@@ -15,7 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';interface AdminOrgProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: any;academicDepts: string[];supportDepts: string[];worklines: string[];}const AdminOrg = defineComponent({ name: "AdminOrg", props: Object as PropType<AdminOrgProps>, setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, worklines } = __props as any;const [viewModel, setViewModel] = useState("dept"); // 'dept' or 'hierarchy'
+import { DEPT_STRUCTURE } from '../../data';interface AdminOrgProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: any;academicDepts: string[];supportDepts: string[];worklines: string[];}const AdminOrg = defineComponent({ name: "AdminOrg", props: ["openModal", "users", "setUsers", "academicDepts", "supportDepts", "worklines"], setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, worklines } = __props as any;const [viewModel, setViewModel] = useState("dept"); // 'dept' or 'hierarchy'
     const [showFilter, setShowFilter] = useState(false);const [filterType, setFilterType] = useState("สายวิชาการ");const [search, setSearch] = useState("");const [deptSearch, setDeptSearch] = useState("");const getDisplayLevel = (user: any) => user.w === "สายงานบริหาร" ? user.p : user.l;const filteredDepts = Array.from(new Set([...academicDepts,
         ...supportDepts,
         ...users.map((u) => u.w === "สายสนับสนุน" && u.d && u.d.includes(" > ") ? u.d.split(" > ")[0] : u.d)].
