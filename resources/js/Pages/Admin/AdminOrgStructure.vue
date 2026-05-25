@@ -28,7 +28,7 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setLearningMethods: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: Object as PropType<AdminOrgStructureProps>, setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods"], setup(__props) {const {
       academicDepts, setAcademicDepts,
       supportDepts, supportPositionGroups, setSupportPositionGroups,
       adminDepts, setAdminDepts,
