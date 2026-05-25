@@ -7,6 +7,16 @@ export default defineConfig({
         jsx: 'automatic',
         jsxImportSource: 'vue',
     },
+    optimizeDeps: {
+        rolldownOptions: {
+            transform: {
+                jsx: {
+                    runtime: 'automatic',
+                    importSource: 'vue',
+                },
+            },
+        },
+    },
     plugins: [
         laravel({
             input: 'resources/js/app.js',
