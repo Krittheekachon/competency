@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};interface LoginProps {onLogin: () => void;}const Login = defineComponent({ name: "Login", props: Object as PropType<LoginProps>, setup(__props) {const { onLogin } = __props as any;return () => <div id="pg-login">
+interface LoginProps {onLogin: () => void;}const Login = defineComponent({ name: "Login", props: Object as PropType<LoginProps>, setup(__props) {const { onLogin } = __props as any;return () => <div id="pg-login">
       <div class="lw">
         <div class="ll">
           <div class="ll-in">

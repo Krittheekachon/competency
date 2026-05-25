@@ -1,5 +1,5 @@
 <script lang="tsx">
-import { defineComponent, ref, watchEffect, type PropType } from "vue";
+import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
   const setState = (next: any) => {
@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: React.Dispatch<React.SetStateAction<any[]>>;competencyTypes: string[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: Object as PropType<AdminDictProps>, setup(__props) {const { competencies, setCompetencies, competencyTypes, onDirtyChange } = __props as any;const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
+import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: string[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: Object as PropType<AdminDictProps>, setup(__props) {const { competencies, setCompetencies, competencyTypes, onDirtyChange } = __props as any;const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
     const [expandedLevel, setExpandedLevel] = useState<number | null>(null);
     const [sortBy, setSortBy] = useState("newest");
     const [typeFilter, setTypeFilter] = useState("ทั้งหมด");
@@ -274,7 +270,7 @@ const React = {
                 </thead>
                 <tbody>
                   {levels.value.map((lv, lvIdx) =>
-                <React.Fragment key={lvIdx}>
+                <Fragment key={lvIdx}>
                       {lv.items.map((item, itemIdx) =>
                   <tr key={`${lvIdx}-${itemIdx}`} style={{ borderBottom: itemIdx === 3 ? '2.5px solid #e2e8f0' : '1px solid #f1f5f9' }}>
                           {itemIdx === 0 &&
@@ -295,7 +291,7 @@ const React = {
                           </td>
                         </tr>
                   )}
-                    </React.Fragment>
+                    </Fragment>
                 )}
                 </tbody>
               </table>

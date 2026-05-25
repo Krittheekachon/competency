@@ -1,5 +1,5 @@
 <script lang="tsx">
-import { defineComponent, ref, watchEffect, type PropType } from "vue";
+import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
   const setState = (next: any) => {
@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};import { DEPT_STRUCTURE } from '../data';interface AdminOrgProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: React.Dispatch<React.SetStateAction<any[]>>;academicDepts: string[];supportDepts: string[];worklines: string[];}const AdminOrg = defineComponent({ name: "AdminOrg", props: Object as PropType<AdminOrgProps>, setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, worklines } = __props as any;const [viewModel, setViewModel] = useState("dept"); // 'dept' or 'hierarchy'
+import { DEPT_STRUCTURE } from '../data';interface AdminOrgProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: any;academicDepts: string[];supportDepts: string[];worklines: string[];}const AdminOrg = defineComponent({ name: "AdminOrg", props: Object as PropType<AdminOrgProps>, setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, worklines } = __props as any;const [viewModel, setViewModel] = useState("dept"); // 'dept' or 'hierarchy'
     const [showFilter, setShowFilter] = useState(false);const [filterType, setFilterType] = useState("สายวิชาการ");const [search, setSearch] = useState("");const [deptSearch, setDeptSearch] = useState("");const getDisplayLevel = (user: any) => user.w === "สายงานบริหาร" ? user.p : user.l;const filteredDepts = Array.from(new Set([...academicDepts,
         ...supportDepts,
         ...users.map((u) => u.w === "สายสนับสนุน" && u.d && u.d.includes(" > ") ? u.d.split(" > ")[0] : u.d)].
@@ -290,12 +286,12 @@ const React = {
                   <span style={{ fontSize: '20px' }}>📂</span> คณะวิศวกรรมศาสตร์
                 </div>
                 {drillPath.value.map((it, idx) =>
-              <React.Fragment key={idx}>
+              <Fragment key={idx}>
                     <div class="breadcrumb-separator">›</div>
                     <div class={`breadcrumb-item ${idx === drillPath.value.length - 1 ? 'active' : ''}`} onClick={() => popDrillPath(idx)}>
                       {it.n}
                     </div>
-                  </React.Fragment>
+                  </Fragment>
               )}
               </div>
               <div class="flex ic jb">

@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropType<{onGoTemplate?: () => void;}>, setup(__props) {const { onGoTemplate } = __props as any;const [modal, setModal] = useState<"new" | "edit" | null>(null);const [editingCycle, setEditingCycle] = useState<any>(null);const [form, setForm] = useState({ n: "", y: "", ss: "", se: "", sup: "" });const [errors, setErrors] = useState({ se: "", sup: "" });const cycles = [{ id: "c1", n: "รอบประเมิน 2568", y: "2568", ss: "2025-04-01", se: "2025-06-30", sup: "2025-07-31", sent: "189/247", act: true }, { id: "c2", n: "รอบประเมิน 2567", y: "2567", ss: "2024-04-01", se: "2024-06-30", sup: "2024-07-31", sent: "240/240", act: false }, { id: "c3", n: "รอบประเมิน 2566", y: "2566", ss: "2023-04-01", se: "2023-06-30", sup: "2023-07-31", sent: "235/235", act: false }];const thM = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];const fmtD = (date: string) => {if (!date) return "";const [y, m, d] = date.split("-");return `${Number(d)} ${thM[Number(m)]} ${Number(y) + 543 - 2500}`;};const openNewCycleModal = () => {
+export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropType<{onGoTemplate?: () => void;}>, setup(__props) {const { onGoTemplate } = __props as any;const [modal, setModal] = useState<"new" | "edit" | null>(null);const [editingCycle, setEditingCycle] = useState<any>(null);const [form, setForm] = useState({ n: "", y: "", ss: "", se: "", sup: "" });const [errors, setErrors] = useState({ se: "", sup: "" });const cycles = [{ id: "c1", n: "รอบประเมิน 2568", y: "2568", ss: "2025-04-01", se: "2025-06-30", sup: "2025-07-31", sent: "189/247", act: true }, { id: "c2", n: "รอบประเมิน 2567", y: "2567", ss: "2024-04-01", se: "2024-06-30", sup: "2024-07-31", sent: "240/240", act: false }, { id: "c3", n: "รอบประเมิน 2566", y: "2566", ss: "2023-04-01", se: "2023-06-30", sup: "2023-07-31", sent: "235/235", act: false }];const thM = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];const fmtD = (date: string) => {if (!date) return "";const [y, m, d] = date.split("-");return `${Number(d)} ${thM[Number(m)]} ${Number(y) + 543 - 2500}`;};const openNewCycleModal = () => {
       setForm({ n: "", y: "", ss: "", se: "", sup: "" });
       setErrors({ se: "", sup: "" });
       setEditingCycle(null);
@@ -221,7 +217,7 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
       fileInputRef.current?.click();
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: Event) => {
       const file = e.target.files?.[0];
       if (file) {
         alert(`นำเข้าไฟล์ "${file.name}" เรียบร้อยแล้ว! (Mock Import)`);

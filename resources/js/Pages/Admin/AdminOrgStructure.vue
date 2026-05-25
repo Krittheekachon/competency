@@ -15,21 +15,17 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: React.Dispatch<React.SetStateAction<string[]>>;supportDepts: string[];supportPositionGroups: Record<string, string[]>;setSupportPositionGroups: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;adminDepts: string[];setAdminDepts: React.Dispatch<React.SetStateAction<string[]>>;supportOrg: any;setSupportOrg: React.Dispatch<React.SetStateAction<any>>;users: any[];orgSups: Record<string, string>;setOrgSups: React.Dispatch<React.SetStateAction<Record<string, string>>>;academicPos: string[];setAcademicPos: React.Dispatch<React.SetStateAction<string[]>>;supportPos: string[];setSupportPos: React.Dispatch<React.SetStateAction<string[]>>;adminPos: string[];setAdminPos: React.Dispatch<React.SetStateAction<string[]>>;
+interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;supportDepts: string[];supportPositionGroups: Record<string, string[]>;setSupportPositionGroups: any;adminDepts: string[];setAdminDepts: any;supportOrg: any;setSupportOrg: any;users: any[];orgSups: Record<string, string>;setOrgSups: any;academicPos: string[];setAcademicPos: any;supportPos: string[];setSupportPos: any;adminPos: string[];setAdminPos: any;
   academicRank: string[];
-  setAcademicRank: React.Dispatch<React.SetStateAction<string[]>>;
+  setAcademicRank: any;
   supportRank: string[];
-  setSupportRank: React.Dispatch<React.SetStateAction<string[]>>;
+  setSupportRank: any;
   worklines: string[];
-  setWorklines: React.Dispatch<React.SetStateAction<string[]>>;
+  setWorklines: any;
   competencyTypes: string[];
-  setCompetencyTypes: React.Dispatch<React.SetStateAction<string[]>>;
+  setCompetencyTypes: any;
   learningMethods: {key: string;label: string;desc?: string;}[];
-  setLearningMethods: React.Dispatch<React.SetStateAction<{key: string;label: string;desc?: string;}[]>>;
+  setLearningMethods: any;
 }
 
 const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: Object as PropType<AdminOrgStructureProps>, setup(__props) {const {

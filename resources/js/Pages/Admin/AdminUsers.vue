@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminUsersProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: React.Dispatch<React.SetStateAction<any[]>>;academicDepts: string[];supportDepts: string[];adminDepts: string[];worklines: string[];}const AdminUsers = defineComponent({ name: "AdminUsers", props: Object as PropType<AdminUsersProps>, setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, adminDepts, worklines } = __props as any;const [showImport, setShowImport] = useState(false);const [search, setSearch] = useState("");const [worklineFilter, setWorklineFilter] = useState("ทุกสายงาน");const [roleFilter, setRoleFilter] = useState("ทุกบทบาท (Role)");const [statusFilter, setStatusFilter] = useState("ทุกสถานะ");const getDisplayLevel = (user: any) => user.w === "สายงานบริหาร" ? user.p : user.l;
+import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminUsersProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: any;academicDepts: string[];supportDepts: string[];adminDepts: string[];worklines: string[];}const AdminUsers = defineComponent({ name: "AdminUsers", props: Object as PropType<AdminUsersProps>, setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, adminDepts, worklines } = __props as any;const [showImport, setShowImport] = useState(false);const [search, setSearch] = useState("");const [worklineFilter, setWorklineFilter] = useState("ทุกสายงาน");const [roleFilter, setRoleFilter] = useState("ทุกบทบาท (Role)");const [statusFilter, setStatusFilter] = useState("ทุกสถานะ");const getDisplayLevel = (user: any) => user.w === "สายงานบริหาร" ? user.p : user.l;
     const toggleStatus = (sso: string) => {
       const next = users.map((u) => {
         if (u.sso === sso) {

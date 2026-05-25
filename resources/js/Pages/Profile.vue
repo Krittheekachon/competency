@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?: (dirty: boolean) => void;}const splitThaiName = (user: any) => ({ firstName: user?.fn || user?.n?.split(" ")[0] || "", lastName: user?.ln || user?.n?.split(" ").slice(1).join(" ") || "" });const getDisplayLevel = (user: any) => user?.w === "สายงานบริหาร" ? user?.p : user?.l;const Profile = defineComponent({ name: "Profile", props: Object as PropType<ProfileProps>, setup(__props) {const { user, onSave, onDirtyChange } = __props as any;const initialName = splitThaiName(user);const [isEditing, setIsEditing] = useState(false);const [isDirty, setIsDirty] = useState(false);const [photo, setPhoto] = useState(user?.photo || "");const [form, setForm] = useState({
+interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?: (dirty: boolean) => void;}const splitThaiName = (user: any) => ({ firstName: user?.fn || user?.n?.split(" ")[0] || "", lastName: user?.ln || user?.n?.split(" ").slice(1).join(" ") || "" });const getDisplayLevel = (user: any) => user?.w === "สายงานบริหาร" ? user?.p : user?.l;const Profile = defineComponent({ name: "Profile", props: Object as PropType<ProfileProps>, setup(__props) {const { user, onSave, onDirtyChange } = __props as any;const initialName = splitThaiName(user);const [isEditing, setIsEditing] = useState(false);const [isDirty, setIsDirty] = useState(false);const [photo, setPhoto] = useState(user?.photo || "");const [form, setForm] = useState({
       sso: user?.sso || "",
       title: user?.t || "",
       firstName: initialName.firstName,
@@ -107,7 +103,7 @@ const React = {
       reader.readAsDataURL(file);
     };
 
-    const handleSubmit = (event: React.FormEvent) => {
+    const handleSubmit = (event: Event) => {
       event.preventDefault();
       onSave({
         ...user,

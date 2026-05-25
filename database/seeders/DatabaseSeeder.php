@@ -17,20 +17,23 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $users = [
-                ['name' => 'Admin User', 'email' => 'admin@test.com', 'role_id' => 0, 'password' => 'adminadmin'],
-                ['name' => 'HR User', 'email' => 'hr@test.com', 'role_id' => 1, 'password' => 'hrhrhrhr'],
-                ['name' => 'Executive User', 'email' => 'exec@test.com', 'role_id' => 2, 'password' => 'execexec'],
-                ['name' => 'Supervisor User', 'email' => 'super@test.com', 'role_id' => 3, 'password' => 'supersuper'],
-                ['name' => 'Staff User', 'email' => 'staff@test.com', 'role_id' => 4, 'password' => 'staffstaff'],
+            ['name' => 'Admin User', 'email' => 'admin@test.com', 'role_id' => 0],
+            ['name' => 'HR User', 'email' => 'hr@test.com', 'role_id' => 1],
+            ['name' => 'Manager User', 'email' => 'manager@test.com', 'role_id' => 2],
+            ['name' => 'Head User', 'email' => 'head@test.com', 'role_id' => 3],
+            ['name' => 'Staff User', 'email' => 'user@test.com', 'role_id' => 4],
+            ['name' => 'Supervisor User', 'email' => 'super@test.com', 'role_id' => 5],
         ];
 
-        foreach ($users as $u) {
-            User::create([
-                'name' => $u['name'],
-                'email' => $u['email'],
-                'password' => Hash::make($u['password']), // รหัสผ่านง่อยๆ สำหรับ Test
-                'role_id' => $u['role_id'],
-            ]);
+        foreach ($users as $user) {
+            User::updateOrCreate(
+                ['email' => $user['email']],
+                [
+                    'name' => $user['name'],
+                    'password' => Hash::make('password'),
+                    'role_id' => $user['role_id'],
+                ],
+            );
         }
     }
 }

@@ -9,296 +9,188 @@ const loginWithKKU = () => {
 <template>
     <Head title="เข้าสู่ระบบ - CIDP" />
 
-    <main class="login-page">
-        <div class="login-bg" aria-hidden="true">
-            <img src="/images/gear_encompetency.png" alt="" />
-        </div>
+    <main class="welcome-page">
+        <img class="watermark watermark-right" src="/images/gear_encompetency.png" alt="" aria-hidden="true" />
+        <img class="watermark watermark-center" src="/images/gear_encompetency.png" alt="" aria-hidden="true" />
 
-        <section class="login-shell">
-            <div class="brand-panel">
-                <div class="faculty-logo">
-                    <img
-                        src="/images/Logo-web-6.png"
-                        alt="Faculty of Engineering KKU"
-                    />
-                </div>
-
-                <div class="brand-copy">
-                    <p class="eyebrow">Faculty of Engineering · Khon Kaen University</p>
-                    <h1>ระบบบริหารสมรรถนะและแผนพัฒนารายบุคคล</h1>
-                    <p class="subtitle">
-                        Competency & Individual Development Plan Management System
-                    </p>
-                </div>
-
-                <div class="cidp-logo">
-                    <img
-                        src="/images/CIDP_encompetency-nobg.png"
-                        alt="CIDP Competency and IDP System"
-                    />
-                </div>
+        <section class="welcome-content" aria-labelledby="welcome-title">
+            <div class="brand-text">
+                <img
+                    class="cidp-mark"
+                    src="/images/CIDP_encompetency-nobg.png"
+                    alt="CIDP Competency and IDP System"
+                />
+                <h1 id="welcome-title">ระบบบริหารสมรรถนะและแผนพัฒนารายบุคคล</h1>
+                <p class="subtitle">Competency & Individual Development Plan Management System</p>
             </div>
 
-            <div class="login-panel">
-                <div>
-                    <p class="panel-kicker">KKU Account</p>
-                    <h2>เข้าสู่ระบบ</h2>
-                    <p class="panel-desc">
-                        ใช้บัญชีมหาวิทยาลัยขอนแก่นของคุณเพื่อเข้าใช้งานระบบ CIDP
-                    </p>
-                </div>
+            <button class="login-button" type="button" @click="loginWithKKU">
+                เข้าสู่ระบบด้วย KKU account
+            </button>
 
-                <button class="login-button" type="button" @click="loginWithKKU">
-                    <span class="login-icon" aria-hidden="true">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path
-                                d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                            <path
-                                d="M10 17l5-5-5-5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                            <path
-                                d="M15 12H3"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </span>
-                    <span>เข้าสู่ระบบด้วย KKU Account</span>
-                </button>
-
-                <div class="support-box">
-                    <span>พบปัญหาการเข้าใช้งาน</span>
-                    <strong>ติดต่อหน่วยงานทรัพยากรบุคคลคณะวิศวกรรมศาสตร์</strong>
-                </div>
-            </div>
+            <p class="support-text">
+                พบปัญหาการเข้าใช้งาน ติดต่อหน่วยงานทรัพยากรบุคคลคณะวิศวกรรมศาสตร์
+            </p>
         </section>
     </main>
 </template>
 
 <style scoped>
-.login-page {
+.welcome-page {
     position: relative;
     display: flex;
     min-height: 100vh;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background:
-        radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.08), transparent 28%),
-        linear-gradient(135deg, #101010 0%, #211313 44%, #0f172a 100%);
-    color: #fff;
+    background: #161a1b;
+    color: #f8fafc;
     font-family: 'Kanit', 'Noto Sans Thai', system-ui, sans-serif;
-    padding: 32px 18px;
+    padding: 32px 20px;
 }
 
-.login-bg {
+.welcome-page::after {
     position: absolute;
-    inset: auto -18% -32% auto;
-    width: min(72vw, 760px);
-    opacity: 0.08;
-    pointer-events: none;
+    inset: auto 0 0;
+    height: 1px;
+    background: rgba(148, 163, 184, 0.45);
+    content: '';
 }
 
-.login-bg img {
-    width: 100%;
+.watermark {
+    position: absolute;
+    display: block;
     height: auto;
-    transform: rotate(14deg);
+    pointer-events: none;
+    user-select: none;
 }
 
-.login-shell {
+.watermark-right {
+    right: -300px;
+    top: -180px;
+    width: min(980px, 68vw);
+    opacity: 0.08;
+    transform: rotate(12deg);
+}
+
+.watermark-center {
+    right: 18%;
+    bottom: -300px;
+    width: min(780px, 54vw);
+    opacity: 0.055;
+    transform: rotate(-8deg);
+}
+
+.welcome-content {
     position: relative;
     z-index: 1;
-    display: grid;
-    width: min(1080px, 100%);
-    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-    gap: 22px;
-    align-items: stretch;
-}
-
-.brand-panel,
-.login-panel {
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(18px);
-}
-
-.brand-panel {
-    display: grid;
-    min-height: 560px;
-    align-content: space-between;
-    gap: 32px;
-    border-radius: 8px;
-    padding: clamp(28px, 5vw, 54px);
-}
-
-.faculty-logo {
-    display: inline-flex;
-    width: clamp(92px, 12vw, 138px);
-    aspect-ratio: 1;
+    display: flex;
+    width: min(620px, calc(100vw - 40px));
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    padding: 14px;
+    gap: clamp(24px, 4vh, 42px);
+    text-align: center;
 }
 
-.faculty-logo img,
-.cidp-logo img {
+.brand-text {
+    min-width: 0;
+}
+
+.cidp-mark {
     display: block;
-    max-width: 100%;
+    width: min(500px, 74vw);
     height: auto;
+    margin-inline: auto;
+    filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.26));
 }
 
-.eyebrow,
-.panel-kicker {
-    margin: 0 0 12px;
-    color: #fecaca;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-}
-
-.brand-copy h1 {
-    max-width: 720px;
-    margin: 0;
-    font-size: clamp(34px, 5.4vw, 64px);
-    font-weight: 800;
-    line-height: 1.12;
+.brand-text h1 {
+    margin: 14px auto 0;
+    max-width: 520px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: clamp(12px, 1vw, 14px);
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
 }
 
 .subtitle {
-    max-width: 560px;
-    margin: 18px 0 0;
-    color: rgba(255, 255, 255, 0.78);
-    font-size: clamp(15px, 2vw, 20px);
-    line-height: 1.7;
-}
-
-.cidp-logo {
-    max-width: min(520px, 92%);
-}
-
-.login-panel {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 28px;
-    border-radius: 8px;
-    padding: clamp(28px, 4vw, 44px);
-}
-
-.login-panel h2 {
-    margin: 0;
-    font-size: clamp(28px, 4vw, 42px);
-    font-weight: 800;
-    line-height: 1.2;
-}
-
-.panel-desc {
-    margin: 12px 0 0;
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 15px;
-    line-height: 1.75;
+    margin: 11px auto 0;
+    padding-top: 11px;
+    width: fit-content;
+    color: rgba(226, 232, 240, 0.78);
+    font-size: clamp(10px, 0.82vw, 12px);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    line-height: 1.4;
+    text-transform: uppercase;
+    white-space: nowrap;
+    border-top: 1px solid rgba(226, 232, 240, 0.56);
 }
 
 .login-button {
-    display: flex;
-    min-height: 58px;
-    width: 100%;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
+    position: relative;
+    min-width: 196px;
+    min-height: 38px;
     border: 0;
-    border-radius: 8px;
-    background: #8c1515;
-    color: #fff;
+    border-radius: 4px;
+    background: #b73a24;
+    color: #ffffff;
     cursor: pointer;
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 1.35;
-    padding: 14px 18px;
-    text-align: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+    padding: 10px 18px;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+    transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .login-button:hover {
-    filter: brightness(1.08);
-    box-shadow: 0 18px 34px rgba(140, 21, 21, 0.36);
+    background: #c9482f;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
     transform: translateY(-1px);
 }
 
-.login-icon {
-    display: inline-flex;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
+.support-text {
+    width: min(680px, calc(100vw - 40px));
+    margin: 0;
+    color: rgba(203, 213, 225, 0.74);
+    font-size: clamp(11px, 0.9vw, 13px);
+    line-height: 1.5;
+    text-align: center;
+    white-space: nowrap;
 }
 
-.support-box {
-    display: grid;
-    gap: 4px;
-    border-left: 3px solid #fecaca;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 13px;
-    line-height: 1.6;
-    padding: 12px 14px;
-}
-
-.support-box strong {
-    color: #fff;
-    font-weight: 700;
-}
-
-@media (max-width: 860px) {
-    .login-page {
-        align-items: flex-start;
-        padding-top: 22px;
+@media (max-width: 720px) {
+    .welcome-content {
+        gap: 22px;
     }
 
-    .login-shell {
-        grid-template-columns: 1fr;
+    .cidp-mark {
+        width: min(390px, 82vw);
     }
 
-    .brand-panel {
-        min-height: auto;
-        gap: 24px;
-    }
-
-    .cidp-logo {
-        max-width: 360px;
+    .brand-text h1,
+    .subtitle,
+    .support-text {
+        white-space: normal;
     }
 }
 
-@media (max-width: 520px) {
-    .login-page {
-        padding: 14px;
+@media (max-width: 420px) {
+    .brand-text h1 {
+        font-size: 13px;
     }
 
-    .brand-panel,
-    .login-panel {
-        padding: 22px;
-    }
-
-    .faculty-logo {
-        width: 84px;
-        padding: 10px;
-    }
-
-    .brand-copy h1 {
-        font-size: 30px;
+    .subtitle,
+    .support-text {
+        font-size: 10px;
     }
 
     .login-button {
-        align-items: flex-start;
-        font-size: 15px;
+        min-width: 180px;
+        font-size: 12px;
     }
 }
 </style>

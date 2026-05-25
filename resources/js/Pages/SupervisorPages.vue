@@ -1,5 +1,5 @@
 <script lang="tsx">
-import { defineComponent, ref, watchEffect, type PropType } from "vue";
+import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
   const setState = (next: any) => {
@@ -15,11 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const React = {
-  useState,
-  useEffect,
-  useRef: ref
-};import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: Object as PropType<{users: any[];setUsers: any;currentUser: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;drafts?: Record<string, any>;setDrafts?: any;onDirtyChange?: (dirty: boolean) => void;}>, setup(__props) {const { users, setUsers, currentUser, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p.includes('รองคณบดี') || currentUser.p.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: Object as PropType<{users: any[];setUsers: any;currentUser: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;drafts?: Record<string, any>;setDrafts?: any;onDirtyChange?: (dirty: boolean) => void;}>, setup(__props) {const { users, setUsers, currentUser, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p.includes('รองคณบดี') || currentUser.p.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -399,7 +395,7 @@ const React = {
                             </div>
             }
                         {mockComps.map((c, i) =>
-            <React.Fragment key={c.id}>
+            <Fragment key={c.id}>
                                 {supervisorMode && <div class="fw8 bc fs13" style={{ padding: "0 0 12px", background: "var(--bg)" }}>{c.t} — {c.t === "CC" ? "สมรรถนะหลัก" : "สมรรถนะตามสายงาน"}</div>}
                                 {supervisorMode ?
               <div class="card mb20" style={{ overflow: "hidden", boxShadow: "var(--sh)" }}>
@@ -480,7 +476,7 @@ const React = {
                                         </div>
                                     </div>
               }
-                            </React.Fragment>
+                            </Fragment>
             )}
 
                         {currentUser.p === 'คณบดี' &&
@@ -1320,7 +1316,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
 
 
-const GapRows: React.FC<{gaps: any[];decisions?: Record<string, SupervisorIDPDecision>;staffId?: string;feedback?: Record<string, string>;}> = ({ gaps, decisions, staffId, feedback }) =>
+const GapRows = ({ gaps, decisions, staffId, feedback }: any) =>
 <div class="cb" style={{ paddingTop: "8px" }}>
         {gaps.map((gap) => {
     const key = staffId ? `${staffId}:${gap.cd}` : "";
@@ -1340,7 +1336,7 @@ const GapRows: React.FC<{gaps: any[];decisions?: Record<string, SupervisorIDPDec
     </div>;
 
 
-const ActivityTimeline: React.FC<{activity: any;}> = ({ activity }) =>
+const ActivityTimeline = ({ activity }: any) =>
 <div style={{ borderLeft: "4px solid var(--green)", borderRadius: "var(--r)", background: "#fbfdff", padding: "12px 14px", marginBottom: "12px" }}>
         <div class="flex ic jb mb8" style={{ flexWrap: "wrap", gap: "8px" }}>
             <div class="flex ic g8">

@@ -1,8 +1,8 @@
 <script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 
 const form = useForm({
-    email: '',    // หรือเปลี่ยนเป็น username ตามโครงสร้าง DB ของคุณ
+    email: '',
     password: '',
     remember: false,
 });
@@ -15,113 +15,224 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="Login - EduCompetency" />
+    <Head title="เข้าสู่ระบบ - CIDP" />
 
-    <div class="bg-on-background text-on-surface font-body-md overflow-hidden h-screen flex flex-col relative">
-        <div class="fixed inset-0 gear-watermark pointer-events-none w-full h-full"></div>
+    <main class="login-page">
+        <section class="login-card" aria-labelledby="login-title">
+            <div class="brand">
+                <img
+                    class="brand-logo"
+                    src="/images/CIDP_encompetency-nobg.png"
+                    alt="CIDP Competency and IDP System"
+                />
+                <p>Faculty of Engineering | Khon Kaen University</p>
+            </div>
 
-        <main class="relative z-10 flex-grow flex items-center justify-center px-gutter">
-            <div class="w-full max-w-[440px] flex flex-col items-center">
-                
-                <div class="mb-xl text-center">
-                    <img alt="EduCompetency Logo" class="h-20 w-auto mx-auto mb-md brightness-0 invert opacity-90" src="https://lh3.googleusercontent.com/aida/ADBb0ugfIzuT9W6gy_7YUD9q4vRNAX9MBUlp60CuDt0NXh0M_Z3iNaHJL9yW5VZYZAlTvV8G4qpF9eWG2dmyEimEjdiAcgMP2BFRk7Bhx0Dwpw9r0ZSoZbpy7jZ-kSpb1viCBtpJN47FqkXxPmgwywmRaFsLom1mIqOsDJHnyu3_CYIybHkYyqoykt6mM22Kj7EyoZjWXqxwOS9u5IU0C7CPJ_oSE7eX8yCJUUBLMmllrTlmJDMw2gFFdYfOlu1lEaoQAex63-qFqYMZ"/>
-                    <h1 class="font-h2 text-h2 text-primary-fixed-dim tracking-tight uppercase">CIDP COMPETENCY & IDP SYSTEM</h1>
-                    <p class="font-body-md text-secondary-fixed-dim opacity-70">Faculty of Engineering | Khon Kaen University</p>
+            <form class="login-form" @submit.prevent="submit">
+                <div class="heading">
+                    <h1 id="login-title">เข้าสู่ระบบ</h1>
+                    <p>กรอก username และ password เพื่อเข้าใช้งานระบบ</p>
                 </div>
 
-                <div class="w-full bg-surface-container-lowest/5 backdrop-blur-md rounded-xl p-xl shadow-2xl border border-outline/20">
-                    <form @submit.prevent="submit" class="space-y-lg">
-                        <div class="space-y-xs">
-                            <label class="font-label-sm text-surface-variant px-xs" for="email">Username</label>
-                            <div class="relative flex items-center">
-                                <span class="material-symbols-outlined absolute left-md text-outline-variant pointer-events-none">person</span>
-                                <input 
-                                    v-model="form.email"
-                                    type="text"
-                                    id="email" 
-                                    placeholder="Enter your username"
-                                    class="w-full bg-on-background/50 border border-outline/30 rounded-lg py-md pl-[48px] pr-md text-on-primary font-body-md placeholder:text-secondary focus:ring-2 focus:ring-primary-container focus:border-primary-container transition-all outline-none" 
-                                    required
-                                />
-                            </div>
-                            <p v-if="form.errors.email" class="text-red-400 text-xs mt-1">{{ form.errors.email }}</p>
-                        </div>
-
-                        <div class="space-y-xs">
-                            <label class="font-label-sm text-surface-variant px-xs" for="password">Password</label>
-                            <div class="relative flex items-center">
-                                <span class="material-symbols-outlined absolute left-md text-outline-variant pointer-events-none">lock</span>
-                                <input 
-                                    v-model="form.password"
-                                    type="password"
-                                    id="password" 
-                                    placeholder="Enter your password"
-                                    class="w-full bg-on-background/50 border border-outline/30 rounded-lg py-md pl-[48px] pr-md text-on-primary font-body-md placeholder:text-secondary focus:ring-2 focus:ring-primary-container focus:border-primary-container transition-all outline-none" 
-                                    required
-                                />
-                            </div>
-                            <p v-if="form.errors.password" class="text-red-400 text-xs mt-1">{{ form.errors.password }}</p>
-                        </div>
-
-                        <div class="pt-sm">
-                            <button 
-                                type="submit"
-                                :disabled="form.processing"
-                                class="w-full bg-primary hover:bg-primary-container text-on-primary font-button text-button py-md rounded-lg shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-sm"
-                                :class="{ 'opacity-50 pointer-events-none': form.processing }"
-                            >
-                                Login (Prototype)
-                                <span class="material-symbols-outlined text-[20px]">login</span>
-                            </button>
-                        </div>
-                    </form>
-
-                    <div class="relative my-xl flex items-center">
-                        <div class="flex-grow border-t border-outline/20"></div>
-                        <span class="mx-md text-secondary-fixed-dim font-label-sm opacity-50">OR</span>
-                        <div class="flex-grow border-t border-outline/20"></div>
-                    </div>
-
-                    <button class="w-full bg-transparent border border-outline/30 hover:bg-surface-variant/10 text-on-primary font-button text-button py-md rounded-lg flex items-center justify-center gap-md active:opacity-80 transition-all">
-                        <img alt="KKU" class="h-6 w-auto" src="https://lh3.googleusercontent.com/aida/ADBb0ugfIzuT9W6gy_7YUD9q4vRNAX9MBUlp60CuDt0NXh0M_Z3iNaHJL9yW5VZYZAlTvV8G4qpF9eWG2dmyEimEjdiAcgMP2BFRk7Bhx0Dwpw9r0ZSoZbpy7jZ-kSpb1viCBtpJN47FqkXxPmgwywmRaFsLom1mIqOsDJHnyu3_CYIybHkYyqoykt6mM22Kj7EyoZjWXqxwOS9u5IU0C7CPJ_oSE7eX8yCJUUBLMmllrTlmJDMw2gFFdYfOlu1lEaoQAex63-qFqYMZ"/>
-                        Login with KKU Account
-                    </button>
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input
+                        id="username"
+                        v-model="form.email"
+                        autocomplete="username"
+                        class="input"
+                        placeholder="Username"
+                        required
+                        type="text"
+                    />
+                    <p v-if="form.errors.email" class="error">{{ form.errors.email }}</p>
                 </div>
 
-                <div class="mt-xl flex flex-col items-center gap-sm">
-                    <Link :href="route('password.request')" class="font-label-sm text-primary-fixed-dim hover:text-on-primary-container transition-colors opacity-80 underline underline-offset-4">
-                        Forgot Password?
-                    </Link>
-                    <p class="font-label-sm text-secondary-fixed-dim opacity-40 mt-md">System Environment: Prototype-V1.0</p>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input
+                        id="password"
+                        v-model="form.password"
+                        autocomplete="current-password"
+                        class="input"
+                        placeholder="password"
+                        required
+                        type="password"
+                    />
+                    <p v-if="form.errors.password" class="error">{{ form.errors.password }}</p>
                 </div>
-            </div>
-        </main>
 
-        <footer class="relative z-10 w-full flex flex-col md:flex-row justify-between items-center px-gutter py-md mt-auto bg-transparent">
-            <div class="font-label-sm text-label-sm text-secondary-fixed-dim opacity-50 mb-sm md:mb-0">
-                © 2024 EduCompetency. All rights reserved.
-            </div>
-            <div class="flex gap-lg">
-                <a class="font-label-sm text-label-sm text-secondary-fixed-dim hover:text-primary-fixed-dim transition-all opacity-60" href="#">Support</a>
-                <a class="font-label-sm text-label-sm text-secondary-fixed-dim hover:text-primary-fixed-dim transition-all opacity-60" href="#">Privacy Policy</a>
-                <a class="font-label-sm text-label-sm text-secondary-fixed-dim hover:text-primary-fixed-dim transition-all opacity-60" href="#">User Manual</a>
-            </div>
-        </footer>
-    </div>
+                <button
+                    class="submit-button"
+                    :disabled="form.processing"
+                    type="submit"
+                >
+                    {{ form.processing ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
+                </button>
+            </form>
+        </section>
+    </main>
 </template>
 
 <style scoped>
-.material-symbols-outlined {
-    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+.login-page {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(circle at 82% 10%, rgba(140, 21, 21, 0.16), transparent 28%),
+        linear-gradient(145deg, #151819 0%, #0f1314 100%);
+    color: #f8fafc;
+    font-family: 'Kanit', 'Noto Sans Thai', system-ui, sans-serif;
+    padding: 24px;
 }
 
-.gear-watermark {
-    /* ใช้สีที่แปรผันตามตัวแปร Tailwind เดิมที่คุณส่งมา */
-    background-image: linear-gradient(rgba(27, 28, 28, 0.85), rgba(27, 28, 28, 0.85)), 
-                      url('https://lh3.googleusercontent.com/aida/ADBb0uj2ayWHUZ9tMvaJKkRLHIQTVhKrsIVYTLKugBPpiUW-mzvarTOj5Xb0KYN-5BgPhalAPRLpvIaUbdT1EdOITNzpNnELLyhrWKTAMRZSXmXNBA5Oc9gRaX3r0C36Cvo5CMSGujssl599LfCmDnICkqzh10bGhQEwtpd_hoix318MioYiRsw7gLQ8XmRzHUbNw-Eu1L72_JSbI4Qbk-ZUDOw_mRKTcgRPh5k2FJm7l0TzGb6xtJrYDMmhXzddmulYqLvyUdEngqe0');
-    background-size: cover;
+.login-card {
+    display: grid;
+    width: min(980px, 100%);
+    grid-template-columns: 0.9fr 1.1fr;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.38);
+}
+
+.brand {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 18px;
+    min-height: 560px;
+    background:
+        linear-gradient(rgba(9, 12, 13, 0.82), rgba(9, 12, 13, 0.82)),
+        url('/images/gear_encompetency.png');
     background-position: center;
-    background-repeat: no-repeat;
-    opacity: 0.4;
+    background-size: 140%;
+    padding: 42px;
+}
+
+.brand-logo {
+    width: min(360px, 100%);
+    height: auto;
+}
+
+.brand p {
+    margin: 0;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.login-form {
+    display: grid;
+    gap: 18px;
+    background: #ffffff;
+    color: #0f172a;
+    padding: 42px;
+}
+
+.heading h1 {
+    margin: 0;
+    color: #0b1f4d;
+    font-size: 30px;
+    font-weight: 900;
+}
+
+.heading p {
+    margin: 8px 0 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.field {
+    display: grid;
+    gap: 7px;
+}
+
+.field label {
+    color: #172033;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.input {
+    min-height: 42px;
+    width: 100%;
+    border: 1px solid #d7dfeb;
+    border-radius: 5px;
+    color: #0f172a;
+    font-size: 14px;
+    outline: none;
+    padding: 9px 12px;
+}
+
+.input:focus {
+    border-color: #8c1515;
+    box-shadow: 0 0 0 3px rgba(140, 21, 21, 0.12);
+}
+
+.error {
+    margin: 0;
+    color: #b91c1c;
+    font-size: 12px;
+}
+
+.submit-button {
+    min-height: 46px;
+    border: 0;
+    border-radius: 5px;
+    background: #8c1515;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 900;
+    margin-top: 4px;
+    transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.submit-button:hover:not(:disabled) {
+    background: #741111;
+    transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+    cursor: wait;
+    opacity: 0.68;
+}
+
+@media (max-width: 840px) {
+    .login-card {
+        grid-template-columns: 1fr;
+    }
+
+    .brand {
+        min-height: auto;
+        align-items: center;
+        padding: 30px 24px;
+        text-align: center;
+    }
+
+    .brand-logo {
+        width: min(310px, 82vw);
+    }
+
+    .login-form {
+        padding: 30px 22px;
+    }
+}
+
+@media (max-width: 520px) {
+    .login-page {
+        padding: 14px;
+    }
+
+    .brand p {
+        white-space: normal;
+    }
 }
 </style>
