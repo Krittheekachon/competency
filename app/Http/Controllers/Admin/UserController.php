@@ -42,6 +42,19 @@ class UserController extends Controller
         return back()->with('success', 'อัปเดตผู้ใช้เรียบร้อยแล้ว');
     }
 
+    public function updateStatus(Request $request, User $user): RedirectResponse
+    {
+        $data = $request->validate([
+            'act' => ['required', 'boolean'],
+        ]);
+
+        $user->update([
+            'is_active' => $data['act'],
+        ]);
+
+        return back()->with('success', 'อัปเดตสถานะผู้ใช้เรียบร้อยแล้ว');
+    }
+
     private function validatedData(Request $request, ?User $user = null): array
     {
         return $request->validate([

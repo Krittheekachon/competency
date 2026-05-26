@@ -132,9 +132,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { router } from '@inertiajs/vue3';
 import { ExcelImportModal } from '../../Components/SharedUI.vue';
 
 type User = {
+  db_id?: number | null;
   sso?: string;
   t?: string;
   n: string;
@@ -240,9 +242,29 @@ const filteredUsers = computed(() => {
 const toggleStatus = (sso?: string) => {
   if (!sso) return;
 
-  props.setUsers((users) =>
-    users.map((user) => (user.sso === sso ? { ...user, act: !isActive(user) } : user)),
-  );
+  const user = props.users.find(u => u.sso === sso);
+  if (!user) return;
+  if (!user.db_id) {
+    alert('ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่');
+    return;
+  }
+
+  const nextActive = !isActive(user);
+  const previousUsers = [...props.users];
+
+  window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
+  props.setUsers((users) => users.map((u) => (u.sso === sso ? { ...u, act: nextActive } : u)));
+
+  router.patch(route('admin.users.status', user.db_id), {
+    act: nextActive,
+  }, {
+    preserveScroll: true,
+    preserveState: true,
+    onError: () => {
+      props.setUsers(previousUsers);
+      alert('ไม่สามารถบันทึกสถานะผู้ใช้ลงฐานข้อมูลได้');
+    },
+  });
 };
 </script>
 

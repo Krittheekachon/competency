@@ -1,4 +1,3 @@
-// routes/api.php
 use App\Http\Controllers\RoleController;
 
 Route::middleware('auth:sanctum')->group(function () {

@@ -173,8 +173,8 @@
                     </span>
                   </td>
                   <td>
-                    <button class="btn btn-s btn-xs w-full edit-user-btn" @click="openModal('modal-user', user)">
-                      แก้ไขผู้ใช้
+                    <button class="btn btn-s btn-xs w-full edit-user-btn" @click="openModal('modal-org', user)">
+                      แก้ไขการบังคับบัญชา
                     </button>
                   </td>
                 </tr>
@@ -301,7 +301,7 @@
                   style="padding-right: 40px; text-align: right; padding-top: 24px; padding-bottom: 24px"
                   @click.stop
                 >
-                  <button class="btn-settings" title="แก้ไขผู้ใช้" @click="openModal('modal-user', user)">⚙️</button>
+                  <button class="btn-settings" title="แก้ไขการบังคับบัญชา" @click="openModal('modal-org', user)">⚙️</button>
                 </td>
               </tr>
             </tbody>
@@ -424,7 +424,7 @@ const listUsers = computed(() => {
 
 const currentHierarchyUsers = computed(() => {
   if (drillPath.value.length === 0) {
-    return props.users.filter((user) => !user.sup);
+    return props.users.filter((user) => user.sup === '');
   }
 
   const last = drillPath.value[drillPath.value.length - 1];
