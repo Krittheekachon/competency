@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import {
     INITIAL_USERS,
     NAV_CONFIG,
@@ -22,6 +22,7 @@ const showSidebar = ref(true);
 const activePage = ref('emp-assess');
 const currentRole = ref('employee');
 const users = ref(clone(INITIAL_USERS));
+const page = usePage();
 
 const learningMethods = ref([
     {
@@ -50,7 +51,16 @@ const currentProfileUser = computed(() =>
     users.value.find((user) => user.r === 'staff')
     || users.value.find((user) => user.r === 'employee')
     || users.value.find((user) => user.sso === '64020')
-    || users.value[0],
+    || {
+        n: page.props.auth?.user?.name || 'Staff User',
+        t: '',
+        sso: page.props.auth?.user?.id || 'current-user',
+        p: '',
+        l: '',
+        w: '',
+        r: 'staff',
+        act: true,
+    },
 );
 
 const requestPageChange = (page) => {
