@@ -44,7 +44,7 @@ class DashboardController extends Controller
             2 => Inertia::render('Executive/Dashboard'),
             3 => Inertia::render('Head/Dashboard', ['users' => $users]),
             4 => Inertia::render('Staff/Dashboard'),
-            5 => Inertia::render('Super/Dashboard'),
+            5 => Inertia::render('Super/Dashboard', ['users' => $users]),
             default => Inertia::render('Dashboard'),
         };
     }

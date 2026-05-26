@@ -77,6 +77,7 @@ const requestPageChange = (page) => {
     activePage.value = page;
 };
 
+const goProfile = () => router.visit(route('profile.edit'));
 const logout = () => router.post(route('logout'));
 </script>
 
@@ -93,7 +94,7 @@ const logout = () => router.post(route('logout'));
                 </div>
             </div>
 
-            <button class="sb-user on" type="button">
+            <button class="sb-user on" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">
                     {{ currentProfileUser?.n?.[0] || currentRoleData.av }}
                 </div>

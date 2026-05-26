@@ -45,6 +45,7 @@ class ProfileUpdateRequest extends FormRequest
             'level' => ['nullable', 'string', 'max:255'],
             'supervisor' => ['nullable', 'string', 'max:255'],
             'evaluator2' => ['nullable', 'string', 'max:255'],
+            'profile_photo' => ['nullable', 'string'],
         ];
     }
 }

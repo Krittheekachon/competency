@@ -54,6 +54,7 @@ class ProfileController extends Controller
             'level' => $data['level'] ?? '',
             'supervisor' => $data['supervisor'] ?? '',
             'evaluator2' => $data['evaluator2'] ?? '',
+            'profile_photo' => $data['profile_photo'] ?? null,
         ]);
 
         if ($user->isDirty('email')) {
@@ -86,6 +87,7 @@ class ProfileController extends Controller
             'r' => $this->normalizeRoleKey($user->role_key ?: $this->roleKeyFromId($user->role_id)),
             'sup' => $user->supervisor ?: '',
             'evaluator2' => $user->evaluator2 ?: '',
+            'photo' => $user->profile_photo ?: '',
             'act' => (bool) $user->is_active,
         ];
     }
