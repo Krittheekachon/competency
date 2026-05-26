@@ -38,6 +38,17 @@ class DashboardController extends Controller
             'act' => (bool) $user->is_active,
         ]);
 
+        $managerSummary = [
+            'totalUsers' => User::count(),
+            'evaluatedUsers' => 0,
+            'passedUsers' => 0,
+            'failedUsers' => 0,
+            'trainingNeeds' => 0,
+            'pendingAssessmentApprovals' => 0,
+            'pendingIdpApprovals' => 0,
+            'source' => 'database',
+        ];
+
         return match ($role) {
             0 => Inertia::render('Admin/Dashboard', ['users' => $users]),
             1 => Inertia::render('HR/Dashboard'),
