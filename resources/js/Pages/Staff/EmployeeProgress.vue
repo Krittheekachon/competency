@@ -205,8 +205,8 @@ type Activity = {
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-const EMPLOYEE_IDP_ACTIVITIES_KEY  = 'mock-employee-idp-activities'
-const EMPLOYEE_PROGRESS_FORMS_KEY  = 'mock-employee-progress-forms'
+const EMPLOYEE_IDP_ACTIVITIES_KEY  = 'cidp-employee-idp-activities'
+const EMPLOYEE_PROGRESS_FORMS_KEY  = 'cidp-employee-progress-forms'
 
 function readStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -327,7 +327,7 @@ function saveProgress(gapCode: string, actIdx: number, mode: 'draft' | 'saved') 
         {
           d: today,
           n: buildLogMessage(form, mode),
-          by: 'สมชาย มีสุข',
+          by: 'ผู้ใช้งานปัจจุบัน',
           type: mode === 'draft' ? 'draft' : 'log',
         },
         ...(act.logs || []),

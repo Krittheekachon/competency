@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 
 const props = defineProps<{ user: any; setUsers: any }>();
 
-const assessDraftKey = `mock-employee-assess:${props.user?.sso || 'default'}`;
+const assessDraftKey = `cidp-employee-assess:${props.user?.sso || 'default'}`;
 
 const readStorage = (key: string, fallback: any) => {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }

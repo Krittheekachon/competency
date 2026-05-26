@@ -73,10 +73,10 @@ const props = withDefaults(
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-const EMPLOYEE_IDP_GAPS_KEY      = 'mock-employee-idp-gaps'
-const EMPLOYEE_IDP_ACTIVITIES_KEY = 'mock-employee-idp-activities'
-const EMPLOYEE_IDP_FORMS_KEY     = 'mock-employee-idp-forms'
-const EMPLOYEE_IDP_GOALS_KEY     = 'mock-employee-idp-goals'
+const EMPLOYEE_IDP_GAPS_KEY      = 'cidp-employee-idp-gaps'
+const EMPLOYEE_IDP_ACTIVITIES_KEY = 'cidp-employee-idp-activities'
+const EMPLOYEE_IDP_FORMS_KEY     = 'cidp-employee-idp-forms'
+const EMPLOYEE_IDP_GOALS_KEY     = 'cidp-employee-idp-goals'
 
 function readStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
