@@ -23,28 +23,13 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
-const implementedAdminPages = new Set([
-    'emp-assess',
-    'emp-gap',
-    'emp-idp',
-    'emp-progress',
-    'emp-idp-detail',
-    'admin-users',
-    'admin-org',
-    'admin-org-structure',
-    'admin-dict',
-]);
-const adminPageStorageKey = 'cidp.admin.activePage';
-const storedAdminPage = typeof window === 'undefined'
-    ? null
-    : window.sessionStorage.getItem(adminPageStorageKey);
-const initialAdminPage = storedAdminPage && implementedAdminPages.has(storedAdminPage)
-    ? storedAdminPage
-    : 'admin-users';
+const requestedPage = ref(typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('page')
+    : null);
 
 const rememberedAdminState = useRemember({
     showSidebar: true,
-    activePage: initialAdminPage,
+    activePage: requestedPage.value || 'emp-assess',
 }, 'AdminDashboard');
 const showSidebar = computed({
     get: () => rememberedAdminState.value.showSidebar !== false,
@@ -218,6 +203,11 @@ const currentNavConfig = computed(() => {
     });
 });
 watchEffect(() => {
+    if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
+        activePage.value = requestedPage.value;
+        requestedPage.value = null;
+    }
+
     if (!implementedAdminPages.has(activePage.value)) {
         activePage.value = 'admin-users';
     }
@@ -530,6 +520,7 @@ const saveUser = () => {
     router.post(route('admin.users.store'), nextUser, options);
 };
 
+const goProfile = () => router.visit(route('profile.edit'));
 const logout = () => router.post(route('logout'));
 </script>
 
@@ -546,7 +537,7 @@ const logout = () => router.post(route('logout'));
                 </div>
             </div>
 
-            <button class="sb-user" type="button" @click="requestPageChange('admin-users')">
+            <button class="sb-user" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">
                     {{ currentProfileUser?.n?.[0] || currentRoleData.av }}
                 </div>
