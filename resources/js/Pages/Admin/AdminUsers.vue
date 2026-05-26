@@ -1,183 +1,352 @@
-<script lang="tsx">
-import { defineComponent, ref, watchEffect, type PropType } from "vue";
-const useState = (initial: any) => {
-  const state = ref(typeof initial === "function" ? initial() : initial);
-  const setState = (next: any) => {
-    state.value = typeof next === "function" ? next(state.value) : next;
-  };
-  return [state, setState] as const;
+<template>
+  <div class="admin-users-head mb20">
+    <div>
+      <div class="sec-t">จัดการผู้ใช้งาน 👤</div>
+      <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-s" type="button" @click="showImport = true">📥 Import Excel</button>
+      <button class="btn btn-p add-user-btn" type="button" @click="openModal('modal-user')">+ เพิ่มผู้ใช้</button>
+    </div>
+  </div>
+
+  <ExcelImportModal
+    v-if="showImport"
+    title="นำเข้าข้อมูลผู้ใช้งาน (User Import)"
+    template-name="User_Template.xlsx"
+    @close="showImport = false"
+  />
+
+  <div class="card mb14">
+    <div class="ch filter-row">
+      <input v-model="search" class="inp search-input" placeholder="🔍 ค้นหาชื่อ / ID..." />
+
+      <select v-model="worklineFilter" class="sel workline-select">
+        <option>ทุกสายงาน</option>
+        <option v-for="workline in worklineOptions" :key="workline" :value="workline">
+          {{ workline }}
+        </option>
+      </select>
+
+      <select v-model="roleFilter" class="sel role-select">
+        <option>ทุกบทบาท (Role)</option>
+        <option v-for="role in roleOptions" :key="role" :value="role">
+          {{ role }}
+        </option>
+      </select>
+
+      <select v-model="statusFilter" class="sel status-select">
+        <option>ทุกสถานะ</option>
+        <option>ปกติ / ใช้งาน</option>
+        <option>ระงับการใช้งาน</option>
+      </select>
+    </div>
+
+    <div class="table-scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th style="min-width: 180px">ชื่อ-นามสกุล</th>
+            <th>สายงาน</th>
+            <th style="min-width: 200px">หน่วยงาน / สังกัด</th>
+            <th>ตำแหน่ง</th>
+            <th>ระดับตำแหน่ง</th>
+            <th>หัวหน้างาน</th>
+            <th>ผู้บังคับบัญชา</th>
+            <th style="min-width: 160px">บทบาทในระบบ</th>
+            <th>สถานะ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(user, index) in filteredUsers" :key="user.sso || index">
+            <td class="id-cell">{{ user.sso || '—' }}</td>
+            <td>
+              <div class="flex ic g8">
+                <div class="av user-avatar">
+                  <img v-if="user.photo" class="avatar-photo" :src="user.photo" :alt="user.n" />
+                  <span v-else>{{ avatarInitial(user) }}</span>
+                </div>
+                <div class="flex col">
+                  <span class="fw6 fs13">{{ user.t }}{{ user.n }}</span>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="b workline-badge" :class="user.w === 'สายวิชาการ' ? 'bb' : 'bg'">
+                {{ user.w || '—' }}
+              </span>
+            </td>
+            <td>
+              <div
+                class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate dept-cell"
+                :title="user.d || ''"
+              >
+                {{ formatDept(user.d) }}
+              </div>
+            </td>
+            <td class="fs12 position-cell">
+              <div class="whitespace-nowrap overflow-hidden truncate full-width" :title="user.p || ''">
+                {{ user.p || '—' }}
+              </div>
+            </td>
+            <td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td>
+            <td class="muted fs12 person-cell">{{ user.sup || '—' }}</td>
+            <td class="muted fs12 person-cell">{{ user.evaluator2 || '—' }}</td>
+            <td>
+              <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
+                {{ roleBadge(user.r).label }}
+              </span>
+            </td>
+            <td>
+              <span class="b" :class="isActive(user) ? 'bg' : 'br'">
+                {{ isActive(user) ? 'ปกติ' : 'ระงับ' }}
+              </span>
+            </td>
+            <td>
+              <div class="flex g4">
+                <button class="btn btn-s btn-xs" type="button" @click="openModal('modal-user', user)">
+                  แก้ไข
+                </button>
+                <button
+                  class="btn btn-r btn-xs status-btn"
+                  type="button"
+                  :class="isActive(user) ? 'suspend' : 'activate'"
+                  @click="toggleStatus(user.sso)"
+                >
+                  {{ isActive(user) ? 'ระงับ' : 'เปิด' }}
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div v-if="filteredUsers.length === 0" class="empty-result">
+        ไม่พบข้อมูลที่คุณค้นหา 🔍
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { ExcelImportModal } from '../../Components/SharedUI.vue';
+
+type User = {
+  sso?: string;
+  t?: string;
+  n: string;
+  photo?: string;
+  w?: string;
+  d?: string;
+  p?: string;
+  l?: string;
+  r?: string;
+  sup?: string;
+  evaluator2?: string;
+  act?: boolean;
 };
 
-const useEffect = (effect: any) => {
-  watchEffect((onCleanup) => {
-    const cleanup = effect();
-    if (typeof cleanup === "function") onCleanup(cleanup);
+type RoleBadge = {
+  label: string;
+  className: string;
+  style?: Record<string, string>;
+};
+
+const props = defineProps<{
+  openModal: (type: string, data?: unknown) => void;
+  users: User[];
+  setUsers: (next: User[] | ((users: User[]) => User[])) => void;
+  academicDepts: string[];
+  supportDepts: string[];
+  adminDepts: string[];
+  worklines: string[];
+}>();
+
+const showImport = ref(false);
+const search = ref('');
+const worklineFilter = ref('ทุกสายงาน');
+const roleFilter = ref('ทุกบทบาท (Role)');
+const statusFilter = ref('ทุกสถานะ');
+const roleOptions = [
+  'บุคลากร',
+  'หัวหน้างาน',
+  'ผู้บังคับบัญชา',
+  'ผู้บริหารคณะ',
+  'งานทรัพยากรบุคคล',
+  'ผู้ดูแลระบบ',
+];
+
+const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
+const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '—');
+const avatarInitial = (user: User) => user.n?.[0] || '?';
+const openModal = (type: string, data?: unknown) => props.openModal(type, data);
+const worklineOptions = computed(() => props.worklines || []);
+const isActive = (user: User) => user.act !== false;
+
+const roleBadge = (role?: string): RoleBadge => {
+  switch (role) {
+    case 'admin':
+      return { label: 'ผู้ดูแลระบบ', className: 'bp' };
+    case 'hr':
+      return { label: 'งานทรัพยากรบุคคล', className: 'bb' };
+    case 'manager':
+    case 'dean':
+      return {
+        label: 'ผู้บริหารคณะ',
+        className: 'bg',
+        style: { background: '#e0f2fe', color: '#0369a1' },
+      };
+    case 'supervisor':
+    case 'dept_head':
+      return {
+        label: 'หัวหน้างาน',
+        className: 'bg',
+        style: { background: '#fff7ed', color: '#c2410c' },
+      };
+    case 'manager_dept':
+      return {
+        label: 'ผู้บังคับบัญชา',
+        className: 'bg',
+        style: { background: '#f0f9ff', color: '#0284c7' },
+      };
+    default:
+      return { label: 'บุคลากร', className: 'bgr' };
+  }
+};
+
+const roleName = (role?: string) => roleBadge(role).label;
+
+const filteredUsers = computed(() => {
+  const keyword = search.value.trim().toLowerCase();
+
+  return props.users.filter((user) => {
+    const name = user.n || '';
+    const id = user.sso || '';
+    const matchesSearch = !keyword
+      || name.toLowerCase().includes(keyword)
+      || id.toLowerCase().includes(keyword);
+    const matchesWorkline = worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value;
+    const matchesRole = roleFilter.value === 'ทุกบทบาท (Role)' || roleName(user.r) === roleFilter.value;
+    const matchesStatus = statusFilter.value === 'ทุกสถานะ'
+      || (statusFilter.value === 'ปกติ / ใช้งาน' ? isActive(user) : !isActive(user));
+
+    return matchesSearch && matchesWorkline && matchesRole && matchesStatus;
   });
+});
+
+const toggleStatus = (sso?: string) => {
+  if (!sso) return;
+
+  props.setUsers((users) =>
+    users.map((user) => (user.sso === sso ? { ...user, act: !isActive(user) } : user)),
+  );
 };
-
-import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminUsersProps {openModal: (type: string, data?: any) => void;users: any[];setUsers: any;academicDepts: string[];supportDepts: string[];adminDepts: string[];worklines: string[];}const AdminUsers = defineComponent({ name: "AdminUsers", props: ["openModal", "users", "setUsers", "academicDepts", "supportDepts", "adminDepts", "worklines"], setup(__props) {const { openModal, users, setUsers, academicDepts, supportDepts, adminDepts, worklines } = __props as any;const [showImport, setShowImport] = useState(false);const [search, setSearch] = useState("");const [worklineFilter, setWorklineFilter] = useState("ทุกสายงาน");const [roleFilter, setRoleFilter] = useState("ทุกบทบาท (Role)");const [statusFilter, setStatusFilter] = useState("ทุกสถานะ");const getDisplayLevel = (user: any) => user.w === "สายงานบริหาร" ? user.p : user.l;
-    const toggleStatus = (sso: string) => {
-      const next = users.map((u) => {
-        if (u.sso === sso) {
-          return { ...u, act: !u.act };
-        }
-        return u;
-      });
-      setUsers(next);
-    };
-
-    const getRoleBadge = (role: string) => {
-      switch (role) {
-        case "admin":return <span class="b bp">ผู้ดูแลระบบ</span>;
-        case "hr":return <span class="b bb">งานทรัพยากรบุคคล</span>;
-        case "manager":return <span class="b bg" style={{ background: "#e0f2fe", color: "#0369a1" }}>ผู้บริหารคณะ</span>;
-        case "manager_dept":return <span class="b bg" style={{ background: "#fef3c7", color: "#92400e" }}>ผู้บังคับบัญชา</span>;
-        case "supervisor":return <span class="b bg" style={{ background: "#f0f9ff", color: "#0284c7" }}>หัวหน้างาน</span>;
-        default:return <span class="b bgr">บุคลากร</span>;
-      }
-    };
-
-    const filtered = users.filter((u) => {
-      const matchesSearch = u.n.toLowerCase().includes(search.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(search.value.toLowerCase());
-      const matchesWorkline = worklineFilter.value === "ทุกสายงาน" || u.w === worklineFilter.value;
-
-      let roleName = "บุคลากร";
-      if (u.r === "admin") roleName = "ผู้ดูแลระบบ";else
-      if (u.r === "hr") roleName = "งานทรัพยากรบุคคล";else
-      if (u.r === "manager") roleName = "ผู้บริหารคณะ";else
-      if (u.r === "manager_dept") roleName = "ผู้บังคับบัญชา";else
-      if (u.r === "supervisor") roleName = "หัวหน้างาน";
-
-      const matchesRole = roleFilter.value === "ทุกบทบาท (Role)" || roleName === roleFilter.value;
-      const matchesStatus = statusFilter.value === "ทุกสถานะ" || (statusFilter.value === "ปกติ / ใช้งาน" ? u.act === true : u.act === false);
-
-      return matchesSearch && matchesWorkline && matchesRole && matchesStatus;
-    });return () =>
-
-
-    <>
-      <div class="flex ic jb mb20">
-        <div>
-          <div class="sec-t">จัดการผู้ใช้งาน 👤</div>
-          <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
-        </div>
-        <div class="flex" style={{ gap: "8px" }}>
-          <button class="btn btn-s" onClick={() => setShowImport(true)}>📥 Import Excel</button>
-          <button class="btn btn-p" onClick={() => openModal("modal-user")}>+ เพิ่มผู้ใช้</button>
-        </div>
-      </div>
-
-      {showImport.value &&
-      <ExcelImportModal
-        title="นำเข้าข้อมูลผู้ใช้งาน (User Import)"
-        templateName="User_Template.xlsx"
-        onClose={() => setShowImport(false)} />
-
-      }
-
-      <div class="card mb14">
-        <div class="ch" style={{ flexWrap: "wrap", gap: "8px" }}>
-          <input class="inp" style={{ maxWidth: "260px" }} placeholder="🔍 ค้นหาชื่อ / ID..." value={search.value} onChange={(e) => setSearch(e.target.value)} />
-          <select class="sel" style={{ width: "160px" }} value={worklineFilter.value} onChange={(e) => setWorklineFilter(e.target.value)}>
-            <option>ทุกสายงาน</option>
-            {worklines.map((w) => <option key={w} value={w}>{w}</option>)}
-          </select>
-          <select class="sel" style={{ width: "180px" }} value={roleFilter.value} onChange={(e) => setRoleFilter(e.target.value)}>
-            <option>ทุกบทบาท (Role)</option>
-            <option>บุคลากร</option>
-            <option>หัวหน้างาน</option>
-            <option>ผู้บังคับบัญชา</option>
-            <option>ผู้บริหารคณะ</option>
-            <option>งานทรัพยากรบุคคล</option>
-            <option>ผู้ดูแลระบบ</option>
-          </select>
-          <select class="sel" style={{ width: "130px" }} value={statusFilter.value} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option>ทุกสถานะ</option>
-            <option>ปกติ / ใช้งาน</option>
-            <option>ระงับการใช้งาน</option>
-          </select>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th style={{ minWidth: "180px" }}>ชื่อ-นามสกุล</th>
-                <th>สายงาน</th>
-                <th style={{ minWidth: "200px" }}>หน่วยงาน / สังกัด</th>
-                <th>ตำแหน่ง</th>
-                <th>ระดับตำแหน่ง</th>
-                <th>หัวหน้างาน</th>
-                <th>ผู้บังคับบัญชา</th>
-                <th style={{ minWidth: "160px" }}>บทบาทในระบบ</th>
-                <th>สถานะ</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u, i) => {
-                const isHierarchical = u.d && u.d.includes(" > ");
-                const depts = isHierarchical ? u.d.split(" > ") : [u.d];
-                return (
-                  <tr key={u.sso || i}>
-                    <td style={{ fontFamily: "monospace", fontSize: "11px", color: "var(--text3)" }}>{u.sso || "—"}</td>
-                    <td>
-                      <div class="flex ic g8">
-                        <div class="av" style={{ width: "32px", height: "32px", fontSize: "12px", background: "var(--navy)" }}>
-                          {u.photo ? <img class="avatar-photo" src={u.photo} alt={u.n} /> : u.n[0]}
-                        </div>
-                        <div class="flex col">
-                          <span class="fw6 fs13">{u.t}{u.n}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td><span class={`b ${u.w === "สายวิชาการ" ? "bb" : "bg"}`} style={{ fontSize: "11px" }}>{u.w}</span></td>
-                    <td>
-                      <div class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate" style={{ maxWidth: "300px" }} title={u.d || ""}>
-                        {u.d ? u.d.split(" > ").join(" > ") : "—"}
-                      </div>
-                    </td>
-                    <td class="fs12" style={{ maxWidth: "140px" }}>
-                      <div class="whitespace-nowrap overflow-hidden truncate" style={{ width: "100%" }} title={u.p || ""}>
-                        {u.p || "—"}
-                      </div>
-                    </td>
-                    <td class="muted fs11">{getDisplayLevel(u) || "—"}</td>
-                    <td class="muted fs12" style={{ maxWidth: "140px" }}>{u.sup || "—"}</td>
-                    <td class="muted fs12" style={{ maxWidth: "140px" }}>{u.evaluator2 || "—"}</td>
-                    <td>{getRoleBadge(u.r)}</td>
-                    <td>
-                      <span class={`b ${u.act ? "bg" : "br"}`}>
-                        {u.act ? "ปกติ" : "ระงับ"}
-                      </span>
-                    </td>
-                    <td>
-                      <div class="flex g4">
-                        <button class="btn btn-s btn-xs" onClick={() => openModal("modal-user", u)}>แก้ไข</button>
-                        <button
-                          class="btn btn-r btn-xs"
-                          style={{ background: u.act ? "#fee2e2" : "#dcfce7", color: u.act ? "#b91c1c" : "#15803d" }}
-                          onClick={() => toggleStatus(u.sso)}>
-                          
-                          {u.act ? "ระงับ" : "เปิด"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>);
-
-              })}
-            </tbody>
-          </table>
-          {filtered.length === 0 &&
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--text3)" }}>
-              ไม่พบข้อมูลที่คุณค้นหา 🔍
-            </div>
-          }
-        </div>
-      </div>
-    </>;} });
-
-
-
-export default AdminUsers;
 </script>
+
+<style scoped>
+.admin-users-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.add-user-btn {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  min-width: 116px;
+  justify-content: center;
+  opacity: 1;
+}
+
+.add-user-btn:hover {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.filter-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-input {
+  max-width: 260px;
+}
+
+.workline-select {
+  width: 160px;
+}
+
+.role-select {
+  width: 180px;
+}
+
+.status-select {
+  width: 130px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.id-cell {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+  background: var(--navy);
+}
+
+.workline-badge {
+  font-size: 11px;
+}
+
+.dept-cell {
+  max-width: 300px;
+}
+
+.position-cell,
+.person-cell {
+  max-width: 140px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.status-btn.suspend {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-btn.activate {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.empty-result {
+  padding: 40px;
+  text-align: center;
+  color: var(--text3);
+}
+</style>
