@@ -15,7 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: Object as PropType<{users: any[];setUsers: any;currentUser: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;drafts?: Record<string, any>;setDrafts?: any;onDirtyChange?: (dirty: boolean) => void;}>, setup(__props) {const { users, setUsers, currentUser, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p.includes('รองคณบดี') || currentUser.p.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -195,7 +195,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     <>
             {supervisorMode ?
       <>
-                    <div class="card mb16">
+                    {!hideSupervisorHeader && <div class="card mb16">
                         <div class="cb" style={{ padding: "12px 16px" }}>
                             <div>
                                 <select class="sel" value={currentUser.sso} onChange={(event) => changeSupervisor(event.target.value)}>
@@ -212,7 +212,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div>}
                     <div class="g4 mb20" style={{ gridTemplateColumns: "repeat(5,minmax(0,1fr))" }}>
                         <div class="sc" style={{ borderTop: "3px solid var(--navy)" }}><div class="sl">ทั้งหมด</div><div class="sv">{assessCounts.total}</div><div class="ss muted">คนในความดูแล</div></div>
                         <div class="sc" style={{ borderTop: "3px solid var(--red)" }}><div class="sl">ยังไม่ส่ง</div><div class="sv rc">{assessCounts.notSent}</div><div class="ss muted">รอลูกน้องประเมินตนเอง</div></div>
@@ -505,7 +505,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
 
 
-export const TeamGap = defineComponent({ name: "TeamGap", props: Object as PropType<{users: any[];currentUser?: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;}>, setup(__props) {const { users, currentUser, supervisorUsers, onSupervisorChange } = __props as any;
+export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "currentUser", "supervisorUsers", "onSupervisorChange", "hideSupervisorHeader"], setup(__props) {const { users = [], currentUser = {}, supervisorUsers, onSupervisorChange, hideSupervisorHeader = false } = __props as any;
     const deptKeys = Object.keys(DEPT_STRUCTURE);
     const [activeDept, setActiveDept] = useState(deptKeys[0]);
     const [selectedGapId, setSelectedGapId] = useState<string | null>(null);
@@ -659,7 +659,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: Object as PropT
 
     if (supervisorMode) return (
       <>
-            <div class="card mb16">
+            {!hideSupervisorHeader && <div class="card mb16">
                 <div class="cb" style={{ padding: "12px 16px" }}>
                     <select class="sel" value={currentUser.sso} onChange={(event) => onSupervisorChange?.(event.target.value)}>
                         {supervisorUsers?.map((user) => <option key={user.sso} value={user.sso}>{user.t}{user.n} · {user.p}</option>)}
@@ -674,7 +674,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: Object as PropT
                         </div>
                     </div>
                 </div>
-            </div>
+            </div>}
 
             <div class="mb20">
                 <div class="sec-t">Competency Gap ทีม</div>
@@ -1050,7 +1050,7 @@ const supervisorIDPMock = [
 }];
 
 
-const SupervisorIDPHeader = defineComponent({ name: "SupervisorIDPHeader", props: Object as PropType<{currentUser?: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;}>, setup(__props) {const { currentUser, supervisorUsers, onSupervisorChange } = __props as any;
+const SupervisorIDPHeader = defineComponent({ name: "SupervisorIDPHeader", props: ["currentUser", "supervisorUsers", "onSupervisorChange"], setup(__props) {const { currentUser, supervisorUsers, onSupervisorChange } = __props as any;
     const supervisorName = currentUser ? `${currentUser.t}${currentUser.n}` : "ดร.สมศักดิ์ ใจงาม";
     const supervisorUnit = currentUser?.d || "หน่วยแผนยุทธศาสตร์";return () =>
 
@@ -1080,7 +1080,7 @@ const SupervisorIDPHeader = defineComponent({ name: "SupervisorIDPHeader", props
 
 
 
-const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", props: Object as PropType<{users: any[];currentUser?: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;}>, setup(__props) {const { users, currentUser, supervisorUsers, onSupervisorChange } = __props as any;
+const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", props: ["users", "currentUser", "supervisorUsers", "onSupervisorChange", "hideSupervisorHeader"], setup(__props) {const { users = [], currentUser = {}, supervisorUsers, onSupervisorChange, hideSupervisorHeader = false } = __props as any;
     const [activeTab, setActiveTab] = useState("notsent");
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [phases, setPhases] = useState<Record<string, SupervisorIDPPhase>>({});
@@ -1151,7 +1151,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
       return (
         <>
-                <SupervisorIDPHeader currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} />
+                {!hideSupervisorHeader && <SupervisorIDPHeader currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} />}
                 <div class="flex ic jb mb16" style={{ flexWrap: "wrap", gap: "10px" }}>
                     <div class="flex ic g8">
                         <button class="btn btn-s btn-sm" onClick={() => setSelectedId(null)}>กลับหน้าติดตามทีม</button>
@@ -1250,7 +1250,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
 
     <>
-            <SupervisorIDPHeader currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} />
+            {!hideSupervisorHeader && <SupervisorIDPHeader currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} />}
             <div class="mb16">
                 <div class="sec-t">IDP & ติดตามทีม</div>
                 <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
@@ -1565,9 +1565,9 @@ const DeptHeadIDP = defineComponent({ name: "DeptHeadIDP", props: Object as Prop
 
 
 
-export const TeamIDP = defineComponent({ name: "TeamIDP", props: Object as PropType<{users: any[];detailed?: boolean;department?: boolean;currentUser?: any;supervisorUsers?: any[];onSupervisorChange?: (sso: string) => void;}>, setup(__props) {const { users, detailed = false, department = false, currentUser, supervisorUsers, onSupervisorChange } = __props as any;
+export const TeamIDP = defineComponent({ name: "TeamIDP", props: ["users", "detailed", "department", "currentUser", "supervisorUsers", "onSupervisorChange", "hideSupervisorHeader"], setup(__props) {const { users = [], detailed = false, department = false, currentUser, supervisorUsers, onSupervisorChange, hideSupervisorHeader = false } = __props as any;
     if (department) return <DeptHeadIDP />;return () =>
-    detailed ? <DetailedSupervisorIDP users={users} currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} /> : <LegacyTeamIDP users={users} />;} });
+    detailed ? <DetailedSupervisorIDP users={users} currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} hideSupervisorHeader={hideSupervisorHeader} /> : <LegacyTeamIDP users={users} />;} });
 
 export default defineComponent({ name: "SupervisorPages" });
 </script>

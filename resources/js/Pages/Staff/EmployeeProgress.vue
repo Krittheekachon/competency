@@ -5,8 +5,16 @@
     <div class="sec-s">บันทึกผลการพัฒนา แนบหลักฐาน และอัปเดตสถานะกิจกรรม IDP</div>
   </div>
 
+  <div v-if="totalActivities === 0" class="card empty-progress">
+    <div class="empty-icon">📭</div>
+    <div class="empty-title">ยังไม่มีกิจกรรมให้ติดตามความก้าวหน้า</div>
+    <div class="empty-desc">
+      เมื่อมีการเพิ่มกิจกรรมในแผน IDP แล้ว รายการสำหรับบันทึกความก้าวหน้าจะแสดงที่หน้านี้
+    </div>
+  </div>
+
   <!-- ── Gap sections ──────────────────────────────────────────────────────── -->
-  <div v-for="{ g, acts } in list" :key="g.cd" style="margin-bottom: 24px">
+  <div v-for="{ g, acts } in list" v-else :key="g.cd" style="margin-bottom: 24px">
 
     <!-- Gap header -->
     <div
@@ -176,7 +184,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watchEffect } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import { IDP_GAPS_DATA, IDP_ACTIVITIES_DATA } from '../../data'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -205,8 +213,8 @@ type Activity = {
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
-const EMPLOYEE_IDP_ACTIVITIES_KEY  = 'mock-employee-idp-activities'
-const EMPLOYEE_PROGRESS_FORMS_KEY  = 'mock-employee-progress-forms'
+const EMPLOYEE_IDP_ACTIVITIES_KEY  = 'cidp-employee-idp-activities'
+const EMPLOYEE_PROGRESS_FORMS_KEY  = 'cidp-employee-progress-forms'
 
 function readStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -242,10 +250,17 @@ watchEffect(() => writeStorage(EMPLOYEE_PROGRESS_FORMS_KEY, progressForms.value)
 
 // ── Derived list ──────────────────────────────────────────────────────────────
 
-const list = IDP_GAPS_DATA.map(g => ({
-  g,
-  acts: activitiesByGap.value[g.cd] || [],
-}))
+const list = computed(() => IDP_GAPS_DATA
+  .map(g => ({
+    g,
+    acts: activitiesByGap.value[g.cd] || [],
+  }))
+  .filter(item => item.acts.length > 0)
+)
+
+const totalActivities = computed(() =>
+  list.value.reduce((sum, item) => sum + item.acts.length, 0)
+)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -327,7 +342,7 @@ function saveProgress(gapCode: string, actIdx: number, mode: 'draft' | 'saved') 
         {
           d: today,
           n: buildLogMessage(form, mode),
-          by: 'สมชาย มีสุข',
+          by: 'ผู้ใช้งานปัจจุบัน',
           type: mode === 'draft' ? 'draft' : 'log',
         },
         ...(act.logs || []),
@@ -340,3 +355,30 @@ function saveProgress(gapCode: string, actIdx: number, mode: 'draft' | 'saved') 
   alert(mode === 'draft' ? 'บันทึกร่างเรียบร้อย' : 'บันทึกความก้าวหน้าเรียบร้อย')
 }
 </script>
+
+<style scoped>
+.empty-progress {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 54px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.empty-title {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.empty-desc {
+  max-width: 520px;
+  color: var(--text3);
+  font-size: 13px;
+}
+</style>

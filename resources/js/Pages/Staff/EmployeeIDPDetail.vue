@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- ── Header ───────────────────────────────────────────────────────────── -->
   <div class="flex ic jb mb20">
     <div>
@@ -344,58 +344,7 @@ const activeRound = ref('current')
 
 // ── Static past rounds data ───────────────────────────────────────────────────
 
-const pastRounds = [
-  {
-    id: 'r2567',
-    n: 'รอบประเมิน 2567',
-    isCurrent: false,
-    gaps: [
-      {
-        cd: 'CC-003', n: 'การทำงานเป็นทีม', t: 'CC', gap: 1,
-        acts: [
-          {
-            ic: '👥', t: 'Peer Learning / Group Activity', m: 'Social Learning',
-            logs: [
-              { d: '5 พ.ค. 67',   n: 'เริ่มกิจกรรมกลุ่มครั้งที่ 1',    by: 'สมชาย มีสุข', type: 'log',  evidence: 'team_activity_round1.pdf' },
-              { d: '30 มิ.ย. 67', n: 'เสร็จสิ้นกิจกรรมและสรุปผล',       by: 'สมชาย มีสุข', type: 'done', evidence: 'team_summary_final.pdf'   },
-            ],
-          },
-        ],
-      },
-      {
-        cd: 'FC2-061', n: 'การใช้เทคโนโลยีดิจิทัล', t: 'FC', gap: 1,
-        acts: [
-          {
-            ic: '💻', t: 'อบรม AI & Data Analytics', m: 'Formal Learning',
-            logs: [
-              { d: '10 มิ.ย. 67', n: 'ลงทะเบียนหลักสูตรและเข้าร่วมครบตามเกณฑ์', by: 'สมชาย มีสุข', type: 'log',  evidence: 'course_register.pdf'      },
-              { d: '28 มิ.ย. 67', n: 'ผ่านการอบรมและส่งใบประกาศนียบัตร',         by: 'สมชาย มีสุข', type: 'done', evidence: 'certificate_ai_data.pdf' },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'r2566',
-    n: 'รอบประเมิน 2566',
-    isCurrent: false,
-    gaps: [
-      {
-        cd: 'FC2-062', n: 'การวิเคราะห์ข้อมูล', t: 'FC', gap: 1,
-        acts: [
-          {
-            ic: '🗂️', t: 'โครงการพัฒนาระบบฐานข้อมูล', m: 'Experiential Learning',
-            logs: [
-              { d: '15 ก.ค. 66', n: 'เริ่มต้นวิเคราะห์ระบบฐานข้อมูลเดิม',      by: 'สมชาย มีสุข', type: 'log',  evidence: 'database_review.docx'        },
-              { d: '31 ส.ค. 66', n: 'เสร็จสิ้นโครงการและส่งมอบรายงาน',          by: 'สมชาย มีสุข', type: 'done', evidence: 'database_project_final.pdf' },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-]
+const pastRounds: any[] = []
 
 const rounds = [
   { id: 'current', n: 'รอบประเมิน 2568', isCurrent: true, gaps: [] as any[] },
@@ -481,3 +430,4 @@ function logCardBorder(type: string): Record<string, string> {
   return {}
 }
 </script>
+

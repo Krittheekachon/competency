@@ -8,6 +8,18 @@ import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
+const legacyMockKeys = [
+    'mock-employee-idp-gaps',
+    'mock-employee-idp-activities',
+    'mock-employee-idp-forms',
+    'mock-employee-idp-goals',
+    'mock-employee-progress-forms',
+];
+
+if (typeof window !== 'undefined') {
+    legacyMockKeys.forEach((key) => window.localStorage.removeItem(key));
+}
+
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: (name) =>
