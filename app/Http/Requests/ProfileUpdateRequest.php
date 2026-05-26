@@ -17,15 +17,35 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
+            'sso' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::unique(User::class)->ignore($this->user()->id),
+            ],
+            'title' => ['nullable', 'string', 'max:255'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'first_name_th' => ['nullable', 'string', 'max:255'],
+            'last_name_th' => ['nullable', 'string', 'max:255'],
+            'first_name_en' => ['nullable', 'string', 'max:255'],
+            'last_name_en' => ['nullable', 'string', 'max:255'],
+            'gender' => ['nullable', 'string', 'max:255'],
             'email' => [
-                'required',
+                'nullable',
                 'string',
                 'lowercase',
                 'email',
                 'max:255',
                 Rule::unique(User::class)->ignore($this->user()->id),
             ],
+            'phone' => ['nullable', 'string', 'max:12'],
+            'workline' => ['nullable', 'string', 'max:255'],
+            'department' => ['nullable', 'string', 'max:255'],
+            'position' => ['nullable', 'string', 'max:255'],
+            'level' => ['nullable', 'string', 'max:255'],
+            'supervisor' => ['nullable', 'string', 'max:255'],
+            'evaluator2' => ['nullable', 'string', 'max:255'],
+            'profile_photo' => ['nullable', 'string'],
         ];
     }
 }

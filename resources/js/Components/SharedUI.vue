@@ -6,6 +6,7 @@
 import {
     computed,
     defineComponent,
+    h,
     ref,
     watch,
     type CSSProperties,
@@ -247,7 +248,7 @@ export const ExcelImportModal = defineComponent({
         const importButtonStyle = computed<CSSProperties>(() => ({
             minWidth: '140px',
             borderRadius: 'var(--r)',
-            opacity: selectedFile.value ? 1 : 0.5,
+            opacity: 1,
             cursor: selectedFile.value ? 'pointer' : 'not-allowed',
         }));
 
@@ -257,10 +258,18 @@ export const ExcelImportModal = defineComponent({
             return `ขนาดไฟล์: ${(selectedFile.value.size / 1024).toFixed(2)} KB`;
         });
 
+        const downloadFileName = computed(() => {
+            const lower = props.templateName.toLowerCase();
+            if (lower.includes('user')) return 'User_Template.xlsx';
+            if (lower.includes('competency')) return 'Competency_Template.xlsx';
+
+            return props.templateName;
+        });
+
         const downloadTemplate = () => {
             const link = document.createElement('a');
-            link.href = props.templateFile || `/templates/${props.templateName}`;
-            link.download = props.templateName;
+            link.href = props.templateFile || `/templates/${downloadFileName.value}`;
+            link.download = downloadFileName.value;
             link.click();
         };
 
@@ -284,107 +293,85 @@ export const ExcelImportModal = defineComponent({
             props.onClose();
         };
 
-        return {
-            selectedFile,
-            fileInputRef,
-            importButtonStyle,
-            selectedFileSize,
-            downloadTemplate,
-            handleFileChange,
-            openFileDialog,
-            handleImport,
-        };
+        return () =>
+            h('div', { class: 'mo shared-import-modal' }, [
+                h('div', { class: 'mo-box anim-fade-in import-box' }, [
+                    h('div', { class: 'mo-h import-header' }, [
+                        h('div', [
+                            h('div', { class: 'fw8 fs18 import-title' }, props.title),
+                            h('div', { class: 'fs12 muted mt4' }, 'อัปโหลดไฟล์ Excel เพื่อนำเข้าข้อมูลเข้าสู่ระบบโดยตรง'),
+                        ]),
+                        h('button', {
+                            class: 'btn-close',
+                            type: 'button',
+                            'aria-label': 'ปิด',
+                            onClick: props.onClose,
+                        }, '×'),
+                    ]),
+
+                    h('div', { class: 'mo-b import-body' }, [
+                        h('div', { class: 'template-card' }, [
+                            h('div', { class: 'template-copy' }, [
+                                h('div', { class: 'template-icon' }, '📄'),
+                                h('div', [
+                                    h('div', { class: 'fw8 fs14 template-title' }, 'ไฟล์แม่แบบ (Template)'),
+                                    h('div', { class: 'fs11 muted' }, 'ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง'),
+                                ]),
+                            ]),
+                            h('div', { class: 'template-actions' }, [
+                                h('button', {
+                                    class: 'btn btn-s btn-sm flex ic g8 download-button',
+                                    type: 'button',
+                                    onClick: downloadTemplate,
+                                }, [
+                                    h('span', { class: 'download-icon' }, '📥'),
+                                    'ดาวน์โหลดตาราง',
+                                ]),
+                                h('div', { class: 'template-support' }, 'รองรับไฟล์ .xlsx, .csv'),
+                            ]),
+                        ]),
+
+                        h('div', { class: 'fg' }, [
+                            h('label', { class: 'lbl import-file-label' }, 'เลือกไฟล์จากคอมพิวเตอร์ของคุณ'),
+                            h('input', {
+                                ref: (el) => {
+                                    fileInputRef.value = el as HTMLInputElement | null;
+                                },
+                                type: 'file',
+                                class: 'hidden-file-input',
+                                accept: '.xlsx, .xls, .csv',
+                                onChange: handleFileChange,
+                            }),
+                            h('div', { class: 'upload-dropzone', onClick: openFileDialog }, [
+                                h('div', { class: 'upload-content' }, [
+                                    h('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '✅' : '📊'),
+                                    h('div', { class: 'upload-title' }, selectedFile.value ? selectedFile.value.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
+                                    h('div', { class: 'upload-desc' }, selectedFile.value
+                                        ? selectedFileSize.value
+                                        : 'ระบบจะตรวจสอบหัวข้อในตารางอัตโนมัติ กรุณาตรวจสอบให้แน่ใจว่าไม่มีเซลล์ที่ว่างเปล่าในคอลัมน์ที่จำเป็น'),
+                                ]),
+                            ]),
+                        ]),
+
+                        h('div', { class: 'flex g12 mt32 import-actions' }, [
+                            h('button', {
+                                class: 'btn btn-s',
+                                type: 'button',
+                                style: 'min-width: 100px; border-radius: var(--r)',
+                                onClick: props.onClose,
+                            }, 'ยกเลิก'),
+                            h('button', {
+                                class: 'btn btn-p shadow-sm',
+                                type: 'button',
+                                disabled: !selectedFile.value,
+                                style: importButtonStyle.value,
+                                onClick: handleImport,
+                            }, 'เริ่มนำเข้าข้อมูล'),
+                        ]),
+                    ]),
+                ]),
+            ]);
     },
-    template: `
-        <div class="mo shared-import-modal">
-            <div class="mo-box anim-fade-in import-box">
-                <div class="mo-h import-header">
-                    <div>
-                        <div class="fw8 fs18 import-title">{{ title }}</div>
-                        <div class="fs12 muted mt4">
-                            อัปโหลดไฟล์ Excel เพื่อนำเข้าข้อมูลเข้าสู่ระบบโดยตรง
-                        </div>
-                    </div>
-                    <button class="btn-close" type="button" @click="onClose">✕</button>
-                </div>
-
-                <div class="mo-b import-body">
-                    <div class="flex ic jb mb24 p16 template-card">
-                        <div class="flex ic g12">
-                            <div class="template-icon">📄</div>
-                            <div>
-                                <div class="fw8 fs14 template-title">ไฟล์แม่แบบ (Template)</div>
-                                <div class="fs11 muted">ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง</div>
-                            </div>
-                        </div>
-                        <button
-                            class="btn btn-s btn-sm flex ic g8 download-button"
-                            type="button"
-                            @click="downloadTemplate"
-                        >
-                            <span class="download-icon">📥</span>
-                            ดาวน์โหลดตาราง
-                        </button>
-                    </div>
-
-                    <div class="fg">
-                        <label class="lbl mb12 flex ic jb">
-                            <span>เลือกไฟล์จากคอมพิวเตอร์ของคุณ</span>
-                            <span class="fs11 fw4 muted">รองรับไฟล์ .xlsx, .csv</span>
-                        </label>
-
-                        <input
-                            ref="fileInputRef"
-                            type="file"
-                            class="hidden-file-input"
-                            accept=".xlsx, .xls, .csv"
-                            @change="handleFileChange"
-                        />
-
-                        <div class="upload-dropzone" @click="openFileDialog">
-                            <div class="flex col ic jc upload-content">
-                                <div class="upload-icon-pulse mb20">
-                                    {{ selectedFile ? '✅' : '📊' }}
-                                </div>
-                                <div class="fw8 fs16 mb8 upload-title">
-                                    {{ selectedFile ? selectedFile.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา' }}
-                                </div>
-                                <div class="muted fs12 upload-desc">
-                                    <template v-if="selectedFile">
-                                        {{ selectedFileSize }}
-                                    </template>
-                                    <template v-else>
-                                        ระบบจะตรวจสอบหัวข้อในตารางอัตโนมัติ<br />
-                                        กรุณาตรวจสอบให้แน่ใจว่าไม่มีเซลล์ที่ว่างเปล่าในคอลัมน์ที่จำเป็น
-                                    </template>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex g12 mt32 import-actions">
-                        <button
-                            class="btn btn-s"
-                            type="button"
-                            style="min-width: 100px; border-radius: var(--r)"
-                            @click="onClose"
-                        >
-                            ยกเลิก
-                        </button>
-                        <button
-                            class="btn btn-p shadow-sm"
-                            type="button"
-                            :disabled="!selectedFile"
-                            :style="importButtonStyle"
-                            @click="handleImport"
-                        >
-                            เริ่มนำเข้าข้อมูล
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `,
 });
 </script>
 
@@ -413,12 +400,13 @@ defineOptions({
 }
 
 .import-box {
-    width: 550px;
-    border-radius: 24px;
+    width: min(688px, calc(100vw - 30px));
+    border-radius: 28px;
+    overflow: hidden;
 }
 
 .import-header {
-    padding: 24px 28px;
+    padding: 30px 34px;
     border-bottom: 1px solid #f1f5f9;
 }
 
@@ -427,13 +415,27 @@ defineOptions({
 }
 
 .import-body {
-    padding: 28px;
+    padding: 34px;
 }
 
 .template-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    align-items: start;
+    margin-bottom: 4px;
+    padding: 0;
     background: #f8fafc;
-    border-radius: var(--r);
-    border: 1px solid #e2e8f0;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+}
+
+.template-copy {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding-left: 8px;
 }
 
 .template-icon {
@@ -449,19 +451,44 @@ defineOptions({
 }
 
 .template-title {
-    color: var(--text2);
+    color: #475569;
+    font-size: 16px;
+}
+
+.template-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
 }
 
 .download-button {
-    padding: 8px 16px;
-    border-radius: 10px;
-    font-weight: 700;
-    border: 1.5px solid var(--blue);
-    color: var(--blue);
+    min-width: 190px;
+    min-height: 54px;
+    justify-content: center;
+    padding: 10px 18px;
+    border: 1.5px solid #2563eb;
+    border-radius: 12px;
+    background: #fff;
+    color: #2563eb;
+    font-weight: 800;
 }
 
 .download-icon {
     font-size: 16px;
+}
+
+.template-support {
+    padding-right: 4px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.import-file-label {
+    margin: 0 0 16px;
+    color: #334155;
+    font-size: 14px;
 }
 
 .hidden-file-input {
@@ -469,36 +496,48 @@ defineOptions({
 }
 
 .upload-content {
-    padding: 60px 40px;
+    display: grid;
+    grid-template-columns: 78px minmax(130px, 190px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: center;
+    min-height: 270px;
+    padding: 44px 62px;
 }
 
 .upload-title {
-    color: var(--navy);
+    color: #0b2a55;
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1.35;
 }
 
 .upload-desc {
-    max-width: 280px;
-    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1.6;
 }
 
 .import-actions {
     justify-content: flex-end;
+    margin-top: 20px;
 }
 
 .btn-close {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 42px;
+    height: 42px;
     border: none;
     border-radius: 50%;
     background: #f1f5f9;
     color: var(--text3);
     cursor: pointer;
     transition: 0.2s;
-    font-size: 14px;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1;
 }
 
 .btn-close:hover {
@@ -508,8 +547,8 @@ defineOptions({
 }
 
 .upload-dropzone {
-    border: 2.5px dashed #e2e8f0;
-    border-radius: 20px;
+    border: 2px dashed #dbe3ef;
+    border-radius: 22px;
     transition: 0.3s;
     cursor: pointer;
     background: #fafafa;
@@ -521,9 +560,49 @@ defineOptions({
 }
 
 .upload-icon-pulse {
-    font-size: 48px;
+    font-size: 56px;
     filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
     animation: pulse 2s infinite;
+}
+
+.import-actions .btn {
+    min-width: 124px;
+    min-height: 44px;
+    justify-content: center;
+    border-radius: 6px !important;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.import-actions .btn-p:disabled {
+    background: #8fb0f0;
+    opacity: 1;
+}
+
+@media (max-width: 640px) {
+    .import-header,
+    .import-body {
+        padding: 22px;
+    }
+
+    .template-card,
+    .upload-content {
+        grid-template-columns: 1fr;
+    }
+
+    .template-actions {
+        align-items: stretch;
+    }
+
+    .download-button {
+        width: 100%;
+    }
+
+    .upload-content {
+        min-height: 260px;
+        padding: 34px 22px;
+        text-align: center;
+    }
 }
 
 @keyframes slideDown {

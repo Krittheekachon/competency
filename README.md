@@ -56,7 +56,7 @@ The local PostgreSQL database runs in Docker with these default credentials:
 
 ```env
 DB_HOST=127.0.0.1
-DB_PORT=5432
+DB_PORT=5433
 DB_DATABASE=competency
 DB_USERNAME=sail
 DB_PASSWORD=password
