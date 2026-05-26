@@ -50,6 +50,8 @@ const users = ref(clone(page.props.users?.length ? page.props.users : INITIAL_US
 const activeModal = ref(null);
 const editingUserKey = ref(null);
 const isSavingUser = ref(false);
+const orgEditMode = ref(false);
+const modalReturnPage = ref('admin-users');
 const userForm = ref({
     db_id: null,
     sso: '',
@@ -180,17 +182,6 @@ const levelOptions = computed(() => {
 });
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
-const implementedAdminPages = new Set([
-    'emp-assess',
-    'emp-gap',
-    'emp-idp',
-    'emp-progress',
-    'emp-idp-detail',
-    'admin-users',
-    'admin-org',
-    'admin-org-structure',
-    'admin-dict',
-]);
 const currentNavConfig = computed(() => {
     const sections = NAV_CONFIG[currentRole.value] || [];
 
@@ -224,6 +215,10 @@ watchEffect(() => {
     if (typeof rememberedAdminState.value.showSidebar !== 'boolean') {
         rememberedAdminState.value.showSidebar = true;
     }
+
+    if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(adminPageStorageKey, activePage.value);
+    }
 });
 const currentProfileUser = computed(() =>
     users.value.find((user) => user.r === currentRole.value)
@@ -236,6 +231,15 @@ const currentProfileUser = computed(() =>
         r: currentRole.value,
         act: true,
     },
+);
+const evaluatorOptions = computed(() =>
+    users.value
+        .filter((user) => user.sso !== editingUserKey.value)
+        .map((user) => ({
+            key: user.sso || `${user.t || ''}${user.n}`,
+            value: `${user.t || ''}${user.n}`,
+            label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+        })),
 );
 
 const requestPageChange = (page) => {
@@ -257,12 +261,12 @@ const syncOrgPath = () => {
 
     if (isSupportWorkline.value) {
         form.d = [form.dept, form.job, form.unit].filter(Boolean).join(' > ');
-        syncOrgSupervisors();
+        if (!orgEditMode.value) syncOrgSupervisors();
         return;
     }
 
     form.d = [form.job, form.unit].filter(Boolean).join(' > ');
-    syncOrgSupervisors();
+    if (!orgEditMode.value) syncOrgSupervisors();
 };
 
 const findUserName = (predicate) => {
@@ -403,20 +407,28 @@ const resetUserForm = (data = null) => {
 };
 
 const openModal = (type, data = null) => {
-    if (type !== 'modal-user') return;
+    if (!['modal-user', 'modal-org'].includes(type)) return;
 
+    orgEditMode.value = type === 'modal-org';
+    modalReturnPage.value = orgEditMode.value ? 'admin-org' : 'admin-users';
     resetUserForm(data);
-    activeModal.value = type;
+    activeModal.value = 'modal-user';
 };
 
 const closeModal = () => {
     activeModal.value = null;
     editingUserKey.value = null;
+    orgEditMode.value = false;
+    modalReturnPage.value = 'admin-users';
 };
 
 const saveUser = () => {
     if (isSavingUser.value) return;
 
+    activePage.value = modalReturnPage.value;
+    if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(adminPageStorageKey, modalReturnPage.value);
+    }
     const form = userForm.value;
     syncOrgPath();
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
@@ -461,9 +473,14 @@ const saveUser = () => {
         act: Boolean(form.act),
     };
 
-    const onSuccess = () => {
-        if (page.props.users?.length) {
-            users.value = clone(page.props.users);
+    const onSuccess = (responsePage) => {
+        activePage.value = modalReturnPage.value;
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(adminPageStorageKey, modalReturnPage.value);
+        }
+
+        if (responsePage.props.users?.length) {
+            users.value = clone(responsePage.props.users);
             closeModal();
             return;
         }
@@ -657,23 +674,27 @@ const logout = () => router.post(route('logout'));
         <div class="mo-box admin-user-modal-box">
             <div class="mo-h admin-user-modal-head">
                 <div>
-                    <div class="fw8 fs18">จัดการผู้ใช้งาน</div>
-                    <div class="muted fs12">กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล</div>
+                    <div class="fw8 fs18">
+                        {{ orgEditMode ? 'แก้ไขการบังคับบัญชา' : 'จัดการผู้ใช้งาน' }}
+                    </div>
+                    <div class="muted fs12">
+                        {{ orgEditMode ? 'ปรับสายงาน หน่วยงาน บทบาท และผู้ประเมิน' : 'กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล' }}
+                    </div>
                 </div>
                 <button class="btn btn-s btn-sm" type="button" @click="closeModal">× ปิด</button>
             </div>
 
             <div class="mo-b admin-user-modal-body">
-                <div class="admin-user-note">
+                <div v-if="!orgEditMode" class="admin-user-note">
                     💡 ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
 
-                <div class="fg">
+                <div v-if="!orgEditMode" class="fg">
                     <label class="lbl req">ID</label>
                     <input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" />
                 </div>
 
-                <div class="modal-grid">
+                <div v-if="!orgEditMode" class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">คำนำหน้า</label>
                         <select v-model="userForm.t" class="sel modal-input">
@@ -697,7 +718,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div class="modal-grid">
+                <div v-if="!orgEditMode" class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">ชื่อ (ภาษาไทย)</label>
                         <input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" />
@@ -708,7 +729,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div class="modal-grid">
+                <div v-if="!orgEditMode" class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">First Name (English)</label>
                         <input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" />
@@ -719,9 +740,9 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div class="modal-divider"></div>
+                <div v-if="!orgEditMode" class="modal-divider"></div>
 
-                <div class="modal-grid">
+                <div v-if="!orgEditMode" class="modal-grid">
                     <div class="fg">
                         <label class="lbl">อีเมล</label>
                         <input v-model="userForm.em" class="inp modal-input" placeholder="example@kku.ac.th" />
@@ -737,6 +758,11 @@ const logout = () => router.post(route('logout'));
                             @input="handlePhoneInput"
                         />
                     </div>
+                </div>
+
+                <div v-if="orgEditMode" class="org-edit-summary">
+                    <div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div>
+                    <div class="muted fs12">{{ userForm.sso || '—' }}</div>
                 </div>
 
                 <div class="modal-grid" :class="{ 'single-col': !userForm.w }">
@@ -802,7 +828,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-if="(isAcademicWorkline && userForm.job) || (isAdminWorkline && userForm.job) || (isSupportWorkline && userForm.job)" class="modal-grid">
+                <div v-if="!orgEditMode && ((isAcademicWorkline && userForm.job) || (isAdminWorkline && userForm.job) || (isSupportWorkline && userForm.job))" class="modal-grid">
                     <div v-if="isSupportWorkline || isAdminWorkline" class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
                         <select v-model="userForm.p" class="sel modal-input" @change="handlePositionChange">
@@ -839,7 +865,22 @@ const logout = () => router.post(route('logout'));
                     </div>
                     <div class="fg">
                         <label class="lbl req">หัวหน้างาน</label>
+                        <select
+                            v-if="orgEditMode"
+                            v-model="userForm.sup"
+                            class="sel modal-input"
+                        >
+                            <option value="">— เลือกหัวหน้างาน —</option>
+                            <option
+                                v-for="person in evaluatorOptions"
+                                :key="`sup-${person.key}`"
+                                :value="person.value"
+                            >
+                                {{ person.label }}
+                            </option>
+                        </select>
                         <input
+                            v-else
                             v-model="userForm.sup"
                             class="inp modal-input"
                             disabled
@@ -851,7 +892,22 @@ const logout = () => router.post(route('logout'));
                 <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</label>
+                        <select
+                            v-if="orgEditMode"
+                            v-model="userForm.evaluator2"
+                            class="sel modal-input"
+                        >
+                            <option value="">— เลือกผู้บังคับบัญชา —</option>
+                            <option
+                                v-for="person in evaluatorOptions"
+                                :key="`evaluator2-${person.key}`"
+                                :value="person.value"
+                            >
+                                {{ person.label }}
+                            </option>
+                        </select>
                         <input
+                            v-else
                             v-model="userForm.evaluator2"
                             class="inp modal-input"
                             disabled
@@ -860,7 +916,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <label class="modal-checkbox">
+                <label v-if="!orgEditMode" class="modal-checkbox">
                     <span>สถานะบัญชี</span>
                     <input v-model="userForm.act" type="checkbox" />
                     <span>ใช้งานได้</span>
@@ -905,6 +961,15 @@ const logout = () => router.post(route('logout'));
     background: #eff6ff;
     color: #2563eb;
     font-size: 13px;
+}
+
+.org-edit-summary {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #dbeafe;
+    border-radius: 6px;
+    background: #eff6ff;
+    color: var(--navy);
 }
 
 .modal-grid {
