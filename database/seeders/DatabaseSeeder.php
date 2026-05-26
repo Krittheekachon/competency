@@ -17,12 +17,12 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $users = [
-            ['name' => 'Admin User', 'email' => 'admin@test.com', 'role_id' => 0],
-            ['name' => 'HR User', 'email' => 'hr@test.com', 'role_id' => 1],
-            ['name' => 'Manager User', 'email' => 'manager@test.com', 'role_id' => 2],
-            ['name' => 'Head User', 'email' => 'head@test.com', 'role_id' => 3],
-            ['name' => 'Staff User', 'email' => 'user@test.com', 'role_id' => 4],
-            ['name' => 'Supervisor User', 'email' => 'super@test.com', 'role_id' => 5],
+            ['name' => 'Admin User',      'email' => 'admin@test.com',   'role_id' => 0, 'role_key' => 'admin'],
+            ['name' => 'HR User',         'email' => 'hr@test.com',      'role_id' => 4, 'role_key' => 'hr'],
+            ['name' => 'Manager User',    'email' => 'manager@test.com', 'role_id' => 1, 'role_key' => 'supervisor'],
+            ['name' => 'Head User',       'email' => 'head@test.com',    'role_id' => 2, 'role_key' => 'dept_head'],
+            ['name' => 'Staff User',      'email' => 'user@test.com',    'role_id' => 3, 'role_key' => 'employee'],
+            ['name' => 'Supervisor User', 'email' => 'super@test.com',   'role_id' => 5, 'role_key' => 'dean'],
         ];
 
         foreach ($users as $user) {
@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
                     'name' => $user['name'],
                     'password' => Hash::make('password'),
                     'role_id' => $user['role_id'],
+                    'role_key' => $user['role_key'],
                 ],
             );
         }
