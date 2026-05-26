@@ -23,10 +23,13 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
+const requestedPage = ref(typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('page')
+    : null);
 
 const rememberedAdminState = useRemember({
     showSidebar: true,
-    activePage: 'emp-assess',
+    activePage: requestedPage.value || 'emp-assess',
 }, 'AdminDashboard');
 const showSidebar = computed({
     get: () => rememberedAdminState.value.showSidebar !== false,
@@ -209,6 +212,11 @@ const currentNavConfig = computed(() => {
     });
 });
 watchEffect(() => {
+    if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
+        activePage.value = requestedPage.value;
+        requestedPage.value = null;
+    }
+
     if (!implementedAdminPages.has(activePage.value)) {
         activePage.value = 'admin-users';
     }
