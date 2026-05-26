@@ -4,8 +4,10 @@ import vue from '@vitejs/plugin-vue';
 
 export default defineConfig({
     esbuild: {
-        jsx: 'automatic',
-        jsxImportSource: 'vue',
+        jsx: 'transform',
+        jsxFactory: 'h',
+        jsxFragment: 'VueFragment',
+        jsxInject: "import { h, Fragment as VueFragment } from 'vue'",
     },
     plugins: [
         laravel({

@@ -1,18 +1,44 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { IDP_GAPS_DATA, INITIAL_COMPETENCIES } from '../../data';
+
 const props = defineProps<{ setPage: (p: string) => void }>();
 
-const gaps = [
-  { cd: 'CC-001', n: 'การบริการที่ดี', t: 'CC', ss: 3, sup: 4, exp: 3, pri: 'low' },
-  { cd: 'CC-002', n: 'การมุ่งผลสัมฤทธิ์', t: 'CC', ss: 3, sup: 3, exp: 3, pri: 'low' },
-  { cd: 'CC-003', n: 'การทำงานเป็นทีม', t: 'CC', ss: 4, sup: 2, exp: 3, pri: 'medium' },
-  { cd: 'FC2-061', n: 'การใช้เทคโนโลยีดิจิทัล', t: 'FC', ss: 2, sup: 1, exp: 3, pri: 'high' },
-  { cd: 'FC2-062', n: 'การวิเคราะห์ข้อมูล', t: 'FC', ss: 2, sup: 1, exp: 2, pri: 'medium' },
-  { cd: 'CC-004', n: 'จริยธรรม', t: 'CC', ss: 4, sup: 3, exp: 3, pri: 'low' },
-];
+type GapRow = {
+  cd: string;
+  n: string;
+  t: string;
+  ss: number | null;
+  sup: number;
+  exp: number;
+  gap: number;
+  pri: string;
+};
 
-const passCount = gaps.filter((g) => g.sup >= g.exp).length;
-const failCount = gaps.filter((g) => g.sup < g.exp).length;
-const needIDP = gaps.filter((g) => g.sup < g.exp).sort((a, b) => (a.sup - a.exp) - (b.sup - b.exp));
+const supervisorScores = new Map(IDP_GAPS_DATA.map((gap: any) => [gap.cd, gap]));
+
+const gaps = computed<GapRow[]>(() => {
+  return INITIAL_COMPETENCIES.map((competency: any) => {
+    const assessed = supervisorScores.get(competency.cd) as any;
+    const expected = Number(assessed?.exp ?? competency.lv ?? 0);
+    const supervisorScore = Number(assessed?.actual ?? expected);
+
+    return {
+      cd: competency.cd,
+      n: competency.n,
+      t: competency.t,
+      ss: null,
+      sup: supervisorScore,
+      exp: expected,
+      gap: supervisorScore - expected,
+      pri: assessed?.pri ?? 'low',
+    };
+  });
+});
+
+const passCount = computed(() => gaps.value.filter((g) => g.gap >= 0).length);
+const failCount = computed(() => gaps.value.filter((g) => g.gap < 0).length);
+const needIDP = computed(() => gaps.value.filter((g) => g.gap < 0).sort((a, b) => a.gap - b.gap));
 
 const getTagClass = (t: string) => t === 'CC' ? 'tag-cc' : t === 'MC' ? 'tag-mc' : t === 'FC1' ? 'tag-fc1' : t === 'FC2' ? 'tag-fc2' : 'tag-fc';
 </script>
@@ -57,7 +83,7 @@ const getTagClass = (t: string) => t === 'CC' ? 'tag-cc' : t === 'MC' ? 'tag-mc'
               <th style="text-align: center;">ระดับคาดหวัง</th>
               <th style="text-align: center;">ประเมินตนเอง</th>
               <th style="text-align: center;">ผู้บังคับบัญชา</th>
-              <th style="text-align: center;">สถานะ</th>
+              <th style="text-align: center;">Competency Gap</th>
               <th style="text-align: center;">Priority</th>
             </tr>
           </thead>
@@ -74,14 +100,18 @@ const getTagClass = (t: string) => t === 'CC' ? 'tag-cc' : t === 'MC' ? 'tag-mc'
                 <span style="display: inline-flex; width: 30px; height: 30px; border-radius: 8px; background: var(--navy); color: #fff; font-size: 14px; font-weight: 800; align-items: center; justify-content: center;">{{ g.exp }}</span>
               </td>
               <td style="text-align: center;">
-                <span style="display: inline-flex; width: 30px; height: 30px; border-radius: 8px; background: var(--blue-lt); color: var(--blue); font-size: 14px; font-weight: 800; align-items: center; justify-content: center;">{{ g.ss }}</span>
+                <span style="display: inline-flex; min-width: 30px; height: 30px; border-radius: 8px; background: var(--blue-lt); color: var(--blue); font-size: 13px; font-weight: 800; align-items: center; justify-content: center; padding: 0 8px;">{{ g.ss ?? '—' }}</span>
               </td>
               <td style="text-align: center;">
-                <span :style="{ display: 'inline-flex', width: '30px', height: '30px', borderRadius: '8px', background: g.sup >= g.exp ? 'var(--green-bg)' : 'var(--red-bg)', color: g.sup >= g.exp ? 'var(--green)' : 'var(--red)', fontSize: '14px', fontWeight: 800, alignItems: 'center', justifyContent: 'center' }">{{ g.sup }}</span>
+                <span :style="{ display: 'inline-flex', width: '30px', height: '30px', borderRadius: '8px', background: g.gap >= 0 ? 'var(--green-bg)' : 'var(--red-bg)', color: g.gap >= 0 ? 'var(--green)' : 'var(--red)', fontSize: '14px', fontWeight: 800, alignItems: 'center', justifyContent: 'center' }">{{ g.sup }}</span>
               </td>
-              <td style="text-align: center;">{{ g.sup - g.exp >= 0 ? '✓' : '✖' }}</td>
               <td style="text-align: center;">
-                <span v-if="g.sup - g.exp >= 0" class="b bt">ผ่านเกณฑ์</span>
+                <span :class="['b', g.gap >= 0 ? 'bt' : g.gap <= -2 ? 'br' : 'by']">
+                  {{ g.gap > 0 ? `+${g.gap}` : g.gap }}
+                </span>
+              </td>
+              <td style="text-align: center;">
+                <span v-if="g.gap >= 0" class="b bt">ผ่านเกณฑ์</span>
                 <span v-else-if="g.pri === 'high'" class="b br">เร่งด่วน</span>
                 <span v-else class="b by">ต้องพัฒนา</span>
               </td>
@@ -113,7 +143,7 @@ const getTagClass = (t: string) => t === 'CC' ? 'tag-cc' : t === 'MC' ? 'tag-mc'
             <span class="muted fs12" style="margin-left: 8px;">{{ g.cd }}</span>
           </div>
           <span :class="['b', getTagClass(g.t)]">{{ g.t }}</span>
-          <span :class="['b', g.pri === 'high' ? 'br' : 'by']">เป้าหมาย: Level {{ g.exp }} (ปัจจุบัน {{ g.sup }})</span>
+          <span :class="['b', g.pri === 'high' ? 'br' : 'by']">Gap {{ g.gap > 0 ? `+${g.gap}` : g.gap }} · คาดหวัง {{ g.exp }} / ผู้บังคับบัญชา {{ g.sup }}</span>
           <span :class="['b', g.pri === 'high' ? 'br' : 'by']" style="margin-left: 4px;">{{ g.pri === 'high' ? 'เร่งด่วน' : 'ต้องพัฒนา' }}</span>
         </div>
       </div>
