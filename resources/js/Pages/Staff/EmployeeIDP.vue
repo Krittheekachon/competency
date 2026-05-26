@@ -7,11 +7,19 @@
         ดึงข้อมูลสมรรถนะที่ต้องการพัฒนาอัตโนมัติ ปีงบประมาณ 2568 สถานะ: draft
       </div>
     </div>
-    <button class="btn btn-s">Export PDF</button>
+    <button v-if="hasIdpPlan" class="btn btn-s">Export PDF</button>
+  </div>
+
+  <div v-if="!hasIdpPlan" class="card empty-idp">
+    <div class="empty-icon">📝</div>
+    <div class="empty-title">ยังไม่มีแผน IDP</div>
+    <div class="empty-desc">
+      เมื่อมีผลการประเมินหรือสมรรถนะที่ต้องพัฒนา ระบบจะแสดงรายการสำหรับจัดทำแผนพัฒนารายบุคคลที่หน้านี้
+    </div>
   </div>
 
   <!-- ── Learning methods card ─────────────────────────────────────────────── -->
-  <div class="card mb20">
+  <div v-if="hasIdpPlan" class="card mb20">
     <div class="ch"><div class="ct">รูปแบบการเรียนรู้ที่นำไปใช้ได้</div></div>
     <div class="cb" style="padding-top: 10px">
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px">
@@ -49,7 +57,7 @@
   />
 
   <!-- ── Footer actions ────────────────────────────────────────────────────── -->
-  <div class="flex g8 mt4" style="padding-top: 4px">
+  <div v-if="hasIdpPlan" class="flex g8 mt4" style="padding-top: 4px">
     <button class="btn btn-t" @click="submitAllIDP">ส่ง IDP ทั้งหมด</button>
     <button class="btn btn-s" @click="saveIDPDraft">บันทึกร่าง</button>
   </div>
@@ -98,6 +106,7 @@ function writeStorage(key: string, value: unknown) {
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const gaps = ref<Gap[]>(readStorage(EMPLOYEE_IDP_GAPS_KEY, IDP_GAPS_DATA))
+const hasIdpPlan = computed(() => gaps.value.length > 0)
 
 const activitiesByGap = ref<Record<string, Activity[]>>(
   readStorage(EMPLOYEE_IDP_ACTIVITIES_KEY, IDP_ACTIVITIES_DATA)
@@ -266,3 +275,30 @@ function saveIDPDraft() {
   alert('บันทึกร่าง IDP เรียบร้อย')
 }
 </script>
+
+<style scoped>
+.empty-idp {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 54px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.empty-title {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.empty-desc {
+  max-width: 560px;
+  color: var(--text3);
+  font-size: 13px;
+}
+</style>

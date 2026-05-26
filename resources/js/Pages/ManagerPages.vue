@@ -15,74 +15,33 @@ const useEffect = (effect: any) => {
   });
 };
 
-const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ = (props: any) => <span {...props}>Z-A</span>;import { DEPT_STRUCTURE } from '../data';export const ManagerGap = defineComponent({ name: "ManagerGap", props: Object as PropType<{users: any[];}>, setup(__props) {const { users } = __props as any;const [openDept, setOpenDept] = useState<string | null>(null);const [openProblem, setOpenProblem] = useState<string | null>(null);const [worklineFilter, setWorklineFilter] = useState("all");const [assessmentFilter, setAssessmentFilter] = useState("assessed");const [deptSort, setDeptSort] = useState("risk");const [deptSortDir, setDeptSortDir] = useState<"asc" | "desc">("asc");const mockCompetencies = { digital: { n: "การใช้เทคโนโลยีดิจิทัล", t: "FC2", tg: "tag-fc2" }, data: { n: "การวิเคราะห์ข้อมูล", t: "FC2", tg: "tag-fc2" }, ai: { n: "AI Literacy", t: "CC", tg: "tag-cc" }, teamwork: { n: "การทำงานเป็นทีม", t: "CC", tg: "tag-cc" }, teaching: { n: "การสอนและถ่ายทอด", t: "FC1", tg: "tag-fc1" }, leadership: { n: "Visionary Leadership", t: "MC", tg: "tag-mc" }, result: { n: "การมุ่งผลสัมฤทธิ์", t: "CC", tg: "tag-cc" } };
-    const mockScenarioUsers = [
-    { n: "ตัวอย่าง เสี่ยงสูง 1", t: "นาย", sso: "MOCK-H01", p: "นักวิชาการคอมพิวเตอร์", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ความเสี่ยงสูง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [mockCompetencies.digital, mockCompetencies.data] },
-    { n: "ตัวอย่าง เสี่ยงสูง 2", t: "นางสาว", sso: "MOCK-H02", p: "นักวิเคราะห์ข้อมูล", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ความเสี่ยงสูง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [mockCompetencies.digital] },
-    { n: "ตัวอย่าง เสี่ยงสูง 3", t: "นาย", sso: "MOCK-H03", p: "นักจัดการงานทั่วไป", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ความเสี่ยงสูง", evalStatus: "self_submitted", act: true, mockFailedCompetencies: [mockCompetencies.ai] },
-    { n: "ตัวอย่าง เสี่ยงสูง 4", t: "นาง", sso: "MOCK-H04", p: "นักทรัพยากรบุคคล", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ความเสี่ยงสูง", evalStatus: "dept_evaluated", act: true, mockFailedCompetencies: [mockCompetencies.teamwork] },
-    { n: "ตัวอย่าง เสี่ยงสูง 5", t: "นาย", sso: "MOCK-H05", p: "เจ้าหน้าที่บริหารงาน", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ความเสี่ยงสูง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เฝ้าระวัง 1", t: "ผศ.ดร.", sso: "MOCK-W01", p: "อาจารย์", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: เฝ้าระวัง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [mockCompetencies.ai] },
-    { n: "ตัวอย่าง เฝ้าระวัง 2", t: "รศ.ดร.", sso: "MOCK-W02", p: "อาจารย์", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: เฝ้าระวัง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [mockCompetencies.teaching] },
-    { n: "ตัวอย่าง เฝ้าระวัง 3", t: "ผศ.ดร.", sso: "MOCK-W03", p: "อาจารย์", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: เฝ้าระวัง", evalStatus: "dept_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เฝ้าระวัง 4", t: "ดร.", sso: "MOCK-W04", p: "นักวิจัย", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: เฝ้าระวัง", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เฝ้าระวัง 5", t: "อ.", sso: "MOCK-W05", p: "อาจารย์", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: เฝ้าระวัง", evalStatus: "self_submitted", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เกณฑ์ดี 1", t: "รศ.ดร.", sso: "MOCK-G01", p: "รองคณบดี", w: "สายงานบริหาร", d: "ฝ่ายตัวอย่าง: อยู่ในเกณฑ์ดี", evalStatus: "dean_approved", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เกณฑ์ดี 2", t: "ผศ.ดร.", sso: "MOCK-G02", p: "ผู้ช่วยคณบดี", w: "สายงานบริหาร", d: "ฝ่ายตัวอย่าง: อยู่ในเกณฑ์ดี", evalStatus: "dean_approved", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เกณฑ์ดี 3", t: "นาย", sso: "MOCK-G03", p: "นักจัดการงานทั่วไป", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: อยู่ในเกณฑ์ดี", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เกณฑ์ดี 4", t: "นางสาว", sso: "MOCK-G04", p: "นักวิชาการศึกษา", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: อยู่ในเกณฑ์ดี", evalStatus: "unit_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง เกณฑ์ดี 5", t: "นาย", sso: "MOCK-G05", p: "นักเทคโนโลยีสารสนเทศ", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: อยู่ในเกณฑ์ดี", evalStatus: "dept_evaluated", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง ยังไม่ประเมิน 1", t: "นาย", sso: "MOCK-N01", p: "เจ้าหน้าที่บริหารงาน", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ยังไม่มีการประเมิน", evalStatus: "draft", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง ยังไม่ประเมิน 2", t: "นาง", sso: "MOCK-N02", p: "นักวิชาการเงินและบัญชี", w: "สายสนับสนุน", d: "ฝ่ายตัวอย่าง: ยังไม่มีการประเมิน", evalStatus: "draft", act: true, mockFailedCompetencies: [] },
-    { n: "ตัวอย่าง ยังไม่ประเมิน 3", t: "ผศ.ดร.", sso: "MOCK-N03", p: "อาจารย์", w: "สายวิชาการ", d: "ฝ่ายตัวอย่าง: ยังไม่มีการประเมิน", evalStatus: "draft", act: true, mockFailedCompetencies: [] }];
+const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ = (props: any) => <span {...props}>Z-A</span>;import { DEPT_STRUCTURE } from '../data';export const ManagerGap = defineComponent({ name: "ManagerGap", props: Object as PropType<{users: any[];}>, setup(__props) {const { users } = __props as any;const [openDept, setOpenDept] = useState<string | null>(null);const [openProblem, setOpenProblem] = useState<string | null>(null);const [worklineFilter, setWorklineFilter] = useState("all");const [assessmentFilter, setAssessmentFilter] = useState("assessed");const [deptSort, setDeptSort] = useState("risk");const [deptSortDir, setDeptSortDir] = useState<"asc" | "desc">("asc");
 
-    const activeUsers = [...users.filter((user) => user.act !== false), ...mockScenarioUsers];
-    const getSeed = (value: string) => value.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const activeUsers = users.filter((user) => user.act !== false);
     const getTopDept = (user: any) => {
       if (!user.d) return "ไม่ระบุหน่วยงาน";
       return user.d.includes(" > ") ? user.d.split(" > ")[0] : user.d;
     };
     const isAssessedUser = (user: any) => !["draft", "", undefined, null].includes(user.evalStatus);
-    const getMockFailedCompetencies = (user: any) => {
-      if (Array.isArray(user.mockFailedCompetencies)) return user.mockFailedCompetencies;
-      if (!isAssessedUser(user)) return [];
+    const getFailedCompetencies = (user: any) => {
+      const gaps = user.failedCompetencies || user.gaps || user.competencyGaps || [];
+      if (!Array.isArray(gaps)) return [];
 
-      const seed = getSeed(`${user.sso || ""}${user.n || ""}`);
-      if (seed % 5 === 0 || user.evalStatus === "dean_approved") return [];
-
-      const supportItems = [
-      { n: "การใช้เทคโนโลยีดิจิทัล", t: "FC2", tg: "tag-fc2" },
-      { n: "การวิเคราะห์ข้อมูล", t: "FC2", tg: "tag-fc2" },
-      { n: "AI Literacy", t: "CC", tg: "tag-cc" },
-      { n: "การทำงานเป็นทีม", t: "CC", tg: "tag-cc" }];
-
-      const academicItems = [
-      { n: "AI Literacy", t: "CC", tg: "tag-cc" },
-      { n: "การสอนและถ่ายทอด", t: "FC1", tg: "tag-fc1" },
-      { n: "การวิเคราะห์ข้อมูล", t: "FC1", tg: "tag-fc1" },
-      { n: "การสื่อสารเชิงวิชาการ", t: "FC1", tg: "tag-fc1" }];
-
-      const managementItems = [
-      { n: "Visionary Leadership", t: "MC", tg: "tag-mc" },
-      { n: "AI Literacy", t: "CC", tg: "tag-cc" },
-      { n: "การมุ่งผลสัมฤทธิ์", t: "CC", tg: "tag-cc" }];
-
-      const items = user.w === "สายวิชาการ" ?
-      academicItems :
-      user.w === "สายงานบริหาร" ?
-      managementItems :
-      supportItems;
-      const failCount = seed % 3 + 1;
-
-      return items.
-      filter((_, index) => (seed + index * 3) % 7 < 4).
-      slice(0, failCount);
+      return gaps
+        .map((gap: any) => typeof gap === "string" ? { n: gap, t: "-", tg: "tag-cc" } : gap)
+        .filter((gap: any) => gap?.n || gap?.name || gap?.title || gap?.competency_name)
+        .map((gap: any) => ({
+          ...gap,
+          n: gap.n || gap.name || gap.title || gap.competency_name,
+          t: gap.t || gap.type || "-",
+          tg: gap.tg || "tag-cc"
+        }));
     };
     const reportUsers = activeUsers.map((user) => ({
       ...user,
       topDept: getTopDept(user),
       assessed: isAssessedUser(user),
-      failedCompetencies: getMockFailedCompetencies(user)
+      failedCompetencies: getFailedCompetencies(user)
     }));
     const worklineOptions = Array.from(new Set(reportUsers.map((user) => user.w || "ไม่ระบุสายงาน")));
     const worklineFilteredUsers = worklineFilter.value === "all" ?

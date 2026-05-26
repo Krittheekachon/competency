@@ -1,7 +1,7 @@
 <script setup>
-import StaffDashboard from '../Staff/Dashboard.vue';
+import HeadDashboard from '../Head/Dashboard.vue';
 </script>
 
 <template>
-    <StaffDashboard />
+    <HeadDashboard />
 </template>

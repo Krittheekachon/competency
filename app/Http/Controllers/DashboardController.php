@@ -42,9 +42,9 @@ class DashboardController extends Controller
             0 => Inertia::render('Admin/Dashboard', ['users' => $users]),
             1 => Inertia::render('HR/Dashboard'),
             2 => Inertia::render('Executive/Dashboard'),
-            3 => Inertia::render('Head/Dashboard'),
+            3 => Inertia::render('Head/Dashboard', ['users' => $users]),
             4 => Inertia::render('Staff/Dashboard'),
-            5 => Inertia::render('Super/Dashboard'),
+            5 => Inertia::render('Super/Dashboard', ['users' => $users]),
             default => Inertia::render('Dashboard'),
         };
     }
@@ -55,7 +55,7 @@ class DashboardController extends Controller
             0 => 'admin',
             1 => 'hr',
             2 => 'manager',
-            3 => 'manager_dept',
+            3 => 'dept_head',
             5 => 'supervisor',
             default => 'employee',
         };
