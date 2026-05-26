@@ -9,6 +9,16 @@ export default defineConfig({
         jsxFragment: 'VueFragment',
         jsxInject: "import { h, Fragment as VueFragment } from 'vue'",
     },
+    optimizeDeps: {
+        rolldownOptions: {
+            transform: {
+                jsx: {
+                    runtime: 'automatic',
+                    importSource: 'vue',
+                },
+            },
+        },
+    },
     plugins: [
         laravel({
             input: 'resources/js/app.js',
