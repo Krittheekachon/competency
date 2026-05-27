@@ -62,8 +62,6 @@ class DashboardController extends Controller
                 'users' => $users,
                 'competencyTypes' => $competencyTypes,
             ]),
-            1 => Inertia::render('HR/Dashboard'),
-            0 => Inertia::render('Admin/Dashboard'),
             1 => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
                     'totalUsers' => User::count(),
