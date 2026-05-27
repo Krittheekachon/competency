@@ -208,6 +208,18 @@ const currentNavConfig = computed(() => {
         };
     });
 });
+const adminPageStorageKey = 'admin-active-page';
+const implementedAdminPages = new Set([
+    'emp-assess',
+    'emp-gap', 
+    'emp-idp',
+    'emp-progress',
+    'emp-idp-detail',
+    'admin-users',
+    'admin-org',
+    'admin-org-structure',
+    'admin-dict',
+]);
 watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
