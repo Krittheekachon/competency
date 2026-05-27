@@ -2,6 +2,11 @@
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { ManagerGap, ManagerIDP } from '../ManagerPages.vue';
+import EmployeeAssess from '../Staff/EmployeeAssess.vue';
+import EmployeeGap from '../Staff/EmployeeGap.vue';
+import EmployeeIDP from '../Staff/EmployeeIDP.vue';
+import EmployeeProgress from '../Staff/EmployeeProgress.vue';
+import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
 
 const props = defineProps({
     hrSummary: {
@@ -39,6 +44,16 @@ const logout = () => router.post(route('logout'));
 const isSidebarOpen = ref(true);
 
 const sections = [
+    {
+        title: 'การประเมินตนเอง',
+        items: [
+            { id: 'emp-assess', icon: '📋', label: 'ประเมินตนเอง' },
+            { id: 'emp-gap', icon: '📊', label: 'สรุปผลสมรรถนะ' },
+            { id: 'emp-idp', icon: '📝', label: 'แผนพัฒนา IDP' },
+            { id: 'emp-progress', icon: '📈', label: 'ความก้าวหน้า' },
+            { id: 'emp-idp-detail', icon: '📁', label: 'รายละเอียด IDP' },
+        ],
+    },
     {
         title: 'HR',
         items: [
@@ -288,7 +303,21 @@ const closeModal = () => {
                         </aside>
                     </div>
                 </template>
-
+                <template v-else-if="activePage === 'emp-assess'">
+                    <EmployeeAssess :user="{ sso: $page.props.auth.user.id }" :set-users="() => {}" />
+                </template>
+                <template v-else-if="activePage === 'emp-gap'">
+                    <EmployeeGap :set-page="(p) => activePage = p" />
+                </template>
+                <template v-else-if="activePage === 'emp-idp'">
+                    <EmployeeIDP />
+                </template>
+                <template v-else-if="activePage === 'emp-progress'">
+                    <EmployeeProgress />
+                </template>
+                <template v-else-if="activePage === 'emp-idp-detail'">
+                    <EmployeeIDPDetail />
+                </template>
                 <template v-else-if="activePage === 'hr-cycle'">
                     <div class="hr-page-head mb20">
                         <div>
