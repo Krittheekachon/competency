@@ -84,6 +84,7 @@ class DashboardController extends Controller
                     ]),
             ]),
             2 => Inertia::render('Executive/Dashboard', [
+                'users' => $users,
                 'managerSummary' => $managerSummary,
                 'activeCycleName' => '',
                 'departmentRows' => [],
