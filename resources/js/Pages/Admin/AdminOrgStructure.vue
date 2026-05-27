@@ -1,5 +1,6 @@
 <script lang="tsx">
 import { defineComponent, ref, watchEffect, type PropType } from "vue";
+import { router } from "@inertiajs/vue3";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
   const setState = (next: any) => {
@@ -22,7 +23,7 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setSupportRank: any;
   worklines: string[];
   setWorklines: any;
-  competencyTypes: string[];
+  competencyTypes: any[];
   setCompetencyTypes: any;
   learningMethods: {key: string;label: string;desc?: string;}[];
   setLearningMethods: any;
@@ -45,9 +46,12 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     } = __props as any;
     const POSITION_PREVIEW_LIMIT = 4;
     const SUPPORT_GROUP_PREVIEW_LIMIT = 4;
+    const competencyTypeList = ref<any[]>([...((__props as any).competencyTypes || [])]);
     const [activeTab, setActiveTab] = useState("workline");
     const [editingItem, setEditingId] = useState<any>(null);
     const [newValue, setNewValue] = useState("");
+    const [editFullName, setEditFullName] = useState("");
+    const [editDesc, setEditDesc] = useState("");
     const [newSupportDeptName, setNewSupportDeptName] = useState("");
     const [newSupportWorkNames, setNewSupportWorkNames] = useState<Record<string, string>>({});
     const [newSupportUnitNames, setNewSupportUnitNames] = useState<Record<string, string>>({});
@@ -58,6 +62,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       category: "workline",
       type: "1",
       name: "",
+      fullName: "",
       desc: "",
       parent: "",
       grandparent: ""
@@ -65,6 +70,32 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const dean = users.find((user) => user.r === "manager")?.n || "";
     const deptManagers = users.filter((user) => user.r === "manager_dept");
     const supervisors = users.filter((user) => user.r === "supervisor");
+    const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
+    const getCompetencyTypeFullName = (item: any) => typeof item === "string" ? "" : item?.fullName || item?.label || "";
+    const getCompetencyTypeDesc = (item: any) => typeof item === "string" ? "" : item?.desc || "";
+    const getCompetencyTypeId = (item: any) => typeof item === "string" ? null : item?.id || null;
+    useEffect(() => {
+      competencyTypeList.value = [...((( __props as any).competencyTypes) || [])];
+    }, [(__props as any).competencyTypes]);
+    const applyCompetencyTypes = (next: any[]) => {
+      competencyTypeList.value = [...next];
+      setCompetencyTypes(next);
+    };
+    const syncCompetencyTypesFromPage = (responsePage: any) => {
+      if (Array.isArray(responsePage.props.competencyTypes)) {
+        applyCompetencyTypes(responsePage.props.competencyTypes);
+      }
+    };
+    const showPersistError = (errors: any) => {
+      const firstError = Object.values(errors || {})[0];
+      alert(firstError || "ไม่สามารถบันทึกข้อมูลประเภทสมรรถนะได้");
+    };
+    const persistOptions = {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: syncCompetencyTypesFromPage,
+      onError: showPersistError
+    };
 
     const setOrgHead = (path: string, value: string) => {
       setOrgSups((current) => ({ ...current, [path]: value }));
@@ -108,6 +139,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const startEdit = (type: string, oldName: string, extras?: any) => {
       setEditingId({ type, oldName, ...extras });
       setNewValue(oldName);
+      setEditFullName(type === "comp-type" ? getCompetencyTypeFullName(extras?.item) : "");
+      setEditDesc(type === "comp-type" ? getCompetencyTypeDesc(extras?.item) : "");
     };
 
     const saveEdit = () => {
@@ -151,7 +184,34 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "academic-rank":setAcademicRank(academicRank.map((v) => v === oldName ? newValue.value : v));break;
         case "support-rank":setSupportRank(supportRank.map((v) => v === oldName ? newValue.value : v));break;
         case "workline":setWorklines(worklines.map((v) => v === oldName ? newValue.value : v));break;
-        case "comp-type":setCompetencyTypes(competencyTypes.map((v) => v === oldName ? newValue.value : v));break;
+        case "comp-type":
+          if (!editFullName.value.trim() || !editDesc.value.trim()) return;
+          {
+            const payload = {
+              code: newValue.value.trim(),
+              full_name: editFullName.value.trim(),
+              description: editDesc.value.trim()
+            };
+            const id = getCompetencyTypeId(editingItem.value.item);
+            if (id) {
+              router.put(route("admin.competency-types.update", id), payload, {
+                ...persistOptions,
+                onSuccess: (responsePage: any) => {
+                  syncCompetencyTypesFromPage(responsePage);
+                  setEditingId(null);
+                }
+              });
+            } else {
+              router.post(route("admin.competency-types.store"), payload, {
+                ...persistOptions,
+                onSuccess: (responsePage: any) => {
+                  syncCompetencyTypesFromPage(responsePage);
+                  setEditingId(null);
+                }
+              });
+            }
+            return;
+          }
         case "learning-method":
           setLearningMethods(learningMethods.map((item) => item.key === oldName ? { ...item, label: newValue.value } : item));
           break;
@@ -199,7 +259,22 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "academic-rank":setAcademicRank(academicRank.filter((v) => v !== oldName));break;
         case "support-rank":setSupportRank(supportRank.filter((v) => v !== oldName));break;
         case "workline":setWorklines(worklines.filter((v) => v !== oldName));break;
-        case "comp-type":setCompetencyTypes(competencyTypes.filter((v) => v !== oldName));break;
+        case "comp-type":{
+            const id = getCompetencyTypeId(editingItem.value.item);
+            if (id) {
+              router.delete(route("admin.competency-types.destroy", id), {
+                ...persistOptions,
+                onSuccess: (responsePage: any) => {
+                  syncCompetencyTypesFromPage(responsePage);
+                  setEditingId(null);
+                }
+              });
+            } else {
+              applyCompetencyTypes(competencyTypeList.value.filter((v) => getCompetencyTypeCode(v) !== oldName));
+              setEditingId(null);
+            }
+            return;
+          }
         case "learning-method":setLearningMethods(learningMethods.filter((item) => item.key !== oldName));break;
       }
       setEditingId(null);
@@ -207,8 +282,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
     const openAddItem = () => {
       const nextItem = activeTab.value === "comp" ?
-      { category: "comp", type: "1", name: "", desc: "", parent: "", grandparent: "" } :
-      { category: "workline", type: "1", name: "", desc: "", parent: "", grandparent: "" };
+      { category: "comp", type: "1", name: "", fullName: "", desc: "", parent: "", grandparent: "" } :
+      { category: "workline", type: "1", name: "", fullName: "", desc: "", parent: "", grandparent: "" };
       setShowAddModal(true);
       setAddItemData(nextItem);
     };
@@ -221,7 +296,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       "สายงานบริหาร";
 
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
-      if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "ชื่อประเภทสมรรถนะ" };
+      if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "รหัสประเภทสมรรถนะ" };
       if (addItemData.value.category === "learning") return { title: "เพิ่มประเภทการเรียนรู้", label: "ชื่อประเภทการเรียนรู้" };
       if (addItemData.value.category === "dept") return { title: `เพิ่มกลุ่มงาน${typeLabel}`, label: "ชื่อกลุ่มงาน" };
       if (addItemData.value.category === "pos") {
@@ -237,7 +312,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     };
 
     const saveAddItem = () => {
-      const { category, type, name, desc, parent, grandparent } = addItemData.value;
+      const { category, type, name, fullName, desc, parent, grandparent } = addItemData.value;
       if (name.trim()) {
         if (category === "pos" && type === "2" && !parent) return;
         if (category === "dept") {
@@ -273,7 +348,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         } else if (category === "workline") {
           setWorklines([...worklines, name]);
         } else if (category === "comp") {
-          setCompetencyTypes([...competencyTypes, name]);
+          if (!fullName.trim() || !desc.trim()) return;
+          router.post(route("admin.competency-types.store"), {
+            code: name.trim(),
+            full_name: fullName.trim(),
+            description: desc.trim()
+          }, {
+            ...persistOptions,
+            onSuccess: (responsePage: any) => {
+              syncCompetencyTypesFromPage(responsePage);
+              setShowAddModal(false);
+            }
+          });
+          return;
         } else if (category === "learning") {
           const baseKey = name.
           trim().
@@ -306,9 +393,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           <div class="sec-t">จัดการโครงสร้างองค์กรและสมรรถนะ</div>
           <div class="sec-s">กลุ่มงาน ตำแหน่ง ระดับตำแหน่ง และประเภทสมรรถนะ</div>
         </div>
-        {(activeTab.value === "workline" || activeTab.value === "comp") &&
+        {activeTab.value === "workline" &&
         <button class="btn btn-p" onClick={openAddItem}>
-            {activeTab.value === "workline" ? "+ เพิ่มสายงาน" : "+ เพิ่มประเภทสมรรถนะ"}
+            + เพิ่มสายงาน
           </button>
         }
       </div>
@@ -585,16 +672,20 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               <section class="structure-section">
                 <div class="structure-section-head">
                   <div class="fw7 fs14 text-navy">หมวดหมู่สมรรถนะ</div>
-                  <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "comp", type: "1", name: "", desc: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มประเภท</button>
+                  <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "comp", type: "1", name: "", fullName: "", desc: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มประเภท</button>
                 </div>
                 <div class="structure-grid">
-                  {competencyTypes.map((item) =>
-                <div key={item} class="structure-item group">
-                      <span class="fs13 fw6 text-gray-700 truncate">{item}</span>
-                      <button class="btn-link opacity-0 group-hover:opacity-100" style={{ fontSize: '12px' }} onClick={() => startEdit("comp-type", item)}>✎</button>
+                  {competencyTypeList.value.map((item) =>
+                <div key={getCompetencyTypeCode(item)} class="structure-item group competency-type-item">
+                      <div style={{ minWidth: 0 }}>
+                        <div class="fs13 fw7 text-gray-800 truncate">{getCompetencyTypeCode(item)}</div>
+                        <div class="muted fs12 truncate">{getCompetencyTypeFullName(item) || "-"}</div>
+                        <div class="muted fs11 competency-type-desc">{getCompetencyTypeDesc(item) || "-"}</div>
+                      </div>
+                      <button class="btn-link opacity-0 group-hover:opacity-100" style={{ fontSize: '12px' }} onClick={() => startEdit("comp-type", getCompetencyTypeCode(item), { item })}>✎</button>
                     </div>
                 )}
-                  {competencyTypes.length === 0 && <div class="structure-empty">ยังไม่มีข้อมูล</div>}
+                  {competencyTypeList.value.length === 0 && <div class="structure-empty">ยังไม่มีข้อมูล</div>}
                 </div>
               </section>
               <section class="structure-section">
@@ -632,6 +723,18 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 <label class="lbl fw8" style={{ color: "var(--navy)" }}>{getAddModalCopy().label}</label>
                 <input class="inp" value={addItemData.value.name} onChange={(e) => setAddItemData({ ...addItemData.value, name: e.target.value })} placeholder="กรอกชื่อที่ต้องการ..." autoFocus />
               </div>
+              {addItemData.value.category === "comp" &&
+            <>
+                <div class="fg">
+                  <label class="lbl fw8" style={{ color: "var(--navy)" }}>ชื่อเต็มประเภทสมรรถนะ</label>
+                  <input class="inp" value={addItemData.value.fullName} onChange={(e) => setAddItemData({ ...addItemData.value, fullName: e.target.value })} placeholder="เช่น Core Competency" />
+                </div>
+                <div class="fg">
+                  <label class="lbl fw8" style={{ color: "var(--navy)" }}>รายละเอียดประเภทสมรรถนะ</label>
+                  <textarea class="ta" rows={3} value={addItemData.value.desc} onChange={(e) => setAddItemData({ ...addItemData.value, desc: e.target.value })} placeholder="อธิบายความหมายและขอบเขตของประเภทสมรรถนะนี้..." />
+                </div>
+              </>
+            }
               {addItemData.value.category === "learning" &&
             <div class="fg">
                   <label class="lbl fw8" style={{ color: "var(--navy)" }}>รายละเอียดแบบย่อ</label>
@@ -657,9 +760,21 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             </div>
             <div class="mo-b">
               <div class="fg">
-                <label class="lbl">ชื่อปัจจุบัน: <span class="muted">{editingItem.value.oldName}</span></label>
+                <label class="lbl">{editingItem.value.type === "comp-type" ? "รหัสประเภทสมรรถนะ" : "ชื่อปัจจุบัน"}: <span class="muted">{editingItem.value.oldName}</span></label>
                 <input class="inp" value={newValue.value} onChange={(e) => setNewValue(e.target.value)} placeholder="กรอกชื่อใหม่..." autoFocus />
               </div>
+              {editingItem.value.type === "comp-type" &&
+            <>
+                <div class="fg">
+                  <label class="lbl">ชื่อเต็มประเภทสมรรถนะ</label>
+                  <input class="inp" value={editFullName.value} onChange={(e) => setEditFullName(e.target.value)} placeholder="เช่น Core Competency" />
+                </div>
+                <div class="fg">
+                  <label class="lbl">รายละเอียดประเภทสมรรถนะ</label>
+                  <textarea class="ta" rows={3} value={editDesc.value} onChange={(e) => setEditDesc(e.target.value)} placeholder="อธิบายความหมายและขอบเขตของประเภทสมรรถนะนี้..." />
+                </div>
+              </>
+            }
               <div style={{ display: "flex", gap: "8px", marginTop: "24px", justifyContent: "space-between" }}>
                 <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}>🗑️ ลบรายการนี้</button>
                 <div class="flex g8">
@@ -687,6 +802,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .structure-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .structure-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
         .structure-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }
+        .competency-type-item { align-items: flex-start; min-height: 86px; }
+        .competency-type-desc { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
         .support-chain-item { align-items: center; grid-column: span 2; }
         .support-chain-item .sel { max-width: 280px; }
         .support-unit-add { display: flex; gap: 8px; width: min(100%, 360px); }

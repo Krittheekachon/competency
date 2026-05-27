@@ -95,7 +95,13 @@ const userForm = ref({
 const worklines = ref(['สายวิชาการ', 'สายสนับสนุน', 'สายงานบริหาร']);
 const academicPositions = ref(['อาจารย์', 'นักวิจัย']);
 const adminDepts = ref(['คณะวิศวกรรมศาสตร์']);
-const competencyTypes = ref(['CC', 'MC', 'FC1', 'FC2']);
+const defaultCompetencyTypes = [
+    { code: 'CC', fullName: 'Core Competency', desc: 'สมรรถนะหลักที่บุคลากรทุกตำแหน่งควรมีร่วมกัน' },
+    { code: 'MC', fullName: 'Managerial Competency', desc: 'สมรรถนะด้านการบริหารและภาวะผู้นำสำหรับตำแหน่งบริหารหรือหัวหน้างาน' },
+    { code: 'FC1', fullName: 'Functional Competency 1', desc: 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 1' },
+    { code: 'FC2', fullName: 'Functional Competency 2', desc: 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 2' },
+];
+const competencyTypes = ref(clone(page.props.competencyTypes?.length ? page.props.competencyTypes : defaultCompetencyTypes));
 const supportOrg = ref(clone(DEPT_STRUCTURE));
 const supportPositionGroups = ref({
     'สนับสนุนการศึกษาและวิชาการ': ['นักวิชาการศึกษา', 'นักวิชาการคอมพิวเตอร์', 'บรรณารักษ์'],
@@ -369,22 +375,6 @@ const handlePositionChange = () => {
     syncOrgSupervisors();
 };
 
-const formatPhone = (value = '') => {
-    const rawDigits = value.replace(/\D/g, '').slice(0, 10);
-    const digits = rawDigits && !rawDigits.startsWith('0')
-        ? `0${rawDigits}`.slice(0, 10)
-        : rawDigits;
-
-    if (digits.length <= 3) return digits;
-    if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-};
-
-const handlePhoneInput = (event) => {
-    userForm.value.ph = formatPhone(event.target.value);
-};
-
 const resetUserForm = (data = null) => {
     const org = parseOrgPath(data?.d || '');
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
@@ -448,11 +438,6 @@ const saveUser = () => {
         return;
     }
 
-    if (form.ph.trim() && !/^0\d{2}-\d{3}-\d{4}$/.test(form.ph.trim())) {
-        alert('กรุณากรอกเบอร์โทรศัพท์ในรูปแบบ 0xx-xxx-xxxx');
-        return;
-    }
-
     const duplicate = users.value.some((user) => user.sso === form.sso && user.sso !== editingUserKey.value);
     if (duplicate) {
         alert(`ID ${form.sso} มีอยู่ในระบบแล้ว`);
@@ -469,7 +454,7 @@ const saveUser = () => {
         fe: form.fe.trim(),
         le: form.le.trim(),
         em: form.em.trim(),
-        ph: formatPhone(form.ph.trim()),
+        ph: form.ph.trim(),
         t: form.t.trim(),
         w: form.w.trim(),
         d: form.d.trim(),
@@ -717,14 +702,6 @@ const logout = () => router.post(route('logout'));
                             <option value="ศ.">ศ.</option>
                         </select>
                     </div>
-                    <div class="fg">
-                        <label class="lbl">เพศ</label>
-                        <select v-model="userForm.g" class="sel modal-input">
-                            <option value="ชาย">ชาย</option>
-                            <option value="หญิง">หญิง</option>
-                            <option value="ไม่ระบุ">ไม่ระบุ</option>
-                        </select>
-                    </div>
                 </div>
 
                 <div v-if="!orgEditMode" class="modal-grid">
@@ -746,26 +723,6 @@ const logout = () => router.post(route('logout'));
                     <div class="fg">
                         <label class="lbl req">Last Name (English)</label>
                         <input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" />
-                    </div>
-                </div>
-
-                <div v-if="!orgEditMode" class="modal-divider"></div>
-
-                <div v-if="!orgEditMode" class="modal-grid">
-                    <div class="fg">
-                        <label class="lbl">อีเมล</label>
-                        <input v-model="userForm.em" class="inp modal-input" placeholder="example@kku.ac.th" />
-                    </div>
-                    <div class="fg">
-                        <label class="lbl">เบอร์โทรศัพท์</label>
-                        <input
-                            :value="userForm.ph"
-                            class="inp modal-input"
-                            inputmode="numeric"
-                            maxlength="12"
-                            placeholder="0xx-xxx-xxxx"
-                            @input="handlePhoneInput"
-                        />
                     </div>
                 </div>
 

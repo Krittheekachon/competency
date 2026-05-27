@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\CompetencyType;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -34,6 +35,20 @@ class DatabaseSeeder extends Seeder
                     'role_id' => $user['role_id'],
                     'role_key' => $user['role_key'],
                 ],
+            );
+        }
+
+        $competencyTypes = [
+            ['code' => 'CC', 'full_name' => 'Core Competency', 'description' => 'สมรรถนะหลักที่บุคลากรทุกตำแหน่งควรมีร่วมกัน'],
+            ['code' => 'MC', 'full_name' => 'Managerial Competency', 'description' => 'สมรรถนะด้านการบริหารและภาวะผู้นำสำหรับตำแหน่งบริหารหรือหัวหน้างาน'],
+            ['code' => 'FC1', 'full_name' => 'Functional Competency 1', 'description' => 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 1'],
+            ['code' => 'FC2', 'full_name' => 'Functional Competency 2', 'description' => 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 2'],
+        ];
+
+        foreach ($competencyTypes as $type) {
+            CompetencyType::updateOrCreate(
+                ['code' => $type['code']],
+                $type,
             );
         }
     }
