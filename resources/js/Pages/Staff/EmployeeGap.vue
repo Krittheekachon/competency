@@ -67,7 +67,7 @@ const getTagClass = (t: string) =>
               <th style="text-align: center;">ระดับคาดหวัง</th>
               <th style="text-align: center;">ประเมินตนเอง</th>
               <th style="text-align: center;">ผู้บังคับบัญชา</th>
-              <th style="text-align: center;">สถานะ</th>
+              <th style="text-align: center;">Competency Gap</th>
               <th style="text-align: center;">Priority</th>
             </tr>
           </thead>
@@ -90,7 +90,7 @@ const getTagClass = (t: string) =>
               <td style="text-align: center;">{{ g.sup }}</td>
               <td style="text-align: center;">{{ g.sup - g.exp >= 0 ? '✓' : '✕' }}</td>
               <td style="text-align: center;">
-                <span v-if="g.sup - g.exp >= 0" class="b bt">ผ่านเกณฑ์</span>
+                <span v-if="g.gap >= 0" class="b bt">ผ่านเกณฑ์</span>
                 <span v-else-if="g.pri === 'high'" class="b br">เร่งด่วน</span>
                 <span v-else class="b by">ต้องพัฒนา</span>
               </td>
@@ -125,7 +125,7 @@ const getTagClass = (t: string) =>
             <span class="muted fs12" style="margin-left: 8px;">{{ g.cd }}</span>
           </div>
           <span :class="['b', getTagClass(g.t)]">{{ g.t }}</span>
-          <span :class="['b', g.pri === 'high' ? 'br' : 'by']">เป้าหมาย: Level {{ g.exp }} (ปัจจุบัน {{ g.sup }})</span>
+          <span :class="['b', g.pri === 'high' ? 'br' : 'by']">Gap {{ g.gap > 0 ? `+${g.gap}` : g.gap }} · คาดหวัง {{ g.exp }} / ผู้บังคับบัญชา {{ g.sup }}</span>
           <span :class="['b', g.pri === 'high' ? 'br' : 'by']" style="margin-left: 4px;">{{ g.pri === 'high' ? 'เร่งด่วน' : 'ต้องพัฒนา' }}</span>
         </div>
       </div>
