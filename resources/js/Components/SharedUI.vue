@@ -1,12 +1,8 @@
-<template>
-    <slot />
-</template>
-
 <script lang="ts">
 import {
     computed,
     defineComponent,
-    h,
+    h as vueH,
     ref,
     watch,
     type CSSProperties,
@@ -294,14 +290,14 @@ export const ExcelImportModal = defineComponent({
         };
 
         return () =>
-            h('div', { class: 'mo shared-import-modal' }, [
-                h('div', { class: 'mo-box anim-fade-in import-box' }, [
-                    h('div', { class: 'mo-h import-header' }, [
-                        h('div', [
-                            h('div', { class: 'fw8 fs18 import-title' }, props.title),
-                            h('div', { class: 'fs12 muted mt4' }, 'อัปโหลดไฟล์ Excel เพื่อนำเข้าข้อมูลเข้าสู่ระบบโดยตรง'),
+            vueH('div', { class: 'mo shared-import-modal' }, [
+                vueH('div', { class: 'mo-box anim-fade-in import-box' }, [
+                    vueH('div', { class: 'mo-h import-header' }, [
+                        vueH('div', [
+                            vueH('div', { class: 'fw8 fs18 import-title' }, props.title),
+                            vueH('div', { class: 'fs12 muted mt4' }, 'อัปโหลดไฟล์ Excel เพื่อนำเข้าข้อมูลเข้าสู่ระบบโดยตรง'),
                         ]),
-                        h('button', {
+                        vueH('button', {
                             class: 'btn-close',
                             type: 'button',
                             'aria-label': 'ปิด',
@@ -309,31 +305,31 @@ export const ExcelImportModal = defineComponent({
                         }, '×'),
                     ]),
 
-                    h('div', { class: 'mo-b import-body' }, [
-                        h('div', { class: 'template-card' }, [
-                            h('div', { class: 'template-copy' }, [
-                                h('div', { class: 'template-icon' }, '📄'),
-                                h('div', [
-                                    h('div', { class: 'fw8 fs14 template-title' }, 'ไฟล์แม่แบบ (Template)'),
-                                    h('div', { class: 'fs11 muted' }, 'ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง'),
+                    vueH('div', { class: 'mo-b import-body' }, [
+                        vueH('div', { class: 'template-card' }, [
+                            vueH('div', { class: 'template-copy' }, [
+                                vueH('div', { class: 'template-icon' }, '📄'),
+                                vueH('div', [
+                                    vueH('div', { class: 'fw8 fs14 template-title' }, 'ไฟล์แม่แบบ (Template)'),
+                                    vueH('div', { class: 'fs11 muted' }, 'ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง'),
                                 ]),
                             ]),
-                            h('div', { class: 'template-actions' }, [
-                                h('button', {
+                            vueH('div', { class: 'template-actions' }, [
+                                vueH('button', {
                                     class: 'btn btn-s btn-sm flex ic g8 download-button',
                                     type: 'button',
                                     onClick: downloadTemplate,
                                 }, [
-                                    h('span', { class: 'download-icon' }, '📥'),
+                                    vueH('span', { class: 'download-icon' }, '📥'),
                                     'ดาวน์โหลดตาราง',
                                 ]),
-                                h('div', { class: 'template-support' }, 'รองรับไฟล์ .xlsx, .csv'),
+                                vueH('div', { class: 'template-support' }, 'รองรับไฟล์ .xlsx, .csv'),
                             ]),
                         ]),
 
-                        h('div', { class: 'fg' }, [
-                            h('label', { class: 'lbl import-file-label' }, 'เลือกไฟล์จากคอมพิวเตอร์ของคุณ'),
-                            h('input', {
+                        vueH('div', { class: 'fg' }, [
+                            vueH('label', { class: 'lbl import-file-label' }, 'เลือกไฟล์จากคอมพิวเตอร์ของคุณ'),
+                            vueH('input', {
                                 ref: (el) => {
                                     fileInputRef.value = el as HTMLInputElement | null;
                                 },
@@ -342,25 +338,25 @@ export const ExcelImportModal = defineComponent({
                                 accept: '.xlsx, .xls, .csv',
                                 onChange: handleFileChange,
                             }),
-                            h('div', { class: 'upload-dropzone', onClick: openFileDialog }, [
-                                h('div', { class: 'upload-content' }, [
-                                    h('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '✅' : '📊'),
-                                    h('div', { class: 'upload-title' }, selectedFile.value ? selectedFile.value.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
-                                    h('div', { class: 'upload-desc' }, selectedFile.value
+                            vueH('div', { class: 'upload-dropzone', onClick: openFileDialog }, [
+                                vueH('div', { class: 'upload-content' }, [
+                                    vueH('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '✅' : '📊'),
+                                    vueH('div', { class: 'upload-title' }, selectedFile.value ? selectedFile.value.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
+                                    vueH('div', { class: 'upload-desc' }, selectedFile.value
                                         ? selectedFileSize.value
                                         : 'ระบบจะตรวจสอบหัวข้อในตารางอัตโนมัติ กรุณาตรวจสอบให้แน่ใจว่าไม่มีเซลล์ที่ว่างเปล่าในคอลัมน์ที่จำเป็น'),
                                 ]),
                             ]),
                         ]),
 
-                        h('div', { class: 'flex g12 mt32 import-actions' }, [
-                            h('button', {
+                        vueH('div', { class: 'flex g12 mt32 import-actions' }, [
+                            vueH('button', {
                                 class: 'btn btn-s',
                                 type: 'button',
                                 style: 'min-width: 100px; border-radius: var(--r)',
                                 onClick: props.onClose,
                             }, 'ยกเลิก'),
-                            h('button', {
+                            vueH('button', {
                                 class: 'btn btn-p shadow-sm',
                                 type: 'button',
                                 disabled: !selectedFile.value,
@@ -373,10 +369,8 @@ export const ExcelImportModal = defineComponent({
             ]);
     },
 });
-</script>
 
-<script setup lang="ts">
-defineOptions({
+export default defineComponent({
     name: 'SharedUI',
 });
 </script>

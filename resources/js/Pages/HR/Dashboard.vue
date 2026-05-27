@@ -1,6 +1,7 @@
 <script setup>
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { ManagerGap, ManagerIDP } from '../ManagerPages.vue';
 
 const props = defineProps({
     hrSummary: {
@@ -27,6 +28,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    overviewUsers: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const logout = () => router.post(route('logout'));
@@ -43,6 +48,13 @@ const sections = [
             { id: 'hr-catalog', icon: '📚', label: 'Learning Catalog' },
         ],
     },
+    {
+        title: 'ภาพรวมคณะ',
+        items: [
+            { id: 'hr-comp-overview', icon: '📈', label: 'ภาพรวม Competency คณะ' },
+            { id: 'hr-idp-overview', icon: '📉', label: 'ภาพรวม IDP คณะ' },
+        ],
+    },
 ];
 
 const pageTitles = {
@@ -50,6 +62,8 @@ const pageTitles = {
     'hr-cycle': 'รอบการประเมิน',
     'hr-template': 'กำหนดความคาดหวัง',
     'hr-catalog': 'Learning Catalog',
+    'hr-comp-overview': 'ภาพรวม Competency คณะ',
+    'hr-idp-overview': 'ภาพรวม IDP คณะ',
 };
 
 const emptyStates = {
@@ -69,9 +83,18 @@ const emptyStates = {
         title: 'ยังไม่มี Learning Catalog',
         body: 'เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะถูกดึงจากฐานข้อมูลมาแสดง',
     },
+    'hr-comp-overview': {
+        title: 'ยังไม่มีผล Competency สำหรับภาพรวม',
+        body: 'รอผลการประเมินจริงก่อน หน้านี้จึงจะแสดงสถานะรายหน่วยงานและความเสี่ยงของคณะ',
+    },
+    'hr-idp-overview': {
+        title: 'ยังไม่มีข้อมูล IDP สำหรับภาพรวม',
+        body: 'รอแผน IDP และสถานะความคืบหน้าจริงก่อน หน้านี้จึงจะแสดงภาพรวมของคณะ',
+    },
 };
 
 const activePage = ref('hr-position-competencies');
+const activeModal = ref('');
 const page = usePage();
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
 const currentEmptyState = computed(() => emptyStates[activePage.value]);
@@ -93,6 +116,14 @@ const jobFamilyLabel = computed(() => {
     if (selectedWorkline.value === 'สายงานบริหาร') return 'คณะวิศวกรรมศาสตร์';
     return selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน';
 });
+
+const openModal = (modal) => {
+    activeModal.value = modal;
+};
+
+const closeModal = () => {
+    activeModal.value = '';
+};
 </script>
 
 <template>
@@ -223,7 +254,7 @@ const jobFamilyLabel = computed(() => {
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
                                     <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนด Expected Level</div>
                                 </div>
-                                <button class="btn btn-t btn-sm" type="button">เพิ่ม CC ทั้งหมด</button>
+                                <button class="btn btn-t btn-sm" disabled type="button">เพิ่ม CC ทั้งหมด</button>
                             </div>
                             <div class="assigned-list">
                                 <div class="assigned-empty">
@@ -264,7 +295,7 @@ const jobFamilyLabel = computed(() => {
                             <div class="sec-t">รอบการประเมิน 🗓️</div>
                             <div class="sec-s">เปิด-ปิดรอบ กำหนดช่วงเวลา และตรวจสอบสถานะจากข้อมูลจริง</div>
                         </div>
-                        <button class="btn btn-p" type="button">+ เปิดรอบใหม่</button>
+                        <button class="btn btn-p" type="button" @click="openModal('cycle')">+ เปิดรอบใหม่</button>
                     </div>
 
                     <div class="g2 mb14">
@@ -318,7 +349,7 @@ const jobFamilyLabel = computed(() => {
                         <div class="ch"><div class="ct">🔔 ส่งการแจ้งเตือน</div></div>
                         <div class="cb">
                             <p class="muted fs13 mb16">แจ้งเตือนบุคลากรที่ยังไม่ส่งแบบประเมิน</p>
-                            <button class="btn btn-p btn-sm" type="button">🔔 ส่งแจ้งเตือน</button>
+                            <button class="btn btn-p btn-sm" disabled type="button">🔔 ส่งแจ้งเตือน</button>
                         </div>
                     </div>
                 </template>
@@ -348,7 +379,9 @@ const jobFamilyLabel = computed(() => {
                     <div class="expect-tabs mb14">
                         <button class="expect-tab on" type="button">กำหนด / แก้ไข</button>
                         <button class="expect-tab" type="button">ดูความคาดหวังทั้งหมด <span class="b bgr">0 ชุด</span></button>
-                        <button class="btn btn-p btn-sm ml-auto" type="button">นำเข้าความคาดหวัง</button>
+                        <button class="btn btn-p btn-sm ml-auto" type="button" @click="openModal('expectation-import')">
+                            นำเข้าความคาดหวัง
+                        </button>
                     </div>
 
                     <div class="expect-layout mb14">
@@ -415,8 +448,8 @@ const jobFamilyLabel = computed(() => {
                                 </table>
                             </div>
                             <div class="hr-card-actions">
-                                <button class="btn btn-p btn-sm" type="button">เพิ่มสมรรถนะ</button>
-                                <button class="btn btn-t btn-sm" type="button">บันทึก Expected Level</button>
+                                <button class="btn btn-p btn-sm" type="button" @click="openModal('competency')">เพิ่มสมรรถนะ</button>
+                                <button class="btn btn-t btn-sm" disabled type="button">บันทึก Expected Level</button>
                             </div>
                         </div>
                     </div>
@@ -429,9 +462,9 @@ const jobFamilyLabel = computed(() => {
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
                         <div class="hr-actions">
-                            <button class="btn btn-s" type="button">📄 ดาวน์โหลด Template</button>
-                            <button class="btn btn-s" type="button">📥 Import Excel</button>
-                            <button class="btn btn-p" type="button">+ เพิ่มกิจกรรม</button>
+                            <button class="btn btn-s" disabled type="button">📄 ดาวน์โหลด Template</button>
+                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')">📥 Import Excel</button>
+                            <button class="btn btn-p" type="button" @click="openModal('catalog')">+ เพิ่มกิจกรรม</button>
                         </div>
                     </div>
 
@@ -488,6 +521,14 @@ const jobFamilyLabel = computed(() => {
                     </div>
                 </template>
 
+                <template v-else-if="activePage === 'hr-comp-overview'">
+                    <ManagerGap :users="props.overviewUsers" :disable-mock-data="true" />
+                </template>
+
+                <template v-else-if="activePage === 'hr-idp-overview'">
+                    <ManagerIDP :users="props.overviewUsers" :disable-mock-data="true" />
+                </template>
+
                 <template v-else>
                     <div class="card">
                         <div class="ch">
@@ -506,6 +547,183 @@ const jobFamilyLabel = computed(() => {
                 </template>
             </main>
         </section>
+
+        <div v-if="activeModal" class="mo hr-modal" @click.self="closeModal">
+            <div class="mo-box hr-modal-box">
+                <div class="mo-h">
+                    <div>
+                        <div v-if="activeModal === 'cycle'" class="ct">เปิดรอบการประเมินใหม่</div>
+                        <div v-else-if="activeModal === 'expectation-import'" class="ct">นำเข้าความคาดหวัง</div>
+                        <div v-else-if="activeModal === 'competency'" class="ct">เพิ่มสมรรถนะในชุดความคาดหวัง</div>
+                        <div v-else-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
+                        <div v-else class="ct">เพิ่มกิจกรรม Learning Catalog</div>
+                        <div class="cs">ฟอร์มนี้เตรียมไว้รอเชื่อม API และฐานข้อมูลจริง</div>
+                    </div>
+                    <button class="modal-close" type="button" @click="closeModal">×</button>
+                </div>
+
+                <form class="mo-b" @submit.prevent>
+                    <template v-if="activeModal === 'cycle'">
+                        <div class="modal-grid">
+                            <div class="fg">
+                                <label class="lbl">ชื่อรอบประเมิน</label>
+                                <input class="inp" placeholder="เช่น รอบประเมิน 2568" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">ปีงบประมาณ</label>
+                                <input class="inp" inputmode="numeric" placeholder="2568" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">เริ่มประเมินตนเอง</label>
+                                <input class="inp" type="date" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">สิ้นสุดประเมินตนเอง</label>
+                                <input class="inp" type="date" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">เวลาสิ้นสุดหัวหน้างาน</label>
+                                <input class="inp" type="date" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">สถานะ</label>
+                                <select class="sel">
+                                    <option>แบบร่าง</option>
+                                    <option>เปิดใช้งาน</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fg mb0">
+                            <label class="lbl">หมายเหตุ</label>
+                            <textarea class="ta" placeholder="รายละเอียดเพิ่มเติมของรอบประเมิน"></textarea>
+                        </div>
+                    </template>
+
+                    <template v-else-if="activeModal === 'expectation-import'">
+                        <div class="modal-grid">
+                            <div class="fg">
+                                <label class="lbl">รอบการประเมิน</label>
+                                <select class="sel">
+                                    <option>ยังไม่มีรอบการประเมิน</option>
+                                </select>
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">รูปแบบการนำเข้า</label>
+                                <select class="sel">
+                                    <option>แทนที่ข้อมูลเดิม</option>
+                                    <option>เพิ่มต่อจากข้อมูลเดิม</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="upload-box">
+                            <div class="upload-ic">📄</div>
+                            <div>
+                                <div class="fw8 fs14">เลือกไฟล์ Expected Level</div>
+                                <div class="muted fs12">รองรับไฟล์ .xlsx เมื่อเชื่อม backend แล้ว</div>
+                            </div>
+                            <input class="inp" type="file" accept=".xlsx,.xls" />
+                        </div>
+                    </template>
+
+                    <template v-else-if="activeModal === 'competency'">
+                        <div class="modal-grid">
+                            <div class="fg">
+                                <label class="lbl">สมรรถนะ</label>
+                                <select class="sel">
+                                    <option>ยังไม่มีข้อมูลสมรรถนะ</option>
+                                </select>
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">ประเภท</label>
+                                <select class="sel">
+                                    <option>CC</option>
+                                    <option>FC</option>
+                                    <option>MC</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fg">
+                            <label class="lbl">Expected Level</label>
+                            <div class="level-picker">
+                                <button v-for="level in 5" :key="level" class="level-choice" type="button">{{ level }}</button>
+                            </div>
+                        </div>
+                        <div class="fg mb0">
+                            <label class="lbl">หมายเหตุ</label>
+                            <textarea class="ta" placeholder="เงื่อนไขหรือคำอธิบายของระดับความคาดหวัง"></textarea>
+                        </div>
+                    </template>
+
+                    <template v-else-if="activeModal === 'catalog-import'">
+                        <div class="modal-grid">
+                            <div class="fg">
+                                <label class="lbl">ประเภทข้อมูล</label>
+                                <select class="sel">
+                                    <option>Learning Catalog</option>
+                                </select>
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">วิธีนำเข้า</label>
+                                <select class="sel">
+                                    <option>ตรวจสอบก่อนบันทึก</option>
+                                    <option>นำเข้าเป็นแบบร่าง</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="upload-box">
+                            <div class="upload-ic">📥</div>
+                            <div>
+                                <div class="fw8 fs14">เลือกไฟล์ Catalog</div>
+                                <div class="muted fs12">รอ API สำหรับ validate และ import ไฟล์ Excel</div>
+                            </div>
+                            <input class="inp" type="file" accept=".xlsx,.xls" />
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <div class="modal-grid">
+                            <div class="fg modal-span">
+                                <label class="lbl">ชื่อกิจกรรม / หลักสูตร</label>
+                                <input class="inp" placeholder="ชื่อกิจกรรมพัฒนา" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">ประเภท</label>
+                                <select class="sel">
+                                    <option>Experiential Learning</option>
+                                    <option>Social Learning</option>
+                                    <option>Formal Training</option>
+                                </select>
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">ผู้จัด</label>
+                                <input class="inp" placeholder="หน่วยงาน / ผู้จัด" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">ค่าใช้จ่าย</label>
+                                <input class="inp" placeholder="ฟรี / จำนวนเงิน" />
+                            </div>
+                            <div class="fg">
+                                <label class="lbl">สถานะ</label>
+                                <select class="sel">
+                                    <option>แบบร่าง</option>
+                                    <option>เปิดใช้</option>
+                                    <option>ปิด</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="fg mb0">
+                            <label class="lbl">คำอธิบาย</label>
+                            <textarea class="ta" placeholder="รายละเอียดกิจกรรมที่บุคลากรจะเห็นตอนทำ IDP"></textarea>
+                        </div>
+                    </template>
+
+                    <div class="modal-actions">
+                        <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
+                        <button class="btn btn-p" disabled type="submit">บันทึกเมื่อเชื่อม backend</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -1031,6 +1249,102 @@ const jobFamilyLabel = computed(() => {
     overflow: hidden;
 }
 
+.hr-modal {
+    font-family: 'Sarabun', 'Noto Sans Thai', system-ui, sans-serif;
+}
+
+.hr-modal-box {
+    width: min(720px, calc(100vw - 36px));
+}
+
+.modal-close {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+    color: var(--text3);
+    font: inherit;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modal-close:hover {
+    background: var(--bg);
+    color: var(--text);
+}
+
+.modal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.modal-span {
+    grid-column: 1 / -1;
+}
+
+.upload-box {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: var(--r-lg);
+    background: var(--bg);
+}
+
+.upload-box .inp {
+    grid-column: 1 / -1;
+    background: #fff;
+}
+
+.upload-ic {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--blue-lt);
+    font-size: 20px;
+}
+
+.level-picker {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.level-choice {
+    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+    color: var(--navy);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.level-choice:hover,
+.level-choice:focus {
+    border-color: var(--teal);
+    background: var(--teal-lt);
+    outline: none;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
 @media (max-width: 1100px) {
     .position-layout,
     .position-scope,
@@ -1090,8 +1404,18 @@ const jobFamilyLabel = computed(() => {
     }
 
     .position-picker,
-    .dictionary-tools {
+    .dictionary-tools,
+    .modal-grid {
         grid-template-columns: 1fr;
+    }
+
+    .modal-actions {
+        justify-content: stretch;
+    }
+
+    .modal-actions .btn {
+        justify-content: center;
+        flex: 1;
     }
 
     .position-hero {

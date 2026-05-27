@@ -15,7 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ = (props: any) => <span {...props}>Z-A</span>;import { DEPT_STRUCTURE } from '../data';export const ManagerGap = defineComponent({ name: "ManagerGap", props: Object as PropType<{users: any[];}>, setup(__props) {const { users } = __props as any;const [openDept, setOpenDept] = useState<string | null>(null);const [openProblem, setOpenProblem] = useState<string | null>(null);const [worklineFilter, setWorklineFilter] = useState("all");const [assessmentFilter, setAssessmentFilter] = useState("assessed");const [deptSort, setDeptSort] = useState("risk");const [deptSortDir, setDeptSortDir] = useState<"asc" | "desc">("asc");
+const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ = (props: any) => <span {...props}>Z-A</span>;import { DEPT_STRUCTURE } from '../data';export const ManagerGap = defineComponent({ name: "ManagerGap", props: { users: { type: Array, default: () => [] }, disableMockData: { type: Boolean, default: false } }, setup(__props) {const { users, disableMockData = false } = __props as any;const [openDept, setOpenDept] = useState<string | null>(null);const [openProblem, setOpenProblem] = useState<string | null>(null);const [worklineFilter, setWorklineFilter] = useState("all");const [assessmentFilter, setAssessmentFilter] = useState("assessed");const [deptSort, setDeptSort] = useState("risk");const [deptSortDir, setDeptSortDir] = useState<"asc" | "desc">("asc");
 
     const activeUsers = users.filter((user) => user.act !== false);
     const getTopDept = (user: any) => {
@@ -62,7 +62,7 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
     const failed = failedUsers.length;
     const passPct = assessed ? Math.round(passed / assessed * 100) : 0;
 
-    const deptRows = [
+    const deptRows = disableMockData ? [] : [
     { n: "สำนักงานคณะฯ", total: 55, assessed: 55, pass: 43, fail: 12, lines: [
       { n: "สายบริหาร", total: 20, fail: 3, weakDetail: [{ n: "การสื่อสาร", cnt: 3 }] },
       { n: "สายการเงิน", total: 22, fail: 5, weakDetail: [{ n: "การใช้เทคโนโลยีดิจิทัล", cnt: 4 }, { n: "การวิเคราะห์ข้อมูล", cnt: 3 }] },
@@ -86,7 +86,7 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
     }];
 
 
-    const problemGroups = [
+    const problemGroups = disableMockData ? [] : [
     {
       label: "สายสนับสนุน",
       color: "var(--blue)",
@@ -590,10 +590,16 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
 
 
 
-export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as PropType<{users: any[];}>, setup(__props) {const { users } = __props as any;
+export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: { users: { type: Array, default: () => [] }, disableMockData: { type: Boolean, default: false } }, setup(__props) {const { users, disableMockData = false } = __props as any;
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
-    const idpStats = {
+    const idpStats = disableMockData ? {
+      completed: 0,
+      inProgress: 0,
+      submitted: 0,
+      draft: 0,
+      noIdp: 0
+    } : {
       completed: 18,
       inProgress: 22,
       submitted: 13,
@@ -601,7 +607,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as
       noIdp: 10
     };
 
-    const groupProgress = [
+    const groupProgress = disableMockData ? [] : [
     {
       d: "สำนักงานคณะฯ",
       total: 12,
@@ -647,7 +653,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as
     }];
 
 
-    const noProgress = [
+    const noProgress = disableMockData ? [] : [
     { n: "มานิตย์ แสง", pos: "นักวิชาการ", d: "สำนักงานคณะฯ", reason: "draft" },
     { n: "ชาญวิทย์ ดีงาม", pos: "เจ้าหน้าที่", d: "สำนักงานคณะฯ", reason: "no_idp" },
     { n: "ธนาวุฒิ สว่างใจ", pos: "นักวิเคราะห์", d: "ภาควิชาวิศวฯ ไฟฟ้า", reason: "draft" },
@@ -662,7 +668,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as
     const selectedDetail = groupProgress.find((group) => group.d === selectedGroup.value);
     const totalFail = groupProgress.reduce((total, group) => total + group.total, 0);
     const totalHasIDP = idpStats.completed + idpStats.inProgress + idpStats.submitted + idpStats.draft;
-    const pctIDP = Math.round(totalHasIDP / totalFail * 100);
+    const pctIDP = totalFail ? Math.round(totalHasIDP / totalFail * 100) : 0;
 
     const statusMeta: Record<string, {label: string;badge: string;}> = {
       completed: { label: "เสร็จสิ้น", badge: "bg" },
@@ -712,7 +718,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as
                 <div
                   key={item.label}
                   title={`${item.label} ${item.value} คน`}
-                  style={{ width: `${item.value / totalFail * 100}%`, background: item.color, transition: ".2s" }} />
+                  style={{ width: `${totalFail ? item.value / totalFail * 100 : 0}%`, background: item.color, transition: ".2s" }} />
 
                 )}
                             </div>
@@ -769,7 +775,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: Object as
                             <div class="ct">บุคลากรที่ยังไม่มีความคืบหน้า IDP</div>
                             <div class="cs">{noProgress.length} คน</div>
                         </div>
-                        <button class="btn btn-p btn-sm" style={{ marginLeft: "auto" }} onClick={() => alert(`ส่งแจ้งเตือนไปยัง ${noProgress.length} คนแล้ว`)}>แจ้งเตือนทั้งหมด</button>
+                        <button class="btn btn-p btn-sm" disabled={disableMockData || noProgress.length === 0} style={{ marginLeft: "auto" }} onClick={() => alert(`ส่งแจ้งเตือนไปยัง ${noProgress.length} คนแล้ว`)}>แจ้งเตือนทั้งหมด</button>
                     </div>
                     <div class="cb" style={{ padding: 0 }}>
                         {noProgress.map((item) => {

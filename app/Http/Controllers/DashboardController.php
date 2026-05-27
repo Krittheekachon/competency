@@ -62,8 +62,6 @@ class DashboardController extends Controller
                 'users' => $users,
                 'competencyTypes' => $competencyTypes,
             ]),
-            1 => Inertia::render('HR/Dashboard'),
-            0 => Inertia::render('Admin/Dashboard'),
             1 => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
                     'totalUsers' => User::count(),
@@ -71,8 +69,31 @@ class DashboardController extends Controller
                     'staffUsers' => User::where('role_id', 4)->count(),
                     'source' => 'database',
                 ],
+                'overviewUsers' => User::query()
+                    ->select(['name', 'email'])
+                    ->get()
+                    ->map(fn (User $user) => [
+                        'n' => $user->name,
+                        't' => '',
+                        'sso' => $user->email,
+                        'p' => '',
+                        'w' => '',
+                        'd' => '',
+                        'evalStatus' => 'draft',
+                        'act' => true,
+                    ]),
             ]),
-            2 => Inertia::render('Executive/Dashboard'),
+            2 => Inertia::render('Executive/Dashboard', [
+                'managerSummary' => $managerSummary,
+                'activeCycleName' => '',
+                'departmentRows' => [],
+                'problemCompetencyRows' => [],
+                'idpProgressRows' => [],
+                'idpNoProgressRows' => [],
+                'trainingNeedRows' => [],
+                'assessmentApprovals' => [],
+                'idpApprovals' => [],
+            ]),
             3 => Inertia::render('Head/Dashboard', ['users' => $users]),
             4 => Inertia::render('Staff/Dashboard'),
             5 => Inertia::render('Super/Dashboard', ['users' => $users]),

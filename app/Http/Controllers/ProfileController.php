@@ -92,7 +92,7 @@ class ProfileController extends Controller
         ];
     }
 
-    private function roleKeyFromId(int $roleId): string
+    private function roleKeyFromId(?int $roleId): string
     {
         return match ($roleId) {
             0 => 'admin',
