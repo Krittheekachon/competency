@@ -33,7 +33,6 @@ const props = defineProps({
     },
 });
 
-const logout = () => router.post(route('logout'));
 const page = usePage();
 const isSidebarOpen = ref(true);
 const activePage = ref('manager-competency-overview');
@@ -80,7 +79,10 @@ const pageTitles = {
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
 const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
+const userId = computed(() => page.props.auth?.user?.id || 'manager');
 const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
+
+const logout = () => router.post(route('logout'));
 </script>
 
 <template>
@@ -135,39 +137,36 @@ const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่�
             </header>
 
             <main class="content">
-                <template v-if="activePage === 'manager-competency-overview'">
-                    <ManagerGap :users="users" :disable-mock-data="false" />
-                </template>
-
-                <template v-else-if="activePage === 'manager-idp-overview'">
-                    <ManagerIDP :users="users" :disable-mock-data="false" />
-                </template>
-
-                <template v-else-if="activePage === 'manager-assessment-approval'">
-                    <ManagerAssessmentApproval :users="users" />
-                </template>
-
-                <template v-else-if="activePage === 'manager-idp-approval'">
-                    <ManagerIDPApproval :users="users" />
-                </template>
-                <template v-else-if="activePage === 'employee-assess'">
-                    <EmployeeAssess
-                        :user="{ sso: $page.props.auth.user.id }"
-                        :set-users="() => {}"
-                    />
-                </template>
-                <template v-else-if="activePage === 'employee-gap'">
-                            <EmployeeGap :set-page="(p) => activePage = p" />
-                </template>
-                <template v-else-if="activePage === 'employee-idp'">
-                    <EmployeeIDP />
-                </template>
-                <template v-else-if="activePage === 'employee-progress'">
-                    <EmployeeProgress />
-                </template>
-                <template v-else-if="activePage === 'employee-idp-detail'">
-                    <EmployeeIDPDetail />
-                </template>                        
+                <ManagerGap
+                    v-if="activePage === 'manager-competency-overview'"
+                    :users="props.users"
+                    :disable-mock-data="false"
+                />
+                <ManagerIDP
+                    v-else-if="activePage === 'manager-idp-overview'"
+                    :users="props.users"
+                    :disable-mock-data="false"
+                />
+                <ManagerAssessmentApproval
+                    v-else-if="activePage === 'manager-assessment-approval'"
+                    :users="props.users"
+                />
+                <ManagerIDPApproval
+                    v-else-if="activePage === 'manager-idp-approval'"
+                    :users="props.users"
+                />
+                <EmployeeAssess
+                    v-else-if="activePage === 'employee-assess'"
+                    :user="{ sso: userId }"
+                    :set-users="() => {}"
+                />
+                <EmployeeGap
+                    v-else-if="activePage === 'employee-gap'"
+                    :set-page="(pageId) => (activePage = pageId)"
+                />
+                <EmployeeIDP v-else-if="activePage === 'employee-idp'" />
+                <EmployeeProgress v-else-if="activePage === 'employee-progress'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'employee-idp-detail'" />
             </main>
         </section>
     </div>
