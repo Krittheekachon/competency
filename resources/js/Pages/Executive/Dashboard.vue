@@ -1,11 +1,4 @@
 <script setup>
-import { router, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
-
-const props = defineProps({
-    managerSummary: {
-        type: Object,
-        required: true,
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import {
@@ -52,6 +45,17 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    managerSummary: {
+        type: Object,
+        default: () => ({
+            totalUsers: 0,
+            evaluatedUsers: 0,
+            passedUsers: 0,
+            failedUsers: 0,
+            pendingAssessmentApprovals: 0,
+            pendingIdpApprovals: 0,
+        }),
+    },
 });
 
 const logout = () => router.post(route('logout'));
@@ -75,18 +79,6 @@ const sections = [
         items: [
             { id: 'manager-competency-overview', icon: '📈', label: 'Competency Gap คณะ' },
             { id: 'manager-idp-overview', icon: '📉', label: 'ติดตาม IDP ภาพรวม' },
-});
-
-const page = usePage();
-const isSidebarOpen = ref(true);
-const activePage = ref('mgr-gap');
-
-const sections = [
-    {
-        title: 'ภาพรวมคณะ',
-        items: [
-            { id: 'mgr-gap', icon: '📈', label: 'Competency Gap คณะ' },
-            { id: 'mgr-idp', icon: '📉', label: 'ติดตาม IDP ภาพรวม' },
         ],
     },
     {
@@ -94,11 +86,32 @@ const sections = [
         items: [
             { id: 'manager-assessment-approval', icon: '✅', label: 'อนุมัติผลการประเมิน' },
             { id: 'manager-idp-approval', icon: '🗂️', label: 'อนุมัติแผน IDP' },
-            { id: 'mgr-assessment-approval', icon: '✅', label: 'อนุมัติผลการประเมิน' },
-            { id: 'mgr-idp-approval', icon: '🗂️', label: 'อนุมัติแผน IDP' },
         ],
     },
 ];
+
+// const page = usePage();
+// const isSidebarOpen = ref(true);
+// const activePage = ref('mgr-gap');
+
+// const sections = [
+//     {
+//         title: 'ภาพรวมคณะ',
+//         items: [
+//             { id: 'mgr-gap', icon: '📈', label: 'Competency Gap คณะ' },
+//             { id: 'mgr-idp', icon: '📉', label: 'ติดตาม IDP ภาพรวม' },
+//         ],
+//     },
+//     {
+//         title: 'การอนุมัติ',
+//         items: [
+//             { id: 'manager-assessment-approval', icon: '✅', label: 'อนุมัติผลการประเมิน' },
+//             { id: 'manager-idp-approval', icon: '🗂️', label: 'อนุมัติแผน IDP' },
+//             { id: 'mgr-assessment-approval', icon: '✅', label: 'อนุมัติผลการประเมิน' },
+//             { id: 'mgr-idp-approval', icon: '🗂️', label: 'อนุมัติแผน IDP' },
+//         ],
+//     },
+// ];
 
 const pageTitles = {
     'employee-assess': 'ประเมินตนเอง',
@@ -137,35 +150,20 @@ const emptyStates = {
 
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
 const currentEmptyState = computed(() => emptyStates[activePage.value] || emptyStates.default);
-const userInitial = computed(() => page.props.auth.user.name?.[0] || 'ผ');
+const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
+const userInitial = computed(() => userName.value?.[0] || 'M');
 const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
-const totalUsers = computed(() => props.managerSummary.totalUsers ?? 0);
-const evaluatedUsers = computed(() => props.managerSummary.evaluatedUsers ?? 0);
-const passedUsers = computed(() => props.managerSummary.passedUsers ?? 0);
-const failedUsers = computed(() => props.managerSummary.failedUsers ?? 0);
-const passPercent = computed(() => (evaluatedUsers.value ? Math.round((passedUsers.value / evaluatedUsers.value) * 100) : 0));
 const hasDepartmentRows = computed(() => props.departmentRows.length > 0);
 const hasProblemCompetencies = computed(() => props.problemCompetencyRows.length > 0);
 const hasIdpProgressRows = computed(() => props.idpProgressRows.length > 0);
 const hasIdpNoProgressRows = computed(() => props.idpNoProgressRows.length > 0);
-const hasTrainingNeeds = computed(() => props.trainingNeedRows.length > 0);
 const hasAssessmentApprovals = computed(() => props.assessmentApprovals.length > 0);
 const hasIdpApprovals = computed(() => props.idpApprovals.length > 0);
-</script>
-
-<template>
-    'mgr-gap': 'Competency Gap คณะ',
-    'mgr-idp': 'ติดตาม IDP ภาพรวม',
-    'mgr-assessment-approval': 'อนุมัติผลการประเมิน',
-    'mgr-idp-approval': 'อนุมัติแผน IDP',
-};
-
-const currentPageTitle = computed(() => pageTitles[activePage.value]);
-const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
-const userInitial = computed(() => userName.value?.[0] || 'M');
-const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
-
-const logout = () => router.post(route('logout'));
+const totalUsers = computed(() => props.managerSummary?.totalUsers ?? 0);
+const evaluatedUsers = computed(() => props.managerSummary?.evaluatedUsers ?? 0);
+const passedUsers = computed(() => props.managerSummary?.passedUsers ?? 0);
+const failedUsers = computed(() => props.managerSummary?.failedUsers ?? 0);
+const passPercent = computed(() => evaluatedUsers.value ? Math.round((passedUsers.value / evaluatedUsers.value) * 100) : 0);
 </script>
 
 <template>
@@ -178,10 +176,6 @@ const logout = () => router.post(route('logout'));
                 <div class="sb-name">Competency &<br />IDP Management</div>
             </div>
 
-            <button class="sb-user" type="button">
-                <div class="av" style="background: var(--navy2)">{{ userInitial }}</div>
-                <div style="min-width: 0">
-                    <div class="u-name">{{ $page.props.auth.user.name }}</div>
             <button class="sb-user on" type="button">
                 <div class="av manager-avatar">{{ userInitial }}</div>
                 <div style="min-width: 0">
@@ -526,13 +520,6 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
                 </template>
-                <ManagerGap v-if="activePage === 'mgr-gap'" :users="props.users" />
-                <ManagerIDP v-else-if="activePage === 'mgr-idp'" :users="props.users" />
-                <ManagerAssessmentApproval
-                    v-else-if="activePage === 'mgr-assessment-approval'"
-                    :users="props.users"
-                />
-                <ManagerIDPApproval v-else :users="props.users" />
             </main>
         </section>
     </div>
