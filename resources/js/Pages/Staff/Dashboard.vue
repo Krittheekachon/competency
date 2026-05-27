@@ -17,9 +17,19 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
+const requestedPage = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('page')
+    : null;
+const implementedStaffPages = new Set([
+    'emp-assess',
+    'emp-gap',
+    'emp-idp',
+    'emp-progress',
+    'emp-idp-detail',
+]);
 
 const showSidebar = ref(true);
-const activePage = ref('emp-assess');
+const activePage = ref(implementedStaffPages.has(requestedPage) ? requestedPage : 'emp-assess');
 const currentRole = ref('employee');
 const users = ref(clone(INITIAL_USERS));
 const page = usePage();
@@ -67,6 +77,7 @@ const requestPageChange = (page) => {
     activePage.value = page;
 };
 
+const goProfile = () => router.visit(route('profile.edit'));
 const logout = () => router.post(route('logout'));
 </script>
 
@@ -83,7 +94,7 @@ const logout = () => router.post(route('logout'));
                 </div>
             </div>
 
-            <button class="sb-user on" type="button">
+            <button class="sb-user on" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">
                     {{ currentProfileUser?.n?.[0] || currentRoleData.av }}
                 </div>
