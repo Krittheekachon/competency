@@ -1,7 +1,3 @@
-<template>
-    <slot />
-</template>
-
 <script lang="ts">
 import {
     computed,
