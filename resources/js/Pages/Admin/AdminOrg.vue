@@ -335,6 +335,7 @@ type User = {
   r?: string;
   sup?: string;
   evaluator2?: string;
+  act?: boolean;
 };
 
 type RoleBadge = {
@@ -354,7 +355,7 @@ const props = defineProps<{
 
 const ALL_WORKLINES = 'ทั้งหมด';
 
-const viewModel = ref<'dept' | 'hierarchy'>('dept');
+const viewModel = ref<'dept' | 'hierarchy'>('hierarchy');
 const showFilter = ref(false);
 const filterType = ref(props.worklines[0] || 'สายวิชาการ');
 const search = ref('');
@@ -422,13 +423,24 @@ const listUsers = computed(() => {
   });
 });
 
+const activeHierarchyUsers = computed(() => {
+  return props.users.filter((user) => user.act !== false && !['admin', 'hr'].includes(normalizeRole(user.r)));
+});
+
 const currentHierarchyUsers = computed(() => {
   if (drillPath.value.length === 0) {
-    return props.users.filter((user) => user.sup === '');
+    const deans = activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'manager');
+
+    if (deans.length) {
+      return sortHierarchyUsers(deans);
+    }
+
+    return sortHierarchyUsers(
+      activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'manager_dept' && !hasNamedLeader(user)),
+    );
   }
 
-  const last = drillPath.value[drillPath.value.length - 1];
-  return props.users.filter((user) => user.sup === last.n);
+  return sortHierarchyUsers(getDirectSubordinates(drillPath.value[drillPath.value.length - 1]));
 });
 
 watch(
@@ -479,8 +491,101 @@ const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '�
 
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 
+const fullName = (user: User) => `${user.t || ''}${user.n}`.trim();
+
+const normalizeRole = (role?: string) => {
+  if (role === 'dean') return 'manager';
+  if (role === 'dept_head') return 'manager_dept';
+  return role || 'employee';
+};
+
+const nameMatches = (value: string | undefined, leader: User) => {
+  if (!value) return false;
+
+  return [leader.n, fullName(leader)].filter(Boolean).includes(value);
+};
+
+const hasNamedLeader = (user: User) => Boolean(user.sup || user.evaluator2);
+
+const roleOrder = (user: User) => {
+  switch (normalizeRole(user.r)) {
+    case 'manager':
+      return 0;
+    case 'manager_dept':
+      return 1;
+    case 'supervisor':
+      return 2;
+    default:
+      return 3;
+  }
+};
+
+const sortHierarchyUsers = (users: User[]) => {
+  return [...users].sort((a, b) => {
+    const byRole = roleOrder(a) - roleOrder(b);
+    if (byRole) return byRole;
+
+    const byDept = (a.d || '').localeCompare(b.d || '', 'th');
+    if (byDept) return byDept;
+
+    return fullName(a).localeCompare(fullName(b), 'th');
+  });
+};
+
+const getDirectSubordinates = (leader: User) => {
+  const leaderRole = normalizeRole(leader.r);
+
+  if (leaderRole === 'manager') {
+    const deptManagers = activeHierarchyUsers.value.filter((user) => {
+      return normalizeRole(user.r) === 'manager_dept' && (nameMatches(user.evaluator2, leader) || nameMatches(user.sup, leader));
+    });
+
+    return deptManagers.length
+      ? deptManagers
+      : activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'manager_dept');
+  }
+
+  if (leaderRole === 'manager_dept') {
+    const supervisors = activeHierarchyUsers.value.filter((user) => {
+      return normalizeRole(user.r) === 'supervisor' && (nameMatches(user.evaluator2, leader) || nameMatches(user.sup, leader));
+    });
+    const directStaff = activeHierarchyUsers.value.filter((user) => {
+      return !['manager', 'manager_dept', 'supervisor'].includes(normalizeRole(user.r))
+        && nameMatches(user.evaluator2, leader)
+        && !user.sup;
+    });
+
+    const directReports = [...supervisors, ...directStaff];
+    if (directReports.length) {
+      return directReports;
+    }
+
+    const deptManagerCount = activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'manager_dept').length;
+    return deptManagerCount <= 1
+      ? activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'supervisor')
+      : [];
+  }
+
+  if (leaderRole === 'supervisor') {
+    const staff = activeHierarchyUsers.value.filter((user) => {
+      return !['manager', 'manager_dept'].includes(normalizeRole(user.r)) && nameMatches(user.sup, leader);
+    });
+
+    if (staff.length) {
+      return staff;
+    }
+
+    const supervisorCount = activeHierarchyUsers.value.filter((user) => normalizeRole(user.r) === 'supervisor').length;
+    return supervisorCount <= 1
+      ? activeHierarchyUsers.value.filter((user) => !['manager', 'manager_dept', 'supervisor'].includes(normalizeRole(user.r)))
+      : [];
+  }
+
+  return [];
+};
+
 const roleBadge = (role?: string): RoleBadge => {
-  switch (role) {
+  switch (normalizeRole(role)) {
     case 'admin':
       return { label: 'ผู้ดูแลระบบ', className: 'bp' };
     case 'hr':
@@ -508,8 +613,8 @@ const roleBadge = (role?: string): RoleBadge => {
   }
 };
 
-const hasSubordinates = (user: User) => props.users.some((candidate) => candidate.sup === user.n);
-const subordinateCount = (user: User) => props.users.filter((candidate) => candidate.sup === user.n).length;
+const hasSubordinates = (user: User) => getDirectSubordinates(user).length > 0;
+const subordinateCount = (user: User) => getDirectSubordinates(user).length;
 
 const popDrillPath = (index: number) => {
   drillPath.value = index === -1 ? [] : drillPath.value.slice(0, index + 1);
