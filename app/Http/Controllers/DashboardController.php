@@ -26,6 +26,19 @@ class DashboardController extends Controller
                     'staffUsers' => User::where('role_id', 4)->count(),
                     'source' => 'database',
                 ],
+                'overviewUsers' => User::query()
+                    ->select(['name', 'email'])
+                    ->get()
+                    ->map(fn (User $user) => [
+                        'n' => $user->name,
+                        't' => '',
+                        'sso' => $user->email,
+                        'p' => '',
+                        'w' => '',
+                        'd' => '',
+                        'evalStatus' => 'draft',
+                        'act' => true,
+                    ]),
             ]),
             2 => Inertia::render('Executive/Dashboard'),
             3 => Inertia::render('SuperV/Dashboard'),
