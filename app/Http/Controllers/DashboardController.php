@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CompetencyType;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia; 
@@ -16,6 +17,13 @@ class DashboardController extends Controller
     {
         // ตรวจสอบว่า User ล็อกอินอยู่หรือไม่ และดึง role_id ออกมา
         $role = auth()->user()->role_id;
+        $this->ensureDefaultCompetencyTypes();
+        $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
+            'id' => $type->id,
+            'code' => $type->code,
+            'fullName' => $type->full_name,
+            'desc' => $type->description,
+        ]);
         $users = User::orderBy('name')->get()->map(fn (User $user) => [
             'db_id' => $user->id,
             'sso' => $user->sso ?: (string) $user->id,
@@ -50,6 +58,11 @@ class DashboardController extends Controller
         ];
 
         return match ($role) {
+            0 => Inertia::render('Admin/Dashboard', [
+                'users' => $users,
+                'competencyTypes' => $competencyTypes,
+            ]),
+            1 => Inertia::render('HR/Dashboard'),
             0 => Inertia::render('Admin/Dashboard'),
             1 => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
@@ -65,6 +78,24 @@ class DashboardController extends Controller
             5 => Inertia::render('Super/Dashboard', ['users' => $users]),
             default => Inertia::render('Dashboard'),
         };
+    }
+
+    private function ensureDefaultCompetencyTypes(): void
+    {
+        if (CompetencyType::query()->exists()) {
+            return;
+        }
+
+        $defaults = [
+            ['code' => 'CC', 'full_name' => 'Core Competency', 'description' => 'สมรรถนะหลักที่บุคลากรทุกตำแหน่งควรมีร่วมกัน'],
+            ['code' => 'MC', 'full_name' => 'Managerial Competency', 'description' => 'สมรรถนะด้านการบริหารและภาวะผู้นำสำหรับตำแหน่งบริหารหรือหัวหน้างาน'],
+            ['code' => 'FC1', 'full_name' => 'Functional Competency 1', 'description' => 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 1'],
+            ['code' => 'FC2', 'full_name' => 'Functional Competency 2', 'description' => 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 2'],
+        ];
+
+        foreach ($defaults as $default) {
+            CompetencyType::create($default);
+        }
     }
 
     private function roleKeyFromId(int $roleId): string

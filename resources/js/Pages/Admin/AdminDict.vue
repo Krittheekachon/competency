@@ -15,7 +15,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: string[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { competencies, setCompetencies, competencyTypes, onDirtyChange } = __props as any;const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
+import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: any[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { competencies, setCompetencies, competencyTypes, onDirtyChange } = __props as any;const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
     const [expandedLevel, setExpandedLevel] = useState<number | null>(null);
     const [sortBy, setSortBy] = useState("newest");
     const [typeFilter, setTypeFilter] = useState("ทั้งหมด");
@@ -40,6 +40,12 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
     const deleteComp = (code: string) => {
       setCompetencies(competencies.filter((c) => c.cd !== code));
       showStatus("s", "ลบข้อมูลสมรรถนะเรียบร้อยแล้ว");
+    };
+    const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
+    const getCompetencyTypeLabel = (item: any) => {
+      const code = getCompetencyTypeCode(item);
+      const fullName = typeof item === "string" ? "" : item?.fullName || item?.label || "";
+      return fullName ? `${code} - ${fullName}` : code;
     };
 
     const getCompType = (c: any) => {
@@ -234,7 +240,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                 <div class="fg" style={{ width: "320px" }}>
                   <label class="lbl">1. ประเภทสมรรถนะ (Competency Type)</label>
                   <select class="sel" value={type.value} onChange={(e) => {setType(e.target.value);setIsDirty(true);}}>
-                    {competencyTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {competencyTypes.map((t) => <option key={getCompetencyTypeCode(t)} value={getCompetencyTypeCode(t)}>{getCompetencyTypeLabel(t)}</option>)}
                   </select>
                 </div>
                 <div class="fg flex-1">
@@ -310,7 +316,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
               <span class="muted fs12 fw7 uppercase tracking-wider">แสดงประเภท:</span>
               <select class="sel sel-sm" style={{ width: "200px" }} value={typeFilter.value} onChange={(e) => setTypeFilter(e.target.value)}>
                 <option value="ทั้งหมด">ทั้งหมด (All)</option>
-                {competencyTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                {competencyTypes.map((t) => <option key={getCompetencyTypeCode(t)} value={getCompetencyTypeCode(t)}>{getCompetencyTypeLabel(t)}</option>)}
               </select>
             </div>
             <div class="flex ic g8">
