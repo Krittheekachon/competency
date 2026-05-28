@@ -71,7 +71,7 @@ class UserController extends Controller
             'le' => ['nullable', 'string', 'max:120'],
             'g' => ['nullable', 'string', 'max:30'],
             'em' => [
-                'nullable',
+                'required',
                 'email',
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user?->id),
@@ -93,7 +93,6 @@ class UserController extends Controller
     private function userAttributes(array $data): array
     {
         $roleKey = $data['r'];
-        $email = $data['em'] ?: Str::lower($data['sso']).'@no-email.local';
         $name = trim($data['fn'].' '.$data['ln']);
 
         return [
@@ -105,7 +104,7 @@ class UserController extends Controller
             'first_name_en' => $data['fe'] ?? null,
             'last_name_en' => $data['le'] ?? null,
             'gender' => $data['g'] ?? null,
-            'email' => $email,
+            'email' => $data['em'],
             'phone' => $data['ph'] ?? null,
             'workline' => $data['w'],
             'department' => $data['d'] ?? null,
@@ -115,7 +114,28 @@ class UserController extends Controller
             'role_key' => $roleKey,
             'supervisor' => $data['sup'] ?? null,
             'evaluator2' => $data['evaluator2'] ?? null,
+            'supervisor_id_1' => $this->userIdFromDisplayName($data['sup'] ?? null),
+            'supervisor_id_2' => $this->userIdFromDisplayName($data['evaluator2'] ?? null),
             'is_active' => $data['act'] ?? true,
         ];
+    }
+
+    private function userIdFromDisplayName(?string $displayName): ?int
+    {
+        $displayName = trim((string) $displayName);
+
+        if ($displayName === '') {
+            return null;
+        }
+
+        return User::query()
+            ->get(['id', 'title', 'name'])
+            ->first(function (User $user) use ($displayName) {
+                $name = trim($user->name);
+                $nameWithTitle = trim(($user->title ?? '').$user->name);
+
+                return $displayName === $name || $displayName === $nameWithTitle;
+            })
+            ?->id;
     }
 }

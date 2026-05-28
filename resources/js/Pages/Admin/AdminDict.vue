@@ -1,5 +1,6 @@
 <script lang="tsx">
 import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
+import { router } from "@inertiajs/vue3";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
   const setState = (next: any) => {
@@ -37,9 +38,33 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
     useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-    const deleteComp = (code: string) => {
-      setCompetencies(competencies.filter((c) => c.cd !== code));
-      showStatus("s", "ลบข้อมูลสมรรถนะเรียบร้อยแล้ว");
+    const syncCompetenciesFromPage = (responsePage: any) => {
+      if (Array.isArray(responsePage.props.competencies)) {
+        setCompetencies(responsePage.props.competencies);
+      }
+    };
+
+    const persistOptions = {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: syncCompetenciesFromPage,
+      onError: (errors: any) => {
+        const firstError = Object.values(errors || {})[0];
+        showStatus("e", firstError || "ไม่สามารถบันทึกข้อมูลสมรรถนะได้");
+      }
+    };
+
+    const deleteComp = (c: any) => {
+      if (!c.id) return;
+      if (!window.confirm(`ต้องการลบสมรรถนะ ${c.cd} ใช่หรือไม่`)) return;
+
+      router.delete(route("admin.competencies.destroy", c.id), {
+        ...persistOptions,
+        onSuccess: (responsePage: any) => {
+          syncCompetenciesFromPage(responsePage);
+          showStatus("s", "ลบข้อมูลสมรรถนะเรียบร้อยแล้ว");
+        }
+      });
     };
     const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
     const getCompetencyTypeLabel = (item: any) => {
@@ -101,8 +126,8 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
     const editComp = (c: any) => {
       const parts = c.cd.split("-");
       setEditId(c.cd);
-      setType(parts[0]);
-      setCodeTail(parts[1]);
+      setType(c.t || parts[0]);
+      setCodeTail(parts.slice(1).join("-"));
       setName(c.n);
       setDesc(c.det);
       if (c.levels) {
@@ -120,6 +145,9 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
     const saveComp = () => {
       const code = `${type.value}-${codeTail.value}`;
+      const selectedType = competencyTypes.find((t: any) => getCompetencyTypeCode(t) === type.value);
+      const selectedTypeId = selectedType?.id || null;
+      if (!selectedTypeId) {showStatus("e", "กรุณาเพิ่มประเภทสมรรถนะก่อน");return;}
       if (!codeTail.value.trim()) {showStatus("e", "กรุณากรอกรหัสสมรรถนะ");return;}
       if (!name.value.trim()) {showStatus("e", "กรุณากรอกชื่อสมรรถนะ");return;}
       if (!desc.value.trim()) {showStatus("e", "กรุณากรอกรายละเอียดสมรรถนะ");return;}
@@ -139,25 +167,44 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       if (alreadyExistsCode) {showStatus("e", `รหัสสมรรถนะ ${code} มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);return;}
       if (alreadyExistsName) {showStatus("e", `ชื่อสมรรถนะ "${name.value}" มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น`);return;}
 
-      const newComp = {
-        cd: code, n: name.value, t: type.value, tg: `tag-${type.value.toLowerCase()}`, det: desc.value, lv: levels.value.length, grp: "ทุกตำแหน่ง",
+      const payload = {
+        competency_type_id: selectedTypeId,
+        code,
+        name: name.value.trim(),
+        detail: desc.value.trim(),
         levels: levels.value.map((l) => ({
-          lvl: parseInt(l.lvl),
-          label: `ระดับที่ ${l.lvl}`,
-          indicators: l.items.filter((it) => it.trim()),
-          weights: l.weights.map((w) => parseFloat(w) || 0)
+          level: parseInt(l.lvl),
+          description: "",
+          indicators: l.items.filter((it) => it.trim()).map((indicator, index) => ({
+            description: indicator.trim(),
+            weight: parseFloat(l.weights[index]) || 0
+          }))
         }))
       };
 
       if (editId.value) {
-        setCompetencies(competencies.map((c) => c.cd === editId.value ? newComp : c));
-        showStatus("s", "แก้ไขข้อมูลสมรรถนะเรียบร้อยแล้ว");
+        const current = competencies.find((c) => c.cd === editId.value);
+        if (!current?.id) {showStatus("e", "ไม่พบข้อมูลสมรรถนะที่ต้องการแก้ไข");return;}
+        router.put(route("admin.competencies.update", current.id), payload, {
+          ...persistOptions,
+          onSuccess: (responsePage: any) => {
+            syncCompetenciesFromPage(responsePage);
+            showStatus("s", "แก้ไขข้อมูลสมรรถนะเรียบร้อยแล้ว");
+            clearForm();
+            setView("list");
+          }
+        });
       } else {
-        setCompetencies([newComp, ...competencies]);
-        showStatus("s", "เพิ่มสมรรถนะใหม่เรียบร้อยแล้ว");
+        router.post(route("admin.competencies.store"), payload, {
+          ...persistOptions,
+          onSuccess: (responsePage: any) => {
+            syncCompetenciesFromPage(responsePage);
+            showStatus("s", "เพิ่มสมรรถนะใหม่เรียบร้อยแล้ว");
+            clearForm();
+            setView("list");
+          }
+        });
       }
-      clearForm();
-      setView("list");
     };
 
     const addLevelRow = () => {
@@ -208,7 +255,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
           {view.value === 'list' ?
           <>
               <button class="btn btn-s" onClick={() => setShowImport(true)}>📥 Import Excel</button>
-              <button class="btn btn-p" onClick={() => {clearForm();setView("add");}}>+ เพิ่มสมรรถนะ</button>
+              <button class="btn btn-p" onClick={() => {clearForm();setType(getCompetencyTypeCode(competencyTypes[0]) || "");setView("add");}}>+ เพิ่มสมรรถนะ</button>
             </> :
 
           <button class="btn btn-s" onClick={closeForm}>⬅️ กลับหน้ารายการ</button>
@@ -350,7 +397,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                     <div class="dict-dots"></div>
                     <div class="flex ic g8">
                       <button class="btn btn-xs btn-s" onClick={(e) => {e.stopPropagation();editComp(c);}}>แก้ไข</button>
-                      <button class="btn btn-xs btn-s" style={{ color: "#ef4444" }} onClick={(e) => {e.stopPropagation();deleteComp(c.cd);}}>ลบ</button>
+                      <button class="btn btn-xs btn-s" style={{ color: "#ef4444" }} onClick={(e) => {e.stopPropagation();deleteComp(c);}}>ลบ</button>
                       <div class="dict-arrow" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none' }}>›</div>
                     </div>
                   </div>
@@ -362,11 +409,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                         {[1, 2, 3, 4, 5].map((lvNum) => {
                       const isLevelExpanded = expandedLevel.value === lvNum;
                       const lvData = c.levels?.find((l: any) => l.lvl === lvNum);
-                      const indicators = lvData?.indicators || [
-                      `พฤติกรรมบ่งชี้ข้อที่ 1 ของ${LEVEL_LABELS[lvNum - 1]}`,
-                      `พฤติกรรมบ่งชี้ข้อที่ 2 ของ${LEVEL_LABELS[lvNum - 1]}`,
-                      `พฤติกรรมบ่งชี้ข้อที่ 3 ของ${LEVEL_LABELS[lvNum - 1]}`,
-                      `พฤติกรรมบ่งชี้ข้อที่ 4 ของ${LEVEL_LABELS[lvNum - 1]}`];
+                      const indicators = lvData?.indicators || [];
 
 
                       return (
@@ -392,6 +435,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                                       </div>
                                     </div>
                             )}
+                                  {indicators.length === 0 && <div class="muted fs12 py8">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</div>}
                                 </div>
                           }
                             </div>);
@@ -404,11 +448,13 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
           })}
           </div>
+          {sorted.length === 0 && <div class="dict-empty">ยังไม่มีข้อมูลสมรรถนะในพจนานุกรม</div>}
         </>
       }
 
       <style>{`
         .dict-list { display: flex; flex-direction: column; gap: 4px; background: #fff; border-radius: var(--r-lg); border: 1px solid var(--border); overflow: hidden; }
+        .dict-empty { display: flex; align-items: center; justify-content: center; min-height: 180px; margin-top: -1px; border: 1px dashed var(--border); border-radius: var(--r-lg); background: #fff; color: var(--text3); font-size: 14px; font-weight: 700; }
         .dict-group { border-bottom: 1px solid #f1f5f9; }
         .dict-group:last-child { border-bottom: none; }
         

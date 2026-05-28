@@ -18,6 +18,8 @@ use App\Models\Role;
     'workline', 'department', 'position',
     'level', 'password', 'role_id', 'role_key',
     'supervisor', 'evaluator2', 'is_active', 'profile_photo',
+    'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2',
+    'profile_affiliation', 'profile_saved',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable

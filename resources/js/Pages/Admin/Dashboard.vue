@@ -2,8 +2,6 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import {
-    DEPT_STRUCTURE,
-    INITIAL_COMPETENCIES,
     INITIAL_USERS,
     NAV_CONFIG,
     PAGE_TITLES,
@@ -44,8 +42,8 @@ const activePage = computed({
     },
 });
 const currentRole = ref('admin');
-const competencies = ref(clone(INITIAL_COMPETENCIES));
 const page = usePage();
+const competencies = ref(clone(page.props.competencies || []));
 const users = ref(clone(page.props.users?.length ? page.props.users : INITIAL_USERS));
 const activeModal = ref(null);
 const editingUserKey = ref(null);
@@ -77,89 +75,34 @@ const userForm = ref({
     act: true,
 });
 
-const worklines = ref(['สายวิชาการ', 'สายสนับสนุน', 'สายงานบริหาร']);
-const academicPositions = ref(['อาจารย์', 'นักวิจัย']);
-const adminDepts = ref(['คณะวิศวกรรมศาสตร์']);
-const defaultCompetencyTypes = [
-    { code: 'CC', fullName: 'Core Competency', desc: 'สมรรถนะหลักที่บุคลากรทุกตำแหน่งควรมีร่วมกัน' },
-    { code: 'MC', fullName: 'Managerial Competency', desc: 'สมรรถนะด้านการบริหารและภาวะผู้นำสำหรับตำแหน่งบริหารหรือหัวหน้างาน' },
-    { code: 'FC1', fullName: 'Functional Competency 1', desc: 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 1' },
-    { code: 'FC2', fullName: 'Functional Competency 2', desc: 'สมรรถนะเฉพาะตามสายงานหรือกลุ่มงานระดับที่ 2' },
-];
-const competencyTypes = ref(clone(page.props.competencyTypes?.length ? page.props.competencyTypes : defaultCompetencyTypes));
-const supportOrg = ref(clone(DEPT_STRUCTURE));
-const supportPositionGroups = ref({
-    'สนับสนุนการศึกษาและวิชาการ': ['นักวิชาการศึกษา', 'นักวิชาการคอมพิวเตอร์', 'บรรณารักษ์'],
-    'ทรัพยากรบุคคล': ['นักทรัพยากรบุคคล', 'เจ้าหน้าที่บริหารงานทั่วไป'],
-    'บริหารยุทธศาสตร์': ['นักวิเคราะห์นโยบายและแผน', 'นักจัดการงานทั่วไป'],
-});
-const supportPositions = ref([
-    'ปฏิบัติการ',
-    'ปฏิบัติงาน',
-    'ชำนาญการ',
-    'ชำนาญงาน',
-    'ชำนาญการพิเศษ',
-    'เชี่ยวชาญ',
-]);
-const adminPositions = ref(['คณบดี', 'รองคณบดีฝ่ายบริหาร', 'รองคณบดีฝ่ายวิชาการ', 'ผู้ช่วยคณบดี']);
-const academicRanks = ref(['อาจารย์', 'ผู้ช่วยศาสตราจารย์', 'รองศาสตราจารย์', 'ศาสตราจารย์']);
-const supportRanks = ref(['ปฏิบัติการ', 'ชำนาญการ', 'ชำนาญการพิเศษ', 'เชี่ยวชาญ']);
-const learningMethods = ref([
-    {
-        key: 'experiential',
-        label: 'Experiential Learning',
-        desc: 'การเรียนรู้ผ่านประสบการณ์จากการทำงานจริง',
-    },
-    {
-        key: 'social',
-        label: 'Social Learning',
-        desc: 'การเรียนรู้ผ่านบุคคลอื่นและการแลกเปลี่ยนประสบการณ์',
-    },
-    {
-        key: 'formal',
-        label: 'Formal Learning',
-        desc: 'การเรียนรู้อย่างเป็นทางการผ่านหลักสูตรหรือการอบรม',
-    },
-]);
-const orgSups = ref({
-    'คณะวิศวกรรมศาสตร์': 'Manager User',
-});
+const worklines = ref(clone(page.props.worklines || []));
+const jobFamiliesByWorkline = ref(clone(page.props.jobFamiliesByWorkline || {}));
+const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายวิชาการ'] || {})));
+const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
+const competencyTypes = ref(clone(page.props.competencyTypes || []));
+const supportOrg = ref({});
+const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
+const supportPositions = ref([]);
+const adminPositions = ref(clone(page.props.adminJobFamilies || []));
+const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
+const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
+const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
+const learningMethods = ref(clone(page.props.learningMethods || []));
+const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
 const supportJobFamilies = computed(() => Object.keys(supportPositionGroups.value));
-const academicGroups = ['อาจารย์', 'นักวิจัย'];
-const academicLevelOptions = [
-    'อาจารย์ (อายุงานไม่เกิน 1 ปี)',
-    'อาจารย์',
-    'ผู้ช่วยศาสตราจารย์',
-    'รองศาสตราจารย์',
-    'ศาสตราจารย์',
-];
-const supportLevelOptions = [
-    'บุคลากร (อายุงานไม่เกิน 1 ปี)',
-    'ปฏิบัติการ',
-    'ชำนาญการ',
-    'ชำนาญการพิเศษ',
-    'เชี่ยวชาญ',
-];
-const adminLevelOptions = [
-    'บุคลากร (อายุงานไม่เกิน 1 ปี)',
-    'หัวหน้างาน',
-    'รองคณบดี',
-    'ผู้ช่วยคณบดี',
-    'คณบดี',
-];
-const selectedWorklineIndex = computed(() => worklines.value.indexOf(userForm.value.w));
-const isAcademicWorkline = computed(() => selectedWorklineIndex.value === 0);
-const isSupportWorkline = computed(() => selectedWorklineIndex.value === 1);
-const isAdminWorkline = computed(() => selectedWorklineIndex.value === 2);
+const levelOptionsFromDatabase = computed(() => {
+    const directLevels = levelsByWorkline.value[userForm.value.w] || [];
+    return directLevels.length ? directLevels : positionOptions.value;
+});
+const isAcademicWorkline = computed(() => userForm.value.w === 'สายวิชาการ');
+const isSupportWorkline = computed(() => userForm.value.w === 'สายสนับสนุน');
+const isAdminWorkline = computed(() => userForm.value.w === 'สายงานบริหาร');
 const selectedDeptWorks = computed(() => supportOrg.value[userForm.value.dept] || []);
 const jobOptions = computed(() => {
     if (isSupportWorkline.value) return selectedDeptWorks.value.map((item) => item.work);
-    if (isAcademicWorkline.value) return academicGroups;
-    if (isAdminWorkline.value) return adminDepts.value;
-
-    return [];
+    return Object.keys(jobFamiliesByWorkline.value[userForm.value.w] || {});
 });
 const selectedSupportWork = computed(() =>
     selectedDeptWorks.value.find((item) => item.work === userForm.value.job),
@@ -170,19 +113,20 @@ const unitOptions = computed(() => {
     return [];
 });
 const positionOptions = computed(() => {
-    if (isAcademicWorkline.value) return [];
     if (isSupportWorkline.value) {
-        const grouped = Object.values(supportPositionGroups.value).flat();
+        const grouped = Object.entries(supportPositionGroups.value).flatMap(([group, positions]) =>
+            positions.length ? positions : [group],
+        );
         return [...new Set(grouped.length ? grouped : supportPositions.value)];
     }
-    if (isAdminWorkline.value) return adminPositions.value;
 
-    return [];
+    const groups = jobFamiliesByWorkline.value[userForm.value.w] || {};
+    return Object.entries(groups).flatMap(([group, positions]) => positions.length ? positions : [group]);
 });
 const levelOptions = computed(() => {
-    if (isAcademicWorkline.value) return academicLevelOptions;
-    if (isSupportWorkline.value) return supportLevelOptions;
-    if (isAdminWorkline.value) return adminLevelOptions;
+    if (isAcademicWorkline.value || isSupportWorkline.value || isAdminWorkline.value) {
+        return levelOptionsFromDatabase.value;
+    }
 
     return [];
 });
@@ -642,6 +586,10 @@ const logout = () => router.post(route('logout'));
                     :set-support-pos="setRef(supportPositions)"
                     :admin-pos="adminPositions"
                     :set-admin-pos="setRef(adminPositions)"
+                    :job-families-by-workline="jobFamiliesByWorkline"
+                    :set-job-families-by-workline="setRef(jobFamiliesByWorkline)"
+                    :levels-by-workline="levelsByWorkline"
+                    :set-levels-by-workline="setRef(levelsByWorkline)"
                     :academic-rank="academicRanks"
                     :set-academic-rank="setRef(academicRanks)"
                     :support-rank="supportRanks"
@@ -726,6 +674,13 @@ const logout = () => router.post(route('logout'));
                     <div class="fg">
                         <label class="lbl req">Last Name (English)</label>
                         <input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" />
+                    </div>
+                </div>
+
+                <div v-if="!orgEditMode" class="modal-grid">
+                    <div class="fg">
+                        <label class="lbl req">Email</label>
+                        <input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" />
                     </div>
                 </div>
 
