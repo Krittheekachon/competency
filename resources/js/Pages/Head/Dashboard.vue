@@ -9,21 +9,36 @@ import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Staff/EmployeeProgress.vue';
 const selectedStaff = ref(null);
 
+const props = defineProps({
+    dashboardTitle: {
+        type: String,
+        default: 'Head - CIDP',
+    },
+    rememberKey: {
+        type: String,
+        default: 'HeadDashboardStable',
+    },
+});
+
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
 const normalizeRoleKey = (role) => role === 'dept_head' ? 'manager_dept' : role;
+const normalizeDashboardPage = (pageId) => ({
+    'sup-assess': 'dh-assess',
+    'sup-idp': 'dh-idp',
+}[pageId] || pageId);
 
 const page = usePage();
 const users = ref(clone(page.props.users || []));
 const requestedPage = ref(typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('page')
+    ? normalizeDashboardPage(new URLSearchParams(window.location.search).get('page'))
     : null);
 const rememberedHeadState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || 'dh-idp',
-}, 'HeadDashboardStable');
+    activePage: requestedPage.value || 'emp-assess',
+}, props.rememberKey);
 
 const showSidebar = computed({
     get: () => rememberedHeadState.value.showSidebar !== false,
@@ -32,7 +47,7 @@ const showSidebar = computed({
     },
 });
 const activePage = computed({
-    get: () => rememberedHeadState.value.activePage || 'dh-idp',
+    get: () => rememberedHeadState.value.activePage || 'emp-assess',
     set: (value) => {
         rememberedHeadState.value.activePage = value;
     },
@@ -62,7 +77,7 @@ const learningMethods = ref([
 const authRoleKey = computed(() => normalizeRoleKey(page.props.auth?.user?.role_key || 'manager_dept'));
 const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.manager_dept || ROLES_CONFIG.supervisor);
 const navSections = computed(() => NAV_CONFIG.supervisor || []);
-const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const pageTitle = computed(() => PAGE_TITLES[activePage.value] || PAGE_TITLES[normalizeDashboardPage(activePage.value)] || activePage.value);
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
 const implementedPages = new Set([
@@ -91,135 +106,158 @@ const currentUser = computed(() =>
     },
 );
 
-const MOCK_TEAM = [
-    {
-        sso: 'mock001',
-        t: 'รศ.ดร.',
-        n: 'เมธา ศิริกุล',
-        p: 'อาจารย์',
-        d: 'ภาควิชาวิศวกรรมคอมพิวเตอร์',
-        r: 'employee',
-        act: true,
-        evalStatus: 'self_submitted',
-        idpPhase: 'notsent',
-        gaps: ['การบริการที่ดี', 'การวิเคราะห์ข้อมูล'],
-    },
-    {
-        sso: 'mock002',
-        t: 'ผศ.ดร.',
-        n: 'อรพรรณ ศรีสวัสดิ์',
-        p: 'อาจารย์',
-        d: 'ภาควิชาวิศวกรรมไฟฟ้า',
-        r: 'employee',
-        act: true,
-        evalStatus: 'unit_evaluated',
-        idpPhase: 'pending',
-        sentAt: 'ส่งแผน 20 พ.ค. 68',
-        gaps: ['การใช้เทคโนโลยีดิจิทัล'],
-        competencyResults: [
-            { id: 'digital', group: 'FC', title: 'การใช้เทคโนโลยีดิจิทัล', code: 'FC-021', expected: 4, selfScore: 2, headScore: 2, gap: -2 },
-        ],
-        idpPlans: [
-            {
-                id: 'digital',
-                goal: 'ใช้เครื่องมือดิจิทัลจัดทำ dashboard ติดตามแผนงานได้',
-                activities: ['อบรม Data Dashboard', 'OJT สรุปข้อมูลผู้บริหาร'],
-            },
-        ],
-    },
-    {
-        sso: 'mock003',
-        t: 'นาย',
-        n: 'สมชาย มีสุข',
-        p: 'นักวิชาการศึกษา',
-        d: 'หน่วยวิชาการและหลักสูตร',
-        r: 'employee',
-        act: true,
-        evalStatus: 'self_submitted',
-        idpPhase: 'rejected',
-        sentAt: 'ส่งแผน 20 พ.ค. 68',
-        gaps: ['การทำงานเป็นทีม', 'การใช้เทคโนโลยีดิจิทัล'],
-        competencyResults: [
-            { id: 'teamwork', group: 'CC', title: 'การทำงานเป็นทีม', code: 'CC-003', expected: 4, selfScore: 2, headScore: 2, gap: -2, feedback: 'พหกพหก' },
-            { id: 'digital', group: 'FC', title: 'การใช้เทคโนโลยีดิจิทัล', code: 'FC-021', expected: 4, selfScore: 2, headScore: 2, gap: -2, feedback: 'พหกพหก' },
-        ],
-        idpPlans: [
-            { id: 'teamwork', goal: 'ปรับรูปแบบการทำงานร่วมกับทีมโครงการให้ชัดเจนขึ้น', activities: ['Team Coaching', 'สรุปบทเรียนงานกลุ่ม'] },
-            { id: 'digital', goal: 'ฝึกใช้เครื่องมือดิจิทัลเพื่อสรุปรายงานงานประจำ', activities: ['อบรม Data Dashboard', 'OJT รายงานดิจิทัล'] },
-        ],
-    },
-    {
-        sso: 'mock004',
-        t: 'นางสาว',
-        n: 'พิมพ์ใจ ทองดี',
-        p: 'นักวิเคราะห์นโยบายและแผน',
-        d: 'หน่วยแผนยุทธศาสตร์',
-        r: 'employee',
-        act: true,
-        evalStatus: 'dept_evaluated',
-        idpPhase: 'inprogress',
-        gaps: ['การทำงานเป็นทีม'],
-        competencyResults: [
-            { id: 'teamwork', group: 'CC', title: 'การทำงานเป็นทีม', code: 'CC-003', expected: 3, selfScore: 2, headScore: 2, gap: -1 },
-        ],
-        idpPlans: [
-            {
-                id: 'teamwork',
-                activities: [
-                    {
-                        title: 'Team Activity Program',
-                        method: 'Social Learning',
-                        status: 'ผ่านแล้ว',
-                        events: [
-                            { date: '5 พ.ค.', text: 'เริ่มกิจกรรมกลุ่ม - โครงการพัฒนาระบบงานร่วมกัน 4 คน', file: 'แผนงาน_Team_Activity_2566.pdf', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '10 มิ.ย.', text: 'ส่งรายงานความก้าวหน้าครึ่งทาง', file: 'รายงานความก้าวหน้า_มิ.ย.66.pdf', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '30 มิ.ย.', text: 'ประเมินผ่านเกณฑ์ - หัวหน้าประเมินระดับ 3/5', file: 'แบบประเมิน_TeamActivity_2566.pdf', by: 'รศ.ดร.วิไล โชติ' },
-                        ],
-                    },
-                    {
-                        title: 'อ่านและสรุปหนังสือ Teamwork 101',
-                        method: 'Formal Learning',
-                        status: 'ผ่านแล้ว',
-                        events: [
-                            { date: '1 ก.ค.', text: 'เริ่มอ่านและจดบันทึกสรุปบทที่ 1-5', file: 'สรุปหนังสือ_บทที่1-5.docx', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '31 ส.ค.', text: 'ส่งสรุปหนังสือครบ 12 บท - ผ่านการตรวจ', file: 'สรุปหนังสือ_Teamwork101_ฉบับสมบูรณ์.pdf', by: 'นายบุญอยู่ มีสุข' },
-                        ],
-                    },
-                ],
-            },
-        ],
-    },
-    {
-        sso: 'mock005',
-        t: 'นาย',
-        n: 'เก่งกาจ พัฒนา',
-        p: 'เจ้าหน้าที่บริหารงานทั่วไป',
-        d: 'งานบริหารและธุรการ',
-        r: 'employee',
-        act: true,
-        evalStatus: 'dean_approved',
-        idpPhase: 'done',
-        gaps: ['การบริการที่ดี'],
-    },
-];
+const mockTeamForCurrentUser = computed(() => {
+    const leaderName = currentUser.value.n || authUserName.value || 'หัวหน้างานตัวอย่าง';
+    const evaluatorName = currentUser.value.evaluator2 || 'ผู้บังคับบัญชา ฝ่ายบริหาร';
 
-const teamMembers = computed(() => {
+    return [
+        {
+            sso: 'mock-admin-001',
+            t: 'นางสาว',
+            n: 'พิมพ์ใจ ทองดี',
+            p: 'เจ้าหน้าที่บริหารงานทั่วไป',
+            d: 'ฝ่ายบริหาร > งานบริหาร > หน่วยสารบรรณ',
+            r: 'employee',
+            sup: leaderName,
+            evaluator2: evaluatorName,
+            act: true,
+            evalStatus: 'self_submitted',
+            idpPhase: 'pending',
+            sentAt: 'ส่งแผน 20 พ.ค. 68',
+            gaps: ['การบริการที่ดี', 'การวิเคราะห์ข้อมูล'],
+            competencyResults: [
+                { id: 'service', group: 'CC', title: 'การบริการที่ดี', code: 'CC-001', expected: 3, selfScore: 2, headScore: 2, gap: -1 },
+                { id: 'data', group: 'FC', title: 'การวิเคราะห์ข้อมูล', code: 'FC-062', expected: 4, selfScore: 3, headScore: 3, gap: -1 },
+            ],
+            idpPlans: [
+                { id: 'service', goal: 'ยกระดับการตอบสนองงานสารบรรณให้รวดเร็วและครบถ้วน', activities: ['Service Mind Workshop', 'OJT ระบบสารบรรณ'] },
+                { id: 'data', goal: 'จัดทำรายงานสรุปงานรับ-ส่งเอกสารรายเดือนด้วย dashboard', activities: ['อบรม Data Dashboard', 'Mentoring รายงานประจำเดือน'] },
+            ],
+        },
+        {
+            sso: 'mock-admin-002',
+            t: 'นาย',
+            n: 'เก่งกาจ พัฒนา',
+            p: 'พนักงานขับรถยนต์',
+            d: 'ฝ่ายบริหาร > งานบริหาร > หน่วยอาคารสถานที่และยานพาหนะ',
+            r: 'employee',
+            sup: leaderName,
+            evaluator2: evaluatorName,
+            act: true,
+            evalStatus: 'unit_evaluated',
+            idpPhase: 'inprogress',
+            gaps: ['การทำงานเป็นทีม'],
+            competencyResults: [
+                { id: 'teamwork', group: 'CC', title: 'การทำงานเป็นทีม', code: 'CC-003', expected: 3, selfScore: 2, headScore: 2, gap: -1 },
+            ],
+            idpPlans: [
+                {
+                    id: 'teamwork',
+                    goal: 'ประสานงานกับทีมอาคารและยานพาหนะให้เป็นระบบมากขึ้น',
+                    activities: [
+                        {
+                            title: 'Team Activity Program',
+                            method: 'Social Learning',
+                            status: 'กำลังดำเนินการ',
+                            events: [
+                                { date: '5 มิ.ย.', text: 'เริ่มกิจกรรมจัดตารางใช้รถร่วมกับทีม', file: 'แผนตารางรถ_มิ.ย.pdf', by: 'นายเก่งกาจ พัฒนา' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            sso: 'mock-fin-001',
+            t: 'นาง',
+            n: 'วราภรณ์ เงินดี',
+            p: 'นักวิชาการเงินและบัญชี',
+            d: 'ฝ่ายบริหาร > งานคลังและพัสดุ > หน่วยการเงินและบัญชี',
+            r: 'employee',
+            sup: leaderName,
+            evaluator2: evaluatorName,
+            act: true,
+            evalStatus: 'self_submitted',
+            idpPhase: 'notsent',
+            gaps: ['การวิเคราะห์ข้อมูล'],
+            competencyResults: [
+                { id: 'data', group: 'FC', title: 'การวิเคราะห์ข้อมูล', code: 'FC-062', expected: 4, selfScore: 2, headScore: 2, gap: -2 },
+            ],
+        },
+        {
+            sso: 'mock-supply-001',
+            t: 'นาย',
+            n: 'ธนากร จัดซื้อ',
+            p: 'เจ้าหน้าที่พัสดุ',
+            d: 'ฝ่ายบริหาร > งานคลังและพัสดุ > หน่วยพัสดุ',
+            r: 'employee',
+            sup: leaderName,
+            evaluator2: evaluatorName,
+            act: true,
+            evalStatus: 'draft',
+            idpPhase: 'notsent',
+            gaps: [],
+        },
+        {
+            sso: 'mock-supply-002',
+            t: 'นางสาว',
+            n: 'สุภาภรณ์ ครุภัณฑ์',
+            p: 'เจ้าหน้าที่พัสดุ',
+            d: 'ฝ่ายบริหาร > งานคลังและพัสดุ > หน่วยพัสดุ',
+            r: 'employee',
+            sup: leaderName,
+            evaluator2: evaluatorName,
+            act: true,
+            evalStatus: 'dean_approved',
+            idpPhase: 'done',
+            gaps: [],
+        },
+    ];
+});
+
+const parseOrgPath = (user) => {
+    const parts = String(user?.d || '').split(' > ').map((part) => part.trim()).filter(Boolean);
+    return {
+        dept: parts[0] || '',
+        work: parts[1] || parts[0] || 'ไม่ระบุงาน',
+        unit: parts.length >= 3 ? parts.slice(2).join(' > ') : '',
+    };
+};
+
+const allTeamMembers = computed(() => {
     const real = users.value.filter((user) =>
         user.sso !== currentUser.value.sso
         && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
         && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
         && user.act !== false,
     );
-    return real.length > 0 ? real : MOCK_TEAM;
+    return real.length > 0 ? real : mockTeamForCurrentUser.value;
 });
-// const teamMembers = computed(() => {
-//     return users.value.filter((user) =>
-//         user.sso !== currentUser.value.sso
-//         && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
-//         && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
-//         && user.act !== false,
-//     );
-// });
+const groupByOrg = (items) => {
+    const workMap = new Map();
+    items.forEach((item) => {
+        const org = parseOrgPath(item);
+        const unitName = org.unit || 'ไม่ระบุหน่วยงาน';
+        if (!workMap.has(org.work)) {
+            workMap.set(org.work, { work: org.work, count: 0, units: new Map() });
+        }
+        const workGroup = workMap.get(org.work);
+        workGroup.count += 1;
+        if (!workGroup.units.has(unitName)) {
+            workGroup.units.set(unitName, { unit: unitName, count: 0, members: [] });
+        }
+        const unitGroup = workGroup.units.get(unitName);
+        unitGroup.count += 1;
+        unitGroup.members.push(item);
+    });
+
+    return Array.from(workMap.values()).map((workGroup) => ({
+        ...workGroup,
+        units: Array.from(workGroup.units.values()),
+    }));
+};
+const teamMembers = computed(() => allTeamMembers.value);
+const teamOrgGroups = computed(() => groupByOrg(teamMembers.value));
 
 const normalizeIdpPhase = (user) => user.idpPhase || user.idp_status || user.idpStatus || 'notsent';
 const normalizeGaps = (user) => {
@@ -249,6 +287,7 @@ const gapRows = computed(() => teamMembers.value.map((user) => ({
     pending: user.evalStatus === 'draft' || !user.evalStatus,
     gaps: normalizeGaps(user),
 })));
+const gapRowGroups = computed(() => groupByOrg(gapRows.value));
 const assessedGapRows = computed(() => gapRows.value.filter((user) => !user.pending));
 const foundGapRows = computed(() => assessedGapRows.value.filter((user) => user.gaps.length));
 const gapCompetencies = computed(() => Object.values(
@@ -278,6 +317,8 @@ const idpTabs = computed(() => [
     { id: 'done', label: idpStatusMeta.done.label, count: idpRows.value.filter((row) => row.phase === 'done').length, cls: 'gcc' },
 ]);
 const visibleIdpRows = computed(() => idpRows.value.filter((row) => row.phase === activeIdpTab.value));
+const visibleIdpGroups = computed(() => groupByOrg(visibleIdpRows.value));
+const teamMemberGroups = computed(() => groupByOrg(teamMembers.value));
 
 const scoreLabels = ['ต่ำมาก', 'ต่ำ', 'พอใช้', 'ดี', 'ดีมาก'];
 const selectedGroup = ref('all');
@@ -295,6 +336,8 @@ const filteredComps = computed(() =>
 const assessmentDrafts = ref({});
 const assessmentSavedAt = ref('');
 const draftTimer = ref(null);
+const selectedAssessmentWork = ref(null);
+const selectedAssessmentUnit = ref(null);
 const selectedGapStaff = ref(null);
 const selectedIdpStaff = ref(null);
 const idpPhaseOverrides = ref({});
@@ -334,13 +377,70 @@ const assessmentComps = [
     },
 ];
 
-const selectedAssessment = computed(() => selectedStaff.value || teamMembers.value.find((user) => user.evalStatus === 'self_submitted') || teamMembers.value[0] || null);
+const selectedAssessment = computed(() => selectedStaff.value || null);
 const assessmentName = computed(() => selectedAssessment.value ? `${selectedAssessment.value.t || ''}${selectedAssessment.value.n}` : '');
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
 
-const getHeadScore = (comp) => activeDraft.value.scores?.[comp.id] || comp.selfScore;
+const currentAssessmentWork = computed(() => teamMemberGroups.value.find((group) => group.work === selectedAssessmentWork.value) || null);
+const currentAssessmentUnit = computed(() => currentAssessmentWork.value?.units.find((unit) => unit.unit === selectedAssessmentUnit.value) || null);
+const resetAssessmentDrill = () => {
+    selectedAssessmentWork.value = null;
+    selectedAssessmentUnit.value = null;
+    selectedStaff.value = null;
+};
+const selectAssessmentWork = (work) => {
+    if (selectedAssessmentWork.value === work) {
+        resetAssessmentDrill();
+        return;
+    }
+    selectedAssessmentWork.value = work;
+    selectedAssessmentUnit.value = null;
+    selectedStaff.value = null;
+};
+const selectAssessmentUnit = (unit) => {
+    if (selectedAssessmentUnit.value === unit) {
+        selectedAssessmentUnit.value = null;
+        selectedStaff.value = null;
+        return;
+    }
+    selectedAssessmentUnit.value = unit;
+    selectedStaff.value = null;
+};
+const backAssessmentDrill = () => {
+    if (selectedStaff.value) {
+        selectedStaff.value = null;
+        return;
+    }
+    if (selectedAssessmentUnit.value) {
+        selectedAssessmentUnit.value = null;
+        return;
+    }
+    selectedAssessmentWork.value = null;
+};
+
+const getAssessmentRow = (person, comp) => {
+    const rows = person?.competencyResults || person?.assessmentResults || person?.evaluationResults || [];
+    return Array.isArray(rows)
+        ? rows.find((row) => [row.id, row.competency_id, row.name, row.title, row.competency_name].includes(comp.id) || [row.id, row.competency_id, row.name, row.title, row.competency_name].includes(comp.title))
+        : null;
+};
+const normalizeScore = (value, fallback = 1) => {
+    const score = Number(value);
+    if (!Number.isFinite(score)) return fallback;
+    return Math.min(5, Math.max(1, score));
+};
+const getSelfScore = (comp) => {
+    const row = getAssessmentRow(selectedAssessment.value, comp);
+    return normalizeScore(row?.selfScore ?? row?.self ?? gapScoreFor(selectedAssessment.value, comp, 'selfScore', comp.selfScore), comp.selfScore);
+};
+const getSupervisorScore = (comp) => {
+    const row = getAssessmentRow(selectedAssessment.value, comp);
+    return normalizeScore(row?.headScore ?? row?.supervisorScore ?? gapScoreFor(selectedAssessment.value, comp, 'headScore', getSelfScore(comp)), getSelfScore(comp));
+};
+const getReviewerScore = (comp) => normalizeScore(activeDraft.value.scores?.[comp.id] || getSupervisorScore(comp), getSupervisorScore(comp));
 const getHeadFeedback = (comp) => activeDraft.value.feedback?.[comp.id] || '';
+const getSupervisorFeedback = (comp) => getAssessmentRow(selectedAssessment.value, comp)?.feedback || 'ยังไม่มีข้อเสนอแนะจากหัวหน้างาน';
 
 const gapScoreFor = (person, comp, key, fallback) => {
     const values = person?.competencyScores || person?.scores || person?.assessmentScores || {};
@@ -506,7 +606,7 @@ const selectAssessmentStaff = (person) => {
 
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
-    persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
+    persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ยืนยันผลการประเมินแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
 };
 
@@ -517,7 +617,7 @@ watchEffect(() => {
     }
 
     if (!implementedPages.has(activePage.value)) {
-        activePage.value = 'dh-idp';
+        activePage.value = 'emp-assess';
     }
 
     if (page.props.users?.length) {
@@ -526,7 +626,7 @@ watchEffect(() => {
 });
 
 const requestPageChange = (nextPage) => {
-    activePage.value = nextPage;
+    activePage.value = normalizeDashboardPage(nextPage);
 };
 
 const goProfile = () => router.visit(route('profile.edit'));
@@ -534,7 +634,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Head - CIDP" />
+    <Head :title="props.dashboardTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
@@ -610,6 +710,28 @@ const logout = () => router.post(route('logout'));
                             <div class="sec-t">IDP & ติดตามทีม</div>
                             <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
                         </div>
+
+                        <!-- <div class="card team-scope-card mb20">
+                            <div>
+                                <div class="fw8 fs13">ขอบเขตงาน/หน่วยงานใต้การบังคับบัญชา</div>
+                                <div class="muted fs11">จัดกลุ่มตามงานและหน่วยงานจากข้อมูลที่ admin กำหนด</div>
+                            </div>
+                            <span class="b bgr">{{ teamMembers.length }} คน</span>
+                            <div class="org-group-tree">
+                                <div v-for="workGroup in teamOrgGroups" :key="`idp-scope-${workGroup.work}`" class="org-work-group">
+                                    <div class="org-work-head">
+                                        <span class="fw8 fs13">{{ workGroup.work }}</span>
+                                        <span class="b bb">{{ workGroup.count }} คน</span>
+                                    </div>
+                                    <div class="org-unit-list">
+                                        <div v-for="unitGroup in workGroup.units" :key="`idp-scope-${workGroup.work}-${unitGroup.unit}`" class="org-unit-chip">
+                                            <span>{{ unitGroup.unit }}</span>
+                                            <span class="muted fs11">{{ unitGroup.count }} คน</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div> -->
 
                         <div class="g4 idp-summary mb20">
                             <button
@@ -796,6 +918,28 @@ const logout = () => router.post(route('logout'));
                         <div class="sec-s">วิเคราะห์ผลการประเมินและจุดอ่อนของทีม</div>
                     </div>
 
+                    <!-- <div class="card team-scope-card mb20">
+                        <div>
+                            <div class="fw8 fs13">ขอบเขตงาน/หน่วยงานใต้การบังคับบัญชา</div>
+                            <div class="muted fs11">สรุป Gap โดยจัดกลุ่มตามงานและหน่วยงาน</div>
+                        </div>
+                        <span class="b bgr">{{ teamMembers.length }} คน</span>
+                        <div class="org-group-tree">
+                            <div v-for="workGroup in teamOrgGroups" :key="`gap-scope-${workGroup.work}`" class="org-work-group">
+                                <div class="org-work-head">
+                                    <span class="fw8 fs13">{{ workGroup.work }}</span>
+                                    <span class="b bb">{{ workGroup.count }} คน</span>
+                                </div>
+                                <div class="org-unit-list">
+                                    <div v-for="unitGroup in workGroup.units" :key="`gap-scope-${workGroup.work}-${unitGroup.unit}`" class="org-unit-chip">
+                                        <span>{{ unitGroup.unit }}</span>
+                                        <span class="muted fs11">{{ unitGroup.count }} คน</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div> -->
+
                     <div v-if="assessedGapRows.length === 0" class="card empty-card">
                         ยังไม่ได้รับผลการประเมินจากผู้ใต้บังคับบัญชา
                     </div>
@@ -908,6 +1052,28 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'dh-assess'">
+                    <!-- <div class="card team-scope-card mb20">
+                        <div>
+                            <div class="fw8 fs13">ขอบเขตงาน/หน่วยงานใต้การบังคับบัญชา</div>
+                            <div class="muted fs11">แสดงรายชื่อโดยจัดกลุ่มตามงานและหน่วยงานทันที</div>
+                        </div>
+                        <span class="b bgr">{{ teamMembers.length }} คน</span>
+                        <div class="org-group-tree">
+                            <div v-for="workGroup in teamOrgGroups" :key="`assess-scope-${workGroup.work}`" class="org-work-group">
+                                <div class="org-work-head">
+                                    <span class="fw8 fs13">{{ workGroup.work }}</span>
+                                    <span class="b bb">{{ workGroup.count }} คน</span>
+                                </div>
+                                <div class="org-unit-list">
+                                    <div v-for="unitGroup in workGroup.units" :key="`assess-scope-${workGroup.work}-${unitGroup.unit}`" class="org-unit-chip">
+                                        <span>{{ unitGroup.unit }}</span>
+                                        <span class="muted fs11">{{ unitGroup.count }} คน</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div> -->
+
                     <div class="g5 assess-summary mb20">
                         <div class="sc navy-top">
                             <div class="sl">ทั้งหมด</div>
@@ -950,7 +1116,11 @@ const logout = () => router.post(route('logout'));
                                 v-for="person in teamMembers"
                                 :key="person.sso"
                                 class="assess-person"
-                                :class="{ selected: selectedAssessment?.sso === person.sso }"
+                                :class="{
+                                    selected: selectedAssessment?.sso === person.sso,
+                                    'assess-person-disabled': !person.evalStatus || person.evalStatus === 'draft'
+                                }"
+                                :disabled="!person.evalStatus || person.evalStatus === 'draft'"
                                 type="button"
                                 @click="selectAssessmentStaff(person)"
                             >
@@ -964,15 +1134,14 @@ const logout = () => router.post(route('logout'));
                                 </span>
                             </button>
                         </div>
-
                         <div v-if="selectedAssessment" class="assessment-detail">
                             <div class="flex ic jb mb12">
                                 <div>
                                     <div class="fw8 fs16">การประเมิน: {{ assessmentName }}</div>
                                     <div class="muted fs12">{{ selectedAssessment.p }} · {{ selectedAssessment.d }}</div>
                                 </div>
-                                <span class="b" :class="activeDraft.submitted ? 'bt' : 'bgr'">
-                                    {{ activeDraft.submitted ? 'ส่งต่อผู้บังคับบัญชาแล้ว' : (assessmentSavedAt || 'ยังไม่มีการแก้ไขผลการประเมิน') }}
+                                <span class="b" :class="selectedAssessment?.evalStatus === 'unit_evaluated' || selectedAssessment?.evalStatus === 'dean_approved' ? 'bt' : activeDraft.submitted ? 'bt' : 'bgr'">
+                                    {{ selectedAssessment?.evalStatus === 'unit_evaluated' ? 'ส่งต่อผู้บังคับบัญชาแล้ว ✓' : selectedAssessment?.evalStatus === 'dean_approved' ? 'คณบดีอนุมัติแล้ว ✓' : activeDraft.submitted ? 'ยืนยันผลการประเมินแล้ว' : (assessmentSavedAt || 'ยังไม่มีการแก้ไขผลการประเมิน') }}
                                 </span>
                             </div>
 
@@ -994,20 +1163,20 @@ const logout = () => router.post(route('logout'));
                                         <span class="tag-cc">{{ comp.group }}</span>
                                         <span class="fw8 fs14">{{ comp.title }}</span>
                                     </div>
-                                    <div class="tc fw8 fs12">{{ getHeadScore(comp) }}/5 ✓</div>
+                                    <div class="tc fw8 fs12">{{ getReviewerScore(comp) }}/5 ✓</div>
                                 </div>
 
                                 <div class="assessment-columns">
                                     <div class="assessment-side self">
                                         <div class="muted fw7 fs11 mb10">พฤติกรรมบ่งชี้ (ใช้ประกอบการตัดสิน)</div>
                                         <ul class="behavior-list">
-                                            <li v-for="behavior in comp.behaviors[comp.selfScore]" :key="behavior">{{ behavior }}</li>
+                                            <li v-for="behavior in comp.behaviors[getSelfScore(comp)]" :key="behavior">{{ behavior }}</li>
                                         </ul>
-                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนประเมินตนเองระดับ {{ comp.selfScore }}: {{ scoreLabels[comp.selfScore - 1] }}</div>
+                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนประเมินตนเองระดับ {{ getSelfScore(comp) }}: {{ scoreLabels[getSelfScore(comp) - 1] }}</div>
 
                                         <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากร (Self-Score)</div>
                                         <div class="score-grid">
-                                            <div v-for="score in [1, 2, 3, 4, 5]" :key="score" class="score-tile" :class="{ selected: comp.selfScore === score }">
+                                            <div v-for="score in [1, 2, 3, 4, 5]" :key="score" class="score-tile" :class="{ selected: getSelfScore(comp) === score }">
                                                 <span>{{ score }}</span>
                                                 <small>{{ scoreLabels[score - 1] }}</small>
                                             </div>
@@ -1030,9 +1199,9 @@ const logout = () => router.post(route('logout'));
                                         <div class="bc fw8 fs12 mb10">1. หัวหน้างาน (คุณ) *</div>
                                         <div class="muted fw7 fs11 mb6">พฤติกรรมบ่งชี้ (ใช้ประกอบการตัดสิน)</div>
                                         <ul class="behavior-list">
-                                            <li v-for="behavior in comp.behaviors[getHeadScore(comp)]" :key="behavior">{{ behavior }}</li>
+                                            <li v-for="behavior in comp.behaviors[getReviewerScore(comp)]" :key="behavior">{{ behavior }}</li>
                                         </ul>
-                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้างานเลือก ระดับ {{ getHeadScore(comp) }}: {{ scoreLabels[getHeadScore(comp) - 1] }}</div>
+                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้างานเลือก ระดับ {{ getReviewerScore(comp) }}: {{ scoreLabels[getReviewerScore(comp) - 1] }}</div>
 
                                         <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากรโดยหัวหน้างาน</div>
                                         <div class="score-grid">
@@ -1040,7 +1209,8 @@ const logout = () => router.post(route('logout'));
                                                 v-for="score in [1, 2, 3, 4, 5]"
                                                 :key="score"
                                                 class="score-tile score-button"
-                                                :class="{ selected: getHeadScore(comp) === score }"
+                                                :class="{ selected: getReviewerScore(comp) === score }"
+                                                :disabled="!selectedAssessment?.evalStatus || selectedAssessment?.evalStatus === 'draft'"
                                                 type="button"
                                                 @click="updateAssessmentScore(comp, score)"
                                             >
@@ -1052,6 +1222,7 @@ const logout = () => router.post(route('logout'));
                                         <textarea
                                             class="ta feedback-box"
                                             :value="getHeadFeedback(comp)"
+                                            :disabled="!selectedAssessment?.evalStatus || selectedAssessment?.evalStatus === 'draft'"
                                             placeholder="ใส่คำเสนอแนะ (ถ้ามี)..."
                                             @input="updateAssessmentFeedback(comp, $event.target.value)"
                                         />
@@ -1068,10 +1239,20 @@ const logout = () => router.post(route('logout'));
                                 <button class="btn btn-s" type="button" style="flex: 1" disabled>
                                     {{ assessmentSavedAt || 'ระบบจะบันทึกร่างอัตโนมัติ' }}
                                 </button>
-                                <button class="btn btn-t" type="button" style="flex: 2" :disabled="activeDraft.submitted" @click="submitAssessmentToManager">
-                                    {{ activeDraft.submitted ? 'ส่งผลการประเมินแล้ว' : 'ส่งผลการประเมินให้ผู้บังคับบัญชา' }}
+                                <button
+                                    class="btn btn-t"
+                                    type="button"
+                                    style="flex: 2"
+                                    :disabled="activeDraft.submitted || selectedAssessment?.evalStatus === 'unit_evaluated' || selectedAssessment?.evalStatus === 'dean_approved' || !selectedAssessment?.evalStatus || selectedAssessment?.evalStatus === 'draft'"
+                                    @click="submitAssessmentToManager"
+                                >
+                                    {{ selectedAssessment?.evalStatus === 'unit_evaluated' ? 'ส่งต่อผู้บังคับบัญชาแล้ว ✓' : selectedAssessment?.evalStatus === 'dean_approved' ? 'คณบดีอนุมัติแล้ว ✓' : activeDraft.submitted ? 'ยืนยันผลการประเมินแล้ว' : 'ยืนยันผลการประเมิน' }}
                                 </button>
                             </div>
+                        </div>
+                        <div v-else class="card empty-panel">
+                            <div class="target-icon">🎯</div>
+                            <div class="muted fs13">เลือกบุคลากรจากรายการด้านซ้ายเพื่อเริ่มประเมิน</div>
                         </div>
                     </div>
                 </template>
@@ -1129,6 +1310,94 @@ const logout = () => router.post(route('logout'));
 .idp-row-action.primary:hover {
     background: var(--blue);
     color: #fff;
+}
+
+.team-scope-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 18px;
+    flex-wrap: wrap;
+}
+
+.org-group-tree {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+    gap: 12px;
+    width: 100%;
+}
+
+.org-work-group {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.org-work-head,
+.org-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.org-list-head.compact {
+    padding: 10px 14px;
+}
+
+.org-unit-list {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px 12px;
+}
+
+.org-unit-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.org-list-card {
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+
+.org-unit-section {
+    border-top: 1px solid var(--border);
+}
+
+.org-unit-section:first-child {
+    border-top: 0;
+}
+
+.org-unit-title {
+    padding: 10px 14px;
+    background: #fff;
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.org-member-row {
+    margin: 0;
+    border-top: 1px solid var(--border);
+}
+
+.assess-org-group {
+    border-top: 1px solid var(--border);
 }
 
 .assess-summary {
@@ -1330,6 +1599,68 @@ const logout = () => router.post(route('logout'));
     overflow-y: auto;
 }
 
+.accordion-list-card {
+    width: 100%;
+}
+
+.accordion-list {
+    display: grid;
+}
+
+.accordion-work + .accordion-work {
+    border-top: 1px solid var(--border);
+}
+
+.accordion-trigger {
+    width: 100%;
+    min-height: 64px;
+    border: 0;
+    background: #fff;
+    color: var(--text1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 18px;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.accordion-trigger:hover,
+.accordion-trigger.open {
+    background: var(--blue-lt);
+}
+
+.accordion-trigger::after {
+    content: "⌄";
+    color: var(--blue);
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.accordion-trigger.open::after {
+    content: "⌃";
+}
+
+.accordion-panel {
+    border-top: 1px solid var(--border);
+    background: #fff;
+}
+
+.accordion-unit + .accordion-unit {
+    border-top: 1px solid var(--border);
+}
+
+.unit-trigger {
+    padding-left: 34px;
+    background: #fbfdff;
+}
+
+.people-panel {
+    padding-left: 34px;
+}
+
 .assess-person {
     width: 100%;
     display: flex;
@@ -1353,8 +1684,37 @@ const logout = () => router.post(route('logout'));
     box-shadow: inset 4px 0 0 var(--blue);
 }
 
+.drill-list {
+    display: grid;
+}
+
+.drill-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 64px;
+    padding: 14px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+    color: var(--text1);
+    text-align: left;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.drill-row:hover {
+    background: var(--blue-lt);
+}
+
 .assessment-detail {
     min-width: 0;
+}
+
+.inline-assessment-detail {
+    padding: 18px;
 }
 
 .assessment-group-title {
@@ -1384,11 +1744,16 @@ const logout = () => router.post(route('logout'));
     grid-template-columns: 1.1fr 1fr;
 }
 
+.assessment-columns-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .assessment-side {
     padding: 22px 20px;
 }
 
-.assessment-side.self {
+.assessment-side.self,
+.assessment-side.supervisor {
     border-right: 1px solid var(--border);
 }
 
@@ -1689,9 +2054,37 @@ const logout = () => router.post(route('logout'));
     cursor: not-allowed;
     opacity: 1 !important;
 }
+
+.btn-p {
+    background: var(--blue);
+    color: #fff;
+    border: none;
+}
+
+.btn-p:hover {
+    background: var(--navy);
+    color: #fff;
+}
 .navy-top { border-top: 3px solid var(--navy); }
 .blue-top { border-top: 3px solid var(--blue); }
 .red-top { border-top: 3px solid var(--red); }
 .yellow-top { border-top: 3px solid var(--yellow); }
 .green-top { border-top: 3px solid var(--green); }
+.assess-person-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.score-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.feedback-box:disabled {
+    opacity: 0.4;
+    background: var(--bg);
+    cursor: not-allowed;
+    resize: none;
+}
 </style>

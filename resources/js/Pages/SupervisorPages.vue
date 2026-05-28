@@ -16,7 +16,25 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';
+
+const getOrgUnit = (user: any) => {
+  const parts = String(user?.d || user?.unit || "").split(" > ").filter(Boolean);
+  return parts[parts.length - 1] || user?.d || user?.unit || "ไม่ระบุหน่วยงาน";
+};
+
+const isManagedBy = (user: any, leader: any) => {
+  if (!leader || !user || user.sso === leader.sso) return false;
+  return user.sup === leader.n || user.evaluator2 === leader.n;
+};
+
+const managedStaffOnly = (users: any[], currentUser: any) => users.filter((user) =>
+  isManagedBy(user, currentUser) &&
+  !["manager_dept", "dept_head", "manager"].includes(user.r) &&
+  (currentUser?.r !== "supervisor" || user.r !== "supervisor")
+);
+
+export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [activeWorkUnit, setActiveWorkUnit] = useState("all");const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -70,11 +88,14 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     const [success, setSuccess] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const [savedAt, setSavedAt] = useState("");
-    const supervisorStaff = filteredUsers.filter((u) =>
+    const allSupervisorStaff = filteredUsers.filter((u) =>
     u.sso !== currentUser.sso &&
-    !['manager_dept', 'manager'].includes(u.r) && (
+    !['manager_dept', 'dept_head', 'manager'].includes(u.r) && (
     currentUser.r !== 'supervisor' || u.r !== 'supervisor')
     );
+    const supervisorWorkUnits = [...new Set(allSupervisorStaff.map(getOrgUnit))];
+    const selectedWorkUnit = activeWorkUnit.value === "all" || supervisorWorkUnits.includes(activeWorkUnit.value) ? activeWorkUnit.value : "all";
+    const supervisorStaff = selectedWorkUnit === "all" ? allSupervisorStaff : allSupervisorStaff.filter((u) => getOrgUnit(u) === selectedWorkUnit);
     const assessCounts = {
       total: supervisorStaff.length,
       notSent: supervisorStaff.filter((u) => u.evalStatus === "draft" || !u.evalStatus).length,
@@ -214,6 +235,18 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                             </div>
                         </div>
                     </div>}
+                    <div class="card mb14">
+                        <div class="cb flex ic jb g10" style={{ padding: "12px 16px", flexWrap: "wrap" }}>
+                            <div>
+                                <div class="fw8 fs13">ขอบเขตหน่วยงานใต้สังกัด</div>
+                                <div class="muted fs11">ประเมินลูกน้องภายในงาน/หน่วยงานที่หัวหน้าฝ่ายดูแล</div>
+                            </div>
+                            <select class="sel" style={{ width: "fit-content", minWidth: "240px" }} value={selectedWorkUnit} onChange={(event) => {setActiveWorkUnit(event.target.value);setSelectedStaff(null);}}>
+                                <option value="all">ทุกงาน/หน่วยงาน ({allSupervisorStaff.length} คน)</option>
+                                {supervisorWorkUnits.map((unit) => <option key={unit} value={unit}>{unit} ({allSupervisorStaff.filter((user) => getOrgUnit(user) === unit).length} คน)</option>)}
+                            </select>
+                        </div>
+                    </div>
                     <div class="g4 mb20" style={{ gridTemplateColumns: "repeat(5,minmax(0,1fr))" }}>
                         <div class="sc" style={{ borderTop: "3px solid var(--navy)" }}><div class="sl">ทั้งหมด</div><div class="sv">{assessCounts.total}</div><div class="ss muted">คนในความดูแล</div></div>
                         <div class="sc" style={{ borderTop: "3px solid var(--red)" }}><div class="sl">ยังไม่ส่ง</div><div class="sv rc">{assessCounts.notSent}</div><div class="ss muted">รอลูกน้องประเมินตนเอง</div></div>
@@ -509,6 +542,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "currentUser", "supervisorUsers", "onSupervisorChange", "hideSupervisorHeader"], setup(__props) {const { users = [], currentUser = {}, supervisorUsers, onSupervisorChange, hideSupervisorHeader = false } = __props as any;
     const deptKeys = Object.keys(DEPT_STRUCTURE);
     const [activeDept, setActiveDept] = useState(deptKeys[0]);
+    const [activeWorkUnit, setActiveWorkUnit] = useState("all");
     const [selectedGapId, setSelectedGapId] = useState<string | null>(null);
     const supervisorMode = !!currentUser && !!supervisorUsers?.length;
 
@@ -550,13 +584,16 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     [],
     ["การทำงานเป็นทีม", "การใช้เทคโนโลยีดิจิทัล"]];
 
-    const directGapPeople = users.filter((user) =>
+    const directGapPeopleAll = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso && (
     user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
     !["manager_dept", "manager"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
+    const gapWorkUnits = [...new Set(directGapPeopleAll.map(getOrgUnit))];
+    const selectedGapWorkUnit = activeWorkUnit.value === "all" || gapWorkUnits.includes(activeWorkUnit.value) ? activeWorkUnit.value : "all";
+    const directGapPeople = selectedGapWorkUnit === "all" ? directGapPeopleAll : directGapPeopleAll.filter((user) => getOrgUnit(user) === selectedGapWorkUnit);
     const gapPeople = directGapPeople.map((user, index) => {
       const pending = user.evalStatus === "draft" || !user.evalStatus;
       const gaps = gapTemplates[index];
@@ -680,6 +717,19 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
             <div class="mb20">
                 <div class="sec-t">Competency Gap ทีม</div>
                 <div class="sec-s">วิเคราะห์ผลการประเมินและจุดอ่อนของทีม ({currentUser.d || "หน่วยงานในความดูแล"})</div>
+            </div>
+
+            <div class="card mb14">
+                <div class="cb flex ic jb g10" style={{ padding: "12px 16px", flexWrap: "wrap" }}>
+                    <div>
+                        <div class="fw8 fs13">ขอบเขตงาน/หน่วยงาน</div>
+                        <div class="muted fs11">แสดง Gap เฉพาะบุคลากรในหน่วยงานใต้สังกัดที่เลือก</div>
+                    </div>
+                    <select class="sel" style={{ width: "fit-content", minWidth: "240px" }} value={selectedGapWorkUnit} onChange={(event) => {setActiveWorkUnit(event.target.value);setSelectedGapId(null);}}>
+                        <option value="all">ทุกงาน/หน่วยงาน ({directGapPeopleAll.length} คน)</option>
+                        {gapWorkUnits.map((unit) => <option key={unit} value={unit}>{unit} ({directGapPeopleAll.filter((user) => getOrgUnit(user) === unit).length} คน)</option>)}
+                    </select>
+                </div>
             </div>
 
             <div class="g3 mb16">
@@ -1083,18 +1133,22 @@ const SupervisorIDPHeader = defineComponent({ name: "SupervisorIDPHeader", props
 
 const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", props: ["users", "currentUser", "supervisorUsers", "onSupervisorChange", "hideSupervisorHeader"], setup(__props) {const { users = [], currentUser = {}, supervisorUsers, onSupervisorChange, hideSupervisorHeader = false } = __props as any;
     const [activeTab, setActiveTab] = useState("notsent");
+    const [activeWorkUnit, setActiveWorkUnit] = useState("all");
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [phases, setPhases] = useState<Record<string, SupervisorIDPPhase>>({});
     const [decisions, setDecisions] = useState<Record<string, SupervisorIDPDecision>>({});
     const [feedback, setFeedback] = useState<Record<string, string>>({});
 
-    const directReports = users.filter((user) =>
+    const directReportsAll = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso && (
     user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
     !["manager_dept", "manager"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
+    const idpWorkUnits = [...new Set(directReportsAll.map(getOrgUnit))];
+    const selectedIdpWorkUnit = activeWorkUnit.value === "all" || idpWorkUnits.includes(activeWorkUnit.value) ? activeWorkUnit.value : "all";
+    const directReports = selectedIdpWorkUnit === "all" ? directReportsAll : directReportsAll.filter((user) => getOrgUnit(user) === selectedIdpWorkUnit);
     const team = directReports.map((report, index) => {
       const item = supervisorIDPMock[index % supervisorIDPMock.length];
       const mockId = report.sso || item.id;
@@ -1255,6 +1309,18 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
             <div class="mb16">
                 <div class="sec-t">IDP & ติดตามทีม</div>
                 <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
+            </div>
+            <div class="card mb14">
+                <div class="cb flex ic jb g10" style={{ padding: "12px 16px", flexWrap: "wrap" }}>
+                    <div>
+                        <div class="fw8 fs13">ขอบเขตงาน/หน่วยงาน</div>
+                        <div class="muted fs11">ติดตาม IDP ของบุคลากรในหน่วยงานใต้สังกัดที่เลือก</div>
+                    </div>
+                    <select class="sel" style={{ width: "fit-content", minWidth: "240px" }} value={selectedIdpWorkUnit} onChange={(event) => {setActiveWorkUnit(event.target.value);setSelectedId(null);}}>
+                        <option value="all">ทุกงาน/หน่วยงาน ({directReportsAll.length} คน)</option>
+                        {idpWorkUnits.map((unit) => <option key={unit} value={unit}>{unit} ({directReportsAll.filter((user) => getOrgUnit(user) === unit).length} คน)</option>)}
+                    </select>
+                </div>
             </div>
             <div
         class="mb14"
