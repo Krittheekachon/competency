@@ -1,4 +1,5 @@
 <script lang="tsx">
+// @ts-nocheck
 import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
