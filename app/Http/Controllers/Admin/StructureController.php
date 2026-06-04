@@ -52,13 +52,20 @@ class StructureController extends Controller
 
     public function storeJobFamily(Request $request): RedirectResponse
     {
+        $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
-            'name' => ['required', 'string', 'max:255', 'unique:job_families,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
         ]);
 
         DB::table('job_families')->insert([
-            'workline_id' => $this->worklineId($data['workline_name'] ?? null),
+            'workline_id' => $worklineId,
             'name' => $data['name'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -69,12 +76,32 @@ class StructureController extends Controller
 
     public function updateJobFamily(Request $request): RedirectResponse
     {
+        $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+
         $data = $request->validate([
-            'old_name' => ['required', 'string', 'exists:job_families,name'],
-            'name' => ['required', 'string', 'max:255', Rule::unique('job_families', 'name')->ignore($request->old_name, 'name')],
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'old_name' => [
+                'required',
+                'string',
+                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('job_families', 'name')
+                    ->where(fn ($query) => $query->where('workline_id', $worklineId))
+                    ->ignore(
+                        DB::table('job_families')
+                            ->where('workline_id', $worklineId)
+                            ->where('name', $request->old_name)
+                            ->value('id')
+                    ),
+            ],
         ]);
 
         DB::table('job_families')
+            ->where('workline_id', $worklineId)
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
@@ -83,29 +110,53 @@ class StructureController extends Controller
 
     public function destroyJobFamily(Request $request): RedirectResponse
     {
+        $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+
         $data = $request->validate([
-            'name' => ['required', 'string', 'exists:job_families,name'],
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'name' => [
+                'required',
+                'string',
+                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
         ]);
 
-        DB::table('job_families')->where('name', $data['name'])->delete();
+        DB::table('job_families')
+            ->where('workline_id', $worklineId)
+            ->where('name', $data['name'])
+            ->delete();
 
         return back()->with('success', 'ลบกลุ่มงานเรียบร้อยแล้ว');
     }
 
     public function storePosition(Request $request): RedirectResponse
     {
+        $jobFamilyId = $this->jobFamilyId(
+            $request->string('job_family_name')->toString(),
+            $request->string('workline_name')->toString() ?: null
+        );
+
         $data = $request->validate([
-            'job_family_name' => ['required', 'string', 'exists:job_families,name'],
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'required',
+                'string',
+                Rule::exists('job_families', 'name')->where(
+                    fn ($query) => $request->filled('workline_name')
+                        ? $query->where('workline_id', $this->worklineId($request->workline_name))
+                        : $query
+                ),
+            ],
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('positions', 'name')->where(fn ($query) => $query->where('job_family_id', $this->jobFamilyId($request->job_family_name))),
+                Rule::unique('positions', 'name')->where(fn ($query) => $query->where('job_family_id', $jobFamilyId)),
             ],
         ]);
 
         DB::table('positions')->insert([
-            'job_family_id' => $this->jobFamilyId($data['job_family_name']),
+            'job_family_id' => $jobFamilyId,
             'name' => $data['name'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -116,14 +167,28 @@ class StructureController extends Controller
 
     public function updatePosition(Request $request): RedirectResponse
     {
+        $jobFamilyId = $this->jobFamilyId(
+            $request->string('job_family_name')->toString(),
+            $request->string('workline_name')->toString() ?: null
+        );
+
         $data = $request->validate([
-            'job_family_name' => ['required', 'string', 'exists:job_families,name'],
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'required',
+                'string',
+                Rule::exists('job_families', 'name')->where(
+                    fn ($query) => $request->filled('workline_name')
+                        ? $query->where('workline_id', $this->worklineId($request->workline_name))
+                        : $query
+                ),
+            ],
             'old_name' => ['required', 'string'],
             'name' => ['required', 'string', 'max:255'],
         ]);
 
         DB::table('positions')
-            ->where('job_family_id', $this->jobFamilyId($data['job_family_name']))
+            ->where('job_family_id', $jobFamilyId)
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
@@ -132,13 +197,27 @@ class StructureController extends Controller
 
     public function destroyPosition(Request $request): RedirectResponse
     {
+        $jobFamilyId = $this->jobFamilyId(
+            $request->string('job_family_name')->toString(),
+            $request->string('workline_name')->toString() ?: null
+        );
+
         $data = $request->validate([
-            'job_family_name' => ['required', 'string', 'exists:job_families,name'],
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'required',
+                'string',
+                Rule::exists('job_families', 'name')->where(
+                    fn ($query) => $request->filled('workline_name')
+                        ? $query->where('workline_id', $this->worklineId($request->workline_name))
+                        : $query
+                ),
+            ],
             'name' => ['required', 'string'],
         ]);
 
         DB::table('positions')
-            ->where('job_family_id', $this->jobFamilyId($data['job_family_name']))
+            ->where('job_family_id', $jobFamilyId)
             ->where('name', $data['name'])
             ->delete();
 
@@ -281,8 +360,14 @@ class StructureController extends Controller
         return DB::table('worklines')->where('name', $name)->value('id');
     }
 
-    private function jobFamilyId(string $name): int
+    private function jobFamilyId(string $name, ?string $worklineName = null): int
     {
-        return (int) DB::table('job_families')->where('name', $name)->value('id');
+        $query = DB::table('job_families')->where('name', $name);
+
+        if ($worklineName) {
+            $query->where('workline_id', $this->worklineId($worklineName));
+        }
+
+        return (int) $query->value('id');
     }
 }

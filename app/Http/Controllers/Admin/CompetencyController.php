@@ -59,7 +59,7 @@ class CompetencyController extends Controller
             'levels.*.level' => ['required', 'integer', 'min:1', 'max:10'],
             'levels.*.description' => ['nullable', 'string'],
             'levels.*.indicators' => ['required', 'array', 'min:1'],
-            'levels.*.indicators.*.description' => ['required', 'string', 'max:255'],
+            'levels.*.indicators.*.description' => ['required', 'string'],
             'levels.*.indicators.*.weight' => ['nullable', 'numeric', 'min:0', 'max:999.99'],
         ]);
     }

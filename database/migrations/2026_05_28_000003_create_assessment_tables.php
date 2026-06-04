@@ -30,8 +30,7 @@ return new class extends Migration
         Schema::create('comp_level_indicators', function (Blueprint $table) {
             $table->id();
             $table->foreignId('competency_level_id')->constrained('competency_levels')->cascadeOnDelete();
-            $table->string('description');
-            $table->decimal('weight', 5, 2)->nullable();
+            $table->text('description');
             $table->timestamps();
         });
 
@@ -80,7 +79,7 @@ return new class extends Migration
             $table->foreignId('assessor_id')->constrained('users')->cascadeOnDelete();
             $table->string('assessor_role');
             $table->unsignedTinyInteger('score')->nullable();
-            $table->string('comment')->nullable();
+            $table->text('comment')->nullable();
             $table->string('status')->default('draft');
             $table->timestamp('auto_saved_at')->nullable();
             $table->timestamp('submitted_at')->nullable();
@@ -95,7 +94,7 @@ return new class extends Migration
             $table->foreignId('competency_id')->constrained('competencies')->cascadeOnDelete();
             $table->string('file_path')->nullable();
             $table->string('url')->nullable();
-            $table->string('description')->nullable();
+            $table->text('description')->nullable();
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
         });

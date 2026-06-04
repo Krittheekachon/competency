@@ -30,22 +30,31 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
 }
 
 const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods"], setup(__props) {const {
-      academicDepts, setAcademicDepts,
-      supportDepts, supportPositionGroups, setSupportPositionGroups,
-      adminDepts, setAdminDepts,
+      setAcademicDepts,
+      setSupportPositionGroups,
+      setAdminDepts,
       supportOrg, setSupportOrg,
       users, orgSups, setOrgSups,
-      academicPos, setAcademicPos,
+      setAcademicPos,
       supportPos, setSupportPos,
-      adminPos, setAdminPos,
-      jobFamiliesByWorkline, setJobFamiliesByWorkline,
-      levelsByWorkline, setLevelsByWorkline,
-      academicRank, setAcademicRank,
-      supportRank, setSupportRank,
-      worklines, setWorklines,
-      competencyTypes, setCompetencyTypes,
+      setAdminPos,
+      setJobFamiliesByWorkline,
+      setLevelsByWorkline,
+      setAcademicRank,
+      setSupportRank,
+      setWorklines,
+      setCompetencyTypes,
       learningMethods, setLearningMethods
     } = __props as any;
+    let academicDepts = [...((__props as any).academicDepts || [])];
+    let supportDepts = [...((__props as any).supportDepts || [])];
+    let supportPositionGroups = { ...((( __props as any).supportPositionGroups) || {}) };
+    let adminDepts = [...((__props as any).adminDepts || [])];
+    let academicPos = [...((__props as any).academicPos || [])];
+    let adminPos = [...((__props as any).adminPos || [])];
+    let jobFamiliesByWorkline = { ...((( __props as any).jobFamiliesByWorkline) || {}) };
+    let levelsByWorkline = { ...((( __props as any).levelsByWorkline) || {}) };
+    let worklines = [...((__props as any).worklines || [])];
     const POSITION_PREVIEW_LIMIT = 4;
     const SUPPORT_GROUP_PREVIEW_LIMIT = 4;
     const competencyTypeList = ref<any[]>([...((__props as any).competencyTypes || [])]);
@@ -58,6 +67,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const [newSupportWorkNames, setNewSupportWorkNames] = useState<Record<string, string>>({});
     const [newSupportUnitNames, setNewSupportUnitNames] = useState<Record<string, string>>({});
     const [showAddModal, setShowAddModal] = useState(false);
+    const [isSavingAddItem, setIsSavingAddItem] = useState(false);
     const [expandedSupportGroups, setExpandedSupportGroups] = useState<Record<string, boolean>>({});
     const [showAllSupportGroups, setShowAllSupportGroups] = useState(false);
     const learningMethodList = ref<any[]>([...((__props as any).learningMethods || [])]);
@@ -71,6 +81,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       parent: "",
       grandparent: ""
     });
+    const [structureVersion, setStructureVersion] = useState(0);
+    const addNameInput = ref<HTMLInputElement | null>(null);
     const dean = users.find((user) => user.r === "manager")?.n || "";
     const deptManagers = users.filter((user) => user.r === "manager_dept");
     const supervisors = users.filter((user) => user.r === "supervisor");
@@ -87,6 +99,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const applyCompetencyTypes = (next: any[]) => {
       competencyTypeList.value = [...next];
       setCompetencyTypes(next);
+      setStructureVersion((current: number) => current + 1);
     };
     const syncCompetencyTypesFromPage = (responsePage: any) => {
       if (Array.isArray(responsePage.props.competencyTypes)) {
@@ -96,10 +109,48 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const applyLearningMethods = (next: any[]) => {
       learningMethodList.value = [...next];
       setLearningMethods(next);
+      setStructureVersion((current: number) => current + 1);
     };
     const syncLearningMethodsFromPage = (responsePage: any) => {
       if (Array.isArray(responsePage.props.learningMethods)) {
         applyLearningMethods(responsePage.props.learningMethods);
+      }
+    };
+    const syncStructureFromPage = (responsePage: any) => {
+      const props = responsePage?.props || {};
+      let didSync = false;
+
+      if (Array.isArray(props.worklines)) {
+        worklines = [...props.worklines];
+        setWorklines([...props.worklines]);
+        didSync = true;
+      }
+
+      if (props.jobFamiliesByWorkline && typeof props.jobFamiliesByWorkline === "object") {
+        const nextGroups = { ...props.jobFamiliesByWorkline };
+        jobFamiliesByWorkline = nextGroups;
+        academicDepts = Object.keys(nextGroups["สายวิชาการ"] || nextGroups["วิชาการ"] || {});
+        adminDepts = Object.keys(nextGroups["สายงานบริหาร"] || nextGroups["สายบริหาร"] || {});
+        supportPositionGroups = nextGroups["สายสนับสนุน"] || nextGroups["สนับสนุน"] || {};
+        supportDepts = Object.keys(supportPositionGroups);
+        setJobFamiliesByWorkline(nextGroups);
+        setAcademicDepts(academicDepts);
+        setAdminDepts(adminDepts);
+        setSupportPositionGroups(supportPositionGroups);
+        didSync = true;
+      }
+
+      if (props.levelsByWorkline && typeof props.levelsByWorkline === "object") {
+        const nextLevels = { ...props.levelsByWorkline };
+        levelsByWorkline = nextLevels;
+        setLevelsByWorkline(nextLevels);
+        setAcademicRank(nextLevels["สายวิชาการ"] || nextLevels["วิชาการ"] || []);
+        setSupportRank(nextLevels["สายสนับสนุน"] || nextLevels["สนับสนุน"] || []);
+        didSync = true;
+      }
+
+      if (didSync) {
+        setStructureVersion((current: number) => current + 1);
       }
     };
     const showPersistError = (errors: any) => {
@@ -115,20 +166,33 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const postStructure = (routeName: string, payload: any, onSuccess: () => void) => {
       router.post(route(routeName), payload, {
         ...persistOptions,
-        onSuccess: () => onSuccess()
+        onSuccess: (responsePage: any) => {
+          onSuccess();
+          syncStructureFromPage(responsePage);
+        },
+        onError: (errors: any) => {
+          setIsSavingAddItem(false);
+          showPersistError(errors);
+        }
       });
     };
     const putStructure = (routeName: string, payload: any, onSuccess: () => void) => {
       router.put(route(routeName), payload, {
         ...persistOptions,
-        onSuccess: () => onSuccess()
+        onSuccess: (responsePage: any) => {
+          onSuccess();
+          syncStructureFromPage(responsePage);
+        }
       });
     };
     const deleteStructure = (routeName: string, payload: any, onSuccess: () => void) => {
       router.delete(route(routeName), {
         ...persistOptions,
         data: payload,
-        onSuccess: () => onSuccess()
+        onSuccess: (responsePage: any) => {
+          onSuccess();
+          syncStructureFromPage(responsePage);
+        }
       });
     };
     const worklineNameFromType = (type: string) => {
@@ -146,6 +210,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     };
     const setLevelItemsForWorkline = (worklineName: string, nextLevels: string[]) => {
       const uniqueLevels = Array.from(new Set(nextLevels));
+      levelsByWorkline = {
+        ...levelsByWorkline,
+        [worklineName]: uniqueLevels
+      };
       setLevelsByWorkline({
         ...levelsByWorkline,
         [worklineName]: uniqueLevels
@@ -153,6 +221,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       if (worklineName === "สายวิชาการ") setAcademicRank(uniqueLevels);
       if (worklineName === "สายสนับสนุน") setSupportRank(uniqueLevels);
+      setStructureVersion((current: number) => current + 1);
     };
     const groupMapForWorkline = (worklineName: string): Record<string, string[]> => {
       const groups = jobFamiliesByWorkline?.[worklineName] || {};
@@ -165,14 +234,26 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       return groups;
     };
     const setGroupMapForWorkline = (worklineName: string, groups: Record<string, string[]>) => {
-      setJobFamiliesByWorkline({
+      jobFamiliesByWorkline = {
         ...jobFamiliesByWorkline,
         [worklineName]: groups
-      });
+      };
+      setJobFamiliesByWorkline(jobFamiliesByWorkline);
 
-      if (worklineName === "สายวิชาการ") setAcademicDepts(Object.keys(groups));
-      if (worklineName === "สายงานบริหาร") setAdminDepts(Object.keys(groups));
-      if (worklineName === "สายสนับสนุน") setSupportPositionGroups(groups);
+      if (worklineName === "สายวิชาการ") {
+        academicDepts = Object.keys(groups);
+        setAcademicDepts(academicDepts);
+      }
+      if (worklineName === "สายงานบริหาร") {
+        adminDepts = Object.keys(groups);
+        setAdminDepts(adminDepts);
+      }
+      if (worklineName === "สายสนับสนุน") {
+        supportPositionGroups = groups;
+        supportDepts = Object.keys(groups);
+        setSupportPositionGroups(supportPositionGroups);
+      }
+      setStructureVersion((current: number) => current + 1);
     };
 
     const setOrgHead = (path: string, value: string) => {
@@ -226,19 +307,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       const { type, oldName, parent, workName } = editingItem.value;
       switch (type) {
         case "academic-dept":
-          putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายวิชาการ", old_name: oldName, name: newValue.value }, () => {
             setAcademicDepts(academicDepts.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
           return;
         case "admin-dept":
-          putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายงานบริหาร", old_name: oldName, name: newValue.value }, () => {
             setAdminDepts(adminDepts.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
           return;
         case "custom-dept":
-          putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: parent, old_name: oldName, name: newValue.value }, () => {
             const groups = groupMapForWorkline(parent);
             const nextGroups = { ...groups, [newValue.value]: groups[oldName] || [] };
             delete nextGroups[oldName];
@@ -250,7 +331,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             const nextSupportPositionGroups = { ...supportPositionGroups };
             nextSupportPositionGroups[newValue.value] = nextSupportPositionGroups[oldName] || [];
             delete nextSupportPositionGroups[oldName];
-            putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+            putStructure("admin.structure.job-families.update", { workline_name: "สายสนับสนุน", old_name: oldName, name: newValue.value }, () => {
               setSupportPositionGroups(nextSupportPositionGroups);
               setEditingId(null);
             });
@@ -258,7 +339,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           }
         case "support-group-pos":
         case "custom-group-pos":
-          putStructure("admin.structure.positions.update", { job_family_name: parent, old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.positions.update", { workline_name: workName, job_family_name: parent, old_name: oldName, name: newValue.value }, () => {
             if (type === "support-group-pos") {
               setSupportPositionGroups({
                 ...supportPositionGroups,
@@ -292,14 +373,14 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             break;
           }
         case "academic-pos":
-          putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายวิชาการ", old_name: oldName, name: newValue.value }, () => {
             setAcademicPos(academicPos.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
           return;
         case "support-pos":setSupportPos(supportPos.map((v) => v === oldName ? newValue.value : v));break;
         case "admin-pos":
-          putStructure("admin.structure.job-families.update", { old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายงานบริหาร", old_name: oldName, name: newValue.value }, () => {
             setAdminPos(adminPos.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
@@ -368,19 +449,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       switch (type) {
         case "academic-dept":
-          deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายวิชาการ", name: oldName }, () => {
             setAcademicDepts(academicDepts.filter((v) => v !== oldName));
             setEditingId(null);
           });
           return;
         case "admin-dept":
-          deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายงานบริหาร", name: oldName }, () => {
             setAdminDepts(adminDepts.filter((v) => v !== oldName));
             setEditingId(null);
           });
           return;
         case "custom-dept":
-          deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: parent, name: oldName }, () => {
             const nextGroups = { ...groupMapForWorkline(parent) };
             delete nextGroups[oldName];
             setGroupMapForWorkline(parent, nextGroups);
@@ -390,7 +471,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "support-dept":{
             const nextSupportPositionGroups = { ...supportPositionGroups };
             delete nextSupportPositionGroups[oldName];
-            deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+            deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายสนับสนุน", name: oldName }, () => {
               setSupportPositionGroups(nextSupportPositionGroups);
               setEditingId(null);
             });
@@ -398,7 +479,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           }
         case "support-group-pos":
         case "custom-group-pos":
-          deleteStructure("admin.structure.positions.destroy", { job_family_name: parent, name: oldName }, () => {
+          deleteStructure("admin.structure.positions.destroy", { workline_name: workName, job_family_name: parent, name: oldName }, () => {
             if (type === "support-group-pos") {
               setSupportPositionGroups({
                 ...supportPositionGroups,
@@ -432,14 +513,14 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             break;
           }
         case "academic-pos":
-          deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายวิชาการ", name: oldName }, () => {
             setAcademicPos(academicPos.filter((v) => v !== oldName));
             setEditingId(null);
           });
           return;
         case "support-pos":setSupportPos(supportPos.filter((v) => v !== oldName));break;
         case "admin-pos":
-          deleteStructure("admin.structure.job-families.destroy", { name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายงานบริหาร", name: oldName }, () => {
             setAdminPos(adminPos.filter((v) => v !== oldName));
             setEditingId(null);
           });
@@ -518,62 +599,94 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       return { title: "เพิ่มรายการ", label: "ชื่อรายการ" };
     };
 
+    const clearAddNameAndFocus = () => {
+      setAddItemData({ ...addItemData.value, name: "" });
+      requestAnimationFrame(() => addNameInput.value?.focus());
+    };
+
     const saveAddItem = () => {
+      if (isSavingAddItem.value) return;
+
       const { category, type, name, fullName, desc, worklineName, parent, grandparent } = addItemData.value;
-      if (name.trim()) {
+      const trimmedName = name.trim();
+      if (trimmedName) {
         if (category === "pos" && type === "2" && !parent) return;
         if (category === "dept") {
           const targetWorklineName = worklineName || worklineNameFromType(type);
-          postStructure("admin.structure.job-families.store", { workline_name: targetWorklineName, name }, () => {
+          if (Object.keys(groupMapForWorkline(targetWorklineName)).includes(trimmedName)) {
+            alert(`มีกลุ่มงาน "${trimmedName}" ใน${targetWorklineName}แล้ว`);
+            return;
+          }
+          setIsSavingAddItem(true);
+          postStructure("admin.structure.job-families.store", { workline_name: targetWorklineName, name: trimmedName }, () => {
             setGroupMapForWorkline(targetWorklineName, {
               ...groupMapForWorkline(targetWorklineName),
-              [name]: []
+              [trimmedName]: []
             });
-            setShowAddModal(false);
+            setIsSavingAddItem(false);
+            clearAddNameAndFocus();
           });
           return;
         } else if (category === "work") {
           const nextSupportOrg = { ...supportOrg };
           if (parent && nextSupportOrg[parent]) {
-            nextSupportOrg[parent] = [...nextSupportOrg[parent], { work: name, units: [] }];
+            nextSupportOrg[parent] = [...nextSupportOrg[parent], { work: trimmedName, units: [] }];
             setSupportOrg(nextSupportOrg);
           }
         } else if (category === "unit") {
           const nextSupportOrg = { ...supportOrg };
           if (grandparent && parent && nextSupportOrg[grandparent]) {
-            nextSupportOrg[grandparent] = nextSupportOrg[grandparent].map((w: any) => w.work === parent ? { ...w, units: [...w.units, name] } : w);
+            nextSupportOrg[grandparent] = nextSupportOrg[grandparent].map((w: any) => w.work === parent ? { ...w, units: [...w.units, trimmedName] } : w);
             setSupportOrg(nextSupportOrg);
           }
         } else if (category === "pos") {
           if (parent) {
             const targetWorklineName = worklineName || worklineNameFromType(type);
-            postStructure("admin.structure.positions.store", { job_family_name: parent, name }, () => {
+            if ((groupMapForWorkline(targetWorklineName)[parent] || []).includes(trimmedName)) {
+              alert(`มีตำแหน่ง "${trimmedName}" ในกลุ่มงาน ${parent} แล้ว`);
+              return;
+            }
+            setIsSavingAddItem(true);
+            postStructure("admin.structure.positions.store", { workline_name: targetWorklineName, job_family_name: parent, name: trimmedName }, () => {
               const groups = groupMapForWorkline(targetWorklineName);
               setGroupMapForWorkline(targetWorklineName, {
                 ...groups,
-                [parent]: [...(groups[parent] || []), name]
+                [parent]: [...(groups[parent] || []), trimmedName]
               });
-              setShowAddModal(false);
+              setIsSavingAddItem(false);
+              clearAddNameAndFocus();
             });
             return;
           }
         } else if (category === "rank") {
           const targetWorklineName = worklineName || worklineNameFromType(type);
-          postStructure("admin.structure.levels.store", { workline_name: targetWorklineName, name }, () => {
-            setLevelItemsForWorkline(targetWorklineName, [...levelItemsForWorkline(targetWorklineName), name]);
-            setShowAddModal(false);
+          if (levelItemsForWorkline(targetWorklineName).includes(trimmedName)) {
+            alert(`มีระดับตำแหน่ง "${trimmedName}" ใน${targetWorklineName}แล้ว`);
+            return;
+          }
+          setIsSavingAddItem(true);
+          postStructure("admin.structure.levels.store", { workline_name: targetWorklineName, name: trimmedName }, () => {
+            setLevelItemsForWorkline(targetWorklineName, [...levelItemsForWorkline(targetWorklineName), trimmedName]);
+            setIsSavingAddItem(false);
+            clearAddNameAndFocus();
           });
           return;
         } else if (category === "workline") {
-          postStructure("admin.structure.worklines.store", { name }, () => {
-            setWorklines([name, ...worklines]);
-            setShowAddModal(false);
+          if (worklines.includes(trimmedName)) {
+            alert(`มีสายงาน "${trimmedName}" แล้ว`);
+            return;
+          }
+          setIsSavingAddItem(true);
+          postStructure("admin.structure.worklines.store", { name: trimmedName }, () => {
+            setWorklines([trimmedName, ...worklines]);
+            setIsSavingAddItem(false);
+            clearAddNameAndFocus();
           });
           return;
         } else if (category === "comp") {
           if (!fullName.trim() || !desc.trim()) return;
           router.post(route("admin.competency-types.store"), {
-            code: name.trim(),
+            code: trimmedName,
             full_name: fullName.trim(),
             description: desc.trim()
           }, {
@@ -585,8 +698,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         } else if (category === "learning") {
-          const baseKey = name.
-          trim().
+          const baseKey = trimmedName.
           toLowerCase().
           replace(/[^a-z0-9]+/g, "-").
           replace(/^-+|-+$/g, "") || `learning-${learningMethods.length + 1}`;
@@ -598,14 +710,14 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           }
           postStructure("admin.structure.learning-methods.store", {
             key: uniqueKey,
-            label: name.trim(),
+            label: trimmedName,
             description: desc.trim() || ""
           }, () => {
             syncLearningMethodsFromPage({ props: { learningMethods: [
               ...learningMethodList.value,
               {
                 key: uniqueKey,
-                label: name.trim(),
+                label: trimmedName,
                 desc: desc.trim() || ""
               }
             ] } });
@@ -613,7 +725,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         }
-        setShowAddModal(false);
+        clearAddNameAndFocus();
       }
     };return () =>
 
@@ -638,17 +750,17 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
       </div>
 
-      <div class="anim-fade-in">
-        <div class="structure-shell">
+      <div class="anim-fade-in" data-structure-version={structureVersion.value}>
+        <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
           {activeTab.value === "workline" ?
           <div class="structure-pane">
               <div class="structure-heading">สายงานและตำแหน่ง</div>
-              <div class="structure-stack">
+              <div class="structure-stack workline-stack">
                 {worklines.map((wl) => {
                 const groupMap = groupMapForWorkline(wl);
                 const groupNames = Object.keys(groupMap);
                 return (
-                  <section key={wl} class="structure-section">
+                  <section key={wl} class="structure-section workline-section">
                       <div class="structure-section-head">
                         <div class="fw7 fs14 text-navy">{wl}</div>
                         <div class="flex g8">
@@ -862,22 +974,20 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           activeTab.value === "pos" ?
           <div class="structure-pane">
               <div class="structure-heading">ระดับตำแหน่ง</div>
-              <div class="structure-stack">
-                <section class="structure-section">
+              <div class="structure-stack level-stack">
                     {worklines.map((wl) => {
                       const directLevels = levelItemsForWorkline(wl);
                       const fallbackLevels = fallbackLevelsForWorkline(wl);
                       const visibleLevels = directLevels.length ? directLevels : fallbackLevels;
                       return (
-                        <div key={wl} class="level-section">
-                          {!directLevels.length &&
-                            <div class="level-auto-note">
-                              <div class="fw8 text-blue">{wl}</div>
-                              <div class="muted fs12">ยังไม่ได้เพิ่มระดับตำแหน่ง ระบบจะใช้ตำแหน่งในสายงานนี้เป็นระดับตำแหน่งอัตโนมัติ</div>
-                            </div>
-                          }
+                        <section key={wl} class="structure-section level-section-card">
                           <div class="structure-section-head level-head">
-                            <div class="fw7 fs14 text-navy">{wl}</div>
+                            <div>
+                              <div class="fw7 fs14 text-navy">{wl}</div>
+                              {!directLevels.length &&
+                                <div class="muted fs12">ยังไม่ได้เพิ่มระดับตำแหน่ง ระบบจะใช้ตำแหน่งในสายงานนี้เป็นระดับตำแหน่งอัตโนมัติ</div>
+                              }
+                            </div>
                             <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "rank", type: "", name: "", worklineName: wl, parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มระดับ</button>
                           </div>
                           <div class="structure-grid level-grid">
@@ -891,17 +1001,17 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                             )}
                             {visibleLevels.length === 0 && <div class="structure-empty">ยังไม่มีตำแหน่งหรือระดับตำแหน่งใน{wl}</div>}
                           </div>
-                        </div>
+                        </section>
                       );
                     })}
                     {worklines.length === 0 && <div class="structure-empty">ยังไม่มีข้อมูลสายงาน</div>}
-                  </section>
               </div>
             </div> :
 
           <div class="structure-pane">
               <div class="structure-heading">ประเภทสมรรถนะ</div>
-              <section class="structure-section">
+              <div class="structure-stack comp-stack">
+              <section class="structure-section comp-section-card">
                 <div class="structure-section-head">
                   <div class="fw7 fs14 text-navy">หมวดหมู่สมรรถนะ</div>
                   <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "comp", type: "1", name: "", fullName: "", desc: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มประเภท</button>
@@ -920,7 +1030,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   {competencyTypeList.value.length === 0 && <div class="structure-empty">ยังไม่มีข้อมูล</div>}
                 </div>
               </section>
-              <section class="structure-section">
+              <section class="structure-section comp-section-card">
                 <div class="structure-section-head">
                   <div class="fw7 fs14 text-navy">ประเภทการเรียนรู้</div>
                   <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "learning", type: "1", name: "", desc: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มประเภทการเรียนรู้</button>
@@ -938,6 +1048,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   {learningMethodList.value.length === 0 && <div class="structure-empty">ยังไม่มีประเภทการเรียนรู้</div>}
                 </div>
               </section>
+              </div>
             </div>
           }
         </div>
@@ -948,12 +1059,26 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           <div class="mo-box anim-fade-in" style={{ width: "450px" }}>
             <div class="mo-h">
               <div class="fw8">{getAddModalCopy().title}</div>
-              <button class="btn btn-s btn-sm" onClick={() => setShowAddModal(false)}>✕</button>
+              <button class="btn btn-s btn-sm" type="button" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
             <div class="mo-b">
               <div class="fg">
                 <label class="lbl fw8" style={{ color: "var(--navy)" }}>{getAddModalCopy().label}</label>
-                <input class="inp" value={addItemData.value.name} onChange={(e) => setAddItemData({ ...addItemData.value, name: e.target.value })} placeholder="กรอกชื่อที่ต้องการ..." autoFocus />
+                <input
+                  ref={addNameInput}
+                  class="inp"
+                  value={addItemData.value.name}
+                  onChange={(e) => setAddItemData({ ...addItemData.value, name: e.target.value })}
+                  onKeydown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      saveAddItem();
+                    }
+                  }}
+                  disabled={isSavingAddItem.value}
+                  placeholder="กรอกชื่อที่ต้องการ..."
+                  autoFocus
+                />
               </div>
               {addItemData.value.category === "comp" &&
             <>
@@ -974,9 +1099,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 </div>
             }
 
-              <div style={{ display: "flex", gap: "8px", marginTop: "24px", justifyContent: "flex-end" }}>
-                <button class="btn btn-s" onClick={() => setShowAddModal(false)}>ยกเลิก</button>
-                <button class="btn btn-p" onClick={saveAddItem}>เพิ่มรายการ</button>
+              <div class="add-modal-actions">
+                <button class="btn btn-s" type="button" onClick={() => setShowAddModal(false)}>ยกเลิก</button>
+                <button class="btn btn-p add-modal-submit" type="button" disabled={isSavingAddItem.value} onClick={saveAddItem}>
+                  {isSavingAddItem.value ? "กำลังเพิ่ม..." : "เพิ่มรายการ"}
+                </button>
               </div>
             </div>
           </div>
@@ -1024,13 +1151,34 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .structure-tab { flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 12px; }
         .structure-tab.active { background: var(--blue); color: #fff; }
         .structure-shell { min-height: 400px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r); background: #fff; }
+        .structure-shell.workline-shell,
+        .structure-shell.level-shell,
+        .structure-shell.comp-shell { min-height: 0; overflow: visible; border: 0; background: transparent; }
+        .structure-shell.workline-shell .structure-pane,
+        .structure-shell.level-shell .structure-pane,
+        .structure-shell.comp-shell .structure-pane { padding: 0; }
         .structure-pane { padding: 20px; }
         .structure-heading { margin-bottom: 14px; color: var(--text); font-size: 15px; font-weight: 800; }
         .structure-note { display: grid; gap: 4px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--blue-md); border-left: 4px solid var(--blue); border-radius: 8px; background: var(--blue-lt); color: var(--text2); font-size: 12px; line-height: 1.55; }
+        .add-modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; width: 100%; }
+        .add-modal-actions .btn { flex: 0 0 auto; min-width: 96px; }
+        .add-modal-submit { display: inline-flex !important; align-items: center; justify-content: center; min-width: 112px; background: var(--blue) !important; color: #fff !important; border-color: var(--blue) !important; opacity: 1 !important; visibility: visible !important; }
         .structure-note b { color: var(--blue); font-size: 13px; }
         .structure-stack { display: grid; gap: 0; }
         .structure-section { padding: 16px 0; border-top: 1px solid var(--border); }
         .structure-section:first-child { padding-top: 0; border-top: 0; }
+        .workline-stack { gap: 16px; }
+        .workline-section { padding: 18px; border: 1px solid var(--border); border-radius: var(--r); background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .workline-stack .workline-section:first-child { padding-top: 18px; border-top: 1px solid var(--border); }
+        .workline-section .structure-section-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e5edf7; }
+        .level-stack,
+        .comp-stack { gap: 16px; }
+        .level-section-card,
+        .comp-section-card { padding: 18px; border: 1px solid var(--border); border-radius: var(--r); background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .level-stack .level-section-card:first-child,
+        .comp-stack .comp-section-card:first-child { padding-top: 18px; border-top: 1px solid var(--border); }
+        .level-section-card .structure-section-head,
+        .comp-section-card .structure-section-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e5edf7; }
         .structure-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .structure-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
         .structure-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }

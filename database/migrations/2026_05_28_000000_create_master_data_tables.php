@@ -17,8 +17,10 @@ return new class extends Migration
         Schema::create('job_families', function (Blueprint $table) {
             $table->id();
             $table->foreignId('workline_id')->nullable()->constrained('worklines')->nullOnDelete();
-            $table->string('name')->unique();
+            $table->string('name');
             $table->timestamps();
+
+            $table->unique(['workline_id', 'name']);
         });
 
         Schema::create('positions', function (Blueprint $table) {

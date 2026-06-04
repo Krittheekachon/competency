@@ -92,17 +92,24 @@ const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
 const supportJobFamilies = computed(() => Object.keys(supportPositionGroups.value));
+const normalizeWorklineName = (name = '') => name.replace(/^สายงาน\s*/, '').replace(/^สาย\s*/, '').trim();
+const selectedWorklineKind = computed(() => normalizeWorklineName(userForm.value.w));
+const selectedWorklineGroups = computed(() => jobFamiliesByWorkline.value[userForm.value.w] || {});
 const levelOptionsFromDatabase = computed(() => {
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    return directLevels.length ? directLevels : positionOptions.value;
+    if (directLevels.length) return directLevels;
+    if (userForm.value.p) return [userForm.value.p];
+
+    return positionOptions.value;
 });
-const isAcademicWorkline = computed(() => userForm.value.w === 'สายวิชาการ');
-const isSupportWorkline = computed(() => userForm.value.w === 'สายสนับสนุน');
-const isAdminWorkline = computed(() => userForm.value.w === 'สายงานบริหาร');
+const isAcademicWorkline = computed(() => selectedWorklineKind.value === 'วิชาการ');
+const isSupportWorkline = computed(() => selectedWorklineKind.value === 'สนับสนุน');
+const isAdminWorkline = computed(() => selectedWorklineKind.value === 'บริหาร');
 const selectedDeptWorks = computed(() => supportOrg.value[userForm.value.dept] || []);
 const jobOptions = computed(() => {
-    if (isSupportWorkline.value) return selectedDeptWorks.value.map((item) => item.work);
-    return Object.keys(jobFamiliesByWorkline.value[userForm.value.w] || {});
+    if (!userForm.value.w) return [];
+
+    return Object.keys(selectedWorklineGroups.value);
 });
 const selectedSupportWork = computed(() =>
     selectedDeptWorks.value.find((item) => item.work === userForm.value.job),
@@ -113,22 +120,15 @@ const unitOptions = computed(() => {
     return [];
 });
 const positionOptions = computed(() => {
-    if (isSupportWorkline.value) {
-        const grouped = Object.entries(supportPositionGroups.value).flatMap(([group, positions]) =>
-            positions.length ? positions : [group],
-        );
-        return [...new Set(grouped.length ? grouped : supportPositions.value)];
-    }
+    if (!userForm.value.job) return [];
 
-    const groups = jobFamiliesByWorkline.value[userForm.value.w] || {};
-    return Object.entries(groups).flatMap(([group, positions]) => positions.length ? positions : [group]);
+    const positions = selectedWorklineGroups.value[userForm.value.job] || [];
+    return positions.length ? positions : [userForm.value.job];
 });
 const levelOptions = computed(() => {
-    if (isAcademicWorkline.value || isSupportWorkline.value || isAdminWorkline.value) {
-        return levelOptionsFromDatabase.value;
-    }
+    if (!userForm.value.w) return [];
 
-    return [];
+    return levelOptionsFromDatabase.value;
 });
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
@@ -221,12 +221,6 @@ const parseOrgPath = (path = '') => {
 const syncOrgPath = () => {
     const form = userForm.value;
 
-    if (isSupportWorkline.value) {
-        form.d = [form.dept, form.job, form.unit].filter(Boolean).join(' > ');
-        if (!orgEditMode.value) syncOrgSupervisors();
-        return;
-    }
-
     form.d = [form.job, form.unit].filter(Boolean).join(' > ');
     if (!orgEditMode.value) syncOrgSupervisors();
 };
@@ -238,7 +232,7 @@ const findUserName = (predicate) => {
 
 const syncOrgSupervisors = () => {
     const form = userForm.value;
-    const deptKey = isSupportWorkline.value ? form.dept : adminDepts.value[0];
+    const deptKey = form.job || form.dept || adminDepts.value[0];
     const orgHead = orgSups.value[deptKey] || orgSups.value[adminDepts.value[0]] || '';
 
     if (isSupportWorkline.value) {
@@ -248,14 +242,15 @@ const syncOrgSupervisors = () => {
             && form.d
             && (
                 user.d === form.d
-                || user.d.startsWith(`${form.dept} > ${form.job}`)
-                || user.d === `${form.dept} > ${form.job}`
+                || user.d.startsWith(form.job)
+                || user.d === form.job
             ),
         );
         form.evaluator2 = findUserName((user) =>
             user.r === 'manager_dept'
             && user.d
-            && user.d.startsWith(form.dept),
+            && form.job
+            && user.d.startsWith(form.job),
         ) || orgHead;
         return;
     }
@@ -318,6 +313,10 @@ const handleUnitChange = () => {
 
 const handlePositionChange = () => {
     userForm.value.l = '';
+    const directLevels = levelsByWorkline.value[userForm.value.w] || [];
+    if (!directLevels.length && userForm.value.p) {
+        userForm.value.l = userForm.value.p;
+    }
     syncOrgSupervisors();
 };
 
@@ -340,8 +339,8 @@ const resetUserForm = (data = null) => {
         ph: data?.ph || '',
         w: data?.w || worklines.value[0] || '',
         d: data?.d || '',
-        dept: org.dept,
-        job: org.job,
+        dept: '',
+        job: org.job || org.dept,
         unit: org.unit,
         p: data?.p || '',
         l: data?.l || '',
@@ -377,6 +376,9 @@ const saveUser = () => {
     }
     const form = userForm.value;
     syncOrgPath();
+    if (!form.l && form.p && !(levelsByWorkline.value[form.w] || []).length) {
+        form.l = form.p;
+    }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
     if (!form.sso.trim() || !thaiName) {
@@ -646,7 +648,6 @@ const logout = () => router.post(route('logout'));
                             <option value="">— เลือกคำนำหน้า —</option>
                             <option value="นาย">นาย</option>
                             <option value="นาง">นาง</option>
-                            <option value="นางสาว">นางสาว</option>
                             <option value="ดร.">ดร.</option>
                             <option value="ผศ.">ผศ.</option>
                             <option value="รศ.">รศ.</option>
@@ -700,7 +701,7 @@ const logout = () => router.post(route('logout'));
                         </select>
                     </div>
 
-                    <div v-if="isAcademicWorkline" class="fg">
+                    <div v-if="userForm.w" class="fg">
                         <label class="lbl req">กลุ่มงาน</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
                             <option value="">— เลือกกลุ่มงาน —</option>
@@ -709,51 +710,10 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                     </div>
-
-                    <div v-else-if="isAdminWorkline" class="fg">
-                        <label class="lbl req">กลุ่มงาน / ส่วนงานบริหาร</label>
-                        <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
-                            <option value="">— เลือกกลุ่มงาน / ส่วนงานบริหาร —</option>
-                            <option v-for="job in jobOptions" :key="job" :value="job">
-                                {{ job }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div v-else-if="isSupportWorkline" class="fg">
-                        <label class="lbl req">ฝ่าย</label>
-                        <select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange">
-                            <option value="">— เลือกฝ่าย —</option>
-                            <option v-for="dept in supportDeptsList" :key="dept" :value="dept">
-                                {{ dept }}
-                            </option>
-                        </select>
-                    </div>
                 </div>
 
-                <div v-if="isSupportWorkline && userForm.dept" class="modal-grid">
+                <div v-if="!orgEditMode && userForm.job" class="modal-grid">
                     <div class="fg">
-                        <label class="lbl req">งาน</label>
-                        <select v-model="userForm.job" class="sel modal-input" :disabled="!userForm.dept" @change="handleJobChange">
-                            <option value="">— เลือกงาน —</option>
-                            <option v-for="job in jobOptions" :key="job" :value="job">
-                                {{ job }}
-                            </option>
-                        </select>
-                    </div>
-                    <div class="fg">
-                        <label class="lbl">หน่วย</label>
-                        <select v-model="userForm.unit" class="sel modal-input" :disabled="!userForm.job" @change="handleUnitChange">
-                            <option value="">— ไม่ระบุหน่วย —</option>
-                            <option v-for="unit in unitOptions" :key="unit" :value="unit">
-                                {{ unit }}
-                            </option>
-                        </select>
-                    </div>
-                </div>
-
-                <div v-if="!orgEditMode && ((isAcademicWorkline && userForm.job) || (isAdminWorkline && userForm.job) || (isSupportWorkline && userForm.job))" class="modal-grid">
-                    <div v-if="isSupportWorkline || isAdminWorkline" class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
                         <select v-model="userForm.p" class="sel modal-input" @change="handlePositionChange">
                             <option value="">— เลือกตำแหน่ง —</option>
@@ -762,7 +722,7 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                     </div>
-                    <div v-if="isAcademicWorkline || userForm.p" class="fg">
+                    <div v-if="userForm.p" class="fg">
                         <label class="lbl req">ระดับตำแหน่ง</label>
                         <select v-model="userForm.l" class="sel modal-input">
                             <option value="">— เลือกระดับตำแหน่ง —</option>
