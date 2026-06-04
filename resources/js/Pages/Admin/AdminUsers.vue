@@ -117,6 +117,9 @@
                 >
                   {{ isActive(user) ? 'ระงับ' : 'เปิด' }}
                 </button>
+                <button class="btn btn-r btn-xs delete-btn" type="button" @click="deleteUser(user)">
+                  ลบ
+                </button>
               </div>
             </td>
           </tr>
@@ -266,6 +269,30 @@ const toggleStatus = (sso?: string) => {
     },
   });
 };
+
+const deleteUser = (user: User) => {
+  if (!user.db_id) {
+    alert('ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่');
+    return;
+  }
+
+  const displayName = `${user.t || ''}${user.n || ''}`.trim() || user.sso || 'ผู้ใช้นี้';
+  if (!confirm(`ต้องการลบ ${displayName} ใช่ไหม?`)) return;
+
+  const previousUsers = [...props.users];
+
+  window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
+  props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
+
+  router.delete(route('admin.users.destroy', user.db_id), {
+    preserveScroll: true,
+    preserveState: true,
+    onError: () => {
+      props.setUsers(previousUsers);
+      alert('ไม่สามารถลบผู้ใช้ได้');
+    },
+  });
+};
 </script>
 
 <style scoped>
@@ -364,6 +391,18 @@ const toggleStatus = (sso?: string) => {
 .status-btn.activate {
   background: #dcfce7;
   color: #15803d;
+}
+
+.delete-btn {
+  border-color: #fca5a5;
+  background: #fff;
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .empty-result {

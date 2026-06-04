@@ -283,8 +283,8 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
           <div class="card shadow-sm mb20">
             <div class="ch"><div class="ct">ข้อมูลสมรรถนะหลัก</div></div>
             <div class="cb">
-              <div class="flex g20 mb16">
-                <div class="fg" style={{ width: "320px" }}>
+              <div class="dict-main-fields mb16">
+                <div class="fg dict-type-field">
                   <label class="lbl">1. ประเภทสมรรถนะ (Competency Type)</label>
                   <select class="sel" value={type.value} onChange={(e) => {setType(e.target.value);setIsDirty(true);}}>
                     {competencyTypes.map((t) => <option key={getCompetencyTypeCode(t)} value={getCompetencyTypeCode(t)}>{getCompetencyTypeLabel(t)}</option>)}
@@ -292,10 +292,12 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                 </div>
                 <div class="fg flex-1">
                   <label class="lbl">2. รหัสและชื่อสมรรถนะ (Code & Name)</label>
-                  <div class="flex ic g0">
-                    <div class="static-code" style={{ padding: '10px 16px', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: '8px 0 0 8px', color: 'var(--text3)', fontWeight: 700, fontSize: '14px' }}>{type.value}-</div>
-                    <input class="inp" style={{ width: '80px', borderRadius: '0' }} placeholder="001" value={codeTail.value} onChange={(e) => {setCodeTail(e.target.value);setIsDirty(true);}} />
-                    <input class="inp" style={{ borderRadius: '0 8px 8px 0', borderLeft: 'none' }} placeholder="กรอกชื่อสมรรถนะ..." value={name.value} onChange={(e) => {setName(e.target.value);setIsDirty(true);}} />
+                  <div class="dict-code-name-fields">
+                    <div class="dict-code-box">
+                      <div class="static-code">{type.value}-</div>
+                      <input class="inp dict-code-input" placeholder="001" value={codeTail.value} onChange={(e) => {setCodeTail(e.target.value);setIsDirty(true);}} />
+                    </div>
+                    <input class="inp dict-name-input" placeholder="กรอกชื่อสมรรถนะ..." value={name.value} onChange={(e) => {setName(e.target.value);setIsDirty(true);}} />
                   </div>
                 </div>
               </div>
@@ -491,9 +493,13 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         .anim-fade-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        .static-code { border-right: none !important; border-radius: 8px 0 0 8px !important; }
-        .static-code + .inp { border-radius: 0 !important; margin-left: -1px; }
-        .static-code + .inp + .inp { border-radius: 0 8px 8px 0 !important; margin-left: -1px; }
+        .dict-main-fields { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 28px; align-items: end; }
+        .dict-type-field { min-width: 0; }
+        .dict-code-name-fields { display: grid; grid-template-columns: 230px minmax(260px, 1fr); gap: 12px; align-items: stretch; }
+        .dict-code-box { display: flex; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08); }
+        .static-code { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 0 14px; background: #f8fafc; border-right: 1px solid var(--border); color: var(--text3); font-weight: 800; font-size: 14px; }
+        .dict-code-input { width: 100%; min-width: 0; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+        .dict-name-input { min-width: 0; border-radius: 8px !important; }
         
         .tbl-add-dict th { background: #f8fafc; font-size: 12px; font-weight: 700; color: var(--text3); border-bottom: 1.5px solid var(--border); padding: 12px; }
         .tbl-add-dict td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
@@ -504,6 +510,11 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         .py8 { padding-top: 8px; padding-bottom: 8px; }
         .mr12 { margin-right: 12px; }
         .sel-sm { font-size: 12px; border-radius: 6px; }
+        @media (max-width: 960px) {
+          .dict-main-fields { grid-template-columns: 1fr; gap: 16px; }
+          .dict-code-name-fields { grid-template-columns: 1fr; }
+          .dict-code-box { max-width: 260px; }
+        }
       `}</style>
     </>;} });
 

@@ -27,6 +27,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
     Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
     Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
+    Route::delete('/admin/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
     Route::post('/admin/competency-types', [AdminCompetencyTypeController::class, 'store'])->name('admin.competency-types.store');
     Route::put('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'update'])->name('admin.competency-types.update');
     Route::delete('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'destroy'])->name('admin.competency-types.destroy');

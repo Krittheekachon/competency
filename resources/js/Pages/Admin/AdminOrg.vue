@@ -189,10 +189,14 @@
         </div>
       </div>
 
-      <div v-else class="card flex col ic jc no-dept-card">
-        <div class="no-dept-icon">🏢</div>
-        <div class="fw7 fs16 mb4 no-dept-title">ยังไม่ได้เลือกกลุ่มงาน</div>
-        <div class="muted fs13">กรุณาเลือกกลุ่มงานจากรายการด้านซ้ายมือ หรือค้นหาชื่อบุคลากรด้านบน</div>
+      <div v-else class="card no-dept-card">
+        <div class="no-dept-content">
+          <div class="no-dept-icon">🏢</div>
+          <div class="fw7 fs16 mb4 no-dept-title">ยังไม่ได้เลือกกลุ่มงาน</div>
+          <div class="muted fs13 no-dept-text">
+            กรุณาเลือกกลุ่มงานจากรายการด้านซ้ายมือ หรือค้นหาชื่อบุคลากรด้านบน
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -532,9 +536,11 @@ const pushDrillPath = (user: User) => {
 <style scoped>
 .org-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
+  width: 100%;
+  max-width: 100%;
 }
 
 .org-side {
@@ -606,6 +612,7 @@ const pushDrillPath = (user: User) => {
 
 .org-main {
   min-width: 0;
+  max-width: 100%;
 }
 
 .org-search-box {
@@ -746,15 +753,34 @@ const pushDrillPath = (user: User) => {
 }
 
 .no-dept-card {
-  height: 400px;
+  display: grid;
+  min-height: 400px;
+  place-items: center;
+  padding: 32px;
   background: #fff;
   border-style: dashed;
   border-width: 2px;
+  overflow: hidden;
+  text-align: center;
+}
+
+.no-dept-content {
+  display: grid;
+  justify-items: center;
+  max-width: min(520px, 100%);
+  min-width: 0;
 }
 
 .no-dept-icon {
   font-size: 48px;
   margin-bottom: 16px;
+  line-height: 1;
+}
+
+.no-dept-text {
+  max-width: 44ch;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .hierarchy-card {

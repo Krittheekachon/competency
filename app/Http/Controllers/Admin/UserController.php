@@ -55,6 +55,13 @@ class UserController extends Controller
         return back()->with('success', 'อัปเดตสถานะผู้ใช้เรียบร้อยแล้ว');
     }
 
+    public function destroy(User $user): RedirectResponse
+    {
+        $user->delete();
+
+        return back()->with('success', 'ลบผู้ใช้เรียบร้อยแล้ว');
+    }
+
     private function validatedData(Request $request, ?User $user = null): array
     {
         return $request->validate([
