@@ -32,6 +32,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'update'])->name('admin.competency-types.update');
     Route::delete('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'destroy'])->name('admin.competency-types.destroy');
     Route::post('/admin/competencies', [AdminCompetencyController::class, 'store'])->name('admin.competencies.store');
+    Route::post('/admin/competencies/import', [AdminCompetencyController::class, 'import'])->name('admin.competencies.import');
     Route::put('/admin/competencies/{competency}', [AdminCompetencyController::class, 'update'])->name('admin.competencies.update');
     Route::delete('/admin/competencies/{competency}', [AdminCompetencyController::class, 'destroy'])->name('admin.competencies.destroy');
     Route::post('/admin/structure/worklines', [AdminStructureController::class, 'storeWorkline'])->name('admin.structure.worklines.store');

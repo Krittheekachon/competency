@@ -1,8 +1,11 @@
 <script lang="ts">
+import { router } from '@inertiajs/vue3';
 import {
     computed,
     defineComponent,
     h as vueH,
+    onBeforeUnmount,
+    onMounted,
     ref,
     watch,
     type CSSProperties,
@@ -236,10 +239,20 @@ export const ExcelImportModal = defineComponent({
             type: Function as PropType<() => void>,
             required: true,
         },
+        importUrl: {
+            type: String,
+            default: '',
+        },
+        onImported: {
+            type: Function as PropType<(page: any) => void>,
+            default: null,
+        },
     },
     setup(props) {
         const selectedFile = ref<File | null>(null);
         const fileInputRef = ref<HTMLInputElement | null>(null);
+        const isDragging = ref(false);
+        const fileError = ref('');
 
         const importButtonStyle = computed<CSSProperties>(() => ({
             minWidth: '140px',
@@ -269,13 +282,72 @@ export const ExcelImportModal = defineComponent({
             link.click();
         };
 
+        const setSelectedFile = (file?: File) => {
+            fileError.value = '';
+
+            if (!file) return;
+
+            const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+            const lowerName = file.name.toLowerCase();
+            const isAllowed = allowedExtensions.some((ext) => lowerName.endsWith(ext));
+
+            if (!isAllowed) {
+                selectedFile.value = null;
+                fileError.value = 'รองรับเฉพาะไฟล์ .xlsx, .xls หรือ .csv';
+                return;
+            }
+
+            selectedFile.value = file;
+        };
+
+        const fileFromDataTransfer = (dataTransfer: DataTransfer | null): File | undefined => {
+            if (!dataTransfer) return undefined;
+            if (dataTransfer.files?.length) return dataTransfer.files[0];
+
+            const fileItem = Array.from(dataTransfer.items || []).find((item) => item.kind === 'file');
+            return fileItem?.getAsFile() || undefined;
+        };
+
         const handleFileChange = (event: Event) => {
             const target = event.target as HTMLInputElement;
-            const file = target.files?.[0];
+            setSelectedFile(target.files?.[0]);
+        };
 
-            if (file) {
-                selectedFile.value = file;
+        const handleDragEnter = (event: DragEvent) => {
+            event.preventDefault();
+            isDragging.value = true;
+        };
+
+        const handleDragOver = (event: DragEvent) => {
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
             }
+            isDragging.value = true;
+        };
+
+        const handleDragLeave = (event: DragEvent) => {
+            event.preventDefault();
+            const target = event.currentTarget as HTMLElement;
+            const related = event.relatedTarget as Node | null;
+
+            if (!related || !target.contains(related)) {
+                isDragging.value = false;
+            }
+        };
+
+        const handleDrop = (event: DragEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            isDragging.value = false;
+            const file = fileFromDataTransfer(event.dataTransfer);
+
+            if (!file) {
+                fileError.value = 'ลากไฟล์จาก Finder หรือกดคลิกเพื่อเลือกไฟล์จากเครื่อง';
+                return;
+            }
+
+            setSelectedFile(file);
         };
 
         const openFileDialog = () => {
@@ -285,9 +357,39 @@ export const ExcelImportModal = defineComponent({
         const handleImport = () => {
             if (!selectedFile.value) return;
 
-            alert(`นำเข้าไฟล์ "${selectedFile.value.name}" เรียบร้อยแล้ว! (Mock Import)`);
-            props.onClose();
+            if (!props.importUrl) {
+                alert(`นำเข้าไฟล์ "${selectedFile.value.name}" เรียบร้อยแล้ว! (Mock Import)`);
+                props.onClose();
+                return;
+            }
+
+            router.post(props.importUrl, { file: selectedFile.value }, {
+                forceFormData: true,
+                preserveScroll: true,
+                onSuccess: (page) => {
+                    props.onImported?.(page);
+                    props.onClose();
+                },
+                onError: (errors) => {
+                    const firstError = Object.values(errors || {})[0];
+                    fileError.value = String(firstError || 'ไม่สามารถนำเข้าไฟล์นี้ได้');
+                },
+            });
         };
+
+        const preventWindowDrop = (event: DragEvent) => {
+            event.preventDefault();
+        };
+
+        onMounted(() => {
+            window.addEventListener('dragover', preventWindowDrop);
+            window.addEventListener('drop', preventWindowDrop);
+        });
+
+        onBeforeUnmount(() => {
+            window.removeEventListener('dragover', preventWindowDrop);
+            window.removeEventListener('drop', preventWindowDrop);
+        });
 
         return () =>
             vueH('div', { class: 'mo shared-import-modal' }, [
@@ -338,13 +440,27 @@ export const ExcelImportModal = defineComponent({
                                 accept: '.xlsx, .xls, .csv',
                                 onChange: handleFileChange,
                             }),
-                            vueH('div', { class: 'upload-dropzone', onClick: openFileDialog }, [
+                            vueH('div', {
+                                class: ['upload-dropzone', isDragging.value ? 'is-dragging' : '', fileError.value ? 'has-error' : ''],
+                                onClick: openFileDialog,
+                                onDragEnter: handleDragEnter,
+                                onDragOver: handleDragOver,
+                                onDragLeave: handleDragLeave,
+                                onDrop: handleDrop,
+                            }, [
                                 vueH('div', { class: 'upload-content' }, [
                                     vueH('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '✅' : '📊'),
-                                    vueH('div', { class: 'upload-title' }, selectedFile.value ? selectedFile.value.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
+                                    vueH('div', { class: 'upload-title' }, selectedFile.value
+                                        ? selectedFile.value.name
+                                        : isDragging.value
+                                            ? 'ปล่อยไฟล์ตรงนี้ได้เลย'
+                                            : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
                                     vueH('div', { class: 'upload-desc' }, selectedFile.value
                                         ? selectedFileSize.value
                                         : 'ระบบจะตรวจสอบหัวข้อในตารางอัตโนมัติ กรุณาตรวจสอบให้แน่ใจว่าไม่มีเซลล์ที่ว่างเปล่าในคอลัมน์ที่จำเป็น'),
+                                    fileError.value
+                                        ? vueH('div', { class: 'upload-error' }, fileError.value)
+                                        : null,
                                 ]),
                             ]),
                         ]),
@@ -357,7 +473,7 @@ export const ExcelImportModal = defineComponent({
                                 onClick: props.onClose,
                             }, 'ยกเลิก'),
                             vueH('button', {
-                                class: 'btn btn-p shadow-sm',
+                                class: 'btn import-submit-button',
                                 type: 'button',
                                 disabled: !selectedFile.value,
                                 style: importButtonStyle.value,
@@ -491,21 +607,27 @@ export default defineComponent({
 
 .upload-content {
     display: grid;
-    grid-template-columns: 78px minmax(130px, 190px) minmax(0, 1fr);
-    gap: 16px;
+    grid-template-columns: 86px minmax(0, 1fr);
+    column-gap: 18px;
+    row-gap: 8px;
     align-items: center;
     min-height: 270px;
     padding: 44px 62px;
 }
 
 .upload-title {
+    min-width: 0;
     color: #0b2a55;
     font-size: 18px;
     font-weight: 900;
     line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .upload-desc {
+    grid-column: 2;
+    min-width: 0;
     color: #94a3b8;
     font-size: 13px;
     font-weight: 700;
@@ -553,6 +675,24 @@ export default defineComponent({
     background: var(--blue-lt);
 }
 
+.upload-dropzone.is-dragging {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.upload-dropzone.has-error {
+    border-color: #ef4444;
+    background: #fff5f5;
+}
+
+.upload-error {
+    grid-column: 2;
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 800;
+}
+
 .upload-icon-pulse {
     font-size: 56px;
     filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
@@ -568,9 +708,26 @@ export default defineComponent({
     font-weight: 800;
 }
 
-.import-actions .btn-p:disabled {
-    background: #8fb0f0;
+.import-submit-button {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
+}
+
+.import-submit-button:hover:not(:disabled) {
+    border-color: #1d4ed8;
+    background: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.import-submit-button:disabled {
+    border-color: #dbe3ef;
+    background: #f1f5f9;
+    color: #64748b;
+    box-shadow: none;
     opacity: 1;
+    cursor: not-allowed;
 }
 
 @media (max-width: 640px) {
@@ -636,4 +793,3 @@ export default defineComponent({
     }
 }
 </style>
-

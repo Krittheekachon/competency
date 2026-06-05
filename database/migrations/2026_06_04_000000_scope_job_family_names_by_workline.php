@@ -9,6 +9,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         Schema::table('job_families', function (Blueprint $table) {
             if ($this->constraintExists('job_families_name_unique')) {
                 $table->dropUnique('job_families_name_unique');
@@ -22,6 +26,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         Schema::table('job_families', function (Blueprint $table) {
             if ($this->constraintExists('job_families_workline_id_name_unique')) {
                 $table->dropUnique(['workline_id', 'name']);
