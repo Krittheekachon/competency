@@ -13,7 +13,7 @@ const useState = (initial: any) => {
 
 const getApprovalRows = (users: any[]) => {
   const activeStaff = users
-    .filter((user) => user.act !== false && user.r !== "manager")
+    .filter((user) => user.act !== false && !["dean", "manager"].includes(user.r))
     .slice(0, 12);
 
   const fallback = [

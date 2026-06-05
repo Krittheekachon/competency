@@ -61,14 +61,27 @@ class DashboardController extends Controller
                 'competencies' => $competencies,
                 ...$structureData,
                 'learningMethods' => $learningMethods,
+                'adminPage' => session('adminPage'),
             ]),
-            1 => Inertia::render('HR/Dashboard', [
+            1 => Inertia::render('Super/Dashboard', ['users' => $users]),
+            2 => Inertia::render('Head/Dashboard', ['users' => $users]),
+            3 => Inertia::render('Staff/Dashboard', [
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+                'activeCycleName' => $activeCycleName,
+                'learningMethods' => $learningMethods,
+            ]),
+            4 => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
                     'totalUsers' => User::count(),
-                    'hrUsers' => User::where('role_id', 1)->count(),
-                    'staffUsers' => User::where('role_id', 4)->count(),
+                    'hrUsers' => User::where('role_id', 4)->count(),
+                    'staffUsers' => User::where('role_id', 3)->count(),
                     'source' => 'database',
                 ],
+                'competencyTypes' => $competencyTypes,
+                'competencies' => $competencies,
+                'learningMethods' => $learningMethods,
+                'activeCycleName' => $activeCycleName,
+                'hrWorklines' => $structureData['worklines'] ?? [],
                 'overviewUsers' => User::query()
                     ->select(['name', 'email'])
                     ->get()
@@ -83,7 +96,7 @@ class DashboardController extends Controller
                         'act' => true,
                     ]),
             ]),
-            2 => Inertia::render('Executive/Dashboard', [
+            5 => Inertia::render('Executive/Dashboard', [
                 'users' => $users,
                 'managerSummary' => $managerSummary,
                 'activeCycleName' => $activeCycleName,
@@ -95,15 +108,40 @@ class DashboardController extends Controller
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
             ]),
-            3 => Inertia::render('Head/Dashboard', ['users' => $users]),
-            4 => Inertia::render('Staff/Dashboard', [
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'activeCycleName' => $activeCycleName,
-                'learningMethods' => $learningMethods,
-            ]),
-            5 => Inertia::render('Super/Dashboard', ['users' => $users]),
             default => Inertia::render('Dashboard'),
         };
+    }
+
+    public function adminIndex()
+    {
+        $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
+            'id'       => $type->id,
+            'code'     => $type->code,
+            'fullName' => $type->full_name,
+            'desc'     => $type->description,
+        ]);
+
+        $users = User::orderBy('name')->get()
+            ->map(fn (User $user) => $this->dashboardUserPayload($user));
+
+        $learningMethods = DB::table('learning_method_types')
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn (object $m) => [
+                'key'   => $m->key,
+                'label' => $m->label,
+                'desc'  => $m->description ?? '',
+            ]);
+
+        return Inertia::render('Admin/Dashboard', [
+            'users'          => $users,
+            'competencyTypes' => $competencyTypes,
+            'competencies'   => $this->competencyPayload(),
+            'learningMethods' => $learningMethods,
+            'adminPage'      => session('adminPage'),
+            ...$this->adminStructurePayload(),
+        ]);
     }
 
     private function dashboardUserPayload(User $user): array
@@ -133,6 +171,10 @@ class DashboardController extends Controller
 
     private function adminStructurePayload(): array
     {
+        $adminWorkline = 'สายบริหาร';
+        $academicWorkline = 'สายวิชาการ';
+        $supportWorkline = 'สายสนับสนุน';
+
         $jobFamilies = DB::table('job_families')
             ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
             ->select('job_families.id', 'job_families.name', 'worklines.name as workline_name')
@@ -155,8 +197,42 @@ class DashboardController extends Controller
                 ->values(),
         ]);
 
+        $supportDepts = DB::table('support_departments')->orderBy('name')->get();
+
+        $supportWorks = DB::table('support_works')
+            ->orderBy('support_department_id')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('support_department_id');
+
+        $supportUnits = DB::table('support_units')
+            ->orderBy('support_work_id')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('support_work_id');
+
+        $supportOrg = $supportDepts->mapWithKeys(function (object $dept) use ($supportWorks, $supportUnits) {
+            $works = ($supportWorks[$dept->id] ?? collect())
+                ->map(function (object $work) use ($supportUnits) {
+                    return [
+                        'work'  => $work->name,
+                        'units' => ($supportUnits[$work->id] ?? collect())
+                            ->pluck('name')
+                            ->values()
+                            ->all(),
+                    ];
+                })
+                ->values()
+                ->all();
+
+            return [$dept->name => $works];
+        })->all();
+
         return [
-            'worklines' => DB::table('worklines')->orderByDesc('id')->pluck('name'),
+            'worklines' => DB::table('worklines')
+                ->orderByRaw("CASE name WHEN '{$adminWorkline}' THEN 1 WHEN '{$academicWorkline}' THEN 2 WHEN '{$supportWorkline}' THEN 3 ELSE 99 END")
+                ->orderBy('name')
+                ->pluck('name'),
             'jobFamiliesByWorkline' => $jobFamiliesWithPositions
                 ->groupBy('worklineName')
                 ->map(fn ($families) => $families->mapWithKeys(fn (array $family) => [
@@ -189,6 +265,7 @@ class DashboardController extends Controller
                 ->groupBy('workline_name')
                 ->map(fn ($levels) => $levels->pluck('name')->values())
                 ->all(),
+            'supportOrg' => $supportOrg,
         ];
     }
 
@@ -247,10 +324,11 @@ class DashboardController extends Controller
     {
         return match ($roleId) {
             0 => 'admin',
-            1 => 'hr',
-            2 => 'manager',
-            3 => 'dept_head',
-            5 => 'supervisor',
+            1 => 'supervisor',
+            2 => 'dept_head',
+            3 => 'employee',
+            4 => 'hr',
+            5 => 'dean',
             default => 'employee',
         };
     }

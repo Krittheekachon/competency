@@ -830,7 +830,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: { users: 
 
 
 const getApprovalRows = (users: any[]) => {
-  const activeStaff = users.filter((user) => user.act !== false && user.r !== "manager").slice(0, 12);
+  const activeStaff = users.filter((user) => user.act !== false && !["dean", "manager"].includes(user.r)).slice(0, 12);
   const fallback = [
   { n: "สมชาย มีสุข", t: "นาย", p: "นักวิชาการศึกษา", d: "สนับสนุนการศึกษาและวิชาการ", w: "สายสนับสนุน", sup: "กัญญารัตน์ ศรีวิชา", evaluator2: "ธนพล ไชยรักษ์" },
   { n: "มาลี ดีเสมอ", t: "นางสาว", p: "นักทรัพยากรบุคคล", d: "ทรัพยากรบุคคล", w: "สายสนับสนุน", sup: "พรพิมล บุคคลดี", evaluator2: "ธนพล ไชยรักษ์" },

@@ -43,6 +43,7 @@ const activePage = computed({
 });
 const currentRole = ref('admin');
 const page = usePage();
+const requestedAdminPage = ref(page.props.adminPage || null);
 const competencies = ref(clone(page.props.competencies || []));
 const users = ref(clone(page.props.users?.length ? page.props.users : INITIAL_USERS));
 const activeModal = ref(null);
@@ -78,9 +79,9 @@ const userForm = ref({
 const worklines = ref(clone(page.props.worklines || []));
 const jobFamiliesByWorkline = ref(clone(page.props.jobFamiliesByWorkline || {}));
 const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายวิชาการ'] || {})));
-const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
+const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายบริหาร'] || jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
 const competencyTypes = ref(clone(page.props.competencyTypes || []));
-const supportOrg = ref({});
+const supportOrg = ref(clone(page.props.supportOrg || {}));
 const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
@@ -165,6 +166,11 @@ const implementedAdminPages = new Set([
     'admin-dict',
 ]);
 watchEffect(() => {
+    if (requestedAdminPage.value && implementedAdminPages.has(requestedAdminPage.value)) {
+        activePage.value = requestedAdminPage.value;
+        requestedAdminPage.value = null;
+    }
+
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
         requestedPage.value = null;
@@ -206,6 +212,14 @@ const evaluatorOptions = computed(() =>
 
 const requestPageChange = (page) => {
     activePage.value = page;
+};
+
+const keepAdminPage = (page = 'admin-org-structure') => {
+    activePage.value = page;
+
+    if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(adminPageStorageKey, page);
+    }
 };
 
 const parseOrgPath = (path = '') => {
@@ -463,6 +477,16 @@ const saveUser = () => {
     router.post(route('admin.users.store'), nextUser, options);
 };
 
+const submitUserModalOnEnter = (event) => {
+    if (event.isComposing || isSavingUser.value) return;
+
+    const tagName = event.target?.tagName?.toLowerCase();
+    if (['button', 'textarea'].includes(tagName)) return;
+
+    event.preventDefault();
+    saveUser();
+};
+
 const goProfile = () => router.visit(route('profile.edit'));
 const logout = () => router.post(route('logout'));
 </script>
@@ -602,6 +626,7 @@ const logout = () => router.post(route('logout'));
                     :set-competency-types="setRef(competencyTypes)"
                     :learning-methods="learningMethods"
                     :set-learning-methods="setRef(learningMethods)"
+                    :keep-admin-page="keepAdminPage"
                 />
 
                 <AdminDict
@@ -631,7 +656,7 @@ const logout = () => router.post(route('logout'));
                 <button class="btn btn-s btn-sm" type="button" @click="closeModal">× ปิด</button>
             </div>
 
-            <div class="mo-b admin-user-modal-body">
+            <div class="mo-b admin-user-modal-body" @keydown.enter="submitUserModalOnEnter">
                 <div v-if="!orgEditMode" class="admin-user-note">
                     💡 ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
@@ -739,12 +764,12 @@ const logout = () => router.post(route('logout'));
                     <div class="fg">
                         <label class="lbl req">บทบาทในระบบ</label>
                         <select v-model="userForm.r" class="sel modal-input">
-                            <option value="employee">บุคลากร</option>
-                            <option value="supervisor">หัวหน้างาน</option>
-                            <option value="manager_dept">ผู้บังคับบัญชา</option>
-                            <option value="manager">ผู้บริหารคณะ</option>
-                            <option value="hr">งานทรัพยากรบุคคล</option>
-                            <option value="admin">ผู้ดูแลระบบ</option>
+                            <option value="user">user</option>
+                            <option value="supervisor">supervisor</option>
+                            <option value="head">head</option>
+                            <option value="dean">dean</option>
+                            <option value="hr">hr</option>
+                            <option value="admin">admin</option>
                         </select>
                     </div>
                     <div class="fg">

@@ -91,132 +91,17 @@ const currentUser = computed(() =>
     },
 );
 
-const MOCK_TEAM = [
-    {
-        sso: 'mock001',
-        t: 'รศ.ดร.',
-        n: 'เมธา ศิริกุล',
-        p: 'อาจารย์',
-        d: 'ภาควิชาวิศวกรรมคอมพิวเตอร์',
-        r: 'employee',
-        act: true,
-        evalStatus: 'self_submitted',
-        idpPhase: 'notsent',
-        gaps: ['การบริการที่ดี', 'การวิเคราะห์ข้อมูล'],
-    },
-    {
-        sso: 'mock002',
-        t: 'ผศ.ดร.',
-        n: 'อรพรรณ ศรีสวัสดิ์',
-        p: 'อาจารย์',
-        d: 'ภาควิชาวิศวกรรมไฟฟ้า',
-        r: 'employee',
-        act: true,
-        evalStatus: 'unit_evaluated',
-        idpPhase: 'pending',
-        sentAt: 'ส่งแผน 20 พ.ค. 68',
-        gaps: ['การใช้เทคโนโลยีดิจิทัล'],
-        competencyResults: [
-            { id: 'digital', group: 'FC', title: 'การใช้เทคโนโลยีดิจิทัล', code: 'FC-021', expected: 4, selfScore: 2, headScore: 2, gap: -2 },
-        ],
-        idpPlans: [
-            {
-                id: 'digital',
-                goal: 'ใช้เครื่องมือดิจิทัลจัดทำ dashboard ติดตามแผนงานได้',
-                activities: ['อบรม Data Dashboard', 'OJT สรุปข้อมูลผู้บริหาร'],
-            },
-        ],
-    },
-    {
-        sso: 'mock003',
-        t: 'นาย',
-        n: 'สมชาย มีสุข',
-        p: 'นักวิชาการศึกษา',
-        d: 'หน่วยวิชาการและหลักสูตร',
-        r: 'employee',
-        act: true,
-        evalStatus: 'self_submitted',
-        idpPhase: 'rejected',
-        sentAt: 'ส่งแผน 20 พ.ค. 68',
-        gaps: ['การทำงานเป็นทีม', 'การใช้เทคโนโลยีดิจิทัล'],
-        competencyResults: [
-            { id: 'teamwork', group: 'CC', title: 'การทำงานเป็นทีม', code: 'CC-003', expected: 4, selfScore: 2, headScore: 2, gap: -2, feedback: 'พหกพหก' },
-            { id: 'digital', group: 'FC', title: 'การใช้เทคโนโลยีดิจิทัล', code: 'FC-021', expected: 4, selfScore: 2, headScore: 2, gap: -2, feedback: 'พหกพหก' },
-        ],
-        idpPlans: [
-            { id: 'teamwork', goal: 'ปรับรูปแบบการทำงานร่วมกับทีมโครงการให้ชัดเจนขึ้น', activities: ['Team Coaching', 'สรุปบทเรียนงานกลุ่ม'] },
-            { id: 'digital', goal: 'ฝึกใช้เครื่องมือดิจิทัลเพื่อสรุปรายงานงานประจำ', activities: ['อบรม Data Dashboard', 'OJT รายงานดิจิทัล'] },
-        ],
-    },
-    {
-        sso: 'mock004',
-        t: 'นางสาว',
-        n: 'พิมพ์ใจ ทองดี',
-        p: 'นักวิเคราะห์นโยบายและแผน',
-        d: 'หน่วยแผนยุทธศาสตร์',
-        r: 'employee',
-        act: true,
-        evalStatus: 'dept_evaluated',
-        idpPhase: 'inprogress',
-        gaps: ['การทำงานเป็นทีม'],
-        competencyResults: [
-            { id: 'teamwork', group: 'CC', title: 'การทำงานเป็นทีม', code: 'CC-003', expected: 3, selfScore: 2, headScore: 2, gap: -1 },
-        ],
-        idpPlans: [
-            {
-                id: 'teamwork',
-                activities: [
-                    {
-                        title: 'Team Activity Program',
-                        method: 'Social Learning',
-                        status: 'ผ่านแล้ว',
-                        events: [
-                            { date: '5 พ.ค.', text: 'เริ่มกิจกรรมกลุ่ม - โครงการพัฒนาระบบงานร่วมกัน 4 คน', file: 'แผนงาน_Team_Activity_2566.pdf', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '10 มิ.ย.', text: 'ส่งรายงานความก้าวหน้าครึ่งทาง', file: 'รายงานความก้าวหน้า_มิ.ย.66.pdf', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '30 มิ.ย.', text: 'ประเมินผ่านเกณฑ์ - หัวหน้าประเมินระดับ 3/5', file: 'แบบประเมิน_TeamActivity_2566.pdf', by: 'รศ.ดร.วิไล โชติ' },
-                        ],
-                    },
-                    {
-                        title: 'อ่านและสรุปหนังสือ Teamwork 101',
-                        method: 'Formal Learning',
-                        status: 'ผ่านแล้ว',
-                        events: [
-                            { date: '1 ก.ค.', text: 'เริ่มอ่านและจดบันทึกสรุปบทที่ 1-5', file: 'สรุปหนังสือ_บทที่1-5.docx', by: 'นายบุญอยู่ มีสุข' },
-                            { date: '31 ส.ค.', text: 'ส่งสรุปหนังสือครบ 12 บท - ผ่านการตรวจ', file: 'สรุปหนังสือ_Teamwork101_ฉบับสมบูรณ์.pdf', by: 'นายบุญอยู่ มีสุข' },
-                        ],
-                    },
-                ],
-            },
-        ],
-    },
-    {
-        sso: 'mock005',
-        t: 'นาย',
-        n: 'เก่งกาจ พัฒนา',
-        p: 'เจ้าหน้าที่บริหารงานทั่วไป',
-        d: 'งานบริหารและธุรการ',
-        r: 'employee',
-        act: true,
-        evalStatus: 'dean_approved',
-        idpPhase: 'done',
-        gaps: ['การบริการที่ดี'],
-    },
-];
-
-const teamMembers = computed(() => {
-    const real = users.value.filter((user) =>
-        user.sso !== currentUser.value.sso
-        && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
-        && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
-        && user.act !== false,
-    );
-    return real.length > 0 ? real : MOCK_TEAM;
-});
+const teamMembers = computed(() => users.value.filter((user) =>
+    user.sso !== currentUser.value.sso
+    && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
+    && !['manager_dept', 'dept_head', 'dean', 'manager'].includes(user.r)
+    && user.act !== false,
+));
 // const teamMembers = computed(() => {
 //     return users.value.filter((user) =>
 //         user.sso !== currentUser.value.sso
 //         && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
-//         && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
+//         && !['manager_dept', 'dept_head', 'dean', 'manager'].includes(user.r)
 //         && user.act !== false,
 //     );
 // });

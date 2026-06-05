@@ -120,7 +120,7 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
         p: form.value.position,
         l: form.value.workline === "สายงานบริหาร" ? form.value.position : form.value.level,
         r: form.value.role,
-        sup: form.value.role === "manager" ? "" : form.value.evaluator1,
+        sup: form.value.role === "dean" ? "" : form.value.evaluator1,
         evaluator2: ["employee", "hr", "admin", "supervisor"].includes(form.value.role) ? form.value.evaluator2 : "",
         act: form.value.active,
         em: form.value.email,

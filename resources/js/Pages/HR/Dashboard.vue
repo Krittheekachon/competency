@@ -33,6 +33,18 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    competencyTypes: {
+        type: Array,
+        default: () => [],
+    },
+    competencies: {
+        type: Array,
+        default: () => [],
+    },
+    learningMethods: {
+        type: Array,
+        default: () => [],
+    },
     overviewUsers: {
         type: Array,
         default: () => [],
@@ -118,11 +130,44 @@ const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่�
 const selectedWorkline = ref('');
 const selectedJobFamily = ref('');
 const selectedPosition = ref('');
+const competencyQuery = ref('');
+const competencyTypeFilter = ref('all');
 const worklines = computed(() => props.hrWorklines);
 const hasWorklines = computed(() => worklines.value.length > 0);
 const hasCycles = computed(() => props.hrCycles.length > 0);
 const hasExpectationSets = computed(() => props.hrExpectationSets.length > 0);
 const hasCatalogItems = computed(() => props.hrCatalogItems.length > 0);
+const competencyTypeOptions = computed(() => props.competencyTypes.map((type) => ({
+    code: typeof type === 'string' ? type : (type.code || type.name || ''),
+    label: typeof type === 'string'
+        ? type
+        : (type.fullName || type.label ? `${type.code || type.name} - ${type.fullName || type.label}` : (type.code || type.name || '')),
+})).filter((type) => type.code));
+const competencyTypeCodes = computed(() => competencyTypeOptions.value.map((type) => type.code));
+const getCompType = (competency) => competency.t || competency.type || competency.typeCode || String(competency.cd || '').split('-')[0] || '';
+const getCompTag = (competency) => `tag-${String(getCompType(competency)).toLowerCase()}`;
+const filteredCompetencies = computed(() => props.competencies.filter((competency) => {
+    const compType = getCompType(competency);
+    const query = competencyQuery.value.trim().toLowerCase();
+    const text = `${competency.cd || ''} ${competency.n || ''} ${competency.det || ''}`.toLowerCase();
+    const matchesType = competencyTypeFilter.value === 'all' || compType === competencyTypeFilter.value;
+    const matchesQuery = !query || text.includes(query);
+    return matchesType && matchesQuery;
+}));
+const coreTypeCode = computed(() => competencyTypeCodes.value.includes('CC') ? 'CC' : competencyTypeCodes.value[0] || 'CC');
+const coreCompetencies = computed(() => props.competencies.filter((competency) => getCompType(competency) === coreTypeCode.value));
+const learningMethodSummaries = computed(() => props.learningMethods.map((method) => {
+    const key = method.key || method.code || method.label;
+    const count = props.hrCatalogItems.filter((item) =>
+        item.methodKey === key || item.method_type_key === key || item.method === key || item.t === key
+    ).length;
+    return {
+        key,
+        label: method.label || method.name || key,
+        desc: method.desc || method.description || '',
+        count,
+    };
+}));
 
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง');
 const jobFamilyLabel = computed(() => {
@@ -252,13 +297,13 @@ const closeModal = () => {
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
-                            <div class="position-card-title">0</div>
-                            <div class="position-card-sub">ยังไม่มีรายการ</div>
+                            <div class="position-card-title">{{ props.competencies.length }}</div>
+                            <div class="position-card-sub">จากพจนานุกรมสมรรถนะ</div>
                         </div>
                         <div class="position-card">
-                            <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title warn">0/0</div>
-                            <div class="position-card-sub">ยังไม่มีข้อมูล CC พื้นฐาน</div>
+                            <div class="position-card-label">{{ coreTypeCode }} พื้นฐาน</div>
+                            <div class="position-card-title" :class="{ warn: !coreCompetencies.length, ok: coreCompetencies.length }">{{ coreCompetencies.length }}</div>
+                            <div class="position-card-sub">อ้างอิงจากประเภทสมรรถนะหลัก</div>
                         </div>
                     </div>
 
@@ -288,16 +333,41 @@ const closeModal = () => {
                                 </div>
                             </div>
                             <div class="dictionary-tools">
-                                <input class="inp" disabled placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
-                                <select class="sel" disabled>
-                                    <option>ทั้งหมด</option>
+                                <input v-model="competencyQuery" class="inp" placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
+                                <select v-model="competencyTypeFilter" class="sel">
+                                    <option value="all">ทั้งหมด</option>
+                                    <option
+                                        v-for="type in competencyTypeOptions"
+                                        :key="type.code"
+                                        :value="type.code"
+                                    >
+                                        {{ type.label }}
+                                    </option>
                                 </select>
                             </div>
                             <div class="dictionary-list">
-                                <div class="assigned-empty dictionary-empty">
+                                <div
+                                    v-for="competency in filteredCompetencies"
+                                    :key="competency.cd"
+                                    class="dictionary-item"
+                                >
+                                    <div>
+                                        <div class="flex ic g8 mb4">
+                                            <span class="dictionary-code">{{ competency.cd }}</span>
+                                            <span :class="getCompTag(competency)">{{ getCompType(competency) }}</span>
+                                        </div>
+                                        <div class="fw8 fs13">{{ competency.n }}</div>
+                                        <div class="muted fs11 truncate-2">{{ competency.det || 'ยังไม่มีคำอธิบาย' }}</div>
+                                        <div class="dictionary-meta">
+                                            {{ competency.levels?.length || 0 }} ระดับ · จากพจนานุกรมสมรรถนะ
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-s btn-xs" disabled type="button">พร้อมใช้</button>
+                                </div>
+                                <div v-if="filteredCompetencies.length === 0" class="assigned-empty dictionary-empty">
                                     <div class="assigned-empty-icon">📖</div>
                                     <div class="fw8">ยังไม่มีข้อมูลสมรรถนะ</div>
-                                    <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
+                                    <div class="muted fs12">เพิ่มประเภทและพจนานุกรมสมรรถนะจากหน้า Admin เพื่อให้ HR เลือกใช้</div>
                                 </div>
                             </div>
                         </aside>
@@ -498,20 +568,19 @@ const closeModal = () => {
                     </div>
 
                     <div class="g3 mb14">
-                        <div class="sc">
-                            <div class="sl">Experiential Learning</div>
-                            <div class="sv oc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
+                        <div
+                            v-for="method in learningMethodSummaries"
+                            :key="method.key"
+                            class="sc"
+                        >
+                            <div class="sl">{{ method.label }}</div>
+                            <div class="sv bc">{{ method.count }}</div>
+                            <div class="ss muted">{{ method.desc || 'ประเภทการเรียนรู้จากโครงสร้าง' }}</div>
                         </div>
-                        <div class="sc">
-                            <div class="sl">Social Learning</div>
-                            <div class="sv gcc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">Formal Training</div>
+                        <div v-if="learningMethodSummaries.length === 0" class="sc">
+                            <div class="sl">Learning Methods</div>
                             <div class="sv bc">0</div>
-                            <div class="ss muted">หลักสูตร</div>
+                            <div class="ss muted">ยังไม่มีประเภทการเรียนรู้</div>
                         </div>
                     </div>
 

@@ -14,21 +14,21 @@ class CompetencyTypeController extends Controller
     {
         CompetencyType::create($this->validatedData($request));
 
-        return back()->with('success', 'บันทึกประเภทสมรรถนะเรียบร้อยแล้ว');
+        return $this->backToAdminStructure($request, 'บันทึกประเภทสมรรถนะเรียบร้อยแล้ว');
     }
 
     public function update(Request $request, CompetencyType $competencyType): RedirectResponse
     {
         $competencyType->update($this->validatedData($request, $competencyType));
 
-        return back()->with('success', 'อัปเดตประเภทสมรรถนะเรียบร้อยแล้ว');
+        return $this->backToAdminStructure($request, 'อัปเดตประเภทสมรรถนะเรียบร้อยแล้ว');
     }
 
-    public function destroy(CompetencyType $competencyType): RedirectResponse
+    public function destroy(Request $request, CompetencyType $competencyType): RedirectResponse
     {
         $competencyType->delete();
 
-        return back()->with('success', 'ลบประเภทสมรรถนะเรียบร้อยแล้ว');
+        return $this->backToAdminStructure($request, 'ลบประเภทสมรรถนะเรียบร้อยแล้ว');
     }
 
     private function validatedData(Request $request, ?CompetencyType $competencyType = null): array
@@ -44,4 +44,9 @@ class CompetencyTypeController extends Controller
             'description' => ['required', 'string', 'max:1000'],
         ]);
     }
-}
+    private function backToAdminStructure(Request $request, string $message): RedirectResponse
+    {
+        return back()
+            ->with('success', $message)
+            ->with('adminPage', $request->string('admin_page')->toString() ?: 'admin-org-structure');
+    }}

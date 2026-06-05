@@ -4,7 +4,7 @@
   employee: { lbl: "บุคลากร", name: "สมชาย มีสุข", av: "ส", pos: "นักวิชาการศึกษา · สายสนับสนุน", col: "#0EA5A0" },
   supervisor: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้างานสนับสนุนการศึกษาและวิชาการ", col: "#EA580C" },
   manager_dept: { lbl: "ผู้บังคับบัญชา", name: "ผศ.ดร.ธนพล ไชยรักษ์", av: "ธ", pos: "รองคณบดีฝ่ายบริหาร", col: "#D97706" },
-  manager: { lbl: "ผู้บริหารคณะ", name: "รศ.ดร.กิตติพงศ์ แสงทอง", av: "ก", pos: "คณบดี", col: "#0F2D5B" }
+  dean: { lbl: "ผู้บริหารคณะ", name: "รศ.ดร.กิตติพงศ์ แสงทอง", av: "ก", pos: "คณบดี", col: "#0F2D5B" }
 };
 
 export const NAV_CONFIG = {
@@ -60,7 +60,7 @@ export const NAV_CONFIG = {
       ]
     }
   ],
-  manager: [
+  dean: [
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
@@ -185,4 +185,3 @@ export const INITIAL_COMPETENCIES = [];
 export const IDP_GAPS_DATA = [];
 
 export const IDP_ACTIVITIES_DATA = {};
-

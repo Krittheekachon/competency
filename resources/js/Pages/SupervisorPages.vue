@@ -23,7 +23,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
         return reviewerAccess && (supervisorMode || matchesDept) && matchesSearch;
       });
 
-    const isLevelBoss = (u: any) => ['supervisor', 'manager_dept', 'manager'].includes(u.r);
+    const isLevelBoss = (u: any) => ['supervisor', 'manager_dept', 'dean', 'manager'].includes(u.r);
     const heads = filteredUsers.filter((u) => isLevelBoss(u));
     const getStaffByGroup = (group: string, excludeBoss = false) => filteredUsers.filter((u) => {
       const parts = u.d.split(" > ");
@@ -72,7 +72,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     const [savedAt, setSavedAt] = useState("");
     const supervisorStaff = filteredUsers.filter((u) =>
     u.sso !== currentUser.sso &&
-    !['manager_dept', 'manager'].includes(u.r) && (
+    !['manager_dept', 'dean', 'manager'].includes(u.r) && (
     currentUser.r !== 'supervisor' || u.r !== 'supervisor')
     );
     const assessCounts = {
@@ -554,7 +554,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     currentUser &&
     user.sso !== currentUser.sso && (
     user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
-    !["manager_dept", "manager"].includes(user.r) && (
+    !["manager_dept", "dean", "manager"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
     const gapPeople = directGapPeople.map((user, index) => {
@@ -1092,7 +1092,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
     currentUser &&
     user.sso !== currentUser.sso && (
     user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
-    !["manager_dept", "manager"].includes(user.r) && (
+    !["manager_dept", "dean", "manager"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
     const team = directReports.map((report, index) => {

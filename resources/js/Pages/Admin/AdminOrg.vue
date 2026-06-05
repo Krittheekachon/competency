@@ -173,8 +173,8 @@
                     </span>
                   </td>
                   <td>
-                    <button class="btn btn-s btn-xs w-full edit-user-btn" @click="openModal('modal-user', user)">
-                      แก้ไขผู้ใช้
+                    <button class="btn btn-s btn-xs w-full edit-user-btn" @click="openModal('modal-org', user)">
+                      แก้ไขกลุ่มงาน
                     </button>
                   </td>
                 </tr>
@@ -305,7 +305,7 @@
                   style="padding-right: 40px; text-align: right; padding-top: 24px; padding-bottom: 24px"
                   @click.stop
                 >
-                  <button class="btn-settings" title="แก้ไขผู้ใช้" @click="openModal('modal-user', user)">⚙️</button>
+                  <button class="btn-settings" title="แก้ไขสายการบังคับบัญชา" @click="openModal('modal-org', user)">⚙️</button>
                 </td>
               </tr>
             </tbody>
@@ -469,7 +469,7 @@ const selectDept = (dept: string) => {
   search.value = '';
 };
 
-const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
+const getDisplayLevel = (user: User) => (['สายบริหาร', 'สายงานบริหาร'].includes(user.w || '') ? user.p : user.l);
 
 const deptUserCount = (dept: string) => {
   return props.users.filter((user) => {
@@ -485,7 +485,7 @@ const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '�
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 
 const normalizeRole = (role?: string) => {
-  if (role === 'dean') return 'manager';
+  if (role === 'manager') return 'dean';
   if (role === 'dept_head') return 'manager_dept';
   return role || 'employee';
 };
@@ -496,7 +496,7 @@ const roleBadge = (role?: string): RoleBadge => {
       return { label: 'ผู้ดูแลระบบ', className: 'bp' };
     case 'hr':
       return { label: 'งานทรัพยากรบุคคล', className: 'bb' };
-    case 'manager':
+    case 'dean':
       return {
         label: 'ผู้บริหารคณะ',
         className: 'bg',

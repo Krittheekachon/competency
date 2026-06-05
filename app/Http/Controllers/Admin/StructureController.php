@@ -21,8 +21,7 @@ class StructureController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-
-        return back()->with('success', 'บันทึกสายงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'บันทึกสายงานเรียบร้อยแล้ว');
     }
 
     public function updateWorkline(Request $request): RedirectResponse
@@ -36,7 +35,7 @@ class StructureController extends Controller
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
-        return back()->with('success', 'อัปเดตสายงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'อัปเดตสายงานเรียบร้อยแล้ว');
     }
 
     public function destroyWorkline(Request $request): RedirectResponse
@@ -47,7 +46,7 @@ class StructureController extends Controller
 
         DB::table('worklines')->where('name', $data['name'])->delete();
 
-        return back()->with('success', 'ลบสายงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'ลบสายงานเรียบร้อยแล้ว');
     }
 
     public function storeJobFamily(Request $request): RedirectResponse
@@ -71,7 +70,7 @@ class StructureController extends Controller
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'บันทึกกลุ่มงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'บันทึกกลุ่มงานเรียบร้อยแล้ว');
     }
 
     public function updateJobFamily(Request $request): RedirectResponse
@@ -105,7 +104,7 @@ class StructureController extends Controller
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
-        return back()->with('success', 'อัปเดตกลุ่มงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'อัปเดตกลุ่มงานเรียบร้อยแล้ว');
     }
 
     public function destroyJobFamily(Request $request): RedirectResponse
@@ -126,7 +125,7 @@ class StructureController extends Controller
             ->where('name', $data['name'])
             ->delete();
 
-        return back()->with('success', 'ลบกลุ่มงานเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'ลบกลุ่มงานเรียบร้อยแล้ว');
     }
 
     public function storePosition(Request $request): RedirectResponse
@@ -162,7 +161,7 @@ class StructureController extends Controller
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'บันทึกตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'บันทึกตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function updatePosition(Request $request): RedirectResponse
@@ -192,7 +191,7 @@ class StructureController extends Controller
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
-        return back()->with('success', 'อัปเดตตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'อัปเดตตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function destroyPosition(Request $request): RedirectResponse
@@ -221,7 +220,7 @@ class StructureController extends Controller
             ->where('name', $data['name'])
             ->delete();
 
-        return back()->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function storeLevel(Request $request): RedirectResponse
@@ -245,7 +244,7 @@ class StructureController extends Controller
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'บันทึกระดับตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'บันทึกระดับตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function updateLevel(Request $request): RedirectResponse
@@ -274,7 +273,7 @@ class StructureController extends Controller
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
-        return back()->with('success', 'อัปเดตระดับตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'อัปเดตระดับตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function destroyLevel(Request $request): RedirectResponse
@@ -295,7 +294,7 @@ class StructureController extends Controller
             ->where('name', $data['name'])
             ->delete();
 
-        return back()->with('success', 'ลบระดับตำแหน่งเรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'ลบระดับตำแหน่งเรียบร้อยแล้ว');
     }
 
     public function storeLearningMethod(Request $request): RedirectResponse
@@ -316,7 +315,7 @@ class StructureController extends Controller
             'updated_at' => now(),
         ]);
 
-        return back()->with('success', 'บันทึกประเภทการเรียนรู้เรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'บันทึกประเภทการเรียนรู้เรียบร้อยแล้ว');
     }
 
     public function updateLearningMethod(Request $request): RedirectResponse
@@ -337,7 +336,7 @@ class StructureController extends Controller
                 'updated_at' => now(),
             ]);
 
-        return back()->with('success', 'อัปเดตประเภทการเรียนรู้เรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'อัปเดตประเภทการเรียนรู้เรียบร้อยแล้ว');
     }
 
     public function destroyLearningMethod(Request $request): RedirectResponse
@@ -348,7 +347,7 @@ class StructureController extends Controller
 
         DB::table('learning_method_types')->where('key', $data['key'])->delete();
 
-        return back()->with('success', 'ลบประเภทการเรียนรู้เรียบร้อยแล้ว');
+        return redirect()->route('admin.dashboard')->with('success', 'ลบประเภทการเรียนรู้เรียบร้อยแล้ว');
     }
 
     private function worklineId(?string $name): ?int
@@ -369,5 +368,96 @@ class StructureController extends Controller
         }
 
         return (int) $query->value('id');
+    }
+
+    private function redirectToAdminDashboard(Request $request, string $message): RedirectResponse
+    {
+        $adminPage = $request->string('admin_page')->toString();
+
+        return redirect()
+            ->route('admin.dashboard')
+            ->with('success', $message)
+            ->with('adminPage', $adminPage ?: 'admin-org-structure');
+    }
+
+    public function storeSupportDept(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', 'unique:support_departments,name'],
+        ]);
+
+        DB::table('support_departments')->insert([
+            'name'       => $data['name'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $this->redirectToAdminDashboard($request, 'บันทึกฝ่ายเรียบร้อยแล้ว');
+    }
+
+    public function storeSupportWork(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'dept_name' => ['required', 'string', 'exists:support_departments,name'],
+            'work_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $deptId = DB::table('support_departments')
+            ->where('name', $data['dept_name'])
+            ->value('id');
+
+        if (DB::table('support_works')
+            ->where('support_department_id', $deptId)
+            ->where('name', $data['work_name'])
+            ->exists()) {
+            return back()->withErrors(['work_name' => "มีงาน \"{$data['work_name']}\" ในฝ่ายนี้แล้ว"]);
+        }
+
+        DB::table('support_works')->insert([
+            'support_department_id' => $deptId,
+            'name'                  => $data['work_name'],
+            'created_at'            => now(),
+            'updated_at'            => now(),
+        ]);
+
+        return $this->redirectToAdminDashboard($request, 'บันทึกงานเรียบร้อยแล้ว');
+    }
+
+    public function storeSupportUnit(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'dept_name' => ['required', 'string', 'exists:support_departments,name'],
+            'work_name' => ['required', 'string'],
+            'unit_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $deptId = DB::table('support_departments')
+            ->where('name', $data['dept_name'])
+            ->value('id');
+
+        $workId = DB::table('support_works')
+            ->where('support_department_id', $deptId)
+            ->where('name', $data['work_name'])
+            ->value('id');
+
+        if (!$workId) {
+            return back()->withErrors(['work_name' => 'ไม่พบงานที่ระบุ']);
+        }
+
+        if (DB::table('support_units')
+            ->where('support_work_id', $workId)
+            ->where('name', $data['unit_name'])
+            ->exists()) {
+            return back()->withErrors(['unit_name' => "มีหน่วย \"{$data['unit_name']}\" ในงานนี้แล้ว"]);
+        }
+
+        DB::table('support_units')->insert([
+            'support_work_id' => $workId,
+            'name'            => $data['unit_name'],
+            'created_at'      => now(),
+            'updated_at'      => now(),
+        ]);
+
+        return $this->redirectToAdminDashboard($request, 'บันทึกหน่วยเรียบร้อยแล้ว');
     }
 }

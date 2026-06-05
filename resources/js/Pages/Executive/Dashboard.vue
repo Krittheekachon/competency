@@ -77,16 +77,16 @@ const pageTitles = {
 };
 
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
-const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
+const userName = computed(() => page.props.auth?.user?.name || 'Dean User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
-const userId = computed(() => page.props.auth?.user?.id || 'manager');
+const userId = computed(() => page.props.auth?.user?.id || 'dean');
 const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
 
 const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Manager - CIDP" />
+    <Head title="Dean - CIDP" />
 
     <div class="shell manager-shell">
         <aside v-if="isSidebarOpen" class="sidebar">

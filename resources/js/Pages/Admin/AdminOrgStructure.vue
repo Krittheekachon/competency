@@ -1,4 +1,5 @@
-<script lang="tsx">
+﻿<script lang="tsx">
+// @ts-nocheck
 import { defineComponent, ref, watchEffect, type PropType } from "vue";
 import { router } from "@inertiajs/vue3";
 const useState = (initial: any) => {
@@ -29,11 +30,11 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setLearningMethods: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods"], setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods", "keepAdminPage"], setup(__props) {const {
       setAcademicDepts,
       setSupportPositionGroups,
       setAdminDepts,
-      supportOrg, setSupportOrg,
+      supportOrg: initialSupportOrg, setSupportOrg,
       users, orgSups, setOrgSups,
       setAcademicPos,
       supportPos, setSupportPos,
@@ -44,11 +45,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setSupportRank,
       setWorklines,
       setCompetencyTypes,
-      learningMethods, setLearningMethods
+      learningMethods, setLearningMethods,
+      keepAdminPage
     } = __props as any;
     let academicDepts = [...((__props as any).academicDepts || [])];
     let supportDepts = [...((__props as any).supportDepts || [])];
     let supportPositionGroups = { ...((( __props as any).supportPositionGroups) || {}) };
+    const supportOrg = ref<Record<string, any[]>>({ ...((initialSupportOrg) || {}) });
     let adminDepts = [...((__props as any).adminDepts || [])];
     let academicPos = [...((__props as any).academicPos || [])];
     let adminPos = [...((__props as any).adminPos || [])];
@@ -57,13 +60,31 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     let worklines = [...((__props as any).worklines || [])];
     const POSITION_PREVIEW_LIMIT = 4;
     const SUPPORT_GROUP_PREVIEW_LIMIT = 4;
+    const STRUCTURE_TAB_STORAGE_KEY = "admin-org-structure-active-tab";
+    const STRUCTURE_TABS = ["workline", "support-chain", "pos", "comp"];
+    const getInitialStructureTab = () => {
+      if (typeof window === "undefined") return "workline";
+      const savedTab = window.sessionStorage.getItem(STRUCTURE_TAB_STORAGE_KEY);
+      return STRUCTURE_TABS.includes(savedTab || "") ? savedTab : "workline";
+    };
     const competencyTypeList = ref<any[]>([...((__props as any).competencyTypes || [])]);
-    const [activeTab, setActiveTab] = useState("workline");
+    const [activeTab, setRawActiveTab] = useState(getInitialStructureTab);
+    const setActiveTab = (next: any) => {
+      setRawActiveTab((current: string) => {
+        const nextTab = typeof next === "function" ? next(current) : next;
+        const safeTab = STRUCTURE_TABS.includes(nextTab) ? nextTab : "workline";
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(STRUCTURE_TAB_STORAGE_KEY, safeTab);
+        }
+        return safeTab;
+      });
+    };
     const [editingItem, setEditingId] = useState<any>(null);
     const [newValue, setNewValue] = useState("");
     const [editFullName, setEditFullName] = useState("");
     const [editDesc, setEditDesc] = useState("");
     const [newSupportDeptName, setNewSupportDeptName] = useState("");
+    const [showSupportDeptModal, setShowSupportDeptModal] = useState(false);
     const [newSupportWorkNames, setNewSupportWorkNames] = useState<Record<string, string>>({});
     const [newSupportUnitNames, setNewSupportUnitNames] = useState<Record<string, string>>({});
     const [showAddModal, setShowAddModal] = useState(false);
@@ -83,26 +104,58 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     });
     const [structureVersion, setStructureVersion] = useState(0);
     const addNameInput = ref<HTMLInputElement | null>(null);
-    const dean = users.find((user) => user.r === "manager")?.n || "";
-    const deptManagers = users.filter((user) => user.r === "manager_dept");
-    const supervisors = users.filter((user) => user.r === "supervisor");
+    const dean = users.find((user) => ["dean", "manager"].includes(user.r))?.n || "";
+    const deptManagers = users.filter((user) => user.r === "supervisor");
+    const supervisors = users.filter((user) => ["dept_head", "head", "manager_dept"].includes(user.r));
     const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
     const getCompetencyTypeFullName = (item: any) => typeof item === "string" ? "" : item?.fullName || item?.label || "";
     const getCompetencyTypeDesc = (item: any) => typeof item === "string" ? "" : item?.desc || "";
     const getCompetencyTypeId = (item: any) => typeof item === "string" ? null : item?.id || null;
+    const competencyTypeFromPayload = (payload: any, id?: any) => ({
+      id: id || null,
+      code: payload.code,
+      fullName: payload.full_name,
+      desc: payload.description
+    });
     useEffect(() => {
       competencyTypeList.value = [...((( __props as any).competencyTypes) || [])];
     }, [(__props as any).competencyTypes]);
     useEffect(() => {
       learningMethodList.value = [...((( __props as any).learningMethods) || [])];
     }, [(__props as any).learningMethods]);
+    useEffect(() => {
+      supportOrg.value = { ...((( __props as any).supportOrg) || {}) };
+    }, [(__props as any).supportOrg]);
     const applyCompetencyTypes = (next: any[]) => {
       competencyTypeList.value = [...next];
       setCompetencyTypes(next);
       setStructureVersion((current: number) => current + 1);
     };
+    const upsertCompetencyType = (item: any, oldCode?: string) => {
+      const itemCode = getCompetencyTypeCode(item);
+      const itemId = getCompetencyTypeId(item);
+      const next = [
+        item,
+        ...competencyTypeList.value.filter((current) => {
+          const currentId = getCompetencyTypeId(current);
+          const currentCode = getCompetencyTypeCode(current);
+          if (itemId && currentId === itemId) return false;
+          return currentCode !== itemCode && currentCode !== oldCode;
+        })
+      ].sort((a, b) => getCompetencyTypeCode(a).localeCompare(getCompetencyTypeCode(b)));
+      applyCompetencyTypes(next);
+    };
+    const removeCompetencyType = (item: any, oldCode: string) => {
+      const itemId = getCompetencyTypeId(item);
+      applyCompetencyTypes(competencyTypeList.value.filter((current) => {
+        if (itemId && getCompetencyTypeId(current) === itemId) return false;
+        return getCompetencyTypeCode(current) !== oldCode;
+      }));
+    };
+    const syncedCompetencyTypeOr = (code: string, fallback: any) =>
+      competencyTypeList.value.find((item) => getCompetencyTypeCode(item) === code) || fallback;
     const syncCompetencyTypesFromPage = (responsePage: any) => {
-      if (Array.isArray(responsePage.props.competencyTypes)) {
+      if (Array.isArray(responsePage?.props?.competencyTypes)) {
         applyCompetencyTypes(responsePage.props.competencyTypes);
       }
     };
@@ -130,7 +183,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         const nextGroups = { ...props.jobFamiliesByWorkline };
         jobFamiliesByWorkline = nextGroups;
         academicDepts = Object.keys(nextGroups["สายวิชาการ"] || nextGroups["วิชาการ"] || {});
-        adminDepts = Object.keys(nextGroups["สายงานบริหาร"] || nextGroups["สายบริหาร"] || {});
+        adminDepts = Object.keys(nextGroups["สายบริหาร"] || nextGroups["สายงานบริหาร"] || {});
         supportPositionGroups = nextGroups["สายสนับสนุน"] || nextGroups["สนับสนุน"] || {};
         supportDepts = Object.keys(supportPositionGroups);
         setJobFamiliesByWorkline(nextGroups);
@@ -149,6 +202,12 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         didSync = true;
       }
 
+      if (props.supportOrg && typeof props.supportOrg === "object") {
+        supportOrg.value = { ...props.supportOrg };
+        setSupportOrg({ ...props.supportOrg });
+        didSync = true;
+      }
+
       if (didSync) {
         setStructureVersion((current: number) => current + 1);
       }
@@ -157,29 +216,42 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       const firstError = Object.values(errors || {})[0];
       alert(firstError || "ไม่สามารถบันทึกข้อมูลประเภทสมรรถนะได้");
     };
+    const keepCurrentAdminPage = () => {
+      if (typeof keepAdminPage === "function") {
+        keepAdminPage("admin-org-structure");
+      }
+    };
     const persistOptions = {
       preserveScroll: true,
       preserveState: true,
+      onStart: keepCurrentAdminPage,
+      onFinish: keepCurrentAdminPage,
       onSuccess: syncCompetencyTypesFromPage,
-      onError: showPersistError
+      onError: (errors: any) => {
+        keepCurrentAdminPage();
+        showPersistError(errors);
+      }
     };
     const postStructure = (routeName: string, payload: any, onSuccess: () => void) => {
-      router.post(route(routeName), payload, {
+      router.post(route(routeName), { ...payload, admin_page: "admin-org-structure" }, {
         ...persistOptions,
         onSuccess: (responsePage: any) => {
+          keepCurrentAdminPage();
           onSuccess();
           syncStructureFromPage(responsePage);
         },
         onError: (errors: any) => {
+          keepCurrentAdminPage();
           setIsSavingAddItem(false);
           showPersistError(errors);
         }
       });
     };
     const putStructure = (routeName: string, payload: any, onSuccess: () => void) => {
-      router.put(route(routeName), payload, {
+      router.put(route(routeName), { ...payload, admin_page: "admin-org-structure" }, {
         ...persistOptions,
         onSuccess: (responsePage: any) => {
+          keepCurrentAdminPage();
           onSuccess();
           syncStructureFromPage(responsePage);
         }
@@ -188,8 +260,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const deleteStructure = (routeName: string, payload: any, onSuccess: () => void) => {
       router.delete(route(routeName), {
         ...persistOptions,
-        data: payload,
+        data: { ...payload, admin_page: "admin-org-structure" },
         onSuccess: (responsePage: any) => {
+          keepCurrentAdminPage();
           onSuccess();
           syncStructureFromPage(responsePage);
         }
@@ -198,7 +271,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const worklineNameFromType = (type: string) => {
       if (type === "1") return "สายวิชาการ";
       if (type === "2") return "สายสนับสนุน";
-      return "สายงานบริหาร";
+      return "สายบริหาร";
     };
     const levelItemsForWorkline = (worklineName: string) => {
       const directLevels = levelsByWorkline?.[worklineName] || [];
@@ -244,7 +317,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         academicDepts = Object.keys(groups);
         setAcademicDepts(academicDepts);
       }
-      if (worklineName === "สายงานบริหาร") {
+      if (worklineName === "สายบริหาร" || worklineName === "สายงานบริหาร") {
         adminDepts = Object.keys(groups);
         setAdminDepts(adminDepts);
       }
@@ -262,37 +335,91 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
     const addSupportDept = () => {
       const name = newSupportDeptName.value.trim();
-      if (!name || supportOrg[name]) return;
-      setSupportOrg({ ...supportOrg, [name]: [] });
-      setSupportPositionGroups({ ...supportPositionGroups, [name]: [] });
-      setOrgSups((current) => ({ ...current, [name]: deptManagers[0]?.n || dean }));
-      setNewSupportDeptName("");
+      if (!name || supportOrg.value[name]) return false;
+      setActiveTab("support-chain");
+
+      postStructure(
+        "admin.structure.support-depts.store",
+        { name },
+        () => {
+          setActiveTab("support-chain");
+          const nextSupportOrg = { ...supportOrg.value, [name]: [] };
+          supportOrg.value = nextSupportOrg;
+          setSupportOrg(nextSupportOrg);
+          setOrgSups((current) => ({
+            ...current,
+            [name]: deptManagers[0]?.n || dean,
+          }));
+          setNewSupportDeptName("");
+          setShowSupportDeptModal(false);
+        }
+      );
+      return true;
+    };
+
+    const submitSupportDept = () => {
+      addSupportDept();
     };
 
     const addSupportWork = (dept: string) => {
       const name = (newSupportWorkNames.value[dept] || "").trim();
       if (!name) return;
-      const works = supportOrg[dept] || [];
+      const works = supportOrg.value[dept] || [];
       if (works.some((item: any) => item.work === name)) return;
-      setSupportOrg({ ...supportOrg, [dept]: [...works, { work: name, units: [] }] });
-      setOrgSups((current) => ({ ...current, [[dept, name].join(" > ")]: supervisors[0]?.n || "" }));
-      setNewSupportWorkNames((current) => ({ ...current, [dept]: "" }));
+      setActiveTab("support-chain");
+
+      postStructure(
+        "admin.structure.support-works.store",
+        { dept_name: dept, work_name: name },
+        () => {
+          setActiveTab("support-chain");
+          const nextSupportOrg = {
+            ...supportOrg.value,
+            [dept]: [...works, { work: name, units: [] }],
+          };
+          supportOrg.value = nextSupportOrg;
+          setSupportOrg(nextSupportOrg);
+          setOrgSups((current) => ({
+            ...current,
+            [[dept, name].join(" > ")]: supervisors[0]?.n || "",
+          }));
+          setNewSupportWorkNames((current) => ({ ...current, [dept]: "" }));
+        }
+      );
     };
 
     const addSupportUnit = (dept: string, workName: string) => {
       const workPath = [dept, workName].join(" > ");
       const name = (newSupportUnitNames.value[workPath] || "").trim();
       if (!name) return;
-      const works = supportOrg[dept] || [];
-      setSupportOrg({
-        ...supportOrg,
-        [dept]: works.map((item: any) =>
-        item.work === workName && !(item.units || []).includes(name) ?
-        { ...item, units: [...(item.units || []), name] } :
-        item
-        )
-      });
-      setNewSupportUnitNames((current) => ({ ...current, [workPath]: "" }));
+      const works = supportOrg.value[dept] || [];
+      setActiveTab("support-chain");
+
+      postStructure(
+        "admin.structure.support-units.store",
+        { dept_name: dept, work_name: workName, unit_name: name },
+        () => {
+          setActiveTab("support-chain");
+          const nextSupportOrg = {
+            ...supportOrg.value,
+            [dept]: works.map((item: any) =>
+              item.work === workName && !(item.units || []).includes(name)
+                ? { ...item, units: [...(item.units || []), name] }
+                : item
+            ),
+          };
+          supportOrg.value = nextSupportOrg;
+          setSupportOrg(nextSupportOrg);
+          setNewSupportUnitNames((current) => ({ ...current, [workPath]: "" }));
+        }
+      );
+    };
+
+    const runOnEnter = (event: any, action: () => void) => {
+      if (event.key !== "Enter" || event.isComposing) return;
+      if (event.target?.tagName?.toLowerCase() === "textarea") return;
+      event.preventDefault();
+      action();
     };
 
     const startEdit = (type: string, oldName: string, extras?: any) => {
@@ -313,7 +440,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         case "admin-dept":
-          putStructure("admin.structure.job-families.update", { workline_name: "สายงานบริหาร", old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายบริหาร", old_name: oldName, name: newValue.value }, () => {
             setAdminDepts(adminDepts.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
@@ -357,17 +484,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         case "support-work":{
-            const nextSupportOrg = { ...supportOrg };
+            const nextSupportOrg = { ...supportOrg.value };
             if (parent && nextSupportOrg[parent]) {
               nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === oldName ? { ...w, work: newValue.value } : w);
+              supportOrg.value = nextSupportOrg;
               setSupportOrg(nextSupportOrg);
             }
             break;
           }
         case "support-unit":{
-            const nextSupportOrg = { ...supportOrg };
+            const nextSupportOrg = { ...supportOrg.value };
             if (parent && workName && nextSupportOrg[parent]) {
               nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.map((u: string) => u === oldName ? newValue.value : u) } : w);
+              supportOrg.value = nextSupportOrg;
               setSupportOrg(nextSupportOrg);
             }
             break;
@@ -380,7 +509,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           return;
         case "support-pos":setSupportPos(supportPos.map((v) => v === oldName ? newValue.value : v));break;
         case "admin-pos":
-          putStructure("admin.structure.job-families.update", { workline_name: "สายงานบริหาร", old_name: oldName, name: newValue.value }, () => {
+          putStructure("admin.structure.job-families.update", { workline_name: "สายบริหาร", old_name: oldName, name: newValue.value }, () => {
             setAdminPos(adminPos.map((v) => v === oldName ? newValue.value : v));
             setEditingId(null);
           });
@@ -404,6 +533,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "comp-type":
           if (!editFullName.value.trim() || !editDesc.value.trim()) return;
           {
+            setActiveTab("comp");
             const payload = {
               code: newValue.value.trim(),
               full_name: editFullName.value.trim(),
@@ -411,18 +541,24 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             };
             const id = getCompetencyTypeId(editingItem.value.item);
             if (id) {
-              router.put(route("admin.competency-types.update", id), payload, {
+              router.put(route("admin.competency-types.update", id), { ...payload, admin_page: "admin-org-structure" }, {
                 ...persistOptions,
                 onSuccess: (responsePage: any) => {
+                  keepCurrentAdminPage();
+                  setActiveTab("comp");
                   syncCompetencyTypesFromPage(responsePage);
+                  upsertCompetencyType(syncedCompetencyTypeOr(payload.code, competencyTypeFromPayload(payload, id)), oldName);
                   setEditingId(null);
                 }
               });
             } else {
-              router.post(route("admin.competency-types.store"), payload, {
+              router.post(route("admin.competency-types.store"), { ...payload, admin_page: "admin-org-structure" }, {
                 ...persistOptions,
                 onSuccess: (responsePage: any) => {
+                  keepCurrentAdminPage();
+                  setActiveTab("comp");
                   syncCompetencyTypesFromPage(responsePage);
+                  upsertCompetencyType(syncedCompetencyTypeOr(payload.code, competencyTypeFromPayload(payload)), oldName);
                   setEditingId(null);
                 }
               });
@@ -455,7 +591,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         case "admin-dept":
-          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายงานบริหาร", name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายบริหาร", name: oldName }, () => {
             setAdminDepts(adminDepts.filter((v) => v !== oldName));
             setEditingId(null);
           });
@@ -497,17 +633,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         case "support-work":{
-            const nextSupportOrg = { ...supportOrg };
+            const nextSupportOrg = { ...supportOrg.value };
             if (parent && nextSupportOrg[parent]) {
               nextSupportOrg[parent] = nextSupportOrg[parent].filter((w: any) => w.work !== oldName);
+              supportOrg.value = nextSupportOrg;
               setSupportOrg(nextSupportOrg);
             }
             break;
           }
         case "support-unit":{
-            const nextSupportOrg = { ...supportOrg };
+            const nextSupportOrg = { ...supportOrg.value };
             if (parent && workName && nextSupportOrg[parent]) {
               nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.filter((u: string) => u !== oldName) } : w);
+              supportOrg.value = nextSupportOrg;
               setSupportOrg(nextSupportOrg);
             }
             break;
@@ -520,7 +658,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           return;
         case "support-pos":setSupportPos(supportPos.filter((v) => v !== oldName));break;
         case "admin-pos":
-          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายงานบริหาร", name: oldName }, () => {
+          deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายบริหาร", name: oldName }, () => {
             setAdminPos(adminPos.filter((v) => v !== oldName));
             setEditingId(null);
           });
@@ -544,10 +682,15 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "comp-type":{
             const id = getCompetencyTypeId(editingItem.value.item);
             if (id) {
+              setActiveTab("comp");
               router.delete(route("admin.competency-types.destroy", id), {
                 ...persistOptions,
+                data: { admin_page: "admin-org-structure" },
                 onSuccess: (responsePage: any) => {
+                  keepCurrentAdminPage();
+                  setActiveTab("comp");
                   syncCompetencyTypesFromPage(responsePage);
+                  removeCompetencyType(editingItem.value.item, oldName);
                   setEditingId(null);
                 }
               });
@@ -581,7 +724,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       "สายวิชาการ" :
       addItemData.value.type === "2" ?
       "สายสนับสนุน" :
-      "สายงานบริหาร");
+      "สายบริหาร");
 
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
       if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "รหัสประเภทสมรรถนะ" };
@@ -628,15 +771,17 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           });
           return;
         } else if (category === "work") {
-          const nextSupportOrg = { ...supportOrg };
+          const nextSupportOrg = { ...supportOrg.value };
           if (parent && nextSupportOrg[parent]) {
             nextSupportOrg[parent] = [...nextSupportOrg[parent], { work: trimmedName, units: [] }];
+            supportOrg.value = nextSupportOrg;
             setSupportOrg(nextSupportOrg);
           }
         } else if (category === "unit") {
-          const nextSupportOrg = { ...supportOrg };
+          const nextSupportOrg = { ...supportOrg.value };
           if (grandparent && parent && nextSupportOrg[grandparent]) {
             nextSupportOrg[grandparent] = nextSupportOrg[grandparent].map((w: any) => w.work === parent ? { ...w, units: [...w.units, trimmedName] } : w);
+            supportOrg.value = nextSupportOrg;
             setSupportOrg(nextSupportOrg);
           }
         } else if (category === "pos") {
@@ -680,20 +825,33 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           postStructure("admin.structure.worklines.store", { name: trimmedName }, () => {
             setWorklines([trimmedName, ...worklines]);
             setIsSavingAddItem(false);
-            clearAddNameAndFocus();
+            setShowAddModal(false);
           });
           return;
         } else if (category === "comp") {
           if (!fullName.trim() || !desc.trim()) return;
-          router.post(route("admin.competency-types.store"), {
+          setActiveTab("comp");
+          setIsSavingAddItem(true);
+          const payload = {
             code: trimmedName,
             full_name: fullName.trim(),
             description: desc.trim()
-          }, {
+          };
+          router.post(route("admin.competency-types.store"), { ...payload, admin_page: "admin-org-structure" }, {
             ...persistOptions,
             onSuccess: (responsePage: any) => {
+              keepCurrentAdminPage();
+              setActiveTab("comp");
               syncCompetencyTypesFromPage(responsePage);
+              upsertCompetencyType(syncedCompetencyTypeOr(payload.code, competencyTypeFromPayload(payload)));
+              setIsSavingAddItem(false);
               setShowAddModal(false);
+            },
+            onError: (errors: any) => {
+              keepCurrentAdminPage();
+              setActiveTab("comp");
+              setIsSavingAddItem(false);
+              showPersistError(errors);
             }
           });
           return;
@@ -727,34 +885,45 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
         clearAddNameAndFocus();
       }
-    };return () =>
+    };
+
+    return () =>
 
 
     <>
       <div class="flex ic jb mb20">
         <div>
           <div class="sec-t">จัดการโครงสร้างองค์กรและสมรรถนะ</div>
-          <div class="sec-s">กลุ่มงาน ตำแหน่ง ระดับตำแหน่ง และประเภทสมรรถนะ</div>
+          <div class="sec-s">กลุ่มงาน ฝ่าย/งาน ระดับตำแหน่ง และประเภทสมรรถนะ</div>
         </div>
         {activeTab.value === "workline" &&
         <button class="btn btn-p" onClick={openAddItem}>
             + เพิ่มสายงาน
           </button>
         }
+        {activeTab.value === "support-chain" &&
+        <button class="btn btn-p support-add-dept-btn" type="button" onClick={() => setShowSupportDeptModal(true)}>
+            + เพิ่มฝ่าย
+          </button>
+        }
       </div>
 
       <div class="structure-tabs mb20">
-        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>สายงาน/กลุ่มงาน/ตำแหน่ง</button>
-        <button class={`structure-tab ${activeTab.value === "support-chain" ? "active" : ""}`} onClick={() => setActiveTab("support-chain")}>งาน/ฝ่าย</button>
-        <button class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
-        <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
+        <button type="button" class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>กลุ่มงาน</button>
+        <button type="button" class={`structure-tab ${activeTab.value === "support-chain" ? "active" : ""}`} onClick={() => setActiveTab("support-chain")}>ฝ่าย/งาน</button>
+        <button type="button" class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
+        <button type="button" class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
       </div>
 
       <div class="anim-fade-in" data-structure-version={structureVersion.value}>
         <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
           {activeTab.value === "workline" ?
           <div class="structure-pane">
-              <div class="structure-heading">สายงานและตำแหน่ง</div>
+              <div class="structure-heading">กลุ่มงานและตำแหน่ง</div>
+              <div class="structure-note">
+                <b>กำหนดกลุ่มงานหลักตามสายงาน</b>
+                <span>เพิ่มกลุ่มงานและตำแหน่งที่ใช้ในระบบ เพื่อให้หน้าเพิ่มผู้ใช้และการประเมินอ้างอิงโครงสร้างเดียวกัน</span>
+              </div>
               <div class="structure-stack workline-stack">
                 {worklines.map((wl) => {
                 const groupMap = groupMapForWorkline(wl);
@@ -833,36 +1002,27 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               </div>
             </div> :
           activeTab.value === "support-chain" ?
-          <div class="structure-pane">
-              <div class="structure-heading">ฝ่าย/งาน สายสนับสนุน</div>
+          <div class="structure-pane support-chain-pane">
+              <div class="structure-heading">ฝ่าย/งานและหน่วยงานย่อย</div>
               <div class="structure-note">
                 <b>กำหนดได้สูงสุดอย่างละ 1 คน</b>
                 <span>หัวหน้าฝ่ายใช้บทบาทผู้บังคับบัญชา ส่วนหัวหน้างานใช้บทบาทหัวหน้างาน หน้าเพิ่มผู้ใช้จะอ้างอิงค่าจากหน้านี้โดยอัตโนมัติ</span>
               </div>
-              <section class="structure-section">
-                <div class="structure-section-head">
-                  <div class="fw7 fs14 text-navy">เพิ่มฝ่ายสนับสนุน</div>
-                  <div class="flex g8" style={{ minWidth: 0 }}>
-                    <input class="inp" value={newSupportDeptName.value} onChange={(e) => setNewSupportDeptName(e.target.value)} placeholder="ชื่อฝ่ายใหม่" />
-                    <button class="btn btn-s btn-sm" onClick={addSupportDept}>+ เพิ่มฝ่าย</button>
-                  </div>
-                </div>
-              </section>
               <div class="structure-stack">
-                {Object.keys(supportOrg).map((dept) =>
+                {Object.keys(supportOrg.value || {}).map((dept) =>
               <section key={dept} class="structure-section">
-                    <div class="structure-section-head">
+                    <div class="structure-section-head support-dept-head">
                       <div>
                         <div class="fw8 fs14 text-navy">{dept}</div>
                         <div class="muted fs11">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</div>
                       </div>
-                      <select class="sel" style={{ maxWidth: "320px" }} value={orgSups[dept] || ""} onChange={(e) => setOrgHead(dept, e.target.value)}>
+                      <select class="sel support-head-select-control" value={orgSups[dept] || ""} onChange={(e) => setOrgHead(dept, e.target.value)}>
                         <option value="">— เลือกหัวหน้าฝ่าย —</option>
                         {deptManagers.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
                       </select>
                     </div>
                     <div class="support-work-grid">
-                      {(supportOrg[dept] || []).map((work: any) => {
+                      {(supportOrg.value[dept] || []).map((work: any) => {
                     const workPath = [dept, work.work].join(" > ");
                     return (
                       <div key={work.work} class="support-work-card">
@@ -887,14 +1047,14 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                               {(work.units || []).length === 0 && <div class="structure-empty">ยังไม่มีหน่วย</div>}
                             </div>
                             <div class="support-unit-add">
-                              <input class="inp" value={newSupportUnitNames.value[workPath] || ""} onChange={(e) => setNewSupportUnitNames((current) => ({ ...current, [workPath]: e.target.value }))} placeholder="เพิ่มหน่วยใต้ งานนี้" />
+                              <input class="inp" value={newSupportUnitNames.value[workPath] || ""} onInput={(e) => setNewSupportUnitNames((current) => ({ ...current, [workPath]: e.target.value }))} onKeydown={(e) => runOnEnter(e, () => addSupportUnit(dept, work.work))} placeholder="เพิ่มหน่วยใต้ งานนี้" />
                               <button class="btn btn-s btn-sm" onClick={() => addSupportUnit(dept, work.work)}>+ เพิ่มหน่วย</button>
                             </div>
                           </div>);
 
                   })}
                       <div class="support-work-card support-add-card">
-                        <input class="inp" value={newSupportWorkNames.value[dept] || ""} onChange={(e) => setNewSupportWorkNames((current) => ({ ...current, [dept]: e.target.value }))} placeholder={`เพิ่มงานใต้${dept}`} />
+                        <input class="inp" value={newSupportWorkNames.value[dept] || ""} onInput={(e) => setNewSupportWorkNames((current) => ({ ...current, [dept]: e.target.value }))} onKeydown={(e) => runOnEnter(e, () => addSupportWork(dept))} placeholder={`เพิ่มงานใต้${dept}`} />
                         <button class="btn btn-s btn-sm" onClick={() => addSupportWork(dept)}>+ เพิ่มงาน</button>
                       </div>
                     </div>
@@ -909,10 +1069,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 {worklines.length === 0 &&
                   <div class="structure-empty">ยังไม่มีข้อมูลสายงานและกลุ่มงาน</div>
                 }
-                {worklines.includes("สายงานบริหาร") &&
+                {(worklines.includes("สายบริหาร") || worklines.includes("สายงานบริหาร")) &&
                 <section class="structure-section">
                   <div class="structure-section-head">
-                    <div class="fw7 fs14 text-navy">สายงานบริหาร</div>
+                    <div class="fw7 fs14 text-navy">สายบริหาร</div>
                     <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "dept", type: "3", name: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มกลุ่มงาน</button>
                   </div>
                   <div class="structure-grid">
@@ -924,7 +1084,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                         <button class="btn-link opacity-0 group-hover:opacity-100" style={{ fontSize: '12px' }} onClick={() => startEdit("admin-dept", item)}>✎</button>
                       </div>
                   )}
-                    {adminDepts.length === 0 && <div class="structure-empty">ยังไม่มีกลุ่มงานในสายงานบริหาร</div>}
+                    {adminDepts.length === 0 && <div class="structure-empty">ยังไม่มีกลุ่มงานในสายบริหาร</div>}
                   </div>
                 </section>
                 }
@@ -1054,6 +1214,34 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         </div>
       </div>
 
+      {showSupportDeptModal.value &&
+      <div class="mo">
+          <div class="mo-box anim-fade-in" style={{ width: "420px" }}>
+            <div class="mo-h">
+              <div class="fw8">เพิ่มฝ่าย</div>
+              <button class="btn btn-s btn-sm" type="button" onClick={() => setShowSupportDeptModal(false)}>✕</button>
+            </div>
+            <form class="mo-b" onSubmit={(e) => { e.preventDefault(); submitSupportDept(); }}>
+              <div class="fg">
+                <label class="lbl fw8" style={{ color: "var(--navy)" }}>ชื่อฝ่ายใหม่</label>
+                <input
+                  class="inp"
+                  value={newSupportDeptName.value}
+                  onInput={(e) => setNewSupportDeptName(e.target.value)}
+                  onKeydown={(e) => runOnEnter(e, submitSupportDept)}
+                  placeholder="กรอกชื่อฝ่าย..."
+                  autoFocus
+                />
+              </div>
+              <div class="add-modal-actions">
+                <button class="btn btn-s" type="button" onClick={() => setShowSupportDeptModal(false)}>ยกเลิก</button>
+                <button class="btn btn-p add-modal-submit" type="submit">เพิ่มฝ่าย</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      }
+
       {showAddModal.value &&
       <div class="mo">
           <div class="mo-box anim-fade-in" style={{ width: "450px" }}>
@@ -1061,20 +1249,15 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               <div class="fw8">{getAddModalCopy().title}</div>
               <button class="btn btn-s btn-sm" type="button" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
-            <div class="mo-b">
+            <form class="mo-b" onSubmit={(e) => { e.preventDefault(); saveAddItem(); }}>
               <div class="fg">
                 <label class="lbl fw8" style={{ color: "var(--navy)" }}>{getAddModalCopy().label}</label>
                 <input
                   ref={addNameInput}
                   class="inp"
                   value={addItemData.value.name}
-                  onChange={(e) => setAddItemData({ ...addItemData.value, name: e.target.value })}
-                  onKeydown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      saveAddItem();
-                    }
-                  }}
+                  onInput={(e) => setAddItemData({ ...addItemData.value, name: e.target.value })}
+                  onKeydown={(e) => runOnEnter(e, saveAddItem)}
                   disabled={isSavingAddItem.value}
                   placeholder="กรอกชื่อที่ต้องการ..."
                   autoFocus
@@ -1101,11 +1284,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
               <div class="add-modal-actions">
                 <button class="btn btn-s" type="button" onClick={() => setShowAddModal(false)}>ยกเลิก</button>
-                <button class="btn btn-p add-modal-submit" type="button" disabled={isSavingAddItem.value} onClick={saveAddItem}>
+                <button class="btn btn-p add-modal-submit" type="submit" disabled={isSavingAddItem.value}>
                   {isSavingAddItem.value ? "กำลังเพิ่ม..." : "เพิ่มรายการ"}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       }
@@ -1117,10 +1300,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               <div class="fw8">แก้ไขข้อมูลรายการ</div>
               <button class="btn btn-s btn-sm" onClick={() => setEditingId(null)}>✕</button>
             </div>
-            <div class="mo-b">
+            <form class="mo-b" onSubmit={(e) => { e.preventDefault(); saveEdit(); }}>
               <div class="fg">
                 <label class="lbl">{editingItem.value.type === "comp-type" ? "รหัสประเภทสมรรถนะ" : "ชื่อปัจจุบัน"}: <span class="muted">{editingItem.value.oldName}</span></label>
-                <input class="inp" value={newValue.value} onChange={(e) => setNewValue(e.target.value)} placeholder="กรอกชื่อใหม่..." autoFocus />
+                <input class="inp" value={newValue.value} onInput={(e) => setNewValue(e.target.value)} onKeydown={(e) => runOnEnter(e, saveEdit)} placeholder="กรอกชื่อใหม่..." autoFocus />
               </div>
               {editingItem.value.type === "comp-type" &&
             <>
@@ -1135,51 +1318,56 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               </>
             }
               <div style={{ display: "flex", gap: "8px", marginTop: "24px", justifyContent: "space-between" }}>
-                <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}>🗑️ ลบรายการนี้</button>
+                <button class="btn btn-r" type="button" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}>🗑️ ลบรายการนี้</button>
                 <div class="flex g8">
-                  <button class="btn btn-s" onClick={() => setEditingId(null)}>ยกเลิก</button>
-                  <button class="btn btn-p" onClick={saveEdit}>💾 บันทึก</button>
+                  <button class="btn btn-s" type="button" onClick={() => setEditingId(null)}>ยกเลิก</button>
+                  <button class="btn btn-p edit-modal-save" type="submit">💾 บันทึก</button>
                 </div>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       }
 
       <style>{`
-        .structure-tabs { display: flex; gap: 4px; padding: 4px; width: fit-content; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); background: #fff; }
-        .structure-tab { flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 12px; }
+        .structure-tabs { position: relative; z-index: 100; display: flex; gap: 4px; padding: 4px; width: fit-content; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); background: #fff; pointer-events: auto; }
+        .structure-tab { position: relative; z-index: 1; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--text2); cursor: pointer; font-size: 13px; font-weight: 600; padding: 8px 12px; pointer-events: auto; }
         .structure-tab.active { background: var(--blue); color: #fff; }
-        .structure-shell { min-height: 400px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r); background: #fff; }
+        .structure-shell { position: relative; z-index: 1; min-height: 400px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r); background: #fff; }
         .structure-shell.workline-shell,
         .structure-shell.level-shell,
-        .structure-shell.comp-shell { min-height: 0; overflow: visible; border: 0; background: transparent; }
+        .structure-shell.comp-shell { min-height: 400px; overflow: hidden; border: 1px solid var(--border); background: #fff; }
         .structure-shell.workline-shell .structure-pane,
         .structure-shell.level-shell .structure-pane,
-        .structure-shell.comp-shell .structure-pane { padding: 0; }
+        .structure-shell.comp-shell .structure-pane { padding: 20px; }
         .structure-pane { padding: 20px; }
         .structure-heading { margin-bottom: 14px; color: var(--text); font-size: 15px; font-weight: 800; }
         .structure-note { display: grid; gap: 4px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--blue-md); border-left: 4px solid var(--blue); border-radius: 8px; background: var(--blue-lt); color: var(--text2); font-size: 12px; line-height: 1.55; }
         .add-modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; width: 100%; }
         .add-modal-actions .btn { flex: 0 0 auto; min-width: 96px; }
         .add-modal-submit { display: inline-flex !important; align-items: center; justify-content: center; min-width: 112px; background: var(--blue) !important; color: #fff !important; border-color: var(--blue) !important; opacity: 1 !important; visibility: visible !important; }
+        .edit-modal-save { display: inline-flex !important; align-items: center; justify-content: center; background: var(--blue) !important; color: #fff !important; border-color: var(--blue) !important; opacity: 1 !important; visibility: visible !important; }
+        .support-add-dept-btn { flex: 0 0 auto; min-height: 38px; white-space: nowrap; background: var(--blue) !important; border-color: var(--blue) !important; color: #fff !important; opacity: 1 !important; visibility: visible !important; }
+        .add-modal-submit:hover,
+        .edit-modal-save:hover,
+        .support-add-dept-btn:hover { background: #1d4ed8 !important; border-color: #1d4ed8 !important; color: #fff !important; }
         .structure-note b { color: var(--blue); font-size: 13px; }
         .structure-stack { display: grid; gap: 0; }
         .structure-section { padding: 16px 0; border-top: 1px solid var(--border); }
         .structure-section:first-child { padding-top: 0; border-top: 0; }
-        .workline-stack { gap: 16px; }
-        .workline-section { padding: 18px; border: 1px solid var(--border); border-radius: var(--r); background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
-        .workline-stack .workline-section:first-child { padding-top: 18px; border-top: 1px solid var(--border); }
-        .workline-section .structure-section-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e5edf7; }
+        .workline-stack { gap: 14px; }
+        .workline-section { padding: 0 16px 16px; border: 1px solid #dbe5f1; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04); overflow: hidden; }
+        .workline-stack .workline-section:first-child { padding-top: 0; border-top: 1px solid #dbe5f1; }
+        .workline-section .structure-section-head { margin: 0 -16px 14px; padding: 13px 16px; border-bottom: 1px solid #dbe5f1; background: #f8fafc; }
         .level-stack,
-        .comp-stack { gap: 16px; }
+        .comp-stack { gap: 0; }
         .level-section-card,
-        .comp-section-card { padding: 18px; border: 1px solid var(--border); border-radius: var(--r); background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .comp-section-card { padding: 16px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
         .level-stack .level-section-card:first-child,
-        .comp-stack .comp-section-card:first-child { padding-top: 18px; border-top: 1px solid var(--border); }
+        .comp-stack .comp-section-card:first-child { padding-top: 0; border-top: 0; }
         .level-section-card .structure-section-head,
-        .comp-section-card .structure-section-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e5edf7; }
-        .structure-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .comp-section-card .structure-section-head { margin-bottom: 12px; padding-bottom: 0; border-bottom: 0; }
+        .structure-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; min-width: 0; }
         .structure-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
         .structure-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }
         .level-auto-note { display: grid; gap: 4px; margin-bottom: 22px; padding: 14px 16px; border: 1px solid #bfdbfe; border-left: 4px solid var(--blue); border-radius: 8px; background: #eff6ff; }
@@ -1193,6 +1381,15 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .competency-type-desc { display: -webkit-box; margin-top: 4px; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
         .support-chain-item { align-items: center; grid-column: span 2; }
         .support-chain-item .sel { max-width: 280px; }
+        .support-chain-pane button,
+        .support-chain-pane input,
+        .support-chain-pane select { position: relative; z-index: 1; }
+        .support-add-head,
+        .support-dept-head { align-items: flex-start; }
+        .support-add-controls { display: flex; flex: 0 1 min(100%, 420px); gap: 8px; min-width: 0; }
+        .support-add-controls .inp { min-width: 0; flex: 1 1 auto; }
+        .support-add-controls .btn { flex: 0 0 auto; white-space: nowrap; }
+        .support-head-select-control { flex: 0 1 320px; max-width: min(100%, 320px); min-width: 180px; }
         .support-unit-add { display: flex; gap: 8px; width: min(100%, 360px); }
         .support-work-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
         .support-work-card { display: grid; align-content: start; gap: 11px; min-height: 260px; padding: 14px; border: 1px solid #dbe5f1; border-radius: 8px; background: #fff; }
@@ -1205,11 +1402,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .support-columns { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
         .support-group-more { justify-self: start; margin-top: 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; padding: 8px 10px; }
         .support-group-more:hover { border-color: var(--blue); background: var(--blue-lt); }
-        .support-column { display: grid; align-content: start; gap: 9px; min-height: 170px; padding: 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; }
+        .support-column { display: grid; align-content: start; gap: 9px; min-height: 170px; padding: 12px; border: 1px solid #dbe5f1; border-radius: 7px; background: #fff; }
         .support-column-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 32px; padding-bottom: 9px; border-bottom: 1px solid var(--border); }
         .support-position-list { display: grid; align-content: start; gap: 7px; }
         .support-more { justify-self: start; border: 0; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; padding: 0; }
-        .support-add { min-height: 34px; border: 1px dashed var(--border); border-radius: 7px; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; }
+        .support-add { width: 100%; min-height: 34px; border: 1px dashed #dbe5f1; border-radius: 7px; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; }
         .support-add:hover { border-color: var(--blue); background: var(--blue-lt); }
         .tbl-mini { width: 100%; border-collapse: collapse; font-size: 13px; }
         .tbl-mini td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: var(--text2); }

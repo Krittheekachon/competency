@@ -184,7 +184,7 @@ const roleOptions = [
   'ผู้ดูแลระบบ',
 ];
 
-const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
+const getDisplayLevel = (user: User) => (['สายบริหาร', 'สายงานบริหาร'].includes(user.w || '') ? user.p : user.l);
 const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '—');
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
@@ -197,8 +197,8 @@ const roleBadge = (role?: string): RoleBadge => {
       return { label: 'ผู้ดูแลระบบ', className: 'bp' };
     case 'hr':
       return { label: 'งานทรัพยากรบุคคล', className: 'bb' };
-    case 'manager':
     case 'dean':
+    case 'manager':
       return {
         label: 'ผู้บริหารคณะ',
         className: 'bg',
