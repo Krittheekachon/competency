@@ -785,12 +785,16 @@ const closeModal = () => {
 
 .content .btn.btn-p {
     background: var(--blue);
-    border: none;
+    border: 1px solid var(--blue);
     color: #fff;
+    opacity: 1;
+    visibility: visible;
 }
 
 .content .btn.btn-p:hover {
     background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
 }
 
 .content .btn.btn-t {
@@ -811,6 +815,20 @@ const closeModal = () => {
 
 .content .btn.btn-s:hover {
     background: var(--border);
+}
+
+.content .btn.btn-p {
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    opacity: 1;
+    visibility: visible;
+}
+
+.content .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
 }
 
 .content .sec-t {
