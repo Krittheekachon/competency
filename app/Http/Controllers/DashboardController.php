@@ -42,6 +42,7 @@ class DashboardController extends Controller
                 'desc' => $method->description ?? '',
             ]);
         $structureData = $this->adminStructurePayload();
+        $hrStructureData = $this->hrStructurePayload();
 
         $managerSummary = [
             'totalUsers' => User::count(),
@@ -69,6 +70,34 @@ class DashboardController extends Controller
                     'staffUsers' => User::where('role_id', 4)->count(),
                     'source' => 'database',
                 ],
+                ...$hrStructureData,
+                'competencies' => $competencies,
+                'learningMethods' => $learningMethods,
+                'activeCycleName' => $activeCycleName,
+                'hrCatalogItems' => DB::table('learning_catalogs')
+                    ->leftJoin('learning_method_types', 'learning_catalogs.method_type_id', '=', 'learning_method_types.id')
+                    ->select(
+                        'learning_catalogs.id',
+                        'learning_catalogs.name',
+                        'learning_catalogs.provider',
+                        'learning_catalogs.cost',
+                        'learning_catalogs.description',
+                        'learning_catalogs.is_active',
+                        'learning_method_types.key as method_key',
+                        'learning_method_types.label as method_label'
+                    )
+                    ->orderBy('learning_catalogs.name')
+                    ->get()
+                    ->map(fn (object $item) => [
+                        'id' => $item->id,
+                        'name' => $item->name,
+                        'methodKey' => $item->method_key,
+                        'methodLabel' => $item->method_label,
+                        'provider' => $item->provider ?? '',
+                        'cost' => $item->cost,
+                        'description' => $item->description ?? '',
+                        'isActive' => (bool) $item->is_active,
+                    ]),
                 'overviewUsers' => User::query()
                     ->select(['name', 'email'])
                     ->get()
@@ -183,13 +212,66 @@ class DashboardController extends Controller
             'levelsByWorkline' => DB::table('levels')
                 ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
                 ->select('levels.name', 'worklines.name as workline_name')
+                ->whereNull('levels.job_family_id')
                 ->orderBy('levels.name')
                 ->get()
                 ->filter(fn (object $level) => $level->workline_name !== null)
                 ->groupBy('workline_name')
                 ->map(fn ($levels) => $levels->pluck('name')->values())
                 ->all(),
+            'levelsByJobFamily' => DB::table('levels')
+                ->join('job_families', 'levels.job_family_id', '=', 'job_families.id')
+                ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
+                ->select('levels.name', 'job_families.name as job_family_name', 'worklines.name as workline_name')
+                ->orderBy('levels.name')
+                ->get()
+                ->filter(fn (object $level) => $level->workline_name !== null)
+                ->groupBy('workline_name')
+                ->map(fn ($levelsByWorkline) => $levelsByWorkline
+                    ->groupBy('job_family_name')
+                    ->map(fn ($levels) => $levels->pluck('name')->values())
+                    ->all())
+                ->all(),
+            'levelExpectationsByWorkline' => DB::table('levels')
+                ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
+                ->select('levels.name', 'levels.expected_level', 'worklines.name as workline_name')
+                ->whereNull('levels.job_family_id')
+                ->orderBy('levels.name')
+                ->get()
+                ->filter(fn (object $level) => $level->workline_name !== null)
+                ->groupBy('workline_name')
+                ->map(fn ($levels) => $levels->mapWithKeys(fn (object $level) => [
+                    $level->name => $level->expected_level,
+                ]))
+                ->all(),
+            'levelExpectationsByJobFamily' => DB::table('levels')
+                ->join('job_families', 'levels.job_family_id', '=', 'job_families.id')
+                ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
+                ->select('levels.name', 'levels.expected_level', 'job_families.name as job_family_name', 'worklines.name as workline_name')
+                ->orderBy('levels.name')
+                ->get()
+                ->filter(fn (object $level) => $level->workline_name !== null)
+                ->groupBy('workline_name')
+                ->map(fn ($levelsByWorkline) => $levelsByWorkline
+                    ->groupBy('job_family_name')
+                    ->map(fn ($levels) => $levels->mapWithKeys(fn (object $level) => [
+                        $level->name => $level->expected_level,
+                    ])->all())
+                    ->all())
+                ->all(),
         ];
+    }
+
+    private function hrStructurePayload(): array
+    {
+        $structure = $this->adminStructurePayload();
+
+        unset($structure['levelsByWorkline']);
+        unset($structure['levelExpectationsByWorkline']);
+        unset($structure['levelsByJobFamily']);
+        unset($structure['levelExpectationsByJobFamily']);
+
+        return $structure;
     }
 
     private function competencyPayload()

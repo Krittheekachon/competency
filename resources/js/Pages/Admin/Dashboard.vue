@@ -90,6 +90,9 @@ const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สาย�
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
+const levelExpectationsByWorkline = ref(clone(page.props.levelExpectationsByWorkline || {}));
+const levelsByJobFamily = ref(clone(page.props.levelsByJobFamily || {}));
+const levelExpectationsByJobFamily = ref(clone(page.props.levelExpectationsByJobFamily || {}));
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
@@ -101,6 +104,9 @@ const normalizeWorklineName = (name = '') => name.replace(/^สายงาน\s
 const selectedWorklineKind = computed(() => normalizeWorklineName(userForm.value.w));
 const selectedWorklineGroups = computed(() => jobFamiliesByWorkline.value[userForm.value.w] || {});
 const levelOptionsFromDatabase = computed(() => {
+    const scopedLevels = levelsByJobFamily.value[userForm.value.w]?.[userForm.value.job] || [];
+    if (scopedLevels.length) return scopedLevels;
+
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
     if (directLevels.length) return directLevels;
     if (userForm.value.p) return [userForm.value.p];
@@ -596,6 +602,12 @@ const logout = () => router.post(route('logout'));
                     :set-job-families-by-workline="setRef(jobFamiliesByWorkline)"
                     :levels-by-workline="levelsByWorkline"
                     :set-levels-by-workline="setRef(levelsByWorkline)"
+                    :level-expectations-by-workline="levelExpectationsByWorkline"
+                    :set-level-expectations-by-workline="setRef(levelExpectationsByWorkline)"
+                    :levels-by-job-family="levelsByJobFamily"
+                    :set-levels-by-job-family="setRef(levelsByJobFamily)"
+                    :level-expectations-by-job-family="levelExpectationsByJobFamily"
+                    :set-level-expectations-by-job-family="setRef(levelExpectationsByJobFamily)"
                     :academic-rank="academicRanks"
                     :set-academic-rank="setRef(academicRanks)"
                     :support-rank="supportRanks"

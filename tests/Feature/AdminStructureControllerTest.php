@@ -127,12 +127,14 @@ class AdminStructureControllerTest extends TestCase
             ->post(route('admin.structure.levels.store'), [
                 'workline_name' => 'สายทดสอบ',
                 'name' => 'ระดับทดสอบ',
+                'expected_level' => 3,
             ])
             ->assertRedirect();
 
         $this->assertDatabaseHas('levels', [
             'workline_id' => $worklineId,
             'name' => 'ระดับทดสอบ',
+            'expected_level' => 3,
         ]);
 
         $this->actingAs($admin)
@@ -140,12 +142,14 @@ class AdminStructureControllerTest extends TestCase
                 'workline_name' => 'สายทดสอบ',
                 'old_name' => 'ระดับทดสอบ',
                 'name' => 'ระดับแก้ไข',
+                'expected_level' => 4,
             ])
             ->assertRedirect();
 
         $this->assertDatabaseHas('levels', [
             'workline_id' => $worklineId,
             'name' => 'ระดับแก้ไข',
+            'expected_level' => 4,
         ]);
         $this->assertDatabaseMissing('levels', [
             'workline_id' => $worklineId,
@@ -162,6 +166,80 @@ class AdminStructureControllerTest extends TestCase
         $this->assertDatabaseMissing('levels', [
             'workline_id' => $worklineId,
             'name' => 'ระดับแก้ไข',
+        ]);
+    }
+
+    public function test_admin_can_scope_levels_to_a_job_family(): void
+    {
+        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายวิชาการ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $teacherFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'อาจารย์',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $researcherFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'นักวิจัย',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.structure.levels.store'), [
+                'workline_name' => 'สายวิชาการ',
+                'job_family_name' => 'อาจารย์',
+                'name' => 'ผศ',
+                'expected_level' => 3,
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($admin)
+            ->post(route('admin.structure.levels.store'), [
+                'workline_name' => 'สายวิชาการ',
+                'job_family_name' => 'นักวิจัย',
+                'name' => 'นักวิจัยระดับ 1',
+                'expected_level' => 2,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('levels', [
+            'workline_id' => $worklineId,
+            'job_family_id' => $teacherFamilyId,
+            'name' => 'ผศ',
+            'expected_level' => 3,
+        ]);
+        $this->assertDatabaseHas('levels', [
+            'workline_id' => $worklineId,
+            'job_family_id' => $researcherFamilyId,
+            'name' => 'นักวิจัยระดับ 1',
+            'expected_level' => 2,
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('admin.structure.levels.update'), [
+                'workline_name' => 'สายวิชาการ',
+                'job_family_name' => 'อาจารย์',
+                'old_name' => 'ผศ',
+                'name' => 'ผู้ช่วยศาสตราจารย์',
+                'expected_level' => 3,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('levels', [
+            'workline_id' => $worklineId,
+            'job_family_id' => $teacherFamilyId,
+            'name' => 'ผู้ช่วยศาสตราจารย์',
+        ]);
+        $this->assertDatabaseMissing('levels', [
+            'workline_id' => $worklineId,
+            'job_family_id' => $teacherFamilyId,
+            'name' => 'ผศ',
         ]);
     }
 

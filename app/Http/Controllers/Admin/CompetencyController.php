@@ -152,7 +152,6 @@ class CompetencyController extends Controller
             'name' => [
                 'required',
                 'string',
-                'max:255',
                 Rule::unique('competencies', 'name')->ignore($competency?->id),
             ],
             'detail' => ['nullable', 'string'],
@@ -590,7 +589,7 @@ class CompetencyController extends Controller
         $validator = validator($normalized, [
             'type' => ['required', 'string', Rule::exists('competency_types', 'code')],
             'code' => ['required', 'string', 'max:50'],
-            'name' => ['required', 'string', 'max:255'],
+            'name' => ['required', 'string'],
             'description' => ['nullable', 'string'],
             'level' => ['required', 'integer', 'min:1', 'max:5'],
             'level_description' => ['nullable', 'string'],

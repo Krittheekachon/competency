@@ -151,6 +151,34 @@ class AdminCompetencyControllerTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_import_competency_with_long_name(): void
+    {
+        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        CompetencyType::create([
+            'code' => 'FC',
+            'full_name' => 'Functional Competency',
+            'description' => 'สมรรถนะตามสายงาน',
+        ]);
+
+        $longName = str_repeat('การออกแบบและวางแผนการจัดการการเรียนรู้', 12);
+        $csv = implode("\n", [
+            'type,code,name,description,level,indicator_order,indicator,weight',
+            'FC,FC1-003,"'.$longName.'",รายละเอียดสมรรถนะ,1,1,พฤติกรรมบ่งชี้ระดับหนึ่ง,0.25',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.competencies.import'), [
+                'file' => UploadedFile::fake()->createWithContent('competencies.csv', $csv),
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('competencies', [
+            'code' => 'FC1-003',
+            'name' => $longName,
+        ]);
+    }
+
     public function test_admin_cannot_create_competency_with_duplicate_name(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);

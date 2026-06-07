@@ -1,31 +1,29 @@
 <script setup>
 import { router, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
-import { ManagerGap, ManagerIDP } from '../ManagerPages.vue';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     hrSummary: {
         type: Object,
         required: true,
     },
-    hrWorklines: {
+    worklines: {
         type: Array,
         default: () => [],
     },
-    activeCycleName: {
-        type: String,
-        default: '',
+    jobFamiliesByWorkline: {
+        type: Object,
+        default: () => ({}),
     },
-    hrCycles: {
+    levelsByWorkline: {
+        type: Object,
+        default: () => ({}),
+    },
+    competencies: {
         type: Array,
         default: () => [],
     },
-    hrExpectationSets: {
+    learningMethods: {
         type: Array,
         default: () => [],
     },
@@ -33,104 +31,137 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    overviewUsers: {
-        type: Array,
-        default: () => [],
+    activeCycleName: {
+        type: String,
+        default: '',
     },
 });
 
+const page = usePage();
 const logout = () => router.post(route('logout'));
 
 const isSidebarOpen = ref(true);
+const activePage = ref('hr-position-competencies');
+const activeModal = ref('');
+const selectedWorkline = ref('');
+const selectedJobFamily = ref('');
+const selectedPosition = ref('');
+const dictionarySearch = ref('');
+const dictionaryType = ref('all');
+const assignedByScope = ref({});
+const selectedDetailCompetency = ref(null);
 
 const sections = [
     {
-        title: 'การประเมินตนเอง',
-        items: [
-            { id: 'emp-assess', icon: '', label: 'ประเมินตนเอง' },
-            { id: 'emp-gap', icon: '', label: 'สรุปผลสมรรถนะ' },
-            { id: 'emp-idp', icon: '', label: 'แผนพัฒนา IDP' },
-            { id: 'emp-progress', icon: '', label: 'ความก้าวหน้า' },
-            { id: 'emp-idp-detail', icon: '', label: 'รายละเอียด IDP' },
-        ],
-    },
-    {
         title: 'HR',
         items: [
-            { id: 'hr-position-competencies', icon: '', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
-            { id: 'hr-cycle', icon: '', label: 'รอบการประเมิน' },
-            { id: 'hr-template', icon: '', label: 'กำหนดความคาดหวัง' },
-            { id: 'hr-catalog', icon: '', label: 'Learning Catalog' },
-        ],
-    },
-    {
-        title: 'ภาพรวมคณะ',
-        items: [
-            { id: 'hr-comp-overview', icon: '', label: 'ภาพรวม Competency คณะ' },
-            { id: 'hr-idp-overview', icon: '', label: 'ภาพรวม IDP คณะ' },
+            { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
+            { id: 'hr-catalog', label: 'Learning Catalog' },
         ],
     },
 ];
 
 const pageTitles = {
     'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
-    'hr-cycle': 'รอบการประเมิน',
-    'hr-template': 'กำหนดความคาดหวัง',
     'hr-catalog': 'Learning Catalog',
-    'hr-comp-overview': 'ภาพรวม Competency คณะ',
-    'hr-idp-overview': 'ภาพรวม IDP คณะ',
 };
 
-const emptyStates = {
-    'hr-position-competencies': {
-        title: 'ยังไม่มีข้อมูลสมรรถนะประจำตำแหน่ง',
-        body: 'เมื่อเชื่อมข้อมูลตำแหน่งและสมรรถนะจริงแล้ว รายการกำหนดสมรรถนะจะแสดงในหน้านี้',
-    },
-    'hr-cycle': {
-        title: 'ยังไม่มีรอบการประเมินในฐานข้อมูล',
-        body: 'เพิ่มตารางและ API สำหรับรอบการประเมินก่อน หน้านี้จึงจะแสดงรอบที่เปิดใช้งานจริง',
-    },
-    'hr-template': {
-        title: 'ยังไม่มีข้อมูลความคาดหวัง',
-        body: 'พื้นที่นี้จะใช้กำหนดระดับคาดหวังเมื่อมีข้อมูล competency และตำแหน่งจากระบบจริง',
-    },
-    'hr-catalog': {
-        title: 'ยังไม่มี Learning Catalog',
-        body: 'เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะถูกดึงจากฐานข้อมูลมาแสดง',
-    },
-    'hr-comp-overview': {
-        title: 'ยังไม่มีผล Competency สำหรับภาพรวม',
-        body: 'รอผลการประเมินจริงก่อน หน้านี้จึงจะแสดงสถานะรายหน่วยงานและความเสี่ยงของคณะ',
-    },
-    'hr-idp-overview': {
-        title: 'ยังไม่มีข้อมูล IDP สำหรับภาพรวม',
-        body: 'รอแผน IDP และสถานะความคืบหน้าจริงก่อน หน้านี้จึงจะแสดงภาพรวมของคณะ',
-    },
-};
-
-const activePage = ref('hr-position-competencies');
-const activeModal = ref('');
-const page = usePage();
-const currentPageTitle = computed(() => pageTitles[activePage.value]);
-const currentEmptyState = computed(() => emptyStates[activePage.value]);
-const userInitial = computed(() => page.props.auth.user.name?.[0] || 'ง');
+const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
+const currentPageTitle = computed(() => pageTitles[activePage.value] || 'HR');
 const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
-const selectedWorkline = ref('');
-const selectedJobFamily = ref('');
-const selectedPosition = ref('');
-const worklines = computed(() => props.hrWorklines);
-const hasWorklines = computed(() => worklines.value.length > 0);
-const hasCycles = computed(() => props.hrCycles.length > 0);
-const hasExpectationSets = computed(() => props.hrExpectationSets.length > 0);
-const hasCatalogItems = computed(() => props.hrCatalogItems.length > 0);
+const worklineOptions = computed(() => props.worklines || []);
 
-const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง');
-const jobFamilyLabel = computed(() => {
-    if (!selectedWorkline.value) return 'ยังไม่มีข้อมูลกลุ่มงาน';
-    if (selectedWorkline.value === 'สายวิชาการ') return 'สายวิชาการ';
-    if (selectedWorkline.value === 'สายงานบริหาร') return 'คณะวิศวกรรมศาสตร์';
-    return selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน';
+const familiesForSelectedWorkline = computed(() => {
+    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return Object.keys(groups);
 });
+
+const rawPositionsForSelectedFamily = computed(() => {
+    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return groups[selectedJobFamily.value] || [];
+});
+
+const levelsForSelectedWorkline = computed(() => {
+    return props.levelsByWorkline?.[selectedWorkline.value] || [];
+});
+
+const positionOptions = computed(() => {
+    if (levelsForSelectedWorkline.value.length) return levelsForSelectedWorkline.value;
+    if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
+    return selectedJobFamily.value ? [selectedJobFamily.value] : [];
+});
+
+const allPositionCount = computed(() => {
+    return worklineOptions.value.reduce((total, workline) => {
+        const levels = props.levelsByWorkline?.[workline] || [];
+        if (levels.length) return total + levels.length;
+
+        const families = props.jobFamiliesByWorkline?.[workline] || {};
+        return total + Object.entries(families || {}).reduce((sum, [familyName, positions]) => {
+            const count = Array.isArray(positions) && positions.length ? positions.length : 1;
+            return sum + (familyName ? count : 0);
+        }, 0);
+    }, 0);
+});
+
+const configuredPositionCount = computed(() => 0);
+const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
+const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
+const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
+const assignmentScopeKey = computed(() => [
+    selectedWorkline.value || '-',
+    selectedJobFamily.value || '-',
+    selectedPosition.value || '-',
+].join('|'));
+
+const competencyItems = computed(() => props.competencies || []);
+const competencyTypes = computed(() => {
+    return [...new Set(competencyItems.value.map((item) => item.t).filter(Boolean))];
+});
+const coreCompetencyCount = computed(() => competencyItems.value.filter((item) => item.t === 'CC').length);
+const assignedCompetencies = computed(() => assignedByScope.value[assignmentScopeKey.value] || []);
+const assignedCompetencyIds = computed(() => new Set(assignedCompetencies.value.map((item) => item.id)));
+const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
+const filteredCompetencies = computed(() => {
+    const keyword = dictionarySearch.value.trim().toLowerCase();
+
+    return competencyItems.value.filter((item) => {
+        const matchesType = dictionaryType.value === 'all' || item.t === dictionaryType.value;
+        const haystack = `${item.cd || ''} ${item.n || ''} ${item.det || ''}`.toLowerCase();
+        return matchesType && (!keyword || haystack.includes(keyword));
+    });
+});
+const availableCoreCompetencies = computed(() => {
+    return competencyItems.value.filter((item) => item.t === 'CC' && !assignedCompetencyIds.value.has(item.id));
+});
+
+const catalogItems = computed(() => props.hrCatalogItems || []);
+const catalogMethodStats = computed(() => {
+    const methods = props.learningMethods?.length
+        ? props.learningMethods
+        : [...new Map(catalogItems.value.map((item) => [item.methodKey, {
+            key: item.methodKey,
+            label: item.methodLabel || item.methodKey,
+        }])).values()].filter((item) => item.key);
+
+    return methods.map((method) => ({
+        key: method.key,
+        label: method.label,
+        count: catalogItems.value.filter((item) => item.methodKey === method.key).length,
+    }));
+});
+
+watch(worklineOptions, (next) => {
+    if (!selectedWorkline.value && next.length) selectedWorkline.value = next[0];
+}, { immediate: true });
+
+watch(familiesForSelectedWorkline, (next) => {
+    if (!next.includes(selectedJobFamily.value)) selectedJobFamily.value = next[0] || '';
+}, { immediate: true });
+
+watch(positionOptions, (next) => {
+    if (!next.includes(selectedPosition.value)) selectedPosition.value = next[0] || '';
+}, { immediate: true });
 
 const openModal = (modal) => {
     activeModal.value = modal;
@@ -138,6 +169,40 @@ const openModal = (modal) => {
 
 const closeModal = () => {
     activeModal.value = '';
+    selectedDetailCompetency.value = null;
+};
+
+const setAssignedForCurrentScope = (items) => {
+    assignedByScope.value = {
+        ...assignedByScope.value,
+        [assignmentScopeKey.value]: items,
+    };
+};
+
+const addCompetency = (item) => {
+    if (!selectedPosition.value || assignedCompetencyIds.value.has(item.id)) return;
+    setAssignedForCurrentScope([...assignedCompetencies.value, item]);
+};
+
+const addAllCoreCompetencies = () => {
+    if (!selectedPosition.value || !availableCoreCompetencies.value.length) return;
+    setAssignedForCurrentScope([...assignedCompetencies.value, ...availableCoreCompetencies.value]);
+};
+
+const removeCompetency = (itemId) => {
+    setAssignedForCurrentScope(assignedCompetencies.value.filter((item) => item.id !== itemId));
+};
+
+const openCompetencyDetail = (item) => {
+    selectedDetailCompetency.value = item;
+    openModal('competency-detail');
+};
+
+const formatCost = (cost) => {
+    if (cost === null || cost === undefined || cost === '') return 'ฟรี';
+    const number = Number(cost);
+    if (Number.isNaN(number) || number === 0) return 'ฟรี';
+    return `${number.toLocaleString('th-TH')} บาท`;
 };
 </script>
 
@@ -168,7 +233,6 @@ const closeModal = () => {
                         type="button"
                         @click="activePage = item.id"
                     >
-                        <span class="nav-ic">{{ item.icon }}</span>
                         <span>{{ item.label }}</span>
                     </button>
                 </div>
@@ -194,7 +258,7 @@ const closeModal = () => {
                 <template v-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">
                         <div>
-                            <div class="position-kicker">competency setup</div>
+                            <div class="position-kicker">COMPETENCY SETUP</div>
                             <div class="sec-t position-title">กำหนดสมรรถนะประจำตำแหน่ง</div>
                             <div class="sec-s position-sub">
                                 เลือกตำแหน่ง แล้วกำหนดชุดสมรรถนะที่ต้องใช้ประเมิน ก่อนนำไปตั้งระดับความคาดหวังในรอบประเมิน
@@ -202,11 +266,11 @@ const closeModal = () => {
                         </div>
                         <div class="position-hero-metrics">
                             <div>
-                                <span>0</span>
+                                <span>{{ configuredPositionCount }}</span>
                                 <small>ตำแหน่งที่กำหนดแล้ว</small>
                             </div>
                             <div>
-                                <span>0</span>
+                                <span>{{ unconfiguredPositionCount }}</span>
                                 <small>ยังไม่กำหนด</small>
                             </div>
                         </div>
@@ -215,9 +279,9 @@ const closeModal = () => {
                     <div class="position-scope mb14">
                         <div class="position-workline">
                             <div class="position-scope-label">สายงาน</div>
-                            <div v-if="hasWorklines" class="position-segments">
+                            <div v-if="worklineOptions.length" class="position-segments">
                                 <button
-                                    v-for="workline in worklines"
+                                    v-for="workline in worklineOptions"
                                     :key="workline"
                                     :class="{ active: selectedWorkline === workline }"
                                     type="button"
@@ -229,16 +293,22 @@ const closeModal = () => {
                             <div v-else class="position-empty-inline">ยังไม่มีสายงาน</div>
                         </div>
                         <div class="position-picker">
-                            <div v-if="selectedWorkline === 'สายสนับสนุน'" class="fg mb0">
+                            <div class="fg mb0">
                                 <label class="lbl">กลุ่มงาน / Job Family</label>
                                 <select v-model="selectedJobFamily" class="sel">
                                     <option value="">ยังไม่มีข้อมูลกลุ่มงาน</option>
+                                    <option v-for="family in familiesForSelectedWorkline" :key="family" :value="family">
+                                        {{ family }}
+                                    </option>
                                 </select>
                             </div>
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
                                 <select v-model="selectedPosition" class="sel">
-                                    <option value="">ยังไม่มีข้อมูลตำแหน่ง</option>
+                                    <option value="">ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง</option>
+                                    <option v-for="position in positionOptions" :key="position" :value="position">
+                                        {{ position }}
+                                    </option>
                                 </select>
                             </div>
                         </div>
@@ -252,13 +322,13 @@ const closeModal = () => {
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
-                            <div class="position-card-title">0</div>
-                            <div class="position-card-sub">ยังไม่มีรายการ</div>
+                            <div class="position-card-title">{{ assignedCompetencies.length }}</div>
+                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title warn">0/0</div>
-                            <div class="position-card-sub">ยังไม่มีข้อมูล CC พื้นฐาน</div>
+                            <div class="position-card-title warn">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
+                            <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
                         </div>
                     </div>
 
@@ -269,13 +339,31 @@ const closeModal = () => {
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
                                     <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนด Expected Level</div>
                                 </div>
-                                <button class="btn btn-t btn-sm" disabled type="button">เพิ่ม CC ทั้งหมด</button>
+                                <button
+                                    class="btn btn-t btn-sm"
+                                    :disabled="!selectedPosition || !availableCoreCompetencies.length"
+                                    type="button"
+                                    @click="addAllCoreCompetencies"
+                                >
+                                    เพิ่ม CC ทั้งหมด
+                                </button>
                             </div>
                             <div class="assigned-list">
-                                <div class="assigned-empty">
-                                    <div class="assigned-empty-icon"></div>
+                                <div v-if="!assignedCompetencies.length" class="assigned-empty">
+                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
                                     <div class="fw8">ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้</div>
-                                    <div class="muted fs12">รอข้อมูลพจนานุกรมและตำแหน่งจากฐานข้อมูลจริง</div>
+                                    <div class="muted fs12">เลือกจากพจนานุกรมด้านขวาเพื่อเพิ่มเข้าชุดนี้</div>
+                                </div>
+                                <div v-for="item in assignedCompetencies" v-else :key="item.id" class="assigned-row">
+                                    <div>
+                                        <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
+                                        <div class="dictionary-name">{{ item.n }}</div>
+                                        <div class="dictionary-detail truncate-2">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
+                                    </div>
+                                    <div class="assigned-actions">
+                                        <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -288,237 +376,70 @@ const closeModal = () => {
                                 </div>
                             </div>
                             <div class="dictionary-tools">
-                                <input class="inp" disabled placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
-                                <select class="sel" disabled>
-                                    <option>ทั้งหมด</option>
+                                <input v-model="dictionarySearch" class="inp" placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
+                                <select v-model="dictionaryType" class="sel">
+                                    <option value="all">ทั้งหมด</option>
+                                    <option v-for="type in competencyTypes" :key="type" :value="type">{{ type }}</option>
                                 </select>
                             </div>
                             <div class="dictionary-list">
-                                <div class="assigned-empty dictionary-empty">
-                                    <div class="assigned-empty-icon"></div>
+                                <div v-if="!filteredCompetencies.length" class="assigned-empty dictionary-empty">
+                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
                                     <div class="fw8">ยังไม่มีข้อมูลสมรรถนะ</div>
                                     <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
                                 </div>
+                                <div v-for="item in filteredCompetencies" v-else :key="item.id" class="dictionary-row">
+                                    <div>
+                                        <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
+                                        <div class="dictionary-name">{{ item.n }}</div>
+                                        <div class="dictionary-detail truncate-2">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
+                                        <div class="muted fs12">{{ item.lv || 0 }} ระดับ</div>
+                                    </div>
+                                    <button
+                                        class="btn btn-p btn-sm"
+                                        :disabled="!selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        type="button"
+                                        @click="addCompetency(item)"
+                                    >
+                                        {{ assignedCompetencyIds.has(item.id) ? 'เพิ่มแล้ว' : 'เพิ่ม' }}
+                                    </button>
+                                </div>
                             </div>
                         </aside>
-                    </div>
-                </template>
-                <template v-else-if="activePage === 'emp-assess'">
-                    <EmployeeAssess :user="{ sso: $page.props.auth.user.id }" :set-users="() => {}" />
-                </template>
-                <template v-else-if="activePage === 'emp-gap'">
-                    <EmployeeGap :set-page="(p) => activePage = p" />
-                </template>
-                <template v-else-if="activePage === 'emp-idp'">
-                    <EmployeeIDP />
-                </template>
-                <template v-else-if="activePage === 'emp-progress'">
-                    <EmployeeProgress />
-                </template>
-                <template v-else-if="activePage === 'emp-idp-detail'">
-                    <EmployeeIDPDetail />
-                </template>
-                <template v-else-if="activePage === 'hr-cycle'">
-                    <div class="hr-page-head mb20">
-                        <div>
-                            <div class="sec-t">รอบการประเมิน </div>
-                            <div class="sec-s">เปิด-ปิดรอบ กำหนดช่วงเวลา และตรวจสอบสถานะจากข้อมูลจริง</div>
-                        </div>
-                        <button class="btn btn-p" type="button" @click="openModal('cycle')">+ เปิดรอบใหม่</button>
-                    </div>
-
-                    <div class="g2 mb14">
-                        <div class="sc">
-                            <div class="sl">รอบที่กำลังเปิดอยู่</div>
-                            <div class="sv tc">0</div>
-                            <div class="ss muted">ยังไม่มีรอบประเมิน</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">ส่งแบบประเมินแล้ว</div>
-                            <div class="sv gcc">0<span class="sv-tail">/0</span></div>
-                            <div class="ss muted">รอข้อมูลการประเมิน</div>
-                        </div>
-                    </div>
-
-                    <div class="card mb14">
-                        <div class="ch">
-                            <div class="ct">รอบประเมินทั้งหมด</div>
-                            <span class="muted fs12 ml-auto">{{ props.hrCycles.length }} รายการ</span>
-                        </div>
-                        <div class="hr-table-wrap">
-                            <table class="tbl hr-fixed-table">
-                                <thead>
-                                    <tr>
-                                        <th>รอบประเมิน</th>
-                                        <th>ปี</th>
-                                        <th>รอบประเมินตนเอง</th>
-                                        <th>เวลาสิ้นสุดหัวหน้างาน</th>
-                                        <th>ส่งแล้ว</th>
-                                        <th>สถานะ</th>
-                                    </tr>
-                                </thead>
-                                <tbody v-if="!hasCycles">
-                                    <tr>
-                                        <td colspan="6">
-                                            <div class="table-empty-cell">
-                                                <div class="hr-empty-icon">∅</div>
-                                                <div>
-                                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="ch"><div class="ct"> ส่งการแจ้งเตือน</div></div>
-                        <div class="cb">
-                            <p class="muted fs13 mb16">แจ้งเตือนบุคลากรที่ยังไม่ส่งแบบประเมิน</p>
-                            <button class="btn btn-p btn-sm" disabled type="button"> ส่งแจ้งเตือน</button>
-                        </div>
-                    </div>
-                </template>
-
-                <template v-else-if="activePage === 'hr-template'">
-                    <div class="hr-page-head mb20">
-                        <div>
-                            <div class="sec-t">กำหนดความคาดหวังการประเมิน </div>
-                            <div class="sec-s">ตั้งค่า Expected Level ของแต่ละประเภทบุคลากรในแต่ละรอบการประเมิน</div>
-                        </div>
-                    </div>
-
-                    <div class="card mb14">
-                        <div class="ch"><div class="ct">① เลือกรอบการประเมิน</div></div>
-                        <div class="cb cycle-picker">
-                            <div v-if="hasCycles" class="cycle-picker"></div>
-                            <div v-else class="cycle-empty">
-                                <div class="hr-empty-icon">∅</div>
-                                <div>
-                                    <div class="fw8 fs14">ยังไม่มีรอบการประเมิน</div>
-                                    <p class="muted fs13 mb0">ต้องมีรอบประเมินก่อนจึงจะกำหนด Expected Level ได้</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="expect-tabs mb14">
-                        <button class="expect-tab on" type="button">กำหนด / แก้ไข</button>
-                        <button class="expect-tab" type="button">ดูความคาดหวังทั้งหมด <span class="b bgr">0 ชุด</span></button>
-                        <button class="btn btn-p btn-sm ml-auto" type="button" @click="openModal('expectation-import')">
-                            นำเข้าความคาดหวัง
-                        </button>
-                    </div>
-
-                    <div class="expect-layout mb14">
-                        <div class="card">
-                            <div class="ch">
-                                <div>
-                                    <div class="ct">กรองดูตามประเภทบุคลากร</div>
-                                    <div class="cs">ตัวเลือกจะมาจากข้อมูลที่ Admin ตั้งไว้</div>
-                                </div>
-                            </div>
-                            <div class="cb">
-                                <div class="fg">
-                                    <label class="lbl">สายงาน</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีสายงาน</option>
-                                    </select>
-                                </div>
-                                <div class="fg">
-                                    <label class="lbl">ตำแหน่ง</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีข้อมูลตำแหน่ง</option>
-                                    </select>
-                                </div>
-                                <div class="fg mb0">
-                                    <label class="lbl">ระดับ</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีข้อมูลระดับ</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <div class="ch">
-                                <div>
-                                    <div class="ct">ชุดความคาดหวัง</div>
-                                    <div class="cs">รอข้อมูลสมรรถนะประจำตำแหน่งและรอบประเมินจริง</div>
-                                </div>
-                                <span class="b bgr ml-auto">ยังไม่บันทึก</span>
-                            </div>
-                            <div class="hr-table-wrap">
-                                <table class="tbl hr-fixed-table">
-                                    <thead>
-                                        <tr>
-                                            <th>รหัส</th>
-                                            <th>สมรรถนะ</th>
-                                            <th>ประเภท</th>
-                                            <th>ความคาดหวัง</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody v-if="!hasExpectationSets">
-                                        <tr>
-                                            <td colspan="4">
-                                                <div class="table-empty-cell">
-                                                    <div class="hr-empty-icon">∅</div>
-                                                    <div>
-                                                        <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                        <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="hr-card-actions">
-                                <button class="btn btn-p btn-sm" type="button" @click="openModal('competency')">เพิ่มสมรรถนะ</button>
-                                <button class="btn btn-t btn-sm" disabled type="button">บันทึก Expected Level</button>
-                            </div>
-                        </div>
                     </div>
                 </template>
 
                 <template v-else-if="activePage === 'hr-catalog'">
                     <div class="hr-page-head mb20">
                         <div>
-                            <div class="sec-t">Learning Catalog </div>
+                            <div class="sec-t">Learning Catalog</div>
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
                         <div class="hr-actions">
-                            <button class="btn btn-s" disabled type="button"> ดาวน์โหลด Template</button>
-                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')"> Import Excel</button>
-                            <button class="btn btn-p" type="button" @click="openModal('catalog')">+ เพิ่มกิจกรรม</button>
+                            <button class="btn btn-s" disabled type="button">ดาวน์โหลด Template</button>
+                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')">Import Excel</button>
+                            <button class="btn btn-p" type="button" @click="openModal('catalog')">เพิ่มกิจกรรม</button>
                         </div>
                     </div>
 
-                    <div class="g3 mb14">
-                        <div class="sc">
-                            <div class="sl">Experiential Learning</div>
-                            <div class="sv oc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
+                    <div v-if="catalogMethodStats.length" class="g3 mb14">
+                        <div v-for="method in catalogMethodStats" :key="method.key" class="sc">
+                            <div class="sl">{{ method.label }}</div>
+                            <div class="sv bc">{{ method.count }}</div>
+                            <div class="ss muted">รายการ</div>
                         </div>
-                        <div class="sc">
-                            <div class="sl">Social Learning</div>
-                            <div class="sv gcc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">Formal Training</div>
-                            <div class="sv bc">0</div>
-                            <div class="ss muted">หลักสูตร</div>
+                    </div>
+                    <div v-else class="hr-empty compact mb14">
+                        <div>
+                            <div class="fw8 fs14">ยังไม่มีประเภทการเรียนรู้</div>
+                            <p class="muted fs13 mb0">เพิ่มประเภทการเรียนรู้จากฝั่ง Admin ก่อน แล้วหน้านี้จะแสดงสถิติ Catalog</p>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="ch">
                             <div class="ct">Learning Catalog</div>
-                            <span class="muted fs12 ml-auto">{{ props.hrCatalogItems.length }} รายการ</span>
+                            <span class="muted fs12 ml-auto">{{ catalogItems.length }} รายการ</span>
                         </div>
                         <div class="hr-table-wrap">
                             <table class="tbl catalog-table">
@@ -532,45 +453,36 @@ const closeModal = () => {
                                         <th></th>
                                     </tr>
                                 </thead>
-                                <tbody v-if="!hasCatalogItems">
+                                <tbody v-if="!catalogItems.length">
                                     <tr>
                                         <td colspan="6">
                                             <div class="table-empty-cell">
-                                                <div class="hr-empty-icon">∅</div>
                                                 <div>
-                                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
+                                                    <div class="fw8 fs14">ยังไม่มี Learning Catalog</div>
+                                                    <p class="muted fs13 mb0">เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะถูกดึงจากฐานข้อมูลมาแสดง</p>
                                                 </div>
                                             </div>
                                         </td>
                                     </tr>
                                 </tbody>
+                                <tbody v-else>
+                                    <tr v-for="item in catalogItems" :key="item.id">
+                                        <td>
+                                            <div class="fw8">{{ item.name }}</div>
+                                            <div class="muted fs12 truncate-2">{{ item.description || 'ไม่มีคำอธิบาย' }}</div>
+                                        </td>
+                                        <td><span class="b bgr">{{ item.methodLabel || '-' }}</span></td>
+                                        <td>{{ item.provider || '-' }}</td>
+                                        <td>{{ formatCost(item.cost) }}</td>
+                                        <td>
+                                            <span class="b" :class="item.isActive ? 'bgr' : 'bgy'">
+                                                {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
+                                            </span>
+                                        </td>
+                                        <td><button class="btn btn-s btn-sm" disabled type="button">แก้ไข</button></td>
+                                    </tr>
+                                </tbody>
                             </table>
-                        </div>
-                    </div>
-                </template>
-
-                <template v-else-if="activePage === 'hr-comp-overview'">
-                    <ManagerGap :users="props.overviewUsers" :disable-mock-data="true" />
-                </template>
-
-                <template v-else-if="activePage === 'hr-idp-overview'">
-                    <ManagerIDP :users="props.overviewUsers" :disable-mock-data="true" />
-                </template>
-
-                <template v-else>
-                    <div class="card">
-                        <div class="ch">
-                            <div class="ct">{{ currentPageTitle }}</div>
-                        </div>
-                        <div class="cb">
-                            <div class="hr-empty">
-                                <div class="hr-empty-icon">∅</div>
-                                <div>
-                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </template>
@@ -581,105 +493,65 @@ const closeModal = () => {
             <div class="mo-box hr-modal-box">
                 <div class="mo-h">
                     <div>
-                        <div v-if="activeModal === 'cycle'" class="ct">เปิดรอบการประเมินใหม่</div>
-                        <div v-else-if="activeModal === 'expectation-import'" class="ct">นำเข้าความคาดหวัง</div>
-                        <div v-else-if="activeModal === 'competency'" class="ct">เพิ่มสมรรถนะในชุดความคาดหวัง</div>
-                        <div v-else-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
-                        <div v-else class="ct">เพิ่มกิจกรรม Learning Catalog</div>
-                        <div class="cs">ฟอร์มนี้เตรียมไว้รอเชื่อม API และฐานข้อมูลจริง</div>
+                        <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                            <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
+                            <div class="cs">รายละเอียดสมรรถนะจากข้อมูลที่ Admin กำหนดไว้</div>
+                        </template>
+                        <template v-else>
+                            <div v-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
+                            <div v-else class="ct">เพิ่มกิจกรรม Learning Catalog</div>
+                            <div class="cs">ฟอร์มนี้เตรียมไว้รอเชื่อม API และฐานข้อมูลจริง</div>
+                        </template>
                     </div>
                     <button class="modal-close" type="button" @click="closeModal">×</button>
                 </div>
 
                 <form class="mo-b" @submit.prevent>
-                    <template v-if="activeModal === 'cycle'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">ชื่อรอบประเมิน</label>
-                                <input class="inp" placeholder="เช่น รอบประเมิน 2568" />
+                    <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                        <div class="competency-detail">
+                            <div class="detail-block">
+                                <div class="dictionary-code">
+                                    {{ selectedDetailCompetency.cd }}
+                                    <span class="b bgr">{{ selectedDetailCompetency.t }}</span>
+                                    <span class="muted">{{ selectedDetailCompetency.lv || 0 }} ระดับ</span>
+                                </div>
+                                <div class="detail-title">{{ selectedDetailCompetency.n }}</div>
+                                <div class="detail-copy">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบาย' }}</div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ปีงบประมาณ</label>
-                                <input class="inp" inputmode="numeric" placeholder="2568" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">เริ่มประเมินตนเอง</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สิ้นสุดประเมินตนเอง</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">เวลาสิ้นสุดหัวหน้างาน</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สถานะ</label>
-                                <select class="sel">
-                                    <option>แบบร่าง</option>
-                                    <option>เปิดใช้งาน</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">หมายเหตุ</label>
-                            <textarea class="ta" placeholder="รายละเอียดเพิ่มเติมของรอบประเมิน"></textarea>
-                        </div>
-                    </template>
 
-                    <template v-else-if="activeModal === 'expectation-import'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">รอบการประเมิน</label>
-                                <select class="sel">
-                                    <option>ยังไม่มีรอบการประเมิน</option>
-                                </select>
+                            <div class="detail-levels">
+                                <div v-if="!(selectedDetailCompetency.levels || []).length" class="assigned-empty detail-empty">
+                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
+                                    <div class="fw8">ยังไม่มีข้อมูลระดับสมรรถนะ</div>
+                                </div>
+                                <div
+                                    v-for="level in selectedDetailCompetency.levels"
+                                    v-else
+                                    :key="level.id || level.lvl"
+                                    class="detail-level"
+                                >
+                                    <div class="detail-level-head">
+                                        <div>
+                                            <div class="detail-level-title">ระดับที่ {{ level.lvl }}</div>
+                                            <div v-if="level.description" class="detail-copy">{{ level.description }}</div>
+                                        </div>
+                                    </div>
+                                    <div v-if="level.indicators?.length" class="detail-indicators">
+                                        <div
+                                            v-for="(indicator, index) in level.indicators"
+                                            :key="`${level.lvl}-${index}`"
+                                            class="detail-indicator"
+                                        >
+                                            <div class="detail-weight">
+                                                <span>น้ำหนัก</span>
+                                                <strong>{{ level.weights?.[index] ?? '-' }}</strong>
+                                            </div>
+                                            <div class="detail-copy">{{ indicator }}</div>
+                                        </div>
+                                    </div>
+                                    <div v-else class="detail-copy muted">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</div>
+                                </div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">รูปแบบการนำเข้า</label>
-                                <select class="sel">
-                                    <option>แทนที่ข้อมูลเดิม</option>
-                                    <option>เพิ่มต่อจากข้อมูลเดิม</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="upload-box">
-                            <div class="upload-ic"></div>
-                            <div>
-                                <div class="fw8 fs14">เลือกไฟล์ Expected Level</div>
-                                <div class="muted fs12">รองรับไฟล์ .xlsx เมื่อเชื่อม backend แล้ว</div>
-                            </div>
-                            <input class="inp" type="file" accept=".xlsx,.xls" />
-                        </div>
-                    </template>
-
-                    <template v-else-if="activeModal === 'competency'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">สมรรถนะ</label>
-                                <select class="sel">
-                                    <option>ยังไม่มีข้อมูลสมรรถนะ</option>
-                                </select>
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">ประเภท</label>
-                                <select class="sel">
-                                    <option>CC</option>
-                                    <option>FC</option>
-                                    <option>MC</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg">
-                            <label class="lbl">Expected Level</label>
-                            <div class="level-picker">
-                                <button v-for="level in 5" :key="level" class="level-choice" type="button">{{ level }}</button>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">หมายเหตุ</label>
-                            <textarea class="ta" placeholder="เงื่อนไขหรือคำอธิบายของระดับความคาดหวัง"></textarea>
                         </div>
                     </template>
 
@@ -700,7 +572,6 @@ const closeModal = () => {
                             </div>
                         </div>
                         <div class="upload-box">
-                            <div class="upload-ic"></div>
                             <div>
                                 <div class="fw8 fs14">เลือกไฟล์ Catalog</div>
                                 <div class="muted fs12">รอ API สำหรับ validate และ import ไฟล์ Excel</div>
@@ -718,9 +589,8 @@ const closeModal = () => {
                             <div class="fg">
                                 <label class="lbl">ประเภท</label>
                                 <select class="sel">
-                                    <option>Experiential Learning</option>
-                                    <option>Social Learning</option>
-                                    <option>Formal Training</option>
+                                    <option v-if="!learningMethods.length">ยังไม่มีประเภทการเรียนรู้</option>
+                                    <option v-for="method in learningMethods" v-else :key="method.key">{{ method.label }}</option>
                                 </select>
                             </div>
                             <div class="fg">
@@ -789,28 +659,16 @@ const closeModal = () => {
     color: #fff;
 }
 
-.content .btn.btn-p:hover {
-    background: #1d4ed8;
-}
-
 .content .btn.btn-t {
     background: var(--teal);
     border: none;
     color: #fff;
 }
 
-.content .btn.btn-t:hover {
-    background: #0c8a85;
-}
-
 .content .btn.btn-s {
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text2);
-}
-
-.content .btn.btn-s:hover {
-    background: var(--border);
 }
 
 .content .sec-t {
@@ -824,22 +682,16 @@ const closeModal = () => {
     font-weight: 400;
 }
 
-.content .ct {
-    font-weight: 700;
-}
-
+.content .ct,
 .content .sl,
 .content .lbl,
-.content .tbl th {
+.content .tbl th,
+.content .fw8 {
     font-weight: 700;
 }
 
 .content .tbl td {
     font-weight: 400;
-}
-
-.content .fw8 {
-    font-weight: 700;
 }
 
 .hr-empty {
@@ -853,37 +705,8 @@ const closeModal = () => {
     padding: 22px;
 }
 
-.hr-empty-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--blue-lt);
-    color: var(--blue);
-    font-size: 22px;
-    font-weight: 800;
-    flex-shrink: 0;
-}
-
 .hr-empty.compact {
-    min-height: 118px;
-}
-
-.cycle-picker {
-    display: flex;
-    align-items: stretch;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.cycle-empty {
-    min-height: 62px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 6px 0;
+    min-height: 96px;
 }
 
 .hr-page-head {
@@ -904,16 +727,8 @@ const closeModal = () => {
     overflow-x: auto;
 }
 
-.hr-fixed-table {
-    min-width: 760px;
-}
-
 .catalog-table {
     min-width: 820px;
-}
-
-.oc {
-    color: var(--orange);
 }
 
 .table-empty-cell {
@@ -929,63 +744,11 @@ const closeModal = () => {
     padding: 0;
 }
 
-.hr-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
-}
-
-.sv-tail {
-    color: var(--text3);
-    font-size: 14px;
-}
-
-.expect-tabs {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    flex-wrap: wrap;
-    border-bottom: 2px solid var(--border);
-}
-
-.expect-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 20px;
-    border: 0;
-    border-bottom: 3px solid transparent;
-    border-radius: 0;
-    margin-bottom: -2px;
-    background: transparent;
-    color: var(--text3);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 800;
-    cursor: pointer;
-}
-
-.expect-tab.on {
-    border-bottom-color: var(--teal);
-    color: var(--teal);
-}
-
-.expect-layout {
-    display: grid;
-    grid-template-columns: 310px minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
-}
-
 .ml-auto {
     margin-left: auto;
 }
 
 .btn:disabled,
-.expect-tab:disabled,
 .sel:disabled,
 .inp:disabled {
     cursor: not-allowed;
@@ -1002,15 +765,6 @@ const closeModal = () => {
     border: 1px solid var(--teal-md);
     background: var(--teal-lt);
     color: var(--teal);
-}
-
-.btn-s:disabled,
-.expect-tab:disabled,
-.sel:disabled,
-.inp:disabled {
-    background-color: #f8fafc;
-    color: var(--text3);
-    border-color: var(--border);
 }
 
 .position-hero {
@@ -1137,10 +891,6 @@ const closeModal = () => {
     align-items: end;
 }
 
-.position-picker .fg:only-child {
-    grid-column: 1 / -1;
-}
-
 .position-board {
     display: grid;
     grid-template-columns: 1.35fr repeat(2, minmax(180px, 0.65fr));
@@ -1173,10 +923,6 @@ const closeModal = () => {
     font-size: 24px;
     font-weight: 800;
     line-height: 1.2;
-}
-
-.position-card-title.ok {
-    color: var(--green);
 }
 
 .position-card-title.warn {
@@ -1234,15 +980,39 @@ const closeModal = () => {
     text-align: center;
 }
 
-.assigned-empty-icon {
-    width: 44px;
-    height: 44px;
+.assigned-row {
     display: grid;
-    place-items: center;
-    border-radius: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     background: #fff;
+}
+
+.assigned-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.danger-text {
+    color: var(--red);
+}
+
+.empty-symbol {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    min-height: 32px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--blue);
     box-shadow: var(--sh);
-    font-size: 22px;
+    font-size: 12px;
+    font-weight: 800;
 }
 
 .dictionary {
@@ -1271,6 +1041,40 @@ const closeModal = () => {
     min-height: 340px;
 }
 
+.dictionary-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+}
+
+.dictionary-code {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.dictionary-name {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 800;
+    margin-top: 3px;
+}
+
+.dictionary-detail {
+    color: var(--text3);
+    font-size: 12px;
+    line-height: 1.55;
+    margin-top: 4px;
+}
+
 .truncate-2 {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -1284,6 +1088,92 @@ const closeModal = () => {
 
 .hr-modal-box {
     width: min(720px, calc(100vw - 36px));
+}
+
+.competency-detail {
+    display: grid;
+    gap: 14px;
+}
+
+.detail-block {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg);
+}
+
+.detail-title {
+    margin-top: 8px;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.35;
+}
+
+.detail-copy {
+    color: var(--text3);
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.detail-levels {
+    display: grid;
+    gap: 10px;
+    max-height: 56vh;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.detail-level {
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+    overflow: hidden;
+}
+
+.detail-level-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #f8fbff;
+}
+
+.detail-level-title {
+    color: var(--blue);
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.detail-indicators {
+    display: grid;
+}
+
+.detail-indicator {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 14px;
+    padding: 12px 14px;
+    border-top: 1px solid #eef3f9;
+}
+
+.detail-indicator:first-child {
+    border-top: 0;
+}
+
+.detail-weight {
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.detail-weight strong {
+    display: block;
+    color: var(--blue);
+    font-size: 13px;
+}
+
+.detail-empty {
+    min-height: 160px;
 }
 
 .modal-close {
@@ -1300,11 +1190,6 @@ const closeModal = () => {
     cursor: pointer;
 }
 
-.modal-close:hover {
-    background: var(--bg);
-    color: var(--text);
-}
-
 .modal-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1317,7 +1202,6 @@ const closeModal = () => {
 
 .upload-box {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
     gap: 12px;
     align-items: center;
     padding: 16px;
@@ -1327,42 +1211,7 @@ const closeModal = () => {
 }
 
 .upload-box .inp {
-    grid-column: 1 / -1;
     background: #fff;
-}
-
-.upload-ic {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--blue-lt);
-    font-size: 20px;
-}
-
-.level-picker {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
-}
-
-.level-choice {
-    height: 40px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: #fff;
-    color: var(--navy);
-    font: inherit;
-    font-weight: 800;
-    cursor: pointer;
-}
-
-.level-choice:hover,
-.level-choice:focus {
-    border-color: var(--teal);
-    background: var(--teal-lt);
-    outline: none;
 }
 
 .modal-actions {
@@ -1378,8 +1227,7 @@ const closeModal = () => {
     .position-layout,
     .position-scope,
     .position-board,
-    .position-hero,
-    .expect-layout {
+    .position-hero {
         grid-template-columns: 1fr;
     }
 
@@ -1390,7 +1238,6 @@ const closeModal = () => {
     .position-hero-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-
 }
 
 @media (max-width: 768px) {
@@ -1415,11 +1262,6 @@ const closeModal = () => {
     }
 
     .g3 {
-        grid-template-columns: 1fr;
-    }
-
-    .g2,
-    .g4 {
         grid-template-columns: 1fr;
     }
 
@@ -1454,6 +1296,5 @@ const closeModal = () => {
     .position-title {
         font-size: 22px;
     }
-
 }
 </style>
