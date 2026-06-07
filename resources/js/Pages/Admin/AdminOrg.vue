@@ -501,18 +501,8 @@ const deptSearch = ref('');
 const selectedDept = ref('');
 const drillPath = ref<User[]>([]);
 const ROLE_NODE_OPTIONS = ['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี'];
-const MOCK_CHAIN_UNITS = [
-  'ฝ่ายบริหารและยุทธศาสตร์',
-  'ฝ่ายวิชาการและพัฒนานักศึกษา',
-  'งานบริการการศึกษา',
-  'งานเทคโนโลยีสารสนเทศ',
-  'งานพัสดุและอาคารสถานที่',
-];
 const defaultChain = ref<string[]>(['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี']);
-const chainOverrides = ref<Record<string, string[]>>({
-  'งานบริการการศึกษา': ['บุคลากร', 'หัวหน้าฝ่าย', 'คณบดี'],
-  'งานเทคโนโลยีสารสนเทศ': ['บุคลากร', 'หัวหน้างาน', 'คณบดี'],
-});
+const chainOverrides = ref<Record<string, string[]>>({});
 const chainModal = ref<{
   open: boolean;
   scope: 'default' | 'unit';
@@ -569,8 +559,7 @@ const filteredDepts = computed(() => {
 });
 
 const chainUnitNames = computed(() => {
-  const realUnits = filteredDepts.value;
-  return realUnits.length ? realUnits : MOCK_CHAIN_UNITS;
+  return filteredDepts.value;
 });
 
 const chainUnits = computed(() => chainUnitNames.value.map((name) => {
