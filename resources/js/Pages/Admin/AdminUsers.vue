@@ -7,7 +7,7 @@ template-name="User_Template.xlsx"
 {{ workline }}
  </option></select><select v-model="roleFilter" class="sel role-select"><option>ทุกบทบาท (Role)</option><option v-for="role in roleOptions" :key="role" :value="role">
 {{ role }}
- </option></select><select v-model="statusFilter" class="sel status-select"><option>ทุกสถานะ</option><option>ปกติ / ใช้งาน</option><option>ระงับการใช้งาน</option></select></div><div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th style="min-width: 180px">ชื่อ-นามสกุล</th><th>สายงาน</th><th style="min-width: 200px">หน่วยงาน / สังกัด</th><th>ตำแหน่ง</th><th>ระดับตำแหน่ง</th><th>หัวหน้างาน</th><th>ผู้บังคับบัญชา</th><th style="min-width: 160px">บทบาทในระบบ</th><th>สถานะ</th><th></th></tr></thead><tbody><tr v-for="(user, index) in filteredUsers" :key="user.sso || index"><td class="id-cell">{{ user.sso || '—' }}</td><td><div class="flex ic g8"><div class="av user-avatar"><img v-if="user.photo" class="avatar-photo" :src="user.photo" :alt="user.n" /><span v-else>{{ avatarInitial(user) }}</span></div><div class="flex col"><span class="fw6 fs13">{{ user.t }}{{ user.n }}</span></div></div></td><td><span class="b workline-badge" :class="user.w === 'สายวิชาการ' ? 'bb' : 'bg'">
+ </option></select><select v-model="statusFilter" class="sel status-select"><option>ทุกสถานะ</option><option>ปกติ / ใช้งาน</option><option>ระงับการใช้งาน</option></select></div><div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th style="min-width: 180px">ชื่อ-นามสกุล</th><th>สายงาน</th><th style="min-width: 200px">หน่วยงาน / สังกัด</th><th>ตำแหน่ง</th><th>ระดับตำแหน่ง</th><th style="min-width: 160px">บทบาทในระบบ</th><th>สถานะ</th><th></th></tr></thead><tbody><tr v-for="(user, index) in filteredUsers" :key="user.sso || index"><td class="id-cell">{{ user.sso || '—' }}</td><td><div class="flex ic g8"><div class="av user-avatar"><img v-if="user.photo" class="avatar-photo" :src="user.photo" :alt="user.n" /><span v-else>{{ avatarInitial(user) }}</span></div><div class="flex col"><span class="fw6 fs13">{{ user.t }}{{ user.n }}</span></div></div></td><td><span class="b workline-badge" :class="user.w === 'สายวิชาการ' ? 'bb' : 'bg'">
 {{ user.w || '—' }}
  </span></td><td><div
 class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate dept-cell"
@@ -16,7 +16,7 @@ class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate dept-ce
 {{ formatDept(user.d) }}
  </div></td><td class="fs12 position-cell"><div class="whitespace-nowrap overflow-hidden truncate full-width" :title="user.p || ''">
 {{ user.p || '—' }}
- </div></td><td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td><td class="muted fs12 person-cell">{{ user.sup || '—' }}</td><td class="muted fs12 person-cell">{{ user.evaluator2 || '—' }}</td><td><span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
+ </div></td><td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td><td><span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
 {{ roleBadge(user.r).label }}
  </span></td><td><span class="b" :class="isActive(user) ? 'bg' : 'br'">
 {{ isActive(user) ? 'ปกติ' : 'ระงับ' }}
@@ -32,7 +32,7 @@ type="button"
  </button><button class="btn btn-r btn-xs delete-btn" type="button" @click="deleteUser(user)">
 ลบ
  </button></div></td></tr></tbody></table><div v-if="filteredUsers.length === 0" class="empty-result">
-ไม่พบข้อมูลที่คุณค้นหา 
+ไม่พบข้อมูลที่คุณค้นหา
  </div></div></div></template><script setup lang="ts">
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
@@ -272,8 +272,7 @@ font-size: 11px;
 max-width: 300px;
 }
 
-.position-cell,
-.person-cell {
+.position-cell {
 max-width: 140px;
 }
 

@@ -236,7 +236,6 @@ const syncOrgPath = () => {
 const form = userForm.value;
 
 form.d = [form.job, form.unit].filter(Boolean).join(' > ');
-if (!orgEditMode.value) syncOrgSupervisors();
 };
 
 const findUserName = (predicate) => {
@@ -408,6 +407,7 @@ return;
 
 const nextUser = {
 ...form,
+manage_hierarchy: orgEditMode.value,
 db_id: form.db_id,
 sso: form.sso.trim(),
 n: thaiName,
@@ -587,7 +587,7 @@ v-else-if="activePage === 'admin-dict'"
 {{ orgEditMode ? 'ปรับสายงาน หน่วยงาน บทบาท และผู้ประเมิน' : 'กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล' }}
  </div></div><button class="btn btn-s btn-sm" type="button" @click="closeModal">× ปิด</button></div><div class="mo-b admin-user-modal-body" @keydown.enter="submitUserModalOnEnter"><div v-if="!orgEditMode" class="admin-user-note">
 ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
- </div><div v-if="!orgEditMode" class="fg"><label class="lbl req">ID</label><input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" /></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">คำนำหน้า</label><select v-model="userForm.t" class="sel modal-input"><option value="">— เลือกคำนำหน้า —</option><option value="นาย">นาย</option><option value="นาง">นาง</option><option value="ดร.">ดร.</option><option value="ผศ.">ผศ.</option><option value="รศ.">รศ.</option><option value="ศ.">ศ.</option></select></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">ชื่อ (ภาษาไทย)</label><input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" /></div><div class="fg"><label class="lbl req">นามสกุล (ภาษาไทย)</label><input v-model="userForm.ln" class="inp modal-input" placeholder="นามสกุล" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">First Name (English)</label><input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" /></div><div class="fg"><label class="lbl req">Last Name (English)</label><input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">Email</label><input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" /></div></div><div v-if="orgEditMode" class="org-edit-summary"><div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div><div class="muted fs12">{{ userForm.sso || '—' }}</div></div><div class="modal-grid" :class="{ 'single-col': !userForm.w }"><div class="fg"><label class="lbl req">สายงาน</label><select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange"><option value="">— เลือกสายงาน —</option><option v-for="workline in worklines" :key="workline" :value="workline">
+ </div><div v-if="!orgEditMode" class="fg compact-id-field"><label class="lbl req">ID</label><input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" /></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">คำนำหน้า</label><select v-model="userForm.t" class="sel modal-input"><option value="">— เลือกคำนำหน้า —</option><option value="นาย">นาย</option><option value="นาง">นาง</option><option value="ดร.">ดร.</option><option value="ผศ.">ผศ.</option><option value="รศ.">รศ.</option><option value="ศ.">ศ.</option></select></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">ชื่อ (ภาษาไทย)</label><input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" /></div><div class="fg"><label class="lbl req">นามสกุล (ภาษาไทย)</label><input v-model="userForm.ln" class="inp modal-input" placeholder="นามสกุล" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">First Name (English)</label><input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" /></div><div class="fg"><label class="lbl req">Last Name (English)</label><input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">Email</label><input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" /></div></div><div v-if="orgEditMode" class="org-edit-summary"><div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div><div class="muted fs12">{{ userForm.sso || '—' }}</div></div><div class="modal-grid" :class="{ 'single-col': !userForm.w }"><div class="fg"><label class="lbl req">สายงาน</label><select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange"><option value="">— เลือกสายงาน —</option><option v-for="workline in worklines" :key="workline" :value="workline">
 {{ workline }}
  </option></select></div><div v-if="userForm.w" class="fg"><label class="lbl req">กลุ่มงาน</label><select v-model="userForm.job" class="sel modal-input" @change="handleJobChange"><option value="">— เลือกกลุ่มงาน —</option><option v-for="job in jobOptions" :key="job" :value="job">
 {{ job }}
@@ -595,8 +595,7 @@ v-else-if="activePage === 'admin-dict'"
 {{ position }}
  </option></select></div><div v-if="userForm.p" class="fg"><label class="lbl req">ระดับตำแหน่ง</label><select v-model="userForm.l" class="sel modal-input"><option value="">— เลือกระดับตำแหน่ง —</option><option v-for="level in levelOptions" :key="level" :value="level">
 {{ level }}
- </option></select></div></div><div class="modal-divider"></div><div class="modal-grid"><div class="fg"><label class="lbl req">บทบาทในระบบ</label><select v-model="userForm.r" class="sel modal-input"><option value="user">user</option><option value="supervisor">supervisor</option><option value="head">head</option><option value="dean">dean</option><option value="hr">hr</option><option value="admin">admin</option></select></div><div class="fg"><label class="lbl req">หัวหน้างาน</label><select
-v-if="orgEditMode"
+ </option></select></div></div><div class="modal-divider"></div><div class="modal-grid compact-role-grid" :class="{ 'single-col': !orgEditMode }"><div class="fg"><label class="lbl req">บทบาทในระบบ</label><select v-model="userForm.r" class="sel modal-input"><option value="user">user</option><option value="supervisor">supervisor</option><option value="head">head</option><option value="dean">dean</option><option value="hr">hr</option><option value="admin">admin</option></select></div><div v-if="orgEditMode" class="fg"><label class="lbl req">หัวหน้างาน</label><select
 v-model="userForm.sup"
 class="sel modal-input"
 ><option value="">— เลือกหัวหน้างาน —</option><option
@@ -605,14 +604,7 @@ v-for="person in evaluatorOptions"
 :value="person.value"
 >
 {{ person.label }}
- </option></select><input
-v-else
-v-model="userForm.sup"
-class="inp modal-input"
-disabled
-placeholder="ยึดตามโครงสร้างองค์กร (หัวหน้างาน)"
-/></div></div><div class="modal-grid"><div class="fg"><label class="lbl req">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</label><select
-v-if="orgEditMode"
+ </option></select></div></div><div v-if="orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</label><select
 v-model="userForm.evaluator2"
 class="sel modal-input"
 ><option value="">— เลือกผู้บังคับบัญชา —</option><option
@@ -621,13 +613,7 @@ v-for="person in evaluatorOptions"
 :value="person.value"
 >
 {{ person.label }}
- </option></select><input
-v-else
-v-model="userForm.evaluator2"
-class="inp modal-input"
-disabled
-placeholder="ยึดตามโครงสร้างองค์กร (ผู้บังคับบัญชา)"
-/></div></div><label v-if="!orgEditMode" class="modal-checkbox"><span>สถานะบัญชี</span><input v-model="userForm.act" type="checkbox" /><span>ใช้งานได้</span></label><div class="modal-actions"><button class="btn btn-s modal-action-btn" type="button" @click="closeModal">ยกเลิก</button><button class="btn btn-p modal-action-btn modal-save-btn" type="button" @click="saveUser">
+ </option></select></div></div><label v-if="!orgEditMode" class="modal-checkbox"><span>สถานะบัญชี</span><input v-model="userForm.act" type="checkbox" /><span>ใช้งานได้</span></label><div class="modal-actions"><button class="btn btn-s modal-action-btn" type="button" @click="closeModal">ยกเลิก</button><button class="btn btn-p modal-action-btn modal-save-btn" type="button" @click="saveUser">
 บันทึก
  </button></div></div></div></div></template><style scoped>
 .admin-user-modal {
@@ -675,7 +661,15 @@ column-gap: 14px;
 }
 
 .modal-grid.single-col {
-grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+grid-template-columns: minmax(0, 1fr);
+}
+
+.compact-id-field {
+max-width: 320px;
+}
+
+.compact-role-grid.single-col {
+max-width: 320px;
 }
 
 .modal-input {
@@ -745,6 +739,11 @@ background: #1d4ed8;
 .modal-grid,
 .modal-grid.single-col {
 grid-template-columns: 1fr;
+}
+
+.compact-id-field,
+.compact-role-grid.single-col {
+max-width: 100%;
 }
 }
 </style>
