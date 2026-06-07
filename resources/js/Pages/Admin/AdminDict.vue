@@ -1,5 +1,5 @@
 <script lang="tsx">
-import { Fragment, defineComponent, ref, watchEffect, type PropType } from "vue";
+import { Fragment, computed, defineComponent, ref, watch, watchEffect, type PropType } from "vue";
 import { router } from "@inertiajs/vue3";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
@@ -16,7 +16,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: any[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { competencies, setCompetencies, competencyTypes, onDirtyChange } = __props as any;const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
+import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: any[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { setCompetencies, competencyTypes, onDirtyChange } = __props as any;const competencyList = ref<any[]>([...((__props as any).competencies || [])]);watch(() => (__props as any).competencies, (next) => {competencyList.value = [...(next || [])];}, { deep: true });const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
     const [expandedLevel, setExpandedLevel] = useState<number | null>(null);
     const [sortBy, setSortBy] = useState("newest");
     const [typeFilter, setTypeFilter] = useState("ทั้งหมด");
@@ -40,6 +40,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
     const syncCompetenciesFromPage = (responsePage: any) => {
       if (Array.isArray(responsePage.props.competencies)) {
+        competencyList.value = [...responsePage.props.competencies];
         setCompetencies(responsePage.props.competencies);
       }
     };
@@ -59,10 +60,25 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       if (!window.confirm(`ต้องการลบสมรรถนะ ${c.cd} ใช่หรือไม่`)) return;
 
       router.delete(route("admin.competencies.destroy", c.id), {
-        ...persistOptions,
+        preserveScroll: true,
+        preserveState: true,
         onSuccess: (responsePage: any) => {
-          syncCompetenciesFromPage(responsePage);
+          const nextCompetencies = Array.isArray(responsePage.props.competencies)
+            ? responsePage.props.competencies
+            : competencyList.value.filter((item: any) => item.id !== c.id);
+
+          if (nextCompetencies.some((item: any) => item.id === c.id)) {
+            showStatus("e", "หลังบ้านตอบกลับแล้ว แต่ข้อมูลสมรรถนะยังไม่ถูกลบจากฐานข้อมูล");
+            return;
+          }
+
+          competencyList.value = nextCompetencies;
+          setCompetencies(nextCompetencies);
           showStatus("s", "ลบข้อมูลสมรรถนะเรียบร้อยแล้ว");
+        },
+        onError: (errors: any) => {
+          const firstError = Object.values(errors || {})[0];
+          showStatus("e", firstError || "ไม่สามารถลบข้อมูลสมรรถนะได้");
         }
       });
     };
@@ -86,7 +102,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       return `tag-${t.toLowerCase()}`;
     };
 
-    const sorted = competencies.filter((c) => {
+    const sorted = computed(() => competencyList.value.filter((c) => {
       const type = getCompType(c);
       return typeFilter.value === "ทั้งหมด" || type === typeFilter.value;
     }).sort((a, b) => {
@@ -99,7 +115,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         return (order[typeA] || 9) - (order[typeB] || 9);
       }
       return 0;
-    });
+    }));
 
     // Form states for Add/Edit
     const [editId, setEditId] = useState<string | null>(null);
@@ -162,8 +178,8 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         }
       }
 
-      const alreadyExistsCode = competencies.some((c) => c.cd === code && c.cd !== editId.value);
-      const alreadyExistsName = competencies.some((c) => c.n === name.value && c.cd !== editId.value);
+      const alreadyExistsCode = competencyList.value.some((c) => c.cd === code && c.cd !== editId.value);
+      const alreadyExistsName = competencyList.value.some((c) => c.n === name.value && c.cd !== editId.value);
       if (alreadyExistsCode) {showStatus("e", `รหัสสมรรถนะ ${code} มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);return;}
       if (alreadyExistsName) {showStatus("e", `ชื่อสมรรถนะ "${name.value}" มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น`);return;}
 
@@ -183,7 +199,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       };
 
       if (editId.value) {
-        const current = competencies.find((c) => c.cd === editId.value);
+        const current = competencyList.value.find((c) => c.cd === editId.value);
         if (!current?.id) {showStatus("e", "ไม่พบข้อมูลสมรรถนะที่ต้องการแก้ไข");return;}
         router.put(route("admin.competencies.update", current.id), payload, {
           ...persistOptions,
@@ -207,10 +223,6 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       }
     };
 
-    const addLevelRow = () => {
-      setLevels([...levels.value, generateLevel(String(levels.value.length + 1))]);
-      setIsDirty(true);
-    };
 
     const removeLevelRow = (idx: number) => {
       setLevels(levels.value.filter((_, i) => i !== idx));
@@ -267,6 +279,11 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       <ExcelImportModal
         title="นำเข้าข้อมูลสมรรถนะ"
         templateName="Competency_Template.xlsx"
+        importUrl={route("admin.competencies.import")}
+        onImported={(responsePage: any) => {
+          syncCompetenciesFromPage(responsePage);
+          showStatus("s", responsePage.props.flash?.success || "นำเข้าข้อมูลสมรรถนะเรียบร้อยแล้ว");
+        }}
         onClose={() => setShowImport(false)} />
 
       }
@@ -311,7 +328,6 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
           <div class="card shadow-sm mb20">
             <div class="ch flex ic jb">
               <div class="ct">รายละเอียดพฤติกรรมบ่งชี้</div>
-              <button class="btn btn-s btn-xs" onClick={addLevelRow}>+ เพิ่มระดับ (Row)</button>
             </div>
             <div class="cb p0">
               <table class="tbl tbl-clean tbl-add-dict">
@@ -380,7 +396,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
           </div>
 
           <div class="dict-list">
-            {sorted.map((c, i) => {
+            {sorted.value.map((c, i) => {
             const isExpanded = expandedCode.value === c.cd;
             return (
               <div key={i} class="dict-group">
@@ -450,7 +466,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
           })}
           </div>
-          {sorted.length === 0 && <div class="dict-empty">ยังไม่มีข้อมูลสมรรถนะในพจนานุกรม</div>}
+          {sorted.value.length === 0 && <div class="dict-empty">ยังไม่มีข้อมูลสมรรถนะในพจนานุกรม</div>}
         </>
       }
 

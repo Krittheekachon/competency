@@ -31,6 +31,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('competency_level_id')->constrained('competency_levels')->cascadeOnDelete();
             $table->text('description');
+            $table->decimal('weight', 5, 2)->nullable();
             $table->timestamps();
         });
 

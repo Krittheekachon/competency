@@ -21,13 +21,18 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
+const adminPageStorageKey = 'admin-active-page';
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
     : null);
+const savedAdminPage = typeof window !== 'undefined'
+    ? window.sessionStorage.getItem(adminPageStorageKey)
+        || window.sessionStorage.getItem('cidp.admin.activePage')
+    : null;
 
 const rememberedAdminState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || 'emp-assess',
+    activePage: requestedPage.value || savedAdminPage || 'admin-users',
 }, 'AdminDashboard');
 const showSidebar = computed({
     get: () => rememberedAdminState.value.showSidebar !== false,
@@ -152,7 +157,6 @@ const currentNavConfig = computed(() => {
         };
     });
 });
-const adminPageStorageKey = 'admin-active-page';
 const implementedAdminPages = new Set([
     'emp-assess',
     'emp-gap', 

@@ -116,41 +116,43 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         applyLearningMethods(responsePage.props.learningMethods);
       }
     };
+    const applyWorklines = (nextWorklines: string[]) => {
+      worklines = [...nextWorklines];
+      setWorklines([...nextWorklines]);
+      setStructureVersion((current: number) => current + 1);
+    };
+    const applyJobFamiliesByWorkline = (nextGroups: Record<string, Record<string, string[]>>) => {
+      jobFamiliesByWorkline = { ...nextGroups };
+      academicDepts = Object.keys(jobFamiliesByWorkline["สายวิชาการ"] || jobFamiliesByWorkline["วิชาการ"] || {});
+      adminDepts = Object.keys(jobFamiliesByWorkline["สายงานบริหาร"] || jobFamiliesByWorkline["สายบริหาร"] || {});
+      supportPositionGroups = jobFamiliesByWorkline["สายสนับสนุน"] || jobFamiliesByWorkline["สนับสนุน"] || {};
+      supportDepts = Object.keys(supportPositionGroups);
+      setJobFamiliesByWorkline(jobFamiliesByWorkline);
+      setAcademicDepts(academicDepts);
+      setAdminDepts(adminDepts);
+      setSupportPositionGroups(supportPositionGroups);
+      setStructureVersion((current: number) => current + 1);
+    };
+    const applyLevelsByWorkline = (nextLevels: Record<string, string[]>) => {
+      levelsByWorkline = { ...nextLevels };
+      setLevelsByWorkline(levelsByWorkline);
+      setAcademicRank(levelsByWorkline["สายวิชาการ"] || levelsByWorkline["วิชาการ"] || []);
+      setSupportRank(levelsByWorkline["สายสนับสนุน"] || levelsByWorkline["สนับสนุน"] || []);
+      setStructureVersion((current: number) => current + 1);
+    };
     const syncStructureFromPage = (responsePage: any) => {
       const props = responsePage?.props || {};
-      let didSync = false;
 
       if (Array.isArray(props.worklines)) {
-        worklines = [...props.worklines];
-        setWorklines([...props.worklines]);
-        didSync = true;
+        applyWorklines(props.worklines);
       }
 
       if (props.jobFamiliesByWorkline && typeof props.jobFamiliesByWorkline === "object") {
-        const nextGroups = { ...props.jobFamiliesByWorkline };
-        jobFamiliesByWorkline = nextGroups;
-        academicDepts = Object.keys(nextGroups["สายวิชาการ"] || nextGroups["วิชาการ"] || {});
-        adminDepts = Object.keys(nextGroups["สายงานบริหาร"] || nextGroups["สายบริหาร"] || {});
-        supportPositionGroups = nextGroups["สายสนับสนุน"] || nextGroups["สนับสนุน"] || {};
-        supportDepts = Object.keys(supportPositionGroups);
-        setJobFamiliesByWorkline(nextGroups);
-        setAcademicDepts(academicDepts);
-        setAdminDepts(adminDepts);
-        setSupportPositionGroups(supportPositionGroups);
-        didSync = true;
+        applyJobFamiliesByWorkline(props.jobFamiliesByWorkline);
       }
 
       if (props.levelsByWorkline && typeof props.levelsByWorkline === "object") {
-        const nextLevels = { ...props.levelsByWorkline };
-        levelsByWorkline = nextLevels;
-        setLevelsByWorkline(nextLevels);
-        setAcademicRank(nextLevels["สายวิชาการ"] || nextLevels["วิชาการ"] || []);
-        setSupportRank(nextLevels["สายสนับสนุน"] || nextLevels["สนับสนุน"] || []);
-        didSync = true;
-      }
-
-      if (didSync) {
-        setStructureVersion((current: number) => current + 1);
+        applyLevelsByWorkline(props.levelsByWorkline);
       }
     };
     const showPersistError = (errors: any) => {
@@ -210,18 +212,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     };
     const setLevelItemsForWorkline = (worklineName: string, nextLevels: string[]) => {
       const uniqueLevels = Array.from(new Set(nextLevels));
-      levelsByWorkline = {
-        ...levelsByWorkline,
-        [worklineName]: uniqueLevels
-      };
-      setLevelsByWorkline({
+      applyLevelsByWorkline({
         ...levelsByWorkline,
         [worklineName]: uniqueLevels
       });
-
-      if (worklineName === "สายวิชาการ") setAcademicRank(uniqueLevels);
-      if (worklineName === "สายสนับสนุน") setSupportRank(uniqueLevels);
-      setStructureVersion((current: number) => current + 1);
     };
     const groupMapForWorkline = (worklineName: string): Record<string, string[]> => {
       const groups = jobFamiliesByWorkline?.[worklineName] || {};
@@ -234,26 +228,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       return groups;
     };
     const setGroupMapForWorkline = (worklineName: string, groups: Record<string, string[]>) => {
-      jobFamiliesByWorkline = {
+      applyJobFamiliesByWorkline({
         ...jobFamiliesByWorkline,
         [worklineName]: groups
-      };
-      setJobFamiliesByWorkline(jobFamiliesByWorkline);
-
-      if (worklineName === "สายวิชาการ") {
-        academicDepts = Object.keys(groups);
-        setAcademicDepts(academicDepts);
-      }
-      if (worklineName === "สายงานบริหาร") {
-        adminDepts = Object.keys(groups);
-        setAdminDepts(adminDepts);
-      }
-      if (worklineName === "สายสนับสนุน") {
-        supportPositionGroups = groups;
-        supportDepts = Object.keys(groups);
-        setSupportPositionGroups(supportPositionGroups);
-      }
-      setStructureVersion((current: number) => current + 1);
+      });
     };
 
     const setOrgHead = (path: string, value: string) => {
@@ -308,13 +286,19 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       switch (type) {
         case "academic-dept":
           putStructure("admin.structure.job-families.update", { workline_name: "สายวิชาการ", old_name: oldName, name: newValue.value }, () => {
-            setAcademicDepts(academicDepts.map((v) => v === oldName ? newValue.value : v));
+            const groups = groupMapForWorkline("สายวิชาการ");
+            const nextGroups = { ...groups, [newValue.value]: groups[oldName] || [] };
+            delete nextGroups[oldName];
+            setGroupMapForWorkline("สายวิชาการ", nextGroups);
             setEditingId(null);
           });
           return;
         case "admin-dept":
           putStructure("admin.structure.job-families.update", { workline_name: "สายงานบริหาร", old_name: oldName, name: newValue.value }, () => {
-            setAdminDepts(adminDepts.map((v) => v === oldName ? newValue.value : v));
+            const groups = groupMapForWorkline("สายงานบริหาร");
+            const nextGroups = { ...groups, [newValue.value]: groups[oldName] || [] };
+            delete nextGroups[oldName];
+            setGroupMapForWorkline("สายงานบริหาร", nextGroups);
             setEditingId(null);
           });
           return;
@@ -332,7 +316,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             nextSupportPositionGroups[newValue.value] = nextSupportPositionGroups[oldName] || [];
             delete nextSupportPositionGroups[oldName];
             putStructure("admin.structure.job-families.update", { workline_name: "สายสนับสนุน", old_name: oldName, name: newValue.value }, () => {
-              setSupportPositionGroups(nextSupportPositionGroups);
+              setGroupMapForWorkline("สายสนับสนุน", nextSupportPositionGroups);
               setEditingId(null);
             });
             return;
@@ -341,7 +325,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "custom-group-pos":
           putStructure("admin.structure.positions.update", { workline_name: workName, job_family_name: parent, old_name: oldName, name: newValue.value }, () => {
             if (type === "support-group-pos") {
-              setSupportPositionGroups({
+              setGroupMapForWorkline("สายสนับสนุน", {
                 ...supportPositionGroups,
                 [parent]: (supportPositionGroups[parent] || []).map((v) => v === oldName ? newValue.value : v)
               });
@@ -397,7 +381,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
         case "workline":
           putStructure("admin.structure.worklines.update", { old_name: oldName, name: newValue.value }, () => {
-            setWorklines(worklines.map((v) => v === oldName ? newValue.value : v));
+            applyWorklines(worklines.map((v) => v === oldName ? newValue.value : v));
+            const nextGroups = { ...jobFamiliesByWorkline, [newValue.value]: jobFamiliesByWorkline[oldName] || {} };
+            delete nextGroups[oldName];
+            applyJobFamiliesByWorkline(nextGroups);
+            const nextLevels = { ...levelsByWorkline, [newValue.value]: levelsByWorkline[oldName] || [] };
+            delete nextLevels[oldName];
+            applyLevelsByWorkline(nextLevels);
             setEditingId(null);
           });
           return;
@@ -450,13 +440,17 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       switch (type) {
         case "academic-dept":
           deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายวิชาการ", name: oldName }, () => {
-            setAcademicDepts(academicDepts.filter((v) => v !== oldName));
+            const nextGroups = { ...groupMapForWorkline("สายวิชาการ") };
+            delete nextGroups[oldName];
+            setGroupMapForWorkline("สายวิชาการ", nextGroups);
             setEditingId(null);
           });
           return;
         case "admin-dept":
           deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายงานบริหาร", name: oldName }, () => {
-            setAdminDepts(adminDepts.filter((v) => v !== oldName));
+            const nextGroups = { ...groupMapForWorkline("สายงานบริหาร") };
+            delete nextGroups[oldName];
+            setGroupMapForWorkline("สายงานบริหาร", nextGroups);
             setEditingId(null);
           });
           return;
@@ -472,7 +466,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             const nextSupportPositionGroups = { ...supportPositionGroups };
             delete nextSupportPositionGroups[oldName];
             deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายสนับสนุน", name: oldName }, () => {
-              setSupportPositionGroups(nextSupportPositionGroups);
+              setGroupMapForWorkline("สายสนับสนุน", nextSupportPositionGroups);
               setEditingId(null);
             });
             return;
@@ -481,7 +475,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "custom-group-pos":
           deleteStructure("admin.structure.positions.destroy", { workline_name: workName, job_family_name: parent, name: oldName }, () => {
             if (type === "support-group-pos") {
-              setSupportPositionGroups({
+              setGroupMapForWorkline("สายสนับสนุน", {
                 ...supportPositionGroups,
                 [parent]: (supportPositionGroups[parent] || []).filter((v) => v !== oldName)
               });
@@ -537,7 +531,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
         case "workline":
           deleteStructure("admin.structure.worklines.destroy", { name: oldName }, () => {
-            setWorklines(worklines.filter((v) => v !== oldName));
+            applyWorklines(worklines.filter((v) => v !== oldName));
+            const nextGroups = { ...jobFamiliesByWorkline };
+            delete nextGroups[oldName];
+            applyJobFamiliesByWorkline(nextGroups);
+            const nextLevels = { ...levelsByWorkline };
+            delete nextLevels[oldName];
+            applyLevelsByWorkline(nextLevels);
             setEditingId(null);
           });
           return;
@@ -678,7 +678,15 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           }
           setIsSavingAddItem(true);
           postStructure("admin.structure.worklines.store", { name: trimmedName }, () => {
-            setWorklines([trimmedName, ...worklines]);
+            applyWorklines([trimmedName, ...worklines]);
+            applyJobFamiliesByWorkline({
+              [trimmedName]: {},
+              ...jobFamiliesByWorkline
+            });
+            applyLevelsByWorkline({
+              [trimmedName]: [],
+              ...levelsByWorkline
+            });
             setIsSavingAddItem(false);
             clearAddNameAndFocus();
           });
