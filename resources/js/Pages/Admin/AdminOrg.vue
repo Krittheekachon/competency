@@ -1,7 +1,7 @@
 <template>
   <div class="flex ic jb mb20">
     <div>
-      <div class="sec-t">จัดการโครงสร้างองค์กร 🌿</div>
+      <div class="sec-t">จัดการโครงสร้างองค์กร </div>
       <div class="sec-s">
         กำหนดกลุ่มงานและสายการบังคับบัญชา ·
         {{ viewModel === 'dept' ? 'มุมมองรายกลุ่มงาน' : 'มุมมองสายงานบังคับบัญชา' }}
@@ -14,7 +14,7 @@
         style="border-radius: 12px"
         @click="setDeptView"
       >
-        🏢 รายกลุ่มงาน
+         รายกลุ่มงาน
       </button>
       <button
         class="btn btn-s"
@@ -22,7 +22,7 @@
         style="border-radius: 12px"
         @click="setHierarchyView"
       >
-        🌳 สายการบังคับบัญชา
+         สายการบังคับบัญชา
       </button>
     </div>
   </div>
@@ -33,7 +33,7 @@
         <input
           v-model="deptSearch"
           class="inp inp-sm org-search-input"
-          placeholder="🔍 ค้นหาสังกัด/กลุ่มงาน..."
+          placeholder=" ค้นหาสังกัด/กลุ่มงาน..."
         />
       </div>
 
@@ -45,7 +45,7 @@
             :class="filterType !== ALL_WORKLINES ? 'btn-p' : 'btn-s'"
             @click="showFilter = !showFilter"
           >
-            🔍 {{ filterType }}
+             {{ filterType }}
           </button>
 
           <div v-if="showFilter" class="filter-menu">
@@ -76,7 +76,7 @@
         </div>
 
         <div v-if="filteredDepts.length === 0" class="empty-side">
-          <div class="empty-icon-sm">🏜️</div>
+          <div class="empty-icon-sm"></div>
           ไม่พบข้อมูลในหมวดนี้
         </div>
       </div>
@@ -84,7 +84,7 @@
 
     <div class="org-main">
       <div class="card mb16 p12 flex ic g12">
-        <div class="muted fs16">🔍</div>
+        <div class="muted fs16"></div>
         <input
           v-model="search"
           class="inp org-main-search"
@@ -155,14 +155,14 @@
                   </td>
                   <td style="min-width: 140px">
                     <div v-if="user.sup" class="flex ic g6">
-                      <span class="fs11 evaluator-icon">👤</span>
+                      <span class="fs11 evaluator-icon"></span>
                       <span class="fs12 evaluator-name">{{ user.sup }}</span>
                     </div>
                     <span v-else class="fs11 muted">—</span>
                   </td>
                   <td style="min-width: 140px">
                     <div v-if="user.evaluator2" class="flex ic g6">
-                      <span class="fs11 evaluator-icon">👤</span>
+                      <span class="fs11 evaluator-icon"></span>
                       <span class="fs12 evaluator-name">{{ user.evaluator2 }}</span>
                     </div>
                     <span v-else class="fs11 muted">—</span>
@@ -184,14 +184,14 @@
         </div>
 
         <div v-if="listUsers.length === 0" class="empty-results">
-          <div class="empty-icon">🔎</div>
+          <div class="empty-icon"></div>
           {{ isSearchActive ? 'ไม่พบบุคลากรที่ค้นหา' : 'กลุ่มงานนี้ยังไม่มีบุคลากร' }}
         </div>
       </div>
 
       <div v-else class="card no-dept-card">
         <div class="no-dept-content">
-          <div class="no-dept-icon">🏢</div>
+          <div class="no-dept-icon"></div>
           <div class="fw7 fs16 mb4 no-dept-title">ยังไม่ได้เลือกกลุ่มงาน</div>
           <div class="muted fs13 no-dept-text">
             กรุณาเลือกกลุ่มงานจากรายการด้านซ้ายมือ หรือค้นหาชื่อบุคลากรด้านบน
@@ -210,7 +210,7 @@
             :class="{ active: drillPath.length === 0 }"
             @click="popDrillPath(-1)"
           >
-            <span class="breadcrumb-icon">📂</span> คณะวิศวกรรมศาสตร์
+            <span class="breadcrumb-icon"></span> คณะวิศวกรรมศาสตร์
           </div>
           <template v-for="(item, index) in drillPath" :key="`${item.sso || item.n}-${index}`">
             <div class="breadcrumb-separator">›</div>
@@ -228,8 +228,8 @@
           <div class="fs13 fw5 hierarchy-context">
             {{
               drillPath.length === 0
-                ? '📍 ระดับผู้บริหารคณะ'
-                : `📍 รายชื่อผู้ที่มีหัวหน้างานเป็น: ${drillPath[drillPath.length - 1].n}`
+                ? ' ระดับผู้บริหารคณะ'
+                : ` รายชื่อผู้ที่มีหัวหน้างานเป็น: ${drillPath[drillPath.length - 1].n}`
             }}
           </div>
         </div>
@@ -305,7 +305,7 @@
                   style="padding-right: 40px; text-align: right; padding-top: 24px; padding-bottom: 24px"
                   @click.stop
                 >
-                  <button class="btn-settings" title="แก้ไขผู้ใช้" @click="openModal('modal-user', user)">⚙️</button>
+                  <button class="btn-settings" title="แก้ไขผู้ใช้" @click="openModal('modal-user', user)">⚙</button>
                 </td>
               </tr>
             </tbody>
@@ -313,7 +313,7 @@
         </div>
 
         <div v-if="currentHierarchyUsers.length === 0" class="flex col ic jc empty-hierarchy">
-          <div class="empty-hierarchy-icon">📁</div>
+          <div class="empty-hierarchy-icon"></div>
           <div class="fw8 fs18 mb6 empty-hierarchy-title">ยังไม่มีผู้รับการประเมินถัดไป</div>
           <div class="muted fs14 empty-hierarchy-text">
             ไม่พบผู้ที่มีหัวหน้างานเป็น {{ drillPath[drillPath.length - 1]?.n }}

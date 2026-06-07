@@ -125,14 +125,14 @@ export const EmployeeAssess = defineComponent({ name: "EmployeeAssess", props: O
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">ประเมินตนเอง 📋</div>
+                    <div class="sec-t">ประเมินตนเอง </div>
                     <div class="sec-s">รอบปี 2568 · กรอกให้ครบทุกสมรรถนะแล้วกด "ส่งให้หัวหน้า"</div>
                 </div>
                 <span class="b by">draft</span>
             </div>
 
             <div style={{ background: "var(--yellow-bg)", border: "1px solid #FDE68A", borderRadius: "var(--r)", padding: "10px 14px", marginBottom: "20px", fontSize: "12px", color: "var(--yellow)" }}>
-                ⚠ กรุณาเลือกคะแนนที่ตรงกับความสามารถที่คุณทำได้จริง อ้างอิงพฤติกรรมบ่งชี้ด้านล่าง
+                 กรุณาเลือกคะแนนที่ตรงกับความสามารถที่คุณทำได้จริง อ้างอิงพฤติกรรมบ่งชี้ด้านล่าง
             </div>
 
             {Object.entries(sections).map(([type, items]) => {
@@ -187,7 +187,7 @@ export const EmployeeAssess = defineComponent({ name: "EmployeeAssess", props: O
                                         <div class="lbl mb8" style={{ fontSize: '11px' }}>แนบหลักฐานประกอบ <span class="lbl-opt">(ถ้ามี)</span></div>
                                         <div class="g2">
                                             <div class="upload-area" style={{ padding: '12px' }}>
-                                                <div style={{ fontSize: '18px', marginBottom: '4px' }}>📎</div>
+                                                <div style={{ fontSize: '18px', marginBottom: '4px' }}></div>
                                                 <div class="fw6 fs12">อัปโหลดไฟล์</div>
                                                 <div class="muted fs11">PDF, Word, Excel, รูปภาพ</div>
                                             </div>
@@ -211,7 +211,7 @@ export const EmployeeAssess = defineComponent({ name: "EmployeeAssess", props: O
       })}
 
             <div class="flex g8 mt4" style={{ paddingTop: '4px' }}>
-                <button class="btn btn-t" onClick={submitEval}>📤 ส่งให้หัวหน้า</button>
+                <button class="btn btn-t" onClick={submitEval}> ส่งให้หัวหน้า</button>
                 <button class="btn btn-s" onClick={saveAssessDraft}>{"บันทึกร่าง"}</button>
             </div>
         </>;} });
@@ -239,10 +239,10 @@ export const EmployeeGap = defineComponent({ name: "EmployeeGap", props: Object 
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">สรุปผลสมรรถนะ 📊</div>
+                    <div class="sec-t">สรุปผลสมรรถนะ </div>
                     <div class="sec-s">ยืนยันโดย รศ.ดร.วิไล ใจดี · 5 พ.ค. 2568 · สถานะ: approved</div>
                 </div>
-                <button class="btn btn-s">📥 Export PDF</button>
+                <button class="btn btn-s"> Export PDF</button>
             </div>
 
             <div class="g2 mb14">
@@ -312,7 +312,7 @@ export const EmployeeGap = defineComponent({ name: "EmployeeGap", props: Object 
             <div class="card">
                 <div class="ch">
                     <div>
-                        <div class="ct">⚠ สมรรถนะที่ต้องทำ IDP</div>
+                        <div class="ct"> สมรรถนะที่ต้องทำ IDP</div>
                         <div class="cs">สมรรถนะที่ยังไม่ผ่านเกณฑ์การประเมิน</div>
                     </div>
                     <div style={{ marginLeft: 'auto' }}>
@@ -832,7 +832,7 @@ export const EmployeeProgress = defineComponent({ name: "EmployeeProgress", prop
                                 e.currentTarget.value = '';
                               }} />
                             
-                                                            <div style={{ fontSize: '18px', marginBottom: '4px' }}>📎</div>
+                                                            <div style={{ fontSize: '18px', marginBottom: '4px' }}></div>
                                                             <div class="fw6 fs12">{form.fileName || 'คลิกเพื่อแนบไฟล์'}</div>
                                                             <div class="muted fs11">PDF, Word, รูปภาพ</div>
                                                         </label>
@@ -903,7 +903,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
         gap: 1,
         acts: [
         {
-          ic: "👥",
+          ic: "",
           t: "Peer Learning / Group Activity",
           m: "Social Learning",
           logs: [
@@ -920,7 +920,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
         gap: 1,
         acts: [
         {
-          ic: "💻",
+          ic: "",
           t: "อบรม AI & Data Analytics",
           m: "Formal Learning",
           logs: [
@@ -944,7 +944,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
         gap: 1,
         acts: [
         {
-          ic: "🗂️",
+          ic: "",
           t: "โครงการพัฒนาระบบฐานข้อมูล",
           m: "Experiential Learning",
           logs: [
@@ -1004,15 +1004,15 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">รายละเอียด IDP 📊</div>
+                    <div class="sec-t">รายละเอียด IDP </div>
                     <div class="sec-s">ภาพรวม · Timeline · ประวัติย้อนหลัง</div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "6px", padding: "4px 12px", background: "var(--navy)", borderRadius: "20px" }}>
-                        <span style={{ fontSize: "12px" }}>🏷️</span>
+                        <span style={{ fontSize: "12px" }}></span>
                         <span style={{ fontSize: "12px", fontWeight: 700, color: "#fff" }}>รอบประเมิน 2568</span>
                         <span style={{ fontSize: "11px", color: "rgba(255,255,255,.6)" }}>รอบปัจจุบัน</span>
                     </div>
                 </div>
-                <button class="btn btn-s">📥 Export PDF</button>
+                <button class="btn btn-s"> Export PDF</button>
             </div>
 
             <div class="g4 mb20">
@@ -1041,7 +1041,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
             <div class="card mb20">
                 <div class="ch">
                     <div>
-                        <div class="ct">🕒 Timeline กิจกรรม IDP</div>
+                        <div class="ct"> Timeline กิจกรรม IDP</div>
                         <div class="cs">กดที่กิจกรรมเพื่อดูรายละเอียดและหลักฐาน</div>
                     </div>
                 </div>
@@ -1081,7 +1081,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
 
                                 {act.result === "failed" &&
                 <div style={{ background: "#FEF2F2", borderTop: "1px solid #FECACA", padding: "10px 18px 10px 36px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
-                                        <span style={{ fontSize: "16px", flexShrink: 0 }}>❌</span>
+                                        <span style={{ fontSize: "16px", flexShrink: 0 }}></span>
                                         <div>
                                             <div class="fw7 fs12" style={{ color: "var(--red)" }}>ไม่ผ่าน · {act.rejectedBy} · {act.rejectedDate}</div>
                                             <div style={{ fontSize: "12px", color: "#991B1B", marginTop: "3px" }}>"{act.rejectComment}"</div>
@@ -1118,7 +1118,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
                                                                 </div>
                                                                 {log.evidence &&
                               <div style={{ marginTop: "8px", padding: "6px 10px", background: "var(--blue-lt)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                                                                        <span style={{ fontSize: "14px" }}>📎</span>
+                                                                        <span style={{ fontSize: "14px" }}></span>
                                                                         <span style={{ fontSize: "11px", color: "var(--blue)", fontWeight: 600 }}>{log.evidence}</span>
                                                                         <span style={{ fontSize: "10px", color: "var(--text3)", marginLeft: "auto" }}>คลิกเพื่อดู →</span>
                                                                     </div>
@@ -1139,7 +1139,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
 
             <div class="card">
                 <div class="ch" style={{ flexDirection: "column", alignItems: "flex-start", gap: "12px" }}>
-                    <div class="ct">📁 ประวัติ IDP ย้อนหลัง</div>
+                    <div class="ct"> ประวัติ IDP ย้อนหลัง</div>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         {rounds.map((round) => {
               const isActive = activeRound.value === round.id;
@@ -1211,7 +1211,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
 
           <div style={{ padding: "16px 0" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--green-bg)", border: "1px solid var(--green-md)", borderRadius: "var(--r)", marginBottom: "16px" }}>
-                                <span>✅</span>
+                                <span></span>
                                 <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--green)" }}>{activeRoundData.n} — เสร็จสิ้นแล้ว</span>
                             </div>
                             {((activeRoundData as {gaps?: any[];}).gaps || []).map((gap: any, idx: number) =>
@@ -1237,7 +1237,7 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
                                                         <div style={{ fontSize: "11px", color: log.type === "done" ? "var(--green)" : "var(--text2)", fontWeight: log.type === "done" ? 700 : 400 }}>{log.n}</div>
                                                         {log.evidence &&
                     <div style={{ marginTop: "4px", display: "inline-flex", alignItems: "center", gap: "5px", padding: "3px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "20px" }}>
-                                                                <span style={{ fontSize: "12px" }}>📎</span>
+                                                                <span style={{ fontSize: "12px" }}></span>
                                                                 <span style={{ fontSize: "11px", color: "var(--blue)", fontWeight: 600 }}>{log.evidence}</span>
                                                                 <span style={{ fontSize: "10px", color: "var(--text3)" }}>↗</span>
                                                             </div>

@@ -6,7 +6,7 @@
   </div>
 
   <div v-if="totalActivities === 0" class="card empty-progress">
-    <div class="empty-icon">📭</div>
+    <div class="empty-icon"></div>
     <div class="empty-title">ยังไม่มีกิจกรรมให้ติดตามความก้าวหน้า</div>
     <div class="empty-desc">
       เมื่อมีการเพิ่มกิจกรรมในแผน IDP แล้ว รายการสำหรับบันทึกความก้าวหน้าจะแสดงที่หน้านี้
@@ -117,7 +117,7 @@
                   style="display: none"
                   @change="e => onFileChange(e, g.cd, aIdx)"
                 />
-                <div style="font-size: 18px; margin-bottom: 4px">📎</div>
+                <div style="font-size: 18px; margin-bottom: 4px"></div>
                 <div class="fw6 fs12">
                   {{ getForm(g.cd, aIdx).fileName || 'คลิกเพื่อแนบไฟล์' }}
                 </div>

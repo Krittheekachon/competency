@@ -11,7 +11,7 @@
   </div>
 
   <div v-if="!hasIdpPlan" class="card empty-idp">
-    <div class="empty-icon">📝</div>
+    <div class="empty-icon"></div>
     <div class="empty-title">ยังไม่มีแผน IDP</div>
     <div class="empty-desc">
       เมื่อมีผลการประเมินหรือสมรรถนะที่ต้องพัฒนา ระบบจะแสดงรายการสำหรับจัดทำแผนพัฒนารายบุคคลที่หน้านี้

@@ -31,10 +31,10 @@ const getTagClass = (t: string) =>
   <div>
     <div class="flex ic jb mb20">
       <div>
-        <div class="sec-t">สรุปผลสมรรถนะ 📊</div>
+        <div class="sec-t">สรุปผลสมรรถนะ </div>
         <div class="sec-s">รอดึงข้อมูลผลการประเมินจากฐานข้อมูล</div>
       </div>
-      <button class="btn btn-s">📥 Export PDF</button>
+      <button class="btn btn-s"> Export PDF</button>
     </div>
 
     <div class="g2 mb14">
@@ -103,7 +103,7 @@ const getTagClass = (t: string) =>
     <div class="card">
       <div class="ch">
         <div>
-          <div class="ct">⚠ สมรรถนะที่ต้องทำ IDP</div>
+          <div class="ct"> สมรรถนะที่ต้องทำ IDP</div>
           <div class="cs">สมรรถนะที่ยังไม่ผ่านเกณฑ์การประเมิน</div>
         </div>
         <div style="margin-left: auto;">

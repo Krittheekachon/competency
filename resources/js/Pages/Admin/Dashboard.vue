@@ -152,7 +152,7 @@ const currentNavConfig = computed(() => {
             ...section,
             items: [
                 ...section.items,
-                { id: 'emp-idp-detail', ic: '📁', lb: 'รายละเอียด IDP' },
+                { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
             ],
         };
     });
@@ -637,7 +637,7 @@ const logout = () => router.post(route('logout'));
 
             <div class="mo-b admin-user-modal-body">
                 <div v-if="!orgEditMode" class="admin-user-note">
-                    💡 ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
+                     ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
 
                 <div v-if="!orgEditMode" class="fg">
@@ -813,7 +813,7 @@ const logout = () => router.post(route('logout'));
                 <div class="modal-actions">
                     <button class="btn btn-s modal-action-btn" type="button" @click="closeModal">ยกเลิก</button>
                     <button class="btn btn-p modal-action-btn modal-save-btn" type="button" @click="saveUser">
-                        💾 บันทึก
+                         บันทึก
                     </button>
                 </div>
             </div>

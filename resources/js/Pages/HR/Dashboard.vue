@@ -47,27 +47,27 @@ const sections = [
     {
         title: 'การประเมินตนเอง',
         items: [
-            { id: 'emp-assess', icon: '📋', label: 'ประเมินตนเอง' },
-            { id: 'emp-gap', icon: '📊', label: 'สรุปผลสมรรถนะ' },
-            { id: 'emp-idp', icon: '📝', label: 'แผนพัฒนา IDP' },
-            { id: 'emp-progress', icon: '📈', label: 'ความก้าวหน้า' },
-            { id: 'emp-idp-detail', icon: '📁', label: 'รายละเอียด IDP' },
+            { id: 'emp-assess', icon: '', label: 'ประเมินตนเอง' },
+            { id: 'emp-gap', icon: '', label: 'สรุปผลสมรรถนะ' },
+            { id: 'emp-idp', icon: '', label: 'แผนพัฒนา IDP' },
+            { id: 'emp-progress', icon: '', label: 'ความก้าวหน้า' },
+            { id: 'emp-idp-detail', icon: '', label: 'รายละเอียด IDP' },
         ],
     },
     {
         title: 'HR',
         items: [
-            { id: 'hr-position-competencies', icon: '🔗', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
-            { id: 'hr-cycle', icon: '🗓️', label: 'รอบการประเมิน' },
-            { id: 'hr-template', icon: '🎯', label: 'กำหนดความคาดหวัง' },
-            { id: 'hr-catalog', icon: '📚', label: 'Learning Catalog' },
+            { id: 'hr-position-competencies', icon: '', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
+            { id: 'hr-cycle', icon: '', label: 'รอบการประเมิน' },
+            { id: 'hr-template', icon: '', label: 'กำหนดความคาดหวัง' },
+            { id: 'hr-catalog', icon: '', label: 'Learning Catalog' },
         ],
     },
     {
         title: 'ภาพรวมคณะ',
         items: [
-            { id: 'hr-comp-overview', icon: '📈', label: 'ภาพรวม Competency คณะ' },
-            { id: 'hr-idp-overview', icon: '📉', label: 'ภาพรวม IDP คณะ' },
+            { id: 'hr-comp-overview', icon: '', label: 'ภาพรวม Competency คณะ' },
+            { id: 'hr-idp-overview', icon: '', label: 'ภาพรวม IDP คณะ' },
         ],
     },
 ];
@@ -273,7 +273,7 @@ const closeModal = () => {
                             </div>
                             <div class="assigned-list">
                                 <div class="assigned-empty">
-                                    <div class="assigned-empty-icon">🔗</div>
+                                    <div class="assigned-empty-icon"></div>
                                     <div class="fw8">ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้</div>
                                     <div class="muted fs12">รอข้อมูลพจนานุกรมและตำแหน่งจากฐานข้อมูลจริง</div>
                                 </div>
@@ -295,7 +295,7 @@ const closeModal = () => {
                             </div>
                             <div class="dictionary-list">
                                 <div class="assigned-empty dictionary-empty">
-                                    <div class="assigned-empty-icon">📖</div>
+                                    <div class="assigned-empty-icon"></div>
                                     <div class="fw8">ยังไม่มีข้อมูลสมรรถนะ</div>
                                     <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
                                 </div>
@@ -321,7 +321,7 @@ const closeModal = () => {
                 <template v-else-if="activePage === 'hr-cycle'">
                     <div class="hr-page-head mb20">
                         <div>
-                            <div class="sec-t">รอบการประเมิน 🗓️</div>
+                            <div class="sec-t">รอบการประเมิน </div>
                             <div class="sec-s">เปิด-ปิดรอบ กำหนดช่วงเวลา และตรวจสอบสถานะจากข้อมูลจริง</div>
                         </div>
                         <button class="btn btn-p" type="button" @click="openModal('cycle')">+ เปิดรอบใหม่</button>
@@ -375,10 +375,10 @@ const closeModal = () => {
                     </div>
 
                     <div class="card">
-                        <div class="ch"><div class="ct">🔔 ส่งการแจ้งเตือน</div></div>
+                        <div class="ch"><div class="ct"> ส่งการแจ้งเตือน</div></div>
                         <div class="cb">
                             <p class="muted fs13 mb16">แจ้งเตือนบุคลากรที่ยังไม่ส่งแบบประเมิน</p>
-                            <button class="btn btn-p btn-sm" disabled type="button">🔔 ส่งแจ้งเตือน</button>
+                            <button class="btn btn-p btn-sm" disabled type="button"> ส่งแจ้งเตือน</button>
                         </div>
                     </div>
                 </template>
@@ -386,7 +386,7 @@ const closeModal = () => {
                 <template v-else-if="activePage === 'hr-template'">
                     <div class="hr-page-head mb20">
                         <div>
-                            <div class="sec-t">กำหนดความคาดหวังการประเมิน 🎯</div>
+                            <div class="sec-t">กำหนดความคาดหวังการประเมิน </div>
                             <div class="sec-s">ตั้งค่า Expected Level ของแต่ละประเภทบุคลากรในแต่ละรอบการประเมิน</div>
                         </div>
                     </div>
@@ -487,12 +487,12 @@ const closeModal = () => {
                 <template v-else-if="activePage === 'hr-catalog'">
                     <div class="hr-page-head mb20">
                         <div>
-                            <div class="sec-t">Learning Catalog 📚</div>
+                            <div class="sec-t">Learning Catalog </div>
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
                         <div class="hr-actions">
-                            <button class="btn btn-s" disabled type="button">📄 ดาวน์โหลด Template</button>
-                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')">📥 Import Excel</button>
+                            <button class="btn btn-s" disabled type="button"> ดาวน์โหลด Template</button>
+                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')"> Import Excel</button>
                             <button class="btn btn-p" type="button" @click="openModal('catalog')">+ เพิ่มกิจกรรม</button>
                         </div>
                     </div>
@@ -645,7 +645,7 @@ const closeModal = () => {
                             </div>
                         </div>
                         <div class="upload-box">
-                            <div class="upload-ic">📄</div>
+                            <div class="upload-ic"></div>
                             <div>
                                 <div class="fw8 fs14">เลือกไฟล์ Expected Level</div>
                                 <div class="muted fs12">รองรับไฟล์ .xlsx เมื่อเชื่อม backend แล้ว</div>
@@ -700,7 +700,7 @@ const closeModal = () => {
                             </div>
                         </div>
                         <div class="upload-box">
-                            <div class="upload-ic">📥</div>
+                            <div class="upload-ic"></div>
                             <div>
                                 <div class="fw8 fs14">เลือกไฟล์ Catalog</div>
                                 <div class="muted fs12">รอ API สำหรับ validate และ import ไฟล์ Excel</div>

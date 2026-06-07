@@ -1,11 +1,11 @@
 <template>
   <div class="admin-users-head mb20">
     <div>
-      <div class="sec-t">จัดการผู้ใช้งาน 👤</div>
+      <div class="sec-t">จัดการผู้ใช้งาน </div>
       <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
     </div>
     <div class="action-row">
-      <button class="btn btn-s" type="button" @click="showImport = true">📥 Import Excel</button>
+      <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button>
       <button class="btn btn-p add-user-btn" type="button" @click="openModal('modal-user')">+ เพิ่มผู้ใช้</button>
     </div>
   </div>
@@ -19,7 +19,7 @@
 
   <div class="card mb14">
     <div class="ch filter-row">
-      <input v-model="search" class="inp search-input" placeholder="🔍 ค้นหาชื่อ / ID..." />
+      <input v-model="search" class="inp search-input" placeholder=" ค้นหาชื่อ / ID..." />
 
       <select v-model="worklineFilter" class="sel workline-select">
         <option>ทุกสายงาน</option>
@@ -127,7 +127,7 @@
       </table>
 
       <div v-if="filteredUsers.length === 0" class="empty-result">
-        ไม่พบข้อมูลที่คุณค้นหา 🔍
+        ไม่พบข้อมูลที่คุณค้นหา 
       </div>
     </div>
   </div>

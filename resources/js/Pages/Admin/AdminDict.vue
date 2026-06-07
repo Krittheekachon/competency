@@ -260,17 +260,17 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
     <>
       <div class="flex ic jb mb20">
         <div>
-          <div class="sec-t">{view.value === 'list' ? 'พจนานุกรมสมรรถนะ 📖' : view.value === 'add' ? 'เพิ่มสมรรถนะการประเมิน 🆕' : 'แก้ไขสมรรถนะการประเมิน 📝'}</div>
+          <div class="sec-t">{view.value === 'list' ? 'พจนานุกรมสมรรถนะ ' : view.value === 'add' ? 'เพิ่มสมรรถนะการประเมิน ' : 'แก้ไขสมรรถนะการประเมิน '}</div>
           <div class="sec-s">{view.value === 'list' ? 'CC (Core) · MC (Managerial) · FC1/FC2 (Functional) · ระดับ 1–5 · พฤติกรรมบ่งชี้' : 'กรอกข้อมูลสมรรถนะและรายละเอียดระดับพฤติกรรม'}</div>
         </div>
         <div class="flex" style={{ gap: "8px" }}>
           {view.value === 'list' ?
           <>
-              <button class="btn btn-s" onClick={() => setShowImport(true)}>📥 Import Excel</button>
+              <button class="btn btn-s" onClick={() => setShowImport(true)}> Import Excel</button>
               <button class="btn btn-p" onClick={() => {clearForm();setType(getCompetencyTypeCode(competencyTypes[0]) || "");setView("add");}}>+ เพิ่มสมรรถนะ</button>
             </> :
 
-          <button class="btn btn-s" onClick={closeForm}>⬅️ กลับหน้ารายการ</button>
+          <button class="btn btn-s" onClick={closeForm}>⬅ กลับหน้ารายการ</button>
           }
         </div>
       </div>
@@ -290,7 +290,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
 
       {status.value &&
       <div class="status-msg anim-fade-in" style={{ position: "fixed", top: "20px", right: "20px", zIndex: 9999, padding: "12px 24px", borderRadius: "var(--r)", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.2)", background: status.value.type === 's' ? '#10b981' : '#ef4444', color: '#fff', fontWeight: 700, display: "flex", alignItems: "center", gap: "10px" }}>
-          <span>{status.value.type === 's' ? '✅' : '⚠️'}</span>
+          <span>{status.value.type === 's' ? '' : ''}</span>
           {status.value.msg}
         </div>
       }
@@ -349,7 +349,7 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
                               <div class="flex col ic g8" style={{ marginTop: '4px' }}>
                                 <div class="muted fs10 fw7">LEVEL</div>
                                 <input class="inp ac" style={{ width: '50px' }} value={lv.lvl} onChange={(e) => updateLvlNum(lvIdx, e.target.value)} />
-                                <button class="btn-icon-r" title="ลบระดับนี้" onClick={() => removeLevelRow(lvIdx)}>🗑️</button>
+                                <button class="btn-icon-r" title="ลบระดับนี้" onClick={() => removeLevelRow(lvIdx)}></button>
                               </div>
                             </td>
                     }

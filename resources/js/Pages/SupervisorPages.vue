@@ -185,7 +185,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
     if (success.value) return (
       <div class="card text-center" style={{ padding: '40px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>✅</div>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}></div>
             <div class="fw8 fs18 mb8">ส่งผลประเมินเรียบร้อย</div>
             <div class="muted fs14 mb20">คุณได้ทำการส่งผลการประเมินเรียบร้อยแล้ว</div>
             <button class="btn btn-p" onClick={() => setSuccess(false)}>กลับไปหน้าสรุป</button>
@@ -232,7 +232,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
       <div class="flex ic jb mb20">
                     <div>
-                        <div class="sec-t">ประเมินลูกน้อง ✍️</div>
+                        <div class="sec-t">ประเมินลูกน้อง </div>
                         <div class="sec-s">ประเมินบุคลากรใน {activeDept}</div>
                     </div>
                     <div class="flex ic g8">
@@ -248,7 +248,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                 <div class="card">
                     <div class="ch" style={supervisorMode ? { padding: "14px 16px" } : undefined}><div class="ct">{supervisorMode ? "ผู้ส่งแบบประเมินแล้ว" : "รายการบุคลากรแยกตามหน่วยงาน"}</div></div>
                     {!supervisorMode && <div class="p12" style={{ borderBottom: '1px solid var(--border)', background: '#fff' }}>
-                        <input class="inp inp-sm" style={{ fontSize: '12px' }} placeholder="🔍 ค้นหาชื่อบุคลากร..." value={searchTerm.value} onChange={(e) => setSearchTerm(e.target.value)} />
+                        <input class="inp inp-sm" style={{ fontSize: '12px' }} placeholder=" ค้นหาชื่อบุคลากร..." value={searchTerm.value} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>}
                     <div style={{ padding: 0, maxHeight: '600px', overflowY: 'auto' }}>
                         {supervisorMode && supervisorStaff.map((u, i) => {
@@ -272,7 +272,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                         {heads.length > 0 &&
               <div style={{ borderBottom: '1px solid var(--border)' }}>
                                 <div style={{ background: 'var(--blue-lt)', padding: '10px 16px', fontWeight: 700, fontSize: '12px', color: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span>👨‍💼 หัวหน้าหน่วยงาน / ผู้บริหาร</span>
+                                    <span> หัวหน้าหน่วยงาน / ผู้บริหาร</span>
                                     <span class="b bg-blue text-white" style={{ fontSize: '9px', padding: '1px 6px' }}>{heads.length}</span>
                                 </div>
                                 {heads.map((u, i) => {
@@ -309,7 +309,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                 return (
                   <div key={wi}>
                                     <div style={{ background: 'var(--bg)', padding: '10px 16px', fontWeight: 700, fontSize: '12px', color: 'var(--navy)', borderTop: wi === 0 ? 'none' : '1px solid var(--border)' }}>
-                                        <span style={{ marginRight: '6px' }}>📁</span>{w.work}
+                                        <span style={{ marginRight: '6px' }}></span>{w.work}
                                     </div>
                                     {wUsers.map((u, ui) => {
                       const isSel = selectedStaff.value?.sso === u.sso;
@@ -335,7 +335,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                     {unitList.map((un, ni) => un.users.length === 0 ? null :
                     <div key={ni}>
                                             <div class="flex ic g8" style={{ background: '#fff', padding: '10px 16px', borderLeft: '3px solid var(--blue)', fontSize: '11px', fontWeight: 600, color: 'var(--blue)' }}>
-                                                <span style={{ fontSize: '14px' }}>🏠</span><span>{un.name}</span>
+                                                <span style={{ fontSize: '14px' }}></span><span>{un.name}</span>
                                             </div>
                                             {un.users.map((u, ui) => {
                         const isSel = selectedStaff.value?.sso === u.sso;
@@ -370,7 +370,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
                 {supervisorMode && !selectedStaff.value ?
         <div class="card flex col ic jc" style={{ minHeight: "240px", padding: "30px 20px", textAlign: "center", alignSelf: "center" }}>
-                        <div style={{ fontSize: "44px", lineHeight: 1, marginBottom: "14px" }}>🎯</div>
+                        <div style={{ fontSize: "44px", lineHeight: 1, marginBottom: "14px" }}></div>
                         <div class="fw7 fs14" style={{ color: "var(--text3)" }}>เลือกบุคลากรจากรายการด้านซ้ายเพื่อเริ่มประเมิน</div>
                     </div> :
 
@@ -385,7 +385,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                         </div>
                     </div>}
                     <div class="cb" style={{ padding: supervisorMode ? '0' : '8px 0 0', opacity: selectedStaff.value ? 1 : 0.5, pointerEvents: selectedStaff.value ? 'all' : 'none' }}>
-                        {supervisorMode && selectedStaff.value && <div class="fw8 fs15" style={{ padding: "0 0 14px", background: "var(--bg)" }}>📝 การประเมิน: {selectedStaff.value.t}{selectedStaff.value.n}</div>}
+                        {supervisorMode && selectedStaff.value && <div class="fw8 fs15" style={{ padding: "0 0 14px", background: "var(--bg)" }}> การประเมิน: {selectedStaff.value.t}{selectedStaff.value.n}</div>}
                         {selectedStaff.value &&
             <div class={`b ${isDirty.value ? "by" : "bt"}`} style={{ marginBottom: "12px", padding: "7px 10px", whiteSpace: "normal" }}>
                                 {isDirty.value ?
@@ -482,7 +482,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
                         {currentUser.p === 'คณบดี' &&
             <div class="p20 mt10" style={{ background: 'var(--blue-lt)', borderRadius: '12px', border: '1px dashed var(--blue)' }}>
-                                <div class="fw8 fs14 text-blue mb10">✍️ ส่วนการเซ็นอนุมัติ (Dean Signature)</div>
+                                <div class="fw8 fs14 text-blue mb10"> ส่วนการเซ็นอนุมัติ (Dean Signature)</div>
                                 <div class="flex ic g10 mb10">
                                     <input type="checkbox" id="sign" class="pointer" />
                                     <label for="sign" class="fs13 fw6 pointer">ข้าพเจ้าอนุมัติผลการประเมินและแผนพัฒนา IDP ฉบับนี้</label>
@@ -495,7 +495,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                 บันทึกผล
                             </button>
                             <button class={`btn ${saving.value ? 'btn-disabled' : 'btn-t'}`} onClick={submit} disabled={saving.value} style={{ justifyContent: 'center', minHeight: '44px', fontSize: '14px', fontWeight: 700, boxShadow: '0 4px 12px var(--blue-lt)', flex: "2 1 300px" }}>
-                                {saving.value ? "กำลังบันทึก..." : currentUser.p === 'คณบดี' ? "✔ เซ็นอนุมัติการประเมิน" : currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || currentUser.r === 'manager_dept' ? "✔ ยืนยันผลและส่งให้คณบดี" : "✔ ส่งผลการประเมินให้หัวหน้าฝ่าย"}
+                                {saving.value ? "กำลังบันทึก..." : currentUser.p === 'คณบดี' ? " เซ็นอนุมัติการประเมิน" : currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || currentUser.r === 'manager_dept' ? " ยืนยันผลและส่งให้คณบดี" : " ส่งผลการประเมินให้หัวหน้าฝ่าย"}
                             </button>
                         </div>
                     </div>
@@ -742,7 +742,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">สรุปสมรรถนะทีม 📊</div>
+                    <div class="sec-t">สรุปสมรรถนะทีม </div>
                     <div class="sec-s">แสดงระดับสมรรถนะ actual_level ของทีมใน {activeDept}</div>
                 </div>
                 <div class="flex ic g8">
@@ -759,12 +759,12 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
                     {DEPT_STRUCTURE[activeDept as keyof typeof DEPT_STRUCTURE].map((w, wi) =>
           <div key={wi}>
                             <div style={{ background: 'var(--navy)', color: '#fff', padding: '8px 16px', fontWeight: 700, fontSize: '13px' }}>
-                                📁 {w.work}
+                                 {w.work}
                             </div>
                             {w.units.map((un, ui) =>
             <div key={ui}>
                                     <div style={{ background: '#f8fafc', padding: '6px 16px', borderLeft: '4px solid var(--blue)', fontSize: '12px', fontWeight: 700, color: 'var(--blue)' }}>
-                                        🏠 {un}
+                                         {un}
                                     </div>
                                     <table class="tbl">
                                         <thead>
@@ -851,7 +851,7 @@ const LegacyTeamIDP = defineComponent({ name: "LegacyTeamIDP", props: Object as 
     <>
             <div class="flex ic jb mb16">
                 <div>
-                    <div class="sec-t">IDP & ติดตามทีม ✅</div>
+                    <div class="sec-t">IDP & ติดตามทีม </div>
                     <div class="sec-s">ข้อมูลใน {activeDept.value}</div>
                 </div>
                 <div class="flex ic g8">
@@ -875,12 +875,12 @@ const LegacyTeamIDP = defineComponent({ name: "LegacyTeamIDP", props: Object as 
                     {DEPT_STRUCTURE[activeDept.value as keyof typeof DEPT_STRUCTURE].map((w, wi) =>
         <div key={wi}>
                             <div style={{ background: 'var(--navy)', color: '#fff', padding: '8px 16px', fontWeight: 700, fontSize: '13px' }}>
-                                📁 {w.work}
+                                 {w.work}
                             </div>
                             {w.units.map((un, ui) =>
           <div key={ui}>
                                     <div style={{ background: '#f8fafc', padding: '6px 16px', borderLeft: '4px solid var(--blue)', fontSize: '12px', fontWeight: 700, color: 'var(--blue)' }}>
-                                        🏠 {un}
+                                         {un}
                                     </div>
                                     <div class="p12">
                                         {getStaff(un).map((s) => doneList.value.includes(s.id) ? null :
@@ -897,8 +897,8 @@ const LegacyTeamIDP = defineComponent({ name: "LegacyTeamIDP", props: Object as 
                                                             </div>
                                                         </div>
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                            <button class="btn btn-s btn-sm" style={{ fontSize: '11px' }}>📄 รายละเอียด</button>
-                                                            <button class="btn btn-g btn-sm" style={{ fontSize: '11px' }} onClick={() => approve(s.id)}>✅ อนุมัติ</button>
+                                                            <button class="btn btn-s btn-sm" style={{ fontSize: '11px' }}> รายละเอียด</button>
+                                                            <button class="btn btn-g btn-sm" style={{ fontSize: '11px' }} onClick={() => approve(s.id)}> อนุมัติ</button>
                                                         </div>
                                                     </div>
                                                     <div class="fg mb0">

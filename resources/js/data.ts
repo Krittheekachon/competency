@@ -12,11 +12,11 @@ export const NAV_CONFIG = {
     {
       sec: "การประเมินของฉัน",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "ผล Competency Gap" },
-        { id: "emp-idp", ic: "📝", lb: "แผนพัฒนา IDP" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "📁", lb: "รายละเอียด IDP" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "แผนพัฒนา IDP" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
       ]
     }
   ],
@@ -24,19 +24,19 @@ export const NAV_CONFIG = {
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "ผล Competency Gap" },
-        { id: "emp-idp", ic: "📝", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "📁", lb: "รายละเอียด IDP" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
       ]
     },
     {
       sec: "จัดการทีม",
       items: [
-        { id: "dh-assess", ic: "✍️", lb: "ประเมินลูกน้อง" },
-        { id: "sup-gap", ic: "📊", lb: "Competency Gap ทีม" },
-        { id: "dh-idp", ic: "✅", lb: "IDP & ติดตามทีม" }
+        { id: "dh-assess", ic: "", lb: "ประเมินลูกน้อง" },
+        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
   ],
@@ -44,19 +44,19 @@ export const NAV_CONFIG = {
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "ผล Competency Gap" },
-        { id: "emp-idp", ic: "📝", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "📁", lb: "รายละเอียด IDP" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
       ]
     },
     {
       sec: "จัดการทีม",
       items: [
-        { id: "sup-assess", ic: "✍️", lb: "ประเมินลูกน้อง" },
-        { id: "sup-gap", ic: "📊", lb: "Competency Gap ทีม" },
-        { id: "sup-idp", ic: "✅", lb: "IDP & ติดตามทีม" }
+        { id: "sup-assess", ic: "", lb: "ประเมินลูกน้อง" },
+        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "sup-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
   ],
@@ -64,20 +64,20 @@ export const NAV_CONFIG = {
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "ผล Competency Gap" },
-        { id: "emp-idp", ic: "📝", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "📁", lb: "รายละเอียด IDP" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
       ]
     },
     {
       sec: "ภาพรวมคณะ",
       items: [
-        { id: "mgr-gap", ic: "📈", lb: "Competency Gap คณะ" },
-        { id: "mgr-idp", ic: "📉", lb: "ติดตาม IDP ภาพรวม" },
-        { id: "mgr-assessment-approval", ic: "✅", lb: "อนุมัติผลการประเมิน" },
-        { id: "mgr-idp-approval", ic: "🗂️", lb: "อนุมัติแผน IDP" }
+        { id: "mgr-gap", ic: "", lb: "Competency Gap คณะ" },
+        { id: "mgr-idp", ic: "", lb: "ติดตาม IDP ภาพรวม" },
+        { id: "mgr-assessment-approval", ic: "", lb: "อนุมัติผลการประเมิน" },
+        { id: "mgr-idp-approval", ic: "", lb: "อนุมัติแผน IDP" }
       ]
     }
   ],
@@ -85,27 +85,27 @@ export const NAV_CONFIG = {
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "ผล Competency Gap" },
-        { id: "emp-idp", ic: "📝", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "📁", lb: "รายละเอียด IDP" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
       ]
     },
     {
       sec: "HR",
       items: [
-        { id: "hr-position-competencies", ic: "🔗", lb: "กำหนดสมรรถนะประจำตำแหน่ง" },
-        { id: "hr-cycle", ic: "🗓️", lb: "รอบการประเมิน" },
-        { id: "hr-template", ic: "🎯", lb: "กำหนดความคาดหวัง" },
-        { id: "hr-catalog", ic: "📚", lb: "Learning Catalog" }
+        { id: "hr-position-competencies", ic: "", lb: "กำหนดสมรรถนะประจำตำแหน่ง" },
+        { id: "hr-cycle", ic: "", lb: "รอบการประเมิน" },
+        { id: "hr-template", ic: "", lb: "กำหนดความคาดหวัง" },
+        { id: "hr-catalog", ic: "", lb: "Learning Catalog" }
       ]
     },
     {
       sec: "ภาพรวมคณะ",
       items: [
-        { id: "hr-comp-overview", ic: "📈", lb: "ภาพรวม Competency คณะ" },
-        { id: "hr-idp-overview", ic: "📉", lb: "ภาพรวม IDP คณะ" }
+        { id: "hr-comp-overview", ic: "", lb: "ภาพรวม Competency คณะ" },
+        { id: "hr-idp-overview", ic: "", lb: "ภาพรวม IDP คณะ" }
       ]
     }
   ],
@@ -113,19 +113,19 @@ export const NAV_CONFIG = {
     {
       sec: "ของฉัน (บุคลากร)",
       items: [
-        { id: "emp-assess", ic: "📋", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "📊", lb: "สรุปผลสมรรถนะ" },
-        { id: "emp-idp", ic: "📝", lb: "แผนพัฒนา IDP" },
-        { id: "emp-progress", ic: "🔄", lb: "อัปเดตความก้าวหน้า" }
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "สรุปผลสมรรถนะ" },
+        { id: "emp-idp", ic: "", lb: "แผนพัฒนา IDP" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" }
       ]
     },
     {
       sec: "ระบบ",
       items: [
-        { id: "admin-users", ic: "👤", lb: "จัดการผู้ใช้งาน" },
-        { id: "admin-org", ic: "🌿", lb: "จัดการสายการบังคับบัญชา" },
-        { id: "admin-org-structure", ic: "🏗️", lb: "จัดการโครงสร้างองค์กร & สมรรถนะ" },
-        { id: "admin-dict", ic: "📖", lb: "พจนานุกรมสมรรถนะ" }
+        { id: "admin-users", ic: "", lb: "จัดการผู้ใช้งาน" },
+        { id: "admin-org", ic: "", lb: "จัดการสายการบังคับบัญชา" },
+        { id: "admin-org-structure", ic: "", lb: "จัดการโครงสร้างองค์กร & สมรรถนะ" },
+        { id: "admin-dict", ic: "", lb: "พจนานุกรมสมรรถนะ" }
       ]
     }
   ]

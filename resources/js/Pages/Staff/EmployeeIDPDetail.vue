@@ -2,17 +2,17 @@
   <!-- ── Header ───────────────────────────────────────────────────────────── -->
   <div class="flex ic jb mb20">
     <div>
-      <div class="sec-t">รายละเอียด IDP 📊</div>
+      <div class="sec-t">รายละเอียด IDP </div>
       <div class="sec-s">ภาพรวม · Timeline · ประวัติย้อนหลัง</div>
       <div
         style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 4px 12px; background: var(--navy); border-radius: 20px"
       >
-        <span style="font-size: 12px">🏷️</span>
+        <span style="font-size: 12px"></span>
         <span style="font-size: 12px; font-weight: 700; color: #fff">รอบประเมิน 2568</span>
         <span style="font-size: 11px; color: rgba(255,255,255,.6)">รอบปัจจุบัน</span>
       </div>
     </div>
-    <button class="btn btn-s">📥 Export PDF</button>
+    <button class="btn btn-s"> Export PDF</button>
   </div>
 
   <!-- ── Summary stats ─────────────────────────────────────────────────────── -->
@@ -43,7 +43,7 @@
   <div class="card mb20">
     <div class="ch">
       <div>
-        <div class="ct">🕒 Timeline กิจกรรม IDP</div>
+        <div class="ct"> Timeline กิจกรรม IDP</div>
         <div class="cs">กดที่กิจกรรมเพื่อดูรายละเอียดและหลักฐาน</div>
       </div>
     </div>
@@ -105,7 +105,7 @@
           v-if="act.result === 'failed'"
           style="background: #FEF2F2; border-top: 1px solid #FECACA; padding: 10px 18px 10px 36px; display: flex; gap: 10px; align-items: flex-start"
         >
-          <span style="font-size: 16px; flex-shrink: 0">❌</span>
+          <span style="font-size: 16px; flex-shrink: 0"></span>
           <div>
             <div class="fw7 fs12" style="color: var(--red)">
               ไม่ผ่าน · {{ act.rejectedBy }} · {{ act.rejectedDate }}
@@ -168,7 +168,7 @@
                     v-if="log.evidence"
                     style="margin-top: 8px; padding: 6px 10px; background: var(--blue-lt); border-radius: 6px; display: flex; align-items: center; gap: 6px"
                   >
-                    <span style="font-size: 14px">📎</span>
+                    <span style="font-size: 14px"></span>
                     <span style="font-size: 11px; color: var(--blue); font-weight: 600">{{ log.evidence }}</span>
                     <span style="font-size: 10px; color: var(--text3); margin-left: auto">คลิกเพื่อดู →</span>
                   </div>
@@ -185,7 +185,7 @@
   <!-- ── History card ───────────────────────────────────────────────────────── -->
   <div class="card">
     <div class="ch" style="flex-direction: column; align-items: flex-start; gap: 12px">
-      <div class="ct">📁 ประวัติ IDP ย้อนหลัง</div>
+      <div class="ct"> ประวัติ IDP ย้อนหลัง</div>
       <div style="display: flex; gap: 6px; flex-wrap: wrap">
         <button
           v-for="round in rounds"
@@ -263,7 +263,7 @@
         <div
           style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--green-bg); border: 1px solid var(--green-md); border-radius: var(--r); margin-bottom: 16px"
         >
-          <span>✅</span>
+          <span></span>
           <span style="font-size: 12px; font-weight: 700; color: var(--green)">
             {{ activeRoundData.n }} — เสร็จสิ้นแล้ว
           </span>
@@ -315,7 +315,7 @@
                   v-if="log.evidence"
                   style="margin-top: 4px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px"
                 >
-                  <span style="font-size: 12px">📎</span>
+                  <span style="font-size: 12px"></span>
                   <span style="font-size: 11px; color: var(--blue); font-weight: 600">{{ log.evidence }}</span>
                   <span style="font-size: 10px; color: var(--text3)">↗</span>
                 </div>

@@ -260,7 +260,7 @@ export default defineComponent({
       const failPct = 100 - getPct(dept.pass, dept.assessed);
 
       if (failPct > 40) {
-        return { label: "⚠ ความเสี่ยงสูง", badge: "br", rank: 0, color: "var(--red)" };
+        return { label: " ความเสี่ยงสูง", badge: "br", rank: 0, color: "var(--red)" };
       }
       if (failPct >= 20) {
         return { label: "ต้องเฝ้าระวัง", badge: "by", rank: 1, color: "var(--yellow)" };
@@ -505,10 +505,10 @@ export default defineComponent({
                                                                 <span style={{ fontSize: "11px", color: "var(--text3)" }}>{line.total} คน</span>
                                                             </div>
                                                             <div style={{ borderTop: "1px solid var(--border)", background: "#FFFBEB", padding: "8px 14px", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-                                                                <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--yellow)" }}>⚠ สมรรถนะที่ตก:</span>
+                                                                <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--yellow)" }}> สมรรถนะที่ตก:</span>
                                                                 {line.weakDetail.map((weak) =>
                               <span key={weak.n} style={{ fontSize: "11px", padding: "2px 8px", background: "var(--red-bg)", color: "var(--red)", borderRadius: "20px", fontWeight: 700 }}>
-                                                                        ⚠ {weak.n} <span style={{ background: "var(--red)", color: "#fff", borderRadius: "10px", padding: "0 5px", fontSize: "10px" }}>{weak.cnt} คน</span>
+                                                                         {weak.n} <span style={{ background: "var(--red)", color: "#fff", borderRadius: "10px", padding: "0 5px", fontSize: "10px" }}>{weak.cnt} คน</span>
                                                                     </span>
                               )}
                                                             </div>
@@ -532,7 +532,7 @@ export default defineComponent({
                 </div>
                 <div class="cb" style={{ padding: "12px 22px 22px" }}>
                     <div style={{ background: "var(--yellow-bg)", border: "1px solid #fde68a", borderRadius: "9px", color: "var(--yellow)", padding: "12px 16px", marginBottom: "20px", fontSize: "13px" }}>
-                        ⚠ บุคลากร 1 คนสามารถไม่ผ่านได้หลายสมรรถนะ ผลรวมอาจสูงกว่าจำนวนจริง
+                         บุคลากร 1 คนสามารถไม่ผ่านได้หลายสมรรถนะ ผลรวมอาจสูงกว่าจำนวนจริง
                     </div>
                     {reportProblemGroups.map((group) =>
           <div key={group.label} style={{ marginBottom: "26px" }}>

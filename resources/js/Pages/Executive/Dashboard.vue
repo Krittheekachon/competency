@@ -41,25 +41,25 @@ const sections = [
     {
         title: 'ของฉัน (บุคลากร)',
         items: [
-            { id: 'employee-assess', icon: '📋', label: 'ประเมินตนเอง' },
-            { id: 'employee-gap', icon: '📊', label: 'ผล Competency Gap' },
-            { id: 'employee-idp', icon: '📝', label: 'IDP ของฉัน' },
-            { id: 'employee-progress', icon: '🔄', label: 'อัปเดตความก้าวหน้า' },
-            { id: 'employee-idp-detail', icon: '📁', label: 'รายละเอียด IDP' },
+            { id: 'employee-assess', icon: '', label: 'ประเมินตนเอง' },
+            { id: 'employee-gap', icon: '', label: 'ผล Competency Gap' },
+            { id: 'employee-idp', icon: '', label: 'IDP ของฉัน' },
+            { id: 'employee-progress', icon: '', label: 'อัปเดตความก้าวหน้า' },
+            { id: 'employee-idp-detail', icon: '', label: 'รายละเอียด IDP' },
         ],
     },
     {
         title: 'ภาพรวมคณะ',
         items: [
-            { id: 'manager-competency-overview', icon: '📈', label: 'Competency Gap คณะ' },
-            { id: 'manager-idp-overview', icon: '📉', label: 'ติดตาม IDP ภาพรวม' },
+            { id: 'manager-competency-overview', icon: '', label: 'Competency Gap คณะ' },
+            { id: 'manager-idp-overview', icon: '', label: 'ติดตาม IDP ภาพรวม' },
         ],
     },
     {
         title: 'การอนุมัติ',
         items: [
-            { id: 'manager-assessment-approval', icon: '✅', label: 'อนุมัติผลการประเมิน' },
-            { id: 'manager-idp-approval', icon: '🗂️', label: 'อนุมัติแผน IDP' },
+            { id: 'manager-assessment-approval', icon: '', label: 'อนุมัติผลการประเมิน' },
+            { id: 'manager-idp-approval', icon: '', label: 'อนุมัติแผน IDP' },
         ],
     },
 ];

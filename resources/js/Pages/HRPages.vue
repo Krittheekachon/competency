@@ -32,10 +32,10 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
     const validateCycleDates = (next = form.value) => {
       const nextErrors = { se: "", sup: "" };
       if (next.ss && next.se && next.se <= next.ss) {
-        nextErrors.se = "⚠ วันปิดรอบต้องอยู่หลังวันเปิดรอบ";
+        nextErrors.se = " วันปิดรอบต้องอยู่หลังวันเปิดรอบ";
       }
       if (next.ss && next.sup && next.sup < next.ss) {
-        nextErrors.sup = "⚠ เวลาสิ้นสุดหัวหน้างานต้องไม่ต่ำกว่าวันเปิดรอบประเมินตนเอง";
+        nextErrors.sup = " เวลาสิ้นสุดหัวหน้างานต้องไม่ต่ำกว่าวันเปิดรอบประเมินตนเอง";
       }
       setErrors(nextErrors);
       return !nextErrors.se && !nextErrors.sup;
@@ -61,7 +61,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">รอบการประเมิน 🗓️</div>
+                    <div class="sec-t">รอบการประเมิน </div>
                     <div class="sec-s">เปิด-ปิดรอบ กำหนดช่วงเวลา ตรวจสอบสถานะ</div>
                 </div>
                 <button class="btn btn-p" onClick={openNewCycleModal}>+ เปิดรอบใหม่</button>
@@ -76,7 +76,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
                 <div class="sc">
                     <div class="sl">ส่งแบบประเมินแล้ว</div>
                     <div class="sv gcc">189<span style={{ fontSize: '14px', color: 'var(--text3)' }}>/247</span></div>
-                    <div class="ss rc">⚠ เหลือ 58 คน</div>
+                    <div class="ss rc"> เหลือ 58 คน</div>
                 </div>
             </div>
 
@@ -108,7 +108,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
                                         {c.act &&
                   <>
                                                 <button class="btn btn-s btn-xs" onClick={() => openEditCycleModal(c)}>แก้ไข</button>
-                                                <button class="btn btn-t btn-xs" onClick={onGoTemplate}>🎯 ไปกำหนดความคาดหวัง</button>
+                                                <button class="btn btn-t btn-xs" onClick={onGoTemplate}> ไปกำหนดความคาดหวัง</button>
                                             </>
                   }
                                     </div>
@@ -120,10 +120,10 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
             </div>
 
             <div class="card">
-                <div class="ch"><div class="ct">🔔 ส่งการแจ้งเตือน</div></div>
+                <div class="ch"><div class="ct"> ส่งการแจ้งเตือน</div></div>
                 <div class="cb">
                     <p class="muted fs13 mb16">แจ้งเตือนบุคลากรที่ยังไม่ส่งแบบประเมิน</p>
-                    <button class="btn btn-p btn-sm" onClick={() => alert("ส่งแจ้งเตือนไปยัง 58 คนแล้ว ✓")}>🔔 ส่งแจ้งเตือน</button>
+                    <button class="btn btn-p btn-sm" onClick={() => alert("ส่งแจ้งเตือนไปยัง 58 คนแล้ว ✓")}> ส่งแจ้งเตือน</button>
                 </div>
             </div>
 
@@ -161,7 +161,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
                             </div>
                             <div class="cycle-modal-actions">
                                 <button class="btn btn-s btn-sm" onClick={() => setModal(null)}>ยกเลิก</button>
-                                <button class="btn btn-p btn-sm" onClick={submitCycle}>{modal.value === "new" ? "✓ เปิดรอบ" : "💾 บันทึก"}</button>
+                                <button class="btn btn-p btn-sm" onClick={submitCycle}>{modal.value === "new" ? "✓ เปิดรอบ" : " บันทึก"}</button>
                             </div>
                         </div>
                     </div>
@@ -237,7 +237,7 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">Learning Catalog 📚</div>
+                    <div class="sec-t">Learning Catalog </div>
                     <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                 </div>
                 <div class="flex" style={{ gap: "8px" }}>
@@ -248,8 +248,8 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
             accept=".xlsx, .xls, .csv"
             onChange={handleFileChange} />
           
-                    <button class="btn btn-s" onClick={handleDownloadTemplate}>📄 ดาวน์โหลด Template</button>
-                    <button class="btn btn-s" onClick={handleImportClick}>📥 Import Excel</button>
+                    <button class="btn btn-s" onClick={handleDownloadTemplate}> ดาวน์โหลด Template</button>
+                    <button class="btn btn-s" onClick={handleImportClick}> Import Excel</button>
                     <button class="btn btn-p" onClick={() => openModal("modal-catalog")}>+ เพิ่มกิจกรรม</button>
                 </div>
             </div>
@@ -303,7 +303,7 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
                                     <td><span class={`b ${c.act ? 'bg' : 'bgr'}`}>{c.act ? 'เปิดใช้' : 'ปิด'}</span></td>
                                     <td>
                                         <div class="flex g4" style={{ flexWrap: "wrap" }}>
-                                            <button class="btn btn-s btn-xs" onClick={() => setSelectedDesc(i)}>📄 คำอธิบาย</button>
+                                            <button class="btn btn-s btn-xs" onClick={() => setSelectedDesc(i)}> คำอธิบาย</button>
                                             <button class="btn btn-s btn-xs" onClick={() => setSelectedEdit(i)}>แก้ไข</button>
                                         </div>
                                     </td>
@@ -318,7 +318,7 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
                     <div class="mo-box" style={{ width: 620, maxWidth: "calc(100vw - 32px)", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
                         <div class="mo-h" style={{ alignItems: "flex-start", gap: 16, background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)" }}>
                             <div style={{ display: "flex", gap: 12, minWidth: 0 }}>
-                                <span style={{ width: 42, height: 42, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--blue-lt)", color: "var(--blue)", fontSize: 22, flexShrink: 0 }}>📄</span>
+                                <span style={{ width: 42, height: 42, borderRadius: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--blue-lt)", color: "var(--blue)", fontSize: 22, flexShrink: 0 }}></span>
                                 <div style={{ minWidth: 0 }}>
                                     <div style={{ fontSize: 18, fontWeight: 900, color: "var(--text)", lineHeight: 1.35 }}>{activeDesc.n}</div>
                                     <div class="muted fs12" style={{ marginTop: 3 }}>รายละเอียดกิจกรรมสำหรับใช้ประกอบการทำ IDP</div>
@@ -396,7 +396,7 @@ export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as P
                             </div>
                             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 14, borderTop: "1px solid var(--border)" }}>
                                 <button class="btn btn-s" onClick={() => setSelectedEdit(null)}>ยกเลิก</button>
-                                <button class="btn btn-p" onClick={() => {setSelectedEdit(null);alert("บันทึกการแก้ไขเรียบร้อยแล้ว!");}}>💾 บันทึก</button>
+                                <button class="btn btn-p" onClick={() => {setSelectedEdit(null);alert("บันทึกการแก้ไขเรียบร้อยแล้ว!");}}> บันทึก</button>
                             </div>
                         </div>
                     </div>
@@ -426,7 +426,7 @@ export const HRMonitor = defineComponent({ name: "HRMonitor", props: Object as P
 
     <>
             <div class="mb20">
-                <div class="sec-t">ติดตามภาพรวม 📡</div>
+                <div class="sec-t">ติดตามภาพรวม </div>
                 <div class="sec-s">คณะวิศวกรรมศาสตร์ · รอบประเมิน 2568</div>
             </div>
 
@@ -833,7 +833,7 @@ export const HRTemplate = defineComponent({ name: "HRTemplate", props: Object as
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">กำหนดความคาดหวังการประเมิน 🎯</div>
+                    <div class="sec-t">กำหนดความคาดหวังการประเมิน </div>
                     <div class="sec-s">ตั้งค่า Expected Level ของแต่ละประเภทบุคลากรในแต่ละรอบการประเมิน</div>
                 </div>
             </div>
@@ -877,7 +877,7 @@ export const HRTemplate = defineComponent({ name: "HRTemplate", props: Object as
                     ดูความคาดหวังทั้งหมด <span class={`b ${cycleSummary.length ? "bt" : "bgr"}`}>{cycleSummary.length} ชุด</span>
                 </button>
                 {isClosedCycle ?
-        <div class="expect-locked">🔒 รอบนี้ปิดแล้ว ไม่สามารถแก้ไขได้</div> :
+        <div class="expect-locked"> รอบนี้ปิดแล้ว ไม่สามารถแก้ไขได้</div> :
 
         <button class="btn btn-p btn-sm ml-auto" onClick={openImportModal}>นำเข้าความคาดหวัง</button>
         }
@@ -1496,7 +1496,7 @@ export const HRPositionCompetencies = defineComponent({ name: "HRPositionCompete
                     <div class="assigned-list">
                         {scopeBindings.length === 0 &&
             <div class="assigned-empty">
-                                <div class="assigned-empty-icon">🔗</div>
+                                <div class="assigned-empty-icon"></div>
                                 <div class="fw8">ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้</div>
                                 <div class="muted fs12">ค้นหาจากพจนานุกรมด้านขวา หรือกดเพิ่ม CC ทั้งหมดเพื่อเริ่มต้น</div>
                             </div>

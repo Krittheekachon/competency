@@ -243,7 +243,7 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
       const failPct = 100 - getPct(dept.pass, dept.assessed);
 
       if (failPct > 40) {
-        return { label: "⚠ ความเสี่ยงสูง", badge: "br", rank: 0, color: "var(--red)" };
+        return { label: " ความเสี่ยงสูง", badge: "br", rank: 0, color: "var(--red)" };
       }
       if (failPct >= 20) {
         return { label: "ต้องเฝ้าระวัง", badge: "by", rank: 1, color: "var(--yellow)" };
@@ -507,10 +507,10 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
                                                                 <span style={{ fontSize: "11px", color: "var(--text3)" }}>{line.total} คน</span>
                                                             </div>
                                                             <div style={{ borderTop: "1px solid var(--border)", background: "#FFFBEB", padding: "8px 14px", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-                                                                <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--yellow)" }}>⚠ สมรรถนะที่ตก:</span>
+                                                                <span style={{ fontSize: "10px", fontWeight: 800, color: "var(--yellow)" }}> สมรรถนะที่ตก:</span>
                                                                 {line.weakDetail.map((weak) =>
                               <span key={weak.n} style={{ fontSize: "11px", padding: "2px 8px", background: "var(--red-bg)", color: "var(--red)", borderRadius: "20px", fontWeight: 700 }}>
-                                                                        ⚠ {weak.n} <span style={{ background: "var(--red)", color: "#fff", borderRadius: "10px", padding: "0 5px", fontSize: "10px" }}>{weak.cnt} คน</span>
+                                                                         {weak.n} <span style={{ background: "var(--red)", color: "#fff", borderRadius: "10px", padding: "0 5px", fontSize: "10px" }}>{weak.cnt} คน</span>
                                                                     </span>
                               )}
                                                             </div>
@@ -534,7 +534,7 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
                 </div>
                 <div class="cb" style={{ padding: "12px 22px 22px" }}>
                     <div style={{ background: "var(--yellow-bg)", border: "1px solid #fde68a", borderRadius: "9px", color: "var(--yellow)", padding: "12px 16px", marginBottom: "20px", fontSize: "13px" }}>
-                        ⚠ บุคลากร 1 คนสามารถไม่ผ่านได้หลายสมรรถนะ ผลรวมอาจสูงกว่าจำนวนจริง
+                         บุคลากร 1 คนสามารถไม่ผ่านได้หลายสมรรถนะ ผลรวมอาจสูงกว่าจำนวนจริง
                     </div>
                     {reportProblemGroups.map((group) =>
           <div key={group.label} style={{ marginBottom: "26px" }}>
@@ -695,7 +695,7 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: { users: 
 
     <>
             <div class="mb20">
-                <div class="sec-t">ภาพรวม IDP คณะ 📋</div>
+                <div class="sec-t">ภาพรวม IDP คณะ </div>
                 <div class="sec-s">สถานะ IDP ของบุคลากรทั้งคณะวิศวกรรมศาสตร์ · รอบ 2568</div>
             </div>
 
@@ -1028,7 +1028,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">ภาพรวมหน่วยงาน (ผู้บังคับบัญชา) 🏢</div>
+                    <div class="sec-t">ภาพรวมหน่วยงาน (ผู้บังคับบัญชา) </div>
                     <div class="sec-s">ตรวจสอบผลการประเมินจากหัวหน้าหน่วยงานใน {activeDept.value} เพื่อส่งต่อผู้บริหาร</div>
                 </div>
                 <div class="flex ic g8">
@@ -1049,18 +1049,18 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
                 <div class="ch">
                     <div class="ct">รายการประเมินจากรอบหัวหน้าหน่วยงาน — {activeDept.value}</div>
                     <div style={{ marginLeft: 'auto' }}>
-                        <button class="btn btn-g btn-sm" onClick={() => alert("ยืนยันผลประเมินทั้งหมดในฝ่ายและส่งให้ผู้บริหารคณะเรียบร้อย")}>✅ ยันประเมินทั้งฝ่าย</button>
+                        <button class="btn btn-g btn-sm" onClick={() => alert("ยืนยันผลประเมินทั้งหมดในฝ่ายและส่งให้ผู้บริหารคณะเรียบร้อย")}> ยันประเมินทั้งฝ่าย</button>
                     </div>
                 </div>
                 <div class="cb" style={{ padding: 0 }}>
                     {deptWorks.map((w, wi) =>
           <div key={wi} class={wi !== deptWorks.length - 1 ? "mb0" : ""}>
                             <div style={{ background: 'var(--navy)', color: '#fff', padding: '10px 16px', fontWeight: 700, fontSize: '14px', position: 'sticky', top: 0, zIndex: 10 }}>
-                                📁 {w.work}
+                                 {w.work}
                             </div>
                             {w.units.map((un, ui) =>
             <div key={ui} style={{ borderBottom: ui === w.units.length - 1 && wi === deptWorks.length - 1 ? "" : "8px solid var(--bg)" }}>
-                                    <div style={{ background: '#f8fafc', padding: '8px 16px', borderLeft: '4px solid var(--blue)', fontSize: '13px', fontWeight: 700, color: 'var(--blue)' }}>🏠 {un}</div>
+                                    <div style={{ background: '#f8fafc', padding: '8px 16px', borderLeft: '4px solid var(--blue)', fontSize: '13px', fontWeight: 700, color: 'var(--blue)' }}> {un}</div>
                                     <div class="cb" style={{ padding: 0 }}>
                                         <table class="tbl">
                                             <thead>
@@ -1094,7 +1094,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
                                                             {s.s === 'self_submitted' && <span class="b by">รอ Unit Head</span>}
                                                             {(!s.s || s.s === 'draft') && <span class="b muted">รอดำเนินการ</span>}
                                                         </td>
-                                                        <td><button class="btn btn-s btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }}>🔍 รีวิวผล</button></td>
+                                                        <td><button class="btn btn-s btn-sm" style={{ padding: '4px 8px', fontSize: '11px' }}> รีวิวผล</button></td>
                                                     </tr>
                     )}
                                             </tbody>
@@ -1122,7 +1122,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
             )}
                     </div>
                     <div class="mt12 text-center">
-                        <button class="btn btn-s btn-sm">📑 ดาวน์โหลดรายงานสรุปทั้ง {activeDept.value} (PDF)</button>
+                        <button class="btn btn-s btn-sm"> ดาวน์โหลดรายงานสรุปทั้ง {activeDept.value} (PDF)</button>
                     </div>
                 </div>
             </div>

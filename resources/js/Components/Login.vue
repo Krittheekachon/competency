@@ -19,7 +19,7 @@ interface LoginProps {onLogin: () => void;}const Login = defineComponent({ name:
       <div class="lw">
         <div class="ll">
           <div class="ll-in">
-            <div class="ll-ico">🎓</div>
+            <div class="ll-ico"></div>
             <div class="ll-fac">Faculty of Engineering · KKU HR System</div>
             <div class="ll-title">ระบบบริหารสมรรถนะ<br />และแผนพัฒนารายบุคคล</div>
             <div class="ll-sub">Competency & IDP Management System</div>

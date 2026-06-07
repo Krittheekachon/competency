@@ -68,14 +68,14 @@ Object.entries(sections).forEach(([type, items]: any) => {
   <div>
     <div class="flex ic jb mb20">
       <div>
-        <div class="sec-t">ประเมินตนเอง 📋</div>
+        <div class="sec-t">ประเมินตนเอง </div>
         <div class="sec-s">รอบปี 2568 · กรอกให้ครบทุกสมรรถนะแล้วกด "ส่งให้หัวหน้า"</div>
       </div>
       <span class="b by">draft</span>
     </div>
 
     <div style="background: var(--yellow-bg); border: 1px solid #FDE68A; border-radius: var(--r); padding: 10px 14px; margin-bottom: 20px; font-size: 12px; color: var(--yellow);">
-      ⚠ กรุณาเลือกคะแนนที่ตรงกับความสามารถที่คุณทำได้จริง อ้างอิงพฤติกรรมบ่งชี้ด้านล่าง
+       กรุณาเลือกคะแนนที่ตรงกับความสามารถที่คุณทำได้จริง อ้างอิงพฤติกรรมบ่งชี้ด้านล่าง
     </div>
 
     <template v-for="[type, items] in Object.entries(sections)" :key="type">
@@ -144,7 +144,7 @@ Object.entries(sections).forEach(([type, items]: any) => {
               <div class="lbl mb8" style="font-size: 11px;">แนบหลักฐานประกอบ <span class="lbl-opt">(ถ้ามี)</span></div>
               <div class="g2">
                 <div class="upload-area" style="padding: 12px;">
-                  <div style="font-size: 18px; margin-bottom: 4px;">📎</div>
+                  <div style="font-size: 18px; margin-bottom: 4px;"></div>
                   <div class="fw6 fs12">อัปโหลดไฟล์</div>
                   <div class="muted fs11">PDF, Word, Excel, รูปภาพ</div>
                 </div>
@@ -166,7 +166,7 @@ Object.entries(sections).forEach(([type, items]: any) => {
     </template>
 
     <div class="flex g8 mt4" style="padding-top: 4px;">
-      <button class="btn btn-t" @click="submitEval">📤 ส่งให้หัวหน้า</button>
+      <button class="btn btn-t" @click="submitEval"> ส่งให้หัวหน้า</button>
       <button class="btn btn-s" @click="saveAssessDraft">บันทึกร่าง</button>
     </div>
   </div>

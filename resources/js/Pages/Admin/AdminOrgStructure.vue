@@ -1143,10 +1143,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               </>
             }
               <div style={{ display: "flex", gap: "8px", marginTop: "24px", justifyContent: "space-between" }}>
-                <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}>🗑️ ลบรายการนี้</button>
+                <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}> ลบรายการนี้</button>
                 <div class="flex g8">
                   <button class="btn btn-s" onClick={() => setEditingId(null)}>ยกเลิก</button>
-                  <button class="btn btn-p" onClick={saveEdit}>💾 บันทึก</button>
+                  <button class="btn btn-p" onClick={saveEdit}> บันทึก</button>
                 </div>
               </div>
             </div>

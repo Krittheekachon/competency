@@ -410,7 +410,7 @@ export const ExcelImportModal = defineComponent({
                     vueH('div', { class: 'mo-b import-body' }, [
                         vueH('div', { class: 'template-card' }, [
                             vueH('div', { class: 'template-copy' }, [
-                                vueH('div', { class: 'template-icon' }, '📄'),
+                                vueH('div', { class: 'template-icon' }, ''),
                                 vueH('div', [
                                     vueH('div', { class: 'fw8 fs14 template-title' }, 'ไฟล์แม่แบบ (Template)'),
                                     vueH('div', { class: 'fs11 muted' }, 'ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง'),
@@ -422,7 +422,7 @@ export const ExcelImportModal = defineComponent({
                                     type: 'button',
                                     onClick: downloadTemplate,
                                 }, [
-                                    vueH('span', { class: 'download-icon' }, '📥'),
+                                    vueH('span', { class: 'download-icon' }, ''),
                                     'ดาวน์โหลดตาราง',
                                 ]),
                                 vueH('div', { class: 'template-support' }, 'รองรับไฟล์ .xlsx, .csv'),
@@ -449,7 +449,7 @@ export const ExcelImportModal = defineComponent({
                                 onDrop: handleDrop,
                             }, [
                                 vueH('div', { class: 'upload-content' }, [
-                                    vueH('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '✅' : '📊'),
+                                    vueH('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '' : ''),
                                     vueH('div', { class: 'upload-title' }, selectedFile.value
                                         ? selectedFile.value.name
                                         : isDragging.value

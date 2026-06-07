@@ -124,7 +124,7 @@ export default defineComponent({
       return (
         <>
           <div class="mb20">
-            <div class="sec-t">ภาพรวม IDP คณะ 📋</div>
+            <div class="sec-t">ภาพรวม IDP คณะ </div>
             <div class="sec-s">
               สถานะ IDP ของบุคลากรทั้งคณะวิศวกรรมศาสตร์ · รอบ 2568
             </div>
