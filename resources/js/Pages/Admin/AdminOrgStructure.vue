@@ -1253,28 +1253,37 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                               const sortedScopedLevels = sortedLevelItemsForWorkline(selectedWorkline, scopedLevels, groupName);
                               const scopedConfiguredCount = scopedLevels.filter((levelName) => expectedLevelForItem(selectedWorkline, levelName, groupName)).length;
 
+                              const scopeStatus = scopedLevels.length
+                                ? "มีระดับเฉพาะกลุ่มงาน"
+                                : directLevels.length
+                                  ? "ใช้ระดับกลางของสายงาน"
+                                  : "ยังไม่กำหนดระดับ";
+
                               return (
-                                <details key={`${selectedWorkline}-${groupName}`} class="scoped-compact-card" open={scopedLevels.length > 0}>
+                                <details key={`${selectedWorkline}-${groupName}`} class="scoped-compact-card">
                                   <summary>
                                     <span class="scoped-summary-main">
                                       <span class="scoped-caret">›</span>
                                       <span>
                                         <strong>{groupName}</strong>
-                                        <small>{scopedLevels.length ? `${scopedConfiguredCount}/${scopedLevels.length} ตั้งค่าแล้ว` : "ยังไม่มีระดับเฉพาะกลุ่ม"}</small>
+                                        {scopedLevels.length > 0 && <small>{scopedConfiguredCount}/{scopedLevels.length} ตั้งค่าแล้ว</small>}
                                       </span>
                                     </span>
-                                    <button
-                                      class="btn btn-s btn-sm"
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setAddItemData({ category: "rank", type: "", name: "", expectedLevel: "1", worklineName: selectedWorkline, parent: groupName, grandparent: "" });
-                                        setShowAddModal(true);
-                                      }}
-                                    >
-                                      + เพิ่ม
-                                    </button>
+                                    <span class="scoped-summary-actions">
+                                      <span class={`scope-status ${scopedLevels.length ? "custom" : directLevels.length ? "shared" : "unset"}`}>{scopeStatus}</span>
+                                      <button
+                                        class="btn btn-s btn-sm"
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setAddItemData({ category: "rank", type: "", name: "", expectedLevel: "1", worklineName: selectedWorkline, parent: groupName, grandparent: "" });
+                                          setShowAddModal(true);
+                                        }}
+                                      >
+                                        + เพิ่ม
+                                      </button>
+                                    </span>
                                   </summary>
                                   {sortedScopedLevels.length > 0 &&
                                     <div class="scoped-mini-rows">
@@ -1518,21 +1527,31 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .level-panel-title { color: var(--navy); font-size: 14px; font-weight: 900; }
         .compact-level-matrix { max-height: 520px; border: 0; border-radius: 0; }
         .compact-level-matrix .level-matrix-head { border-top: 0; }
+        .compact-level-matrix .level-matrix-head,
+        .compact-level-matrix .level-matrix-row { grid-template-columns: minmax(0, 1fr) 112px 68px; gap: 8px; }
+        .compact-level-matrix .level-matrix-head { padding: 0 10px; }
+        .compact-level-matrix .level-matrix-row { padding: 10px; }
+        .compact-level-matrix .level-name-text { white-space: normal; overflow-wrap: anywhere; }
+        .compact-level-matrix .level-action-cell .btn { min-width: 0; padding-left: 10px; padding-right: 10px; }
         .level-row-sub { margin-top: 3px; color: var(--text3); font-size: 11px; font-weight: 650; }
         .scoped-level-panel { max-height: 626px; display: flex; flex-direction: column; }
-        .scoped-compact-list { display: block; padding: 0; overflow: auto; }
-        .scoped-compact-card { border: 0; border-bottom: 1px solid #edf2f8; background: #fff; }
-        .scoped-compact-card:last-child { border-bottom: 0; }
-        .scoped-compact-card[open] { background: #fbfdff; }
-        .scoped-compact-card summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; cursor: pointer; list-style: none; }
+        .scoped-compact-list { display: grid; gap: 10px; padding: 10px; overflow: auto; background: #fbfdff; }
+        .scoped-compact-card { overflow: hidden; border: 1px solid #dbe5f1; border-radius: 9px; background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.035); }
+        .scoped-compact-card[open] { border-color: #c8d9f2; background: #fff; }
+        .scoped-compact-card summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 9px 11px; cursor: pointer; list-style: none; background: #f8fbff; }
         .scoped-compact-card summary::-webkit-details-marker { display: none; }
         .scoped-summary-main { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 8px; min-width: 0; }
+        .scoped-summary-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
         .scoped-caret { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: var(--text3); font-size: 18px; line-height: 1; transform: rotate(0deg); transition: transform 160ms ease, background 160ms ease; }
         .scoped-compact-card[open] .scoped-caret { background: #eef4ff; color: var(--blue); transform: rotate(90deg); }
         .scoped-compact-card summary strong { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 850; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
         .scoped-compact-card summary small { display: block; margin-top: 1px; color: var(--text3); font-size: 11px; font-weight: 750; line-height: 1.2; }
-        .scoped-mini-rows { display: grid; border-top: 1px solid #edf2f8; background: #fff; }
-        .scoped-mini-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 42px; padding: 7px 12px 7px 38px; border-top: 1px solid #f2f6fb; }
+        .scope-status { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; max-width: 176px; padding: 5px 9px; border: 1px solid #dbe5f1; border-radius: 999px; background: #f8fafc; color: var(--text3); font-size: 11px; font-weight: 850; line-height: 1.2; white-space: nowrap; }
+        .scope-status.custom { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+        .scope-status.shared { border-color: #d1fae5; background: #ecfdf5; color: #047857; }
+        .scope-status.unset { border-style: dashed; background: #fbfdff; color: var(--text3); }
+        .scoped-mini-rows { display: grid; border-top: 1px solid #e5edf7; background: #fff; }
+        .scoped-mini-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 44px; margin: 0 8px; padding: 7px 4px 7px 28px; border-top: 1px solid #f2f6fb; }
         .scoped-mini-row:first-child { border-top: 0; }
         .scoped-mini-row span:first-child { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
         .level-stack,
@@ -1550,7 +1569,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .level-section { padding: 18px 0; border-top: 1px solid var(--border); }
         .level-section:first-of-type { border-top: 0; }
         .level-head { margin-bottom: 12px; }
-        .level-matrix { max-height: 430px; overflow-y: auto; border: 1px solid #dbe5f1; border-radius: 8px; background: #fff; }
+        .level-matrix { max-height: 430px; overflow-x: hidden; overflow-y: auto; border: 1px solid #dbe5f1; border-radius: 8px; background: #fff; }
         .level-matrix-head,
         .level-matrix-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) minmax(104px, 174px); align-items: center; gap: 14px; }
         .level-matrix-head { position: sticky; top: 0; z-index: 1; min-height: 38px; padding: 0 14px; border-bottom: 1px solid #eef2f7; background: #f8fafc; color: var(--text3); font-size: 11px; font-weight: 800; text-transform: uppercase; }
@@ -1628,6 +1647,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           .level-matrix-head { display: none; }
           .level-matrix-row { grid-template-columns: 1fr; gap: 9px; margin-bottom: 10px; border: 1px solid #dbe5f1; border-radius: 8px; background: #fff; }
           .level-action-cell { justify-content: flex-start; }
+          .scoped-compact-card summary { grid-template-columns: 1fr; }
+          .scoped-summary-actions { justify-content: flex-start; flex-wrap: wrap; padding-left: 26px; }
           .scoped-mini-row { grid-template-columns: 1fr; justify-items: start; }
           .scoped-level-head { align-items: flex-start; flex-direction: column; }
         }
