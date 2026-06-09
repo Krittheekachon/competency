@@ -7,16 +7,16 @@ template-name="User_Template.xlsx"
 {{ workline }}
  </option></select><select v-model="roleFilter" class="sel role-select"><option>ทุกบทบาท (Role)</option><option v-for="role in roleOptions" :key="role" :value="role">
 {{ role }}
- </option></select><select v-model="statusFilter" class="sel status-select"><option>ทุกสถานะ</option><option>ปกติ / ใช้งาน</option><option>ระงับการใช้งาน</option></select></div><div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th style="min-width: 180px">ชื่อ-นามสกุล</th><th>สายงาน</th><th style="min-width: 200px">หน่วยงาน / สังกัด</th><th>ตำแหน่ง</th><th>ระดับตำแหน่ง</th><th style="min-width: 160px">บทบาทในระบบ</th><th>สถานะ</th><th></th></tr></thead><tbody><tr v-for="(user, index) in filteredUsers" :key="user.sso || index"><td class="id-cell">{{ user.sso || '—' }}</td><td><div class="flex ic g8"><div class="av user-avatar"><img v-if="user.photo" class="avatar-photo" :src="user.photo" :alt="user.n" /><span v-else>{{ avatarInitial(user) }}</span></div><div class="flex col"><span class="fw6 fs13">{{ user.t }}{{ user.n }}</span></div></div></td><td><span class="b workline-badge" :class="user.w === 'สายวิชาการ' ? 'bb' : 'bg'">
+ </option></select><select v-model="statusFilter" class="sel status-select"><option>ทุกสถานะ</option><option>ปกติ / ใช้งาน</option><option>ระงับการใช้งาน</option></select></div><div class="table-scroll"><table class="tbl"><thead><tr><th>ID</th><th style="min-width: 180px">ชื่อ-นามสกุล</th><th>สายงาน</th><th style="min-width: 200px">กลุ่มงาน / งาน</th><th>ตำแหน่ง</th><th>ระดับตำแหน่ง</th><th style="min-width: 160px">บทบาทในระบบ</th><th>สถานะ</th><th></th></tr></thead><tbody><tr v-for="(user, index) in filteredUsers" :key="user.sso || index"><td class="id-cell">{{ user.sso || '—' }}</td><td><div class="flex ic g8"><div class="av user-avatar"><img v-if="user.photo" class="avatar-photo" :src="user.photo" :alt="user.n" /><span v-else>{{ avatarInitial(user) }}</span></div><div class="flex col"><span class="fw6 fs13">{{ user.t }}{{ user.n }}</span></div></div></td><td><span class="b workline-badge" :class="user.w === 'สายวิชาการ' ? 'bb' : 'bg'">
 {{ user.w || '—' }}
  </span></td><td><div
 class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate dept-cell"
-:title="user.d || ''"
+:title="formatOrgGroup(user)"
 >
-{{ formatDept(user.d) }}
+{{ formatOrgGroup(user) }}
  </div></td><td class="fs12 position-cell"><div class="whitespace-nowrap overflow-hidden truncate full-width" :title="user.p || ''">
-{{ user.p || '—' }}
- </div></td><td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td><td><span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
+{{ displayValue(user.p) }}
+ </div></td><td class="muted fs11">{{ displayValue(getDisplayLevel(user)) }}</td><td><span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
 {{ roleBadge(user.r).label }}
  </span></td><td><span class="b" :class="isActive(user) ? 'bg' : 'br'">
 {{ isActive(user) ? 'ปกติ' : 'ระงับ' }}
@@ -52,6 +52,8 @@ r?: string;
 sup?: string;
 evaluator2?: string;
 act?: boolean;
+job?: string;
+job_family?: string;
 };
 
 type RoleBadge = {
@@ -84,8 +86,22 @@ const roleOptions = [
 'ผู้ดูแลระบบ',
 ];
 
-const getDisplayLevel = (user: User) => (['สายบริหาร', 'สายงานบริหาร'].includes(user.w || '') ? user.p : user.l);
-const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '—');
+const isBlankDisplay = (value?: string) => {
+const normalized = String(value || '').trim();
+return normalized === '' || normalized === '-';
+};
+const displayValue = (value?: string) => isBlankDisplay(value) ? '—' : String(value).trim();
+const getDisplayLevel = (user: User) => (['สายบริหาร', 'สายงานบริหาร'].includes(user.w || '') ? user.l : user.l);
+const formatDept = (dept?: string) => {
+const parts = (dept || '').split(' > ').map((part) => part.trim()).filter((part) => !isBlankDisplay(part));
+return parts.length ? parts.join(' > ') : '—';
+};
+const formatOrgGroup = (user: User) => {
+const parts = [user.job_family, user.job].map((part) => String(part || '').trim()).filter((part) => !isBlankDisplay(part));
+if (parts.length) return parts.join(' > ');
+
+return formatDept(user.d);
+};
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
 const worklineOptions = computed(() => props.worklines || []);
@@ -179,16 +195,24 @@ return;
 const displayName = `${user.t || ''}${user.n || ''}`.trim() || user.sso || 'ผู้ใช้นี้';
 if (!confirm(`ต้องการลบ ${displayName} ใช่ไหม?`)) return;
 
-const previousUsers = [...props.users];
-
 window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
-props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
+window.sessionStorage.setItem('admin-active-page', 'admin-users');
 
 router.delete(route('admin.users.destroy', user.db_id), {
 preserveScroll: true,
 preserveState: true,
+onStart: () => {
+window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
+window.sessionStorage.setItem('admin-active-page', 'admin-users');
+},
+onSuccess: (responsePage: any) => {
+if (responsePage.props.users?.length) {
+props.setUsers(responsePage.props.users);
+} else {
+props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
+}
+},
 onError: () => {
-props.setUsers(previousUsers);
 alert('ไม่สามารถลบผู้ใช้ได้');
 },
 });

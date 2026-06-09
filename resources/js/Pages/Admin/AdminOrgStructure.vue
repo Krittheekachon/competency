@@ -30,7 +30,7 @@ learningMethods: {key: string;label: string;desc?: string;}[];
 setLearningMethods: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods", "keepAdminPage"], setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods", "keepAdminPage", "divisionsByWorkline", "setDivisionsByWorkline"], setup(__props) {const {
 setAcademicDepts,
 setSupportPositionGroups,
 setAdminDepts,
@@ -56,6 +56,7 @@ let adminDepts = [...((__props as any).adminDepts || [])];
 let academicPos = [...((__props as any).academicPos || [])];
 let adminPos = [...((__props as any).adminPos || [])];
 let jobFamiliesByWorkline = { ...((( __props as any).jobFamiliesByWorkline) || {}) };
+const divisionsByWorklineData = ref({ ...((__props as any).divisionsByWorkline || {}) });
 let levelsByWorkline = { ...((( __props as any).levelsByWorkline) || {}) };
 let worklines = [...((__props as any).worklines || [])];
 const POSITION_PREVIEW_LIMIT = 4;
@@ -464,6 +465,15 @@ setEditingId(null);
 });
 return;
 }
+case "support-org-dept":
+putStructure("admin.structure.support-depts.update", { old_name: oldName, name: newValue.value }, () => {
+const nextSupportOrg = { ...supportOrg.value, [newValue.value]: supportOrg.value[oldName] || [] };
+delete nextSupportOrg[oldName];
+supportOrg.value = nextSupportOrg;
+setSupportOrg(nextSupportOrg);
+setEditingId(null);
+});
+return;
 case "support-group-pos":
 case "custom-group-pos":
 putStructure("admin.structure.positions.update", { workline_name: workName, job_family_name: parent, old_name: oldName, name: newValue.value }, () => {
@@ -484,22 +494,28 @@ setEditingId(null);
 });
 return;
 case "support-work":{
+putStructure("admin.structure.support-works.update", { dept_name: parent, old_name: oldName, name: newValue.value }, () => {
 const nextSupportOrg = { ...supportOrg.value };
 if (parent && nextSupportOrg[parent]) {
 nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === oldName ? { ...w, work: newValue.value } : w);
 supportOrg.value = nextSupportOrg;
 setSupportOrg(nextSupportOrg);
 }
-break;
+setEditingId(null);
+});
+return;
 }
 case "support-unit":{
+putStructure("admin.structure.support-units.update", { dept_name: parent, work_name: workName, old_name: oldName, name: newValue.value }, () => {
 const nextSupportOrg = { ...supportOrg.value };
 if (parent && workName && nextSupportOrg[parent]) {
 nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.map((u: string) => u === oldName ? newValue.value : u) } : w);
 supportOrg.value = nextSupportOrg;
 setSupportOrg(nextSupportOrg);
 }
-break;
+setEditingId(null);
+});
+return;
 }
 case "academic-pos":
 putStructure("admin.structure.job-families.update", { workline_name: "สายวิชาการ", old_name: oldName, name: newValue.value }, () => {
@@ -613,6 +629,15 @@ setEditingId(null);
 });
 return;
 }
+case "support-org-dept":
+deleteStructure("admin.structure.support-depts.destroy", { name: oldName }, () => {
+const nextSupportOrg = { ...supportOrg.value };
+delete nextSupportOrg[oldName];
+supportOrg.value = nextSupportOrg;
+setSupportOrg(nextSupportOrg);
+setEditingId(null);
+});
+return;
 case "support-group-pos":
 case "custom-group-pos":
 deleteStructure("admin.structure.positions.destroy", { workline_name: workName, job_family_name: parent, name: oldName }, () => {
@@ -633,22 +658,28 @@ setEditingId(null);
 });
 return;
 case "support-work":{
+deleteStructure("admin.structure.support-works.destroy", { dept_name: parent, name: oldName }, () => {
 const nextSupportOrg = { ...supportOrg.value };
 if (parent && nextSupportOrg[parent]) {
 nextSupportOrg[parent] = nextSupportOrg[parent].filter((w: any) => w.work !== oldName);
 supportOrg.value = nextSupportOrg;
 setSupportOrg(nextSupportOrg);
 }
-break;
+setEditingId(null);
+});
+return;
 }
 case "support-unit":{
+deleteStructure("admin.structure.support-units.destroy", { dept_name: parent, work_name: workName, name: oldName }, () => {
 const nextSupportOrg = { ...supportOrg.value };
 if (parent && workName && nextSupportOrg[parent]) {
 nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.filter((u: string) => u !== oldName) } : w);
 supportOrg.value = nextSupportOrg;
 setSupportOrg(nextSupportOrg);
 }
-break;
+setEditingId(null);
+});
+return;
 }
 case "academic-pos":
 deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายวิชาการ", name: oldName }, () => {
@@ -959,23 +990,28 @@ onClick={() => setExpandedSupportGroups((current) => ({ ...current, [`${wl}:${gr
 }
  </div></div> :
 activeTab.value === "support-chain" ?
- <div class="structure-pane support-chain-pane"><div class="structure-heading">ฝ่าย/งานและหน่วยงานย่อย</div><div class="structure-note"><b>กำหนดได้สูงสุดอย่างละ 1 คน</b><span>หัวหน้าฝ่ายใช้บทบาทผู้บังคับบัญชา ส่วนหัวหน้างานใช้บทบาทหัวหน้างาน หน้าเพิ่มผู้ใช้จะอ้างอิงค่าจากหน้านี้โดยอัตโนมัติ</span></div><div class="structure-stack">
-{Object.keys(supportOrg.value || {}).map((dept) =><section key={dept} class="structure-section"><div class="structure-section-head support-dept-head"><div><div class="fw8 fs14 text-navy">{dept}</div><div class="muted fs11">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</div></div><select class="sel support-head-select-control" value={orgSups[dept] || ""} onChange={(e) => setOrgHead(dept, e.target.value)}><option value="">— เลือกหัวหน้าฝ่าย —</option>
-{deptManagers.map((user) =><option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
- </select></div><div class="support-work-grid">
-{(supportOrg.value[dept] || []).map((work: any) => {
-const workPath = [dept, work.work].join(" > ");
-return (
- <div key={work.work} class="support-work-card"><div class="support-work-head"><div class="fw8 fs13 text-navy">{work.work}</div><button class="btn-link" onClick={() => startEdit("support-work", work.work, { parent: dept })}>✎</button></div><div class="support-head-select"><div class="muted fs11">หัวหน้างาน</div><select class="sel" value={orgSups[workPath] || ""} onChange={(e) => setOrgHead(workPath, e.target.value)}><option value="">— เลือกหัวหน้างาน —</option>
-{supervisors.map((user) =><option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
- </select></div><div class="support-unit-list">
-{(work.units || []).map((unit: string) =><div key={unit} class="support-unit-row"><span>{unit}</span><button class="btn-link" onClick={() => startEdit("support-unit", unit, { parent: dept, workName: work.work })}>✎</button></div>
-)}
-{(work.units || []).length === 0 && <div class="structure-empty">ยังไม่มีหน่วย</div>}
- </div><div class="support-unit-add"><input class="inp" value={newSupportUnitNames.value[workPath] || ""} onInput={(e) => setNewSupportUnitNames((current) => ({ ...current, [workPath]: e.target.value }))} onKeydown={(e) => runOnEnter(e, () => addSupportUnit(dept, work.work))} placeholder="เพิ่มหน่วยใต้ งานนี้" /><button class="btn btn-s btn-sm" onClick={() => addSupportUnit(dept, work.work)}>+ เพิ่มหน่วย</button></div></div>);
-
-})}
- <div class="support-work-card support-add-card"><input class="inp" value={newSupportWorkNames.value[dept] || ""} onInput={(e) => setNewSupportWorkNames((current) => ({ ...current, [dept]: e.target.value }))} onKeydown={(e) => runOnEnter(e, () => addSupportWork(dept))} placeholder={`เพิ่มงานใต้${dept}`} /><button class="btn btn-s btn-sm" onClick={() => addSupportWork(dept)}>+ เพิ่มงาน</button></div></div></section>
+<div class="structure-pane support-chain-pane"><div class="structure-heading">ฝ่าย/งานและหน่วยงานย่อย</div><div class="structure-note"><b>กำหนดได้สูงสุดอย่างละ 1 คน</b><span>หัวหน้าฝ่ายใช้บทบาทผู้บังคับบัญชา ส่วนหัวหน้างานใช้บทบาทหัวหน้างาน หน้าเพิ่มผู้ใช้จะอ้างอิงค่าจากหน้านี้โดยอัตโนมัติ</span></div><div class="structure-stack">
+{Object.entries(divisionsByWorklineData.value || {}).map(([worklineName, divisions]: [string, any]) =>
+  <section key={worklineName} class="structure-section">
+    <div class="structure-section-head support-dept-head">
+      <div>
+        <div class="fw8 fs14 text-navy">{worklineName}</div>
+        <div class="muted fs11">ฝ่ายในสายงานนี้</div>
+      </div>
+    </div>
+    <div class="support-work-grid">
+      {(divisions || []).map((division: string) =>
+        <div key={division} class="support-chain-item">
+          <div class="fw6 fs13">{division}</div>
+        </div>
+      )}
+      {(!divisions || divisions.length === 0) &&
+        <div class="muted fs13" style={{ padding: '16px' }}>
+          ยังไม่มีฝ่ายในสายงานนี้
+        </div>
+      }
+    </div>
+  </section>
 )}
  </div></div> :
 activeTab.value === "dept" ?
@@ -1146,6 +1182,8 @@ autoFocus
 .support-chain-pane select { position: relative; z-index: 1; }
 .support-add-head,
 .support-dept-head { align-items: flex-start; }
+.support-dept-actions { display: flex; align-items: center; gap: 8px; flex: 0 1 360px; max-width: min(100%, 360px); min-width: 0; }
+.support-dept-actions .support-head-select-control { flex: 1 1 auto; min-width: 0; }
 .support-add-controls { display: flex; flex: 0 1 min(100%, 420px); gap: 8px; min-width: 0; }
 .support-add-controls .inp { min-width: 0; flex: 1 1 auto; }
 .support-add-controls .btn { flex: 0 0 auto; white-space: nowrap; }

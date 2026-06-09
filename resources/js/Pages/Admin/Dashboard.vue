@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watchEffect } from 'vue';
+import { computed, ref, watch, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import {
 INITIAL_USERS,
@@ -68,6 +68,7 @@ d: '',
 dept: '',
 job: '',
 unit: '',
+positionGroup: '',
 p: '',
 l: '',
 r: 'employee',
@@ -82,6 +83,7 @@ const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['ส
 const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายบริหาร'] || jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
 const competencyTypes = ref(clone(page.props.competencyTypes || []));
 const supportOrg = ref(clone(page.props.supportOrg || {}));
+const divisionsByWorkline = ref(clone(page.props.divisionsByWorkline || {}));
 const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
@@ -90,6 +92,16 @@ const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาก
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const orgSups = ref({});
+
+watch(
+() => page.props.users,
+(nextUsers) => {
+if (Array.isArray(nextUsers)) {
+users.value = clone(nextUsers.length ? nextUsers : INITIAL_USERS);
+}
+},
+{ deep: true },
+);
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
 const supportJobFamilies = computed(() => Object.keys(supportPositionGroups.value));
@@ -109,6 +121,12 @@ const isAdminWorkline = computed(() => selectedWorklineKind.value === 'บริ
 const selectedDeptWorks = computed(() => supportOrg.value[userForm.value.dept] || []);
 const jobOptions = computed(() => {
 if (!userForm.value.w) return [];
+if (isSupportWorkline.value) return selectedDeptWorks.value.map((item) => item.work);
+
+return Object.keys(selectedWorklineGroups.value);
+});
+const positionGroupOptions = computed(() => {
+if (!userForm.value.w) return [];
 
 return Object.keys(selectedWorklineGroups.value);
 });
@@ -121,11 +139,18 @@ if (isSupportWorkline.value) return selectedSupportWork.value?.units || [];
 return [];
 });
 const positionOptions = computed(() => {
-if (!userForm.value.job) return [];
+const groupName = isSupportWorkline.value ? userForm.value.positionGroup : userForm.value.job;
+if (!groupName) return [];
 
-const positions = selectedWorklineGroups.value[userForm.value.job] || [];
-return positions.length ? positions : [userForm.value.job];
+const positions = selectedWorklineGroups.value[groupName] || [];
+return positions.length ? positions : [groupName];
 });
+const canSelectSupportPositionGroup = computed(() =>
+isSupportWorkline.value
+&& userForm.value.dept
+&& userForm.value.job
+&& (unitOptions.value.length === 0 || userForm.value.unit),
+);
 const levelOptions = computed(() => {
 if (!userForm.value.w) return [];
 
@@ -235,6 +260,11 @@ return { dept: '', job: '', unit: '' };
 const syncOrgPath = () => {
 const form = userForm.value;
 
+if (isSupportWorkline.value) {
+form.d = [form.dept, form.job, form.unit].filter(Boolean).join(' > ');
+return;
+}
+
 form.d = [form.job, form.unit].filter(Boolean).join(' > ');
 };
 
@@ -245,8 +275,10 @@ return found ? `${found.t || ''}${found.n}` : '';
 
 const syncOrgSupervisors = () => {
 const form = userForm.value;
-const deptKey = form.job || form.dept || adminDepts.value[0];
+const supportWorkKey = [form.dept, form.job].filter(Boolean).join(' > ');
+const deptKey = isSupportWorkline.value ? form.dept : form.job || form.dept || adminDepts.value[0];
 const orgHead = orgSups.value[deptKey] || orgSups.value[adminDepts.value[0]] || '';
+const supportWorkHead = supportWorkKey ? orgSups.value[supportWorkKey] : '';
 
 if (isSupportWorkline.value) {
 form.sup = findUserName((user) =>
@@ -255,15 +287,15 @@ user.r === 'supervisor'
 && form.d
 && (
 user.d === form.d
-|| user.d.startsWith(form.job)
+|| user.d.startsWith(supportWorkKey)
 || user.d === form.job
 ),
-);
+) || supportWorkHead;
 form.evaluator2 = findUserName((user) =>
 user.r === 'manager_dept'
 && user.d
-&& form.job
-&& user.d.startsWith(form.job),
+&& form.dept
+&& user.d.startsWith(form.dept),
 ) || orgHead;
 return;
 }
@@ -293,6 +325,7 @@ userForm.value.dept = '';
 userForm.value.job = '';
 userForm.value.unit = '';
 userForm.value.d = '';
+userForm.value.positionGroup = '';
 userForm.value.p = '';
 userForm.value.l = '';
 userForm.value.sup = '';
@@ -306,6 +339,7 @@ resetOrgSelection();
 const handleDeptChange = () => {
 userForm.value.job = '';
 userForm.value.unit = '';
+userForm.value.positionGroup = '';
 userForm.value.p = '';
 userForm.value.l = '';
 syncOrgPath();
@@ -313,15 +347,30 @@ syncOrgPath();
 
 const handleJobChange = () => {
 userForm.value.unit = '';
+userForm.value.positionGroup = '';
+userForm.value.p = '';
+userForm.value.l = '';
+if (isAcademicWorkline.value && userForm.value.job) {
+userForm.value.p = userForm.value.job;
+}
+syncOrgPath();
+};
+
+const handleUnitChange = () => {
+userForm.value.positionGroup = '';
 userForm.value.p = '';
 userForm.value.l = '';
 syncOrgPath();
 };
 
-const handleUnitChange = () => {
-userForm.value.p = '';
+const handlePositionGroupChange = () => {
+userForm.value.p = userForm.value.positionGroup;
 userForm.value.l = '';
-syncOrgPath();
+syncOrgSupervisors();
+};
+
+const handleAdminPositionChange = () => {
+syncOrgSupervisors();
 };
 
 const handlePositionChange = () => {
@@ -336,6 +385,8 @@ syncOrgSupervisors();
 const resetUserForm = (data = null) => {
 const org = parseOrgPath(data?.d || '');
 const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
+const dataWorklineKind = normalizeWorklineName(data?.w || '');
+const isSupportData = dataWorklineKind === 'สนับสนุน';
 
 editingUserKey.value = data?.sso || null;
 userForm.value = {
@@ -352,9 +403,10 @@ em: data?.em || '',
 ph: data?.ph || '',
 w: data?.w || worklines.value[0] || '',
 d: data?.d || '',
-dept: '',
-job: org.job || org.dept,
+dept: isSupportData ? data?.division || (org.job ? org.dept : '') : '',
+job: isSupportData ? data?.job || org.job || org.dept : data?.job_family || org.job || org.dept,
 unit: org.unit,
+positionGroup: data?.job_family || data?.p || '',
 p: data?.p || '',
 l: data?.l || '',
 r: data?.r || 'employee',
@@ -421,7 +473,9 @@ t: form.t.trim(),
 w: form.w.trim(),
 d: form.d.trim(),
 dept: form.dept.trim(),
-job: form.job.trim(),
+job: isSupportWorkline.value ? form.job.trim() : '',
+division: isSupportWorkline.value ? form.dept.trim() : '',
+job_family: isSupportWorkline.value ? form.positionGroup.trim() : form.job.trim(),
 unit: form.unit.trim(),
 p: form.p.trim(),
 l: form.l.trim(),
@@ -551,6 +605,8 @@ v-else-if="activePage === 'admin-org-structure'"
 :set-admin-depts="setRef(adminDepts)"
 :support-org="supportOrg"
 :set-support-org="setRef(supportOrg)"
+:divisions-by-workline="divisionsByWorkline"
+:set-divisions-by-workline="setRef(divisionsByWorkline)"
 :users="users"
 :org-sups="orgSups"
 :set-org-sups="setRef(orgSups)"
@@ -587,13 +643,29 @@ v-else-if="activePage === 'admin-dict'"
 {{ orgEditMode ? 'ปรับสายงาน หน่วยงาน บทบาท และผู้ประเมิน' : 'กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล' }}
  </div></div><button class="btn btn-s btn-sm" type="button" @click="closeModal">× ปิด</button></div><div class="mo-b admin-user-modal-body" @keydown.enter="submitUserModalOnEnter"><div v-if="!orgEditMode" class="admin-user-note">
 ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
- </div><div v-if="!orgEditMode" class="fg compact-id-field"><label class="lbl req">ID</label><input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" /></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">คำนำหน้า</label><select v-model="userForm.t" class="sel modal-input"><option value="">— เลือกคำนำหน้า —</option><option value="นาย">นาย</option><option value="นาง">นาง</option><option value="ดร.">ดร.</option><option value="ผศ.">ผศ.</option><option value="รศ.">รศ.</option><option value="ศ.">ศ.</option></select></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">ชื่อ (ภาษาไทย)</label><input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" /></div><div class="fg"><label class="lbl req">นามสกุล (ภาษาไทย)</label><input v-model="userForm.ln" class="inp modal-input" placeholder="นามสกุล" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">First Name (English)</label><input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" /></div><div class="fg"><label class="lbl req">Last Name (English)</label><input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">Email</label><input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" /></div></div><div v-if="orgEditMode" class="org-edit-summary"><div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div><div class="muted fs12">{{ userForm.sso || '—' }}</div></div><div class="modal-grid" :class="{ 'single-col': !userForm.w }"><div class="fg"><label class="lbl req">สายงาน</label><select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange"><option value="">— เลือกสายงาน —</option><option v-for="workline in worklines" :key="workline" :value="workline">
+ </div><div v-if="!orgEditMode" class="fg compact-id-field"><label class="lbl req">ID</label><input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" /></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">คำนำหน้า</label><select v-model="userForm.t" class="sel modal-input"><option value="">— เลือกคำนำหน้า —</option><option value="นาย">นาย</option><option value="นาง">นาง</option><option value="นางสาว">นางสาว</option><option value="ดร.">ดร.</option><option value="ผศ.ดร.">ผศ.ดร.</option><option value="รศ.ดร.">รศ.ดร.</option><option value="ศ.">ศ.ดร.</option></select></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">ชื่อ (ภาษาไทย)</label><input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" /></div><div class="fg"><label class="lbl req">นามสกุล (ภาษาไทย)</label><input v-model="userForm.ln" class="inp modal-input" placeholder="นามสกุล" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">First Name (English)</label><input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" /></div><div class="fg"><label class="lbl req">Last Name (English)</label><input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" /></div></div><div v-if="!orgEditMode" class="modal-grid"><div class="fg"><label class="lbl req">Email</label><input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" /></div></div><div v-if="orgEditMode" class="org-edit-summary"><div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div><div class="muted fs12">{{ userForm.sso || '—' }}</div></div><div class="modal-grid" :class="{ 'single-col': !userForm.w }"><div class="fg"><label class="lbl req">สายงาน</label><select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange"><option value="">— เลือกสายงาน —</option><option v-for="workline in worklines" :key="workline" :value="workline">
 {{ workline }}
- </option></select></div><div v-if="userForm.w" class="fg"><label class="lbl req">กลุ่มงาน</label><select v-model="userForm.job" class="sel modal-input" @change="handleJobChange"><option value="">— เลือกกลุ่มงาน —</option><option v-for="job in jobOptions" :key="job" :value="job">
+ </option></select></div><div v-if="userForm.w && !isSupportWorkline" class="fg"><label class="lbl req">{{ isAdminWorkline ? 'กลุ่มงาน / ส่วนงานบริหาร' : 'กลุ่มงาน' }}</label><select v-model="userForm.job" class="sel modal-input" @change="handleJobChange"><option value="">— เลือกกลุ่มงาน —</option><option v-for="job in jobOptions" :key="job" :value="job">
 {{ job }}
- </option></select></div></div><div v-if="!orgEditMode && userForm.job" class="modal-grid"><div class="fg"><label class="lbl req">ตำแหน่ง</label><select v-model="userForm.p" class="sel modal-input" @change="handlePositionChange"><option value="">— เลือกตำแหน่ง —</option><option v-for="position in positionOptions" :key="position" :value="position">
+ </option></select></div><div v-if="!orgEditMode && isSupportWorkline" class="fg"><label class="lbl req">ฝ่าย</label><select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange"><option value="">— เลือกฝ่าย —</option><option v-for="dept in supportDeptsList" :key="dept" :value="dept">
+{{ dept }}
+ </option></select></div></div><div v-if="!orgEditMode && isSupportWorkline && userForm.dept" class="modal-grid"><div class="fg"><label class="lbl req">งาน</label><select v-model="userForm.job" class="sel modal-input" @change="handleJobChange"><option value="">— เลือกงาน —</option><option v-for="job in jobOptions" :key="job" :value="job">
+{{ job }}
+ </option></select></div><div v-if="userForm.job" class="fg"><label class="lbl req">หน่วย</label><select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange"><option value="">— เลือกหน่วย —</option><option v-for="unit in unitOptions" :key="unit" :value="unit">
+{{ unit }}
+ </option></select></div></div><div v-if="!orgEditMode && canSelectSupportPositionGroup" class="modal-grid"><div class="fg"><label class="lbl req">กลุ่มงาน</label><select v-model="userForm.positionGroup" class="sel modal-input" @change="handlePositionGroupChange"><option value="">— เลือกกลุ่มงาน —</option><option v-for="group in positionGroupOptions" :key="group" :value="group">
+{{ group }}
+ </option></select></div><div v-if="userForm.positionGroup" class="fg"><label class="lbl req">ระดับตำแหน่ง</label><select v-model="userForm.l" class="sel modal-input"><option value="">— เลือกระดับตำแหน่ง —</option><option v-for="level in levelOptions" :key="level" :value="level">
+{{ level }}
+ </option></select></div></div><!-- สายบริหาร: แสดง ระดับตำแหน่ง → ตำแหน่ง --><div v-if="!orgEditMode && userForm.job && isAdminWorkline" class="modal-grid"><div class="fg"><label class="lbl req">ระดับตำแหน่ง</label><select v-model="userForm.l" class="sel modal-input"><option value="">— เลือกระดับตำแหน่ง —</option><option v-for="level in levelOptions" :key="level" :value="level">
+{{ level }}
+ </option></select></div><div v-if="userForm.l" class="fg"><label class="lbl req">ตำแหน่ง</label><select v-model="userForm.p" class="sel modal-input" @change="handleAdminPositionChange"><option value="">— เลือกตำแหน่ง —</option><option v-for="position in positionOptions" :key="position" :value="position">
+{{ position }}
+ </option></select></div></div><!-- สายงานอื่น: แสดง ตำแหน่ง → ระดับ ตามเดิม --><div v-if="!orgEditMode && userForm.job && !isAcademicWorkline && !isSupportWorkline && !isAdminWorkline" class="modal-grid"><div class="fg"><label class="lbl req">ตำแหน่ง</label><select v-model="userForm.p" class="sel modal-input" @change="handlePositionChange"><option value="">— เลือกตำแหน่ง —</option><option v-for="position in positionOptions" :key="position" :value="position">
 {{ position }}
  </option></select></div><div v-if="userForm.p" class="fg"><label class="lbl req">ระดับตำแหน่ง</label><select v-model="userForm.l" class="sel modal-input"><option value="">— เลือกระดับตำแหน่ง —</option><option v-for="level in levelOptions" :key="level" :value="level">
+{{ level }}
+ </option></select></div></div><!-- สายวิชาการ: ข้ามตำแหน่ง แสดงแค่ระดับตำแหน่ง --><div v-if="!orgEditMode && userForm.job && isAcademicWorkline" class="modal-grid single-col"><div class="fg"><label class="lbl req">ระดับตำแหน่ง</label><select v-model="userForm.l" class="sel modal-input"><option value="">— เลือกระดับตำแหน่ง —</option><option v-for="level in levelOptions" :key="level" :value="level">
 {{ level }}
  </option></select></div></div><div class="modal-divider"></div><div class="modal-grid compact-role-grid" :class="{ 'single-col': !orgEditMode }"><div class="fg"><label class="lbl req">บทบาทในระบบ</label><select v-model="userForm.r" class="sel modal-input"><option value="user">user</option><option value="supervisor">supervisor</option><option value="head">head</option><option value="dean">dean</option><option value="hr">hr</option><option value="admin">admin</option></select></div><div v-if="orgEditMode" class="fg"><label class="lbl req">หัวหน้างาน</label><select
 v-model="userForm.sup"

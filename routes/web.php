@@ -29,6 +29,7 @@ Route::get('/admin/dashboard', [DashboardController::class, 'adminIndex'])
 
 Route::middleware('auth')->group(function () {
     Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
+    Route::post('/admin/users/import', [AdminUserController::class, 'import'])->name('admin.users.import');
     Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
     Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
     Route::delete('/admin/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
@@ -54,8 +55,14 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
     Route::post('/admin/structure/support-depts', [AdminStructureController::class, 'storeSupportDept'])->name('admin.structure.support-depts.store');
+    Route::put('/admin/structure/support-depts', [AdminStructureController::class, 'updateSupportDept'])->name('admin.structure.support-depts.update');
+    Route::delete('/admin/structure/support-depts', [AdminStructureController::class, 'destroySupportDept'])->name('admin.structure.support-depts.destroy');
     Route::post('/admin/structure/support-works', [AdminStructureController::class, 'storeSupportWork'])->name('admin.structure.support-works.store');
+    Route::put('/admin/structure/support-works', [AdminStructureController::class, 'updateSupportWork'])->name('admin.structure.support-works.update');
+    Route::delete('/admin/structure/support-works', [AdminStructureController::class, 'destroySupportWork'])->name('admin.structure.support-works.destroy');
     Route::post('/admin/structure/support-units', [AdminStructureController::class, 'storeSupportUnit'])->name('admin.structure.support-units.store');
+    Route::put('/admin/structure/support-units', [AdminStructureController::class, 'updateSupportUnit'])->name('admin.structure.support-units.update');
+    Route::delete('/admin/structure/support-units', [AdminStructureController::class, 'destroySupportUnit'])->name('admin.structure.support-units.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

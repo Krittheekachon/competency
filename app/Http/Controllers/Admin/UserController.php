@@ -3,12 +3,18 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Level;
+use App\Models\Position;
 use App\Models\User;
+use App\Models\Workline;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Models\JobFamily;
+use App\Models\Division;
 
 class UserController extends Controller
 {
@@ -61,9 +67,130 @@ class UserController extends Controller
 
     public function destroy(User $user): RedirectResponse
     {
-        $user->delete();
+        DB::transaction(function () use ($user) {
+            User::query()->where('supervisor_id_1', $user->id)->update(['supervisor_id_1' => null]);
+            User::query()->where('supervisor_id_2', $user->id)->update(['supervisor_id_2' => null]);
+            User::query()->where('supervisor', $user->name)->update(['supervisor' => null]);
+            User::query()->where('evaluator2', $user->name)->update(['evaluator2' => null]);
+
+            $user->delete();
+        });
 
         return back()->with('success', 'ลบผู้ใช้เรียบร้อยแล้ว');
+    }
+
+    public function import(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'users' => ['required', 'array', 'min:1'],
+            'users.*.id' => ['required', 'numeric'],
+            'users.*.firstname' => ['required', 'string', 'max:255'],
+            'users.*.lastname' => ['required', 'string', 'max:255'],
+            'users.*.workline' => ['required', 'string', 'max:255'],
+            'users.*.posi' => ['required', 'string', 'max:255'],
+            'users.*.level' => ['required', 'string', 'max:255'],
+            'users.*.division' => ['nullable', 'string', 'max:255'],
+            'users.*.job' => ['nullable', 'string', 'max:255'],
+            'users.*.job_family' => ['nullable', 'string', 'max:255'],
+            'users.*.role' => ['nullable', 'string', 'in:admin,hr,dean,head,supervisor,user'],
+            'users.*.email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $imported = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($request, &$imported, &$skipped) {
+            foreach ($request->input('users', []) as $row) {
+                $cleanImportValue = fn (string $key): string => $this->cleanImportValue($row[$key] ?? '');
+                $sso = trim($row['id'] ?? '');
+                if ($sso === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                $workline = Workline::firstOrCreate([
+                    'name' => trim($row['workline'] ?? ''),
+                ]);
+                $jobFamily = $cleanImportValue('job_family');
+
+                $jobFamilyModel = null;
+                if (!empty($jobFamily)) {
+                    $jobFamilyModel = JobFamily::firstOrCreate(
+                        [
+                            'name'        => $jobFamily,
+                            'workline_id' => $workline->id,
+                        ]
+                    );
+                }
+
+                $divisionModel = null;
+                if (!empty($division)) {
+                    $divisionModel = Division::firstOrCreate(
+                        [
+                            'name'        => $division,
+                            'workline_id' => $workline->id,
+                        ]
+                    );
+                }
+
+                $level = Level::firstOrCreate([
+                    'name' => trim($row['level'] ?? ''),
+                    'workline_id' => $workline->id,
+                ]);
+
+                $position = Position::where('name', trim($row['posi'] ?? ''))->first();
+
+                $department = implode(' > ', array_filter(array_map(
+                    fn ($value) => trim((string) $value),
+                    [
+                        $cleanImportValue('faculty'),
+                        $cleanImportValue('division'),
+                        $cleanImportValue('unit'),
+                    ],
+                )));
+                $division = $cleanImportValue('division');
+                $job = $cleanImportValue('job');
+
+                $roleKey = $this->canonicalImportRoleKey(trim($row['role'] ?? ''));
+
+                User::updateOrCreate(
+                    ['sso' => $sso],
+                    [
+                        'name' => trim(($row['firstname'] ?? '').' '.($row['lastname'] ?? '')),
+                        'first_name_th' => trim($row['firstname'] ?? ''),
+                        'last_name_th' => trim($row['lastname'] ?? ''),
+                        'first_name_en' => trim($row['firstname_eng'] ?? ''),
+                        'last_name_en' => trim($row['lastname_eng'] ?? ''),
+                        'title' => trim($row['title'] ?? ''),
+                        'email' => !empty(trim($row['email'] ?? ''))
+                            ? trim($row['email'])
+                            : $sso . '@kku.ac.th',
+                        'password' => bcrypt($sso),
+                        'workline' => trim($row['workline'] ?? ''),
+                        'department' => $department,
+                        'division' => $division,
+                        'job' => $job,
+                        'job_family' => $jobFamily,
+                        'position' => $cleanImportValue('posi'),
+                        'level' => trim($row['level'] ?? ''),
+                        'level_id' => $level->id,
+                        'position_id' => $position?->id,
+                        'role_id' => self::ROLE_IDS[$roleKey],
+                        'role_key' => $roleKey,
+                        'is_active' => true,
+                        'division_id' => $divisionModel?->id,
+                    ],
+                );
+
+                $imported++;
+            }
+        });
+
+        return back()->with('flash', [
+            'type' => 'success',
+            'message' => 'นำเข้าข้อมูลสำเร็จ '.$imported.' รายการ'
+                .($skipped ? ' (ข้าม '.$skipped.' รายการที่ไม่มี ID)' : ''),
+        ]);
     }
 
     private function validatedData(Request $request, ?User $user = null): array
@@ -90,6 +217,9 @@ class UserController extends Controller
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => ['required', 'string', 'max:120'],
             'd' => ['nullable', 'string', 'max:255'],
+            'division' => ['nullable', 'string', 'max:255'],
+            'job' => ['nullable', 'string', 'max:255'],
+            'job_family' => ['nullable', 'string', 'max:255'],
             'p' => ['nullable', 'string', 'max:120'],
             'l' => ['nullable', 'string', 'max:120'],
             'r' => ['required', Rule::in(array_keys(self::ROLE_IDS))],
@@ -125,6 +255,9 @@ class UserController extends Controller
             'phone' => $data['ph'] ?? null,
             'workline' => $data['w'],
             'department' => $data['d'] ?? null,
+            'division' => $data['division'] ?? null,
+            'job' => $data['job'] ?? null,
+            'job_family' => $data['job_family'] ?? null,
             'position' => $data['p'] ?? null,
             'level' => $data['l'] ?? null,
             'role_id' => self::ROLE_IDS[$roleKey],
@@ -160,4 +293,24 @@ class UserController extends Controller
             })
             ?->id;
     }
+
+    private function canonicalImportRoleKey(string $role): string
+    {
+        return match ($role) {
+            'admin' => 'admin',
+            'hr' => 'hr',
+            'supervisor', 'manager_dept', 'dept_head', 'head' => 'dept_head',
+            'manager', 'dean' => 'dean',
+            'user', 'employee' => 'employee',
+            default => 'employee',
+        };
+    }
+
+    private function cleanImportValue(mixed $value): string
+    {
+        $value = trim((string) $value);
+
+        return in_array($value, ['', '-'], true) ? '' : $value;
+    }
+
 }

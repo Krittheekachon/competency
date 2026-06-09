@@ -160,6 +160,9 @@ class DashboardController extends Controller
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $user->department ?: '',
+            'division' => $user->division ?? '',
+            'job' => $user->job ?? '',
+            'job_family' => $user->job_family ?? '',
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'r' => $user->role_key ?: $this->roleKeyFromId($user->role_id),
@@ -196,6 +199,18 @@ class DashboardController extends Controller
                 ->pluck('name')
                 ->values(),
         ]);
+
+        $divisions = DB::table('divisions')
+            ->leftJoin('worklines', 'divisions.workline_id', '=', 'worklines.id')
+            ->select('divisions.id', 'divisions.name', 'worklines.name as workline_name')
+            ->orderBy('worklines.name')
+            ->orderBy('divisions.name')
+            ->get();
+
+        $divisionsByWorkline = $divisions
+            ->groupBy('workline_name')
+            ->map(fn ($divs) => $divs->pluck('name')->values())
+            ->all();
 
         $supportDepts = DB::table('support_departments')->orderBy('name')->get();
 
@@ -243,6 +258,7 @@ class DashboardController extends Controller
                 ->where('worklineName', 'สายวิชาการ')
                 ->pluck('name')
                 ->values(),
+            'divisionsByWorkline' => $divisionsByWorkline,
             'supportJobFamilies' => $jobFamiliesWithPositions
                 ->where('worklineName', 'สายสนับสนุน')
                 ->pluck('name')

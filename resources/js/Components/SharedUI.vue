@@ -8,6 +8,8 @@ watch,
 type CSSProperties,
 type PropType,
 } from 'vue';
+import { router } from '@inertiajs/vue3';
+import * as XLSX from 'xlsx';
 
 interface AutoSelectProps {
 label: string;
@@ -220,6 +222,9 @@ required: true,
 setup(props) {
 const selectedFile = ref<File | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const isLoading = ref(false);
+const errorMessage = ref('');
+const isDragging = ref(false);
 
 const importButtonStyle = computed<CSSProperties>(() => ({
 minWidth: '140px',
@@ -262,11 +267,139 @@ const openFileDialog = () => {
 fileInputRef.value?.click();
 };
 
-const handleImport = () => {
-if (!selectedFile.value) return;
+const handleDragOver = (event: DragEvent) => {
+event.preventDefault();
+isDragging.value = true;
+};
 
-alert(`นำเข้าไฟล์ "${selectedFile.value.name}" เรียบร้อยแล้ว! (Mock Import)`);
-props.onClose();
+const handleDragLeave = () => {
+isDragging.value = false;
+};
+
+const handleDrop = (event: DragEvent) => {
+event.preventDefault();
+isDragging.value = false;
+const file = event.dataTransfer?.files?.[0];
+if (file) {
+selectedFile.value = file;
+errorMessage.value = '';
+}
+};
+
+const REQUIRED_COLUMNS = ['id', 'firstname', 'lastname', 'workline', 'job_family', 'posi', 'level'];
+const VALID_WORKLINES = ['วิชาการ', 'สนับสนุน', 'บริหาร'];
+const VALID_ROLES = ['admin', 'hr', 'dean', 'supervisor', 'head', 'user', ''];
+
+const handleImport = async () => {
+if (!selectedFile.value) return;
+if (selectedFile.value.size > 5 * 1024 * 1024) {
+errorMessage.value = 'ไฟล์มีขนาดใหญ่เกิน 5MB กรุณาลดขนาดไฟล์';
+isLoading.value = false;
+return;
+}
+isLoading.value = true;
+errorMessage.value = '';
+
+try {
+const buffer = await selectedFile.value.arrayBuffer();
+const workbook = XLSX.read(buffer, { type: 'array' });
+const sheet = workbook.Sheets[workbook.SheetNames[0]];
+const matrix: string[][] = XLSX.utils.sheet_to_json(sheet, {
+header: 1,
+defval: '',
+raw: false,
+});
+const headers = (matrix[2] || []).map((header) => String(header).trim());
+const rows: Record<string, string>[] = matrix.slice(4)
+.map((row) => headers.reduce((carry: Record<string, string>, header, index) => {
+if (header) {
+carry[header] = String(row[index] ?? '').trim();
+}
+return carry;
+}, {}))
+.filter((row) => {
+const id = String(row['id'] || '').trim();
+return (
+id !== '' &&
+!isNaN(Number(id)) &&
+!id.includes('ตัวอย่าง') &&
+!id.includes('←')
+);
+});
+
+if (rows.length === 0) {
+errorMessage.value = 'ไม่พบข้อมูลในไฟล์ กรุณาตรวจสอบ';
+isLoading.value = false;
+return;
+}
+
+const missing = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
+if (missing.length > 0) {
+errorMessage.value = `ไม่พบคอลัมน์: ${missing.join(', ')}`;
+isLoading.value = false;
+return;
+}
+
+const rowErrors: string[] = [];
+rows.forEach((row, index) => {
+const rowNum = index + 6;
+if (!row['id'] || isNaN(Number(String(row['id']).trim().replace(/[^0-9]/g, '')))) {
+rowErrors.push(`แถว ${rowNum}: id ต้องเป็นตัวเลขเท่านั้น`);
+}
+if ((row['firstname'] || '').length > 255) {
+rowErrors.push(`แถว ${rowNum}: firstname ยาวเกิน 255 ตัวอักษร`);
+}
+if ((row['lastname'] || '').length > 255) {
+rowErrors.push(`แถว ${rowNum}: lastname ยาวเกิน 255 ตัวอักษร`);
+}
+if ((row['posi'] || '').length > 255) {
+rowErrors.push(`แถว ${rowNum}: posi ยาวเกิน 255 ตัวอักษร`);
+}
+if ((row['level'] || '').length > 255) {
+rowErrors.push(`แถว ${rowNum}: level ยาวเกิน 255 ตัวอักษร`);
+}
+if ((row['job_family'] || '').length > 255) {
+rowErrors.push(`แถว ${rowNum}: job_family ยาวเกิน 255 ตัวอักษร`);
+}
+if (row['workline'] && !VALID_WORKLINES.includes(row['workline'])) {
+rowErrors.push(`แถว ${rowNum}: workline "${row['workline']}" ไม่ถูกต้อง (ต้องเป็น วิชาการ/สนับสนุน/บริหาร)`);
+}
+if (row['role'] && !VALID_ROLES.includes(row['role'])) {
+rowErrors.push(`แถว ${rowNum}: role "${row['role']}" ไม่ถูกต้อง`);
+}
+});
+
+if (rowErrors.length > 0) {
+errorMessage.value = rowErrors.slice(0, 5).join('\n');
+if (rowErrors.length > 5) {
+errorMessage.value += `\n...และอีก ${rowErrors.length - 5} รายการ`;
+}
+isLoading.value = false;
+return;
+}
+
+router.post(route('admin.users.import'), { users: rows }, {
+preserveScroll: true,
+onStart: () => {
+window.sessionStorage.setItem('admin-active-page', 'admin-users');
+window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
+},
+onSuccess: () => {
+  props.onClose();
+  router.reload();
+},
+onError: (errors) => {
+  const firstError = Object.values(errors)[0];
+  errorMessage.value = typeof firstError === 'string'
+    ? firstError
+    : 'เกิดข้อผิดพลาดในการนำเข้าข้อมูล';
+},
+onFinish: () => { isLoading.value = false; },
+});
+} catch {
+errorMessage.value = 'ไม่สามารถอ่านไฟล์ได้ กรุณาตรวจสอบรูปแบบไฟล์';
+isLoading.value = false;
+}
 };
 
 return () =>
@@ -288,7 +421,6 @@ onClick: props.onClose,
 vueH('div', { class: 'mo-b import-body' }, [
 vueH('div', { class: 'template-card' }, [
 vueH('div', { class: 'template-copy' }, [
-vueH('div', { class: 'template-icon' }, ''),
 vueH('div', [
 vueH('div', { class: 'fw8 fs14 template-title' }, 'ไฟล์แม่แบบ (Template)'),
 vueH('div', { class: 'fs11 muted' }, 'ดาวน์โหลดเพื่อเตรียมข้อมูลให้ถูกต้อง'),
@@ -318,15 +450,27 @@ class: 'hidden-file-input',
 accept: '.xlsx, .xls, .csv',
 onChange: handleFileChange,
 }),
-vueH('div', { class: 'upload-dropzone', onClick: openFileDialog }, [
+vueH('div', {
+class: isDragging.value ? 'upload-dropzone dragging' : 'upload-dropzone',
+onClick: openFileDialog,
+onDragover: handleDragOver,
+onDragleave: handleDragLeave,
+onDrop: handleDrop,
+}, [
 vueH('div', { class: 'upload-content' }, [
 vueH('div', { class: 'upload-icon-pulse' }, selectedFile.value ? '' : ''),
 vueH('div', { class: 'upload-title' }, selectedFile.value ? selectedFile.value.name : 'ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อค้นหา'),
+vueH('div', {
+  style: 'font-size:12px; color:#94a3b8; margin-bottom:8px; font-weight:600;'
+}, 'รองรับไฟล์ .xlsx, .xls, .csv ขนาดไม่เกิน 5MB'),
 vueH('div', { class: 'upload-desc' }, selectedFile.value
 ? selectedFileSize.value
 : 'ระบบจะตรวจสอบหัวข้อในตารางอัตโนมัติ กรุณาตรวจสอบให้แน่ใจว่าไม่มีเซลล์ที่ว่างเปล่าในคอลัมน์ที่จำเป็น'),
 ]),
 ]),
+errorMessage.value ? vueH('div', {
+style: 'margin-top:12px; padding:10px 14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; color:#b91c1c; font-size:13px; font-weight:600;',
+}, errorMessage.value) : null,
 ]),
 
 vueH('div', { class: 'flex g12 mt32 import-actions' }, [
@@ -339,10 +483,10 @@ onClick: props.onClose,
 vueH('button', {
 class: 'btn btn-p shadow-sm',
 type: 'button',
-disabled: !selectedFile.value,
+disabled: !selectedFile.value || isLoading.value,
 style: importButtonStyle.value,
 onClick: handleImport,
-}, 'เริ่มนำเข้าข้อมูล'),
+}, isLoading.value ? 'กำลังนำเข้า...' : 'เริ่มนำเข้าข้อมูล'),
 ]),
 ]),
 ]),
@@ -396,7 +540,7 @@ grid-template-columns: minmax(0, 1fr) auto;
 gap: 18px;
 align-items: start;
 margin-bottom: 4px;
-padding: 0;
+padding: 16px 16px 16px 20px;
 background: #f8fafc;
 border: 1px solid #dbeafe;
 border-radius: 12px;
@@ -407,7 +551,7 @@ display: flex;
 align-items: center;
 gap: 12px;
 min-height: 52px;
-padding-left: 8px;
+padding-left: 0;
 }
 
 .template-icon {
@@ -435,12 +579,12 @@ gap: 5px;
 }
 
 .download-button {
-min-width: 190px;
-min-height: 54px;
+min-width: 160px;
+min-height: 44px;
 justify-content: center;
 padding: 10px 18px;
 border: 1.5px solid #2563eb;
-border-radius: 12px;
+border-radius: 8px;
 background: #fff;
 color: #2563eb;
 font-weight: 800;
@@ -468,12 +612,14 @@ display: none;
 }
 
 .upload-content {
-display: grid;
-grid-template-columns: 78px minmax(130px, 190px) minmax(0, 1fr);
-gap: 16px;
+display: flex;
+flex-direction: column;
 align-items: center;
-min-height: 270px;
-padding: 44px 62px;
+justify-content: center;
+gap: 10px;
+min-height: 200px;
+padding: 40px 32px;
+text-align: center;
 }
 
 .upload-title {
@@ -486,8 +632,9 @@ line-height: 1.35;
 .upload-desc {
 color: #94a3b8;
 font-size: 13px;
-font-weight: 700;
+font-weight: 600;
 line-height: 1.6;
+max-width: 320px;
 }
 
 .import-actions {
@@ -531,9 +678,15 @@ border-color: var(--blue);
 background: var(--blue-lt);
 }
 
+.upload-dropzone.dragging {
+border-color: var(--blue);
+background: var(--blue-lt);
+transform: scale(1.01);
+transition: 0.2s;
+}
+
 .upload-icon-pulse {
-font-size: 56px;
-filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
+font-size: 48px;
 animation: pulse 2s infinite;
 }
 
@@ -544,6 +697,20 @@ justify-content: center;
 border-radius: 6px !important;
 font-size: 15px;
 font-weight: 800;
+}
+
+.import-actions .btn.btn-p {
+background: var(--blue) !important;
+border-color: var(--blue) !important;
+color: #fff !important;
+opacity: 1 !important;
+visibility: visible !important;
+}
+
+.import-actions .btn.btn-p:hover {
+background: #1d4ed8 !important;
+border-color: #1d4ed8 !important;
+color: #fff !important;
 }
 
 .import-actions .btn-p:disabled {
@@ -614,4 +781,3 @@ opacity: 0.8;
 }
 }
 </style>
-
