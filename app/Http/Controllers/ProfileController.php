@@ -96,17 +96,22 @@ class ProfileController extends Controller
     {
         return match ($roleId) {
             0 => 'admin',
-            1 => 'hr',
-            2 => 'manager',
-            3 => 'dept_head',
-            5 => 'supervisor',
+            1 => 'supervisor',
+            2 => 'dept_head',
+            3 => 'employee',
+            4 => 'hr',
+            5 => 'dean',
             default => 'employee',
         };
     }
 
     private function normalizeRoleKey(string $roleKey): string
     {
-        return $roleKey === 'dept_head' ? 'manager_dept' : $roleKey;
+        return match ($roleKey) {
+            'dept_head' => 'manager_dept',
+            'dean' => 'manager',
+            default => $roleKey,
+        };
     }
 
     /**

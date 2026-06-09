@@ -5,7 +5,7 @@
       <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
     </div>
     <div class="action-row">
-      <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button>
+      <!-- <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button> -->
       <button class="btn btn-p add-user-btn" type="button" @click="openModal('modal-user')">+ เพิ่มผู้ใช้</button>
     </div>
   </div>

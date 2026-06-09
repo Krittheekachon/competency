@@ -16,7 +16,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedStaff, setSelectedStaff] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -25,7 +25,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
     const isLevelBoss = (u: any) => ['supervisor', 'manager_dept', 'manager'].includes(u.r);
     const heads = filteredUsers.filter((u) => isLevelBoss(u));
-    const getStaffByGroup = (group: string, excludeBoss = false) => filteredUsers.filter((u) => {
+    const getEmployeeByGroup = (group: string, excludeBoss = false) => filteredUsers.filter((u) => {
       const parts = u.d.split(" > ");
       const match = parts[parts.length - 1] === group;
       return excludeBoss ? match && !isLevelBoss(u) : match;
@@ -70,17 +70,17 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     const [success, setSuccess] = useState(false);
     const [isDirty, setIsDirty] = useState(false);
     const [savedAt, setSavedAt] = useState("");
-    const supervisorStaff = filteredUsers.filter((u) =>
+    const supervisorEmployee = filteredUsers.filter((u) =>
     u.sso !== currentUser.sso &&
     !['manager_dept', 'manager'].includes(u.r) && (
     currentUser.r !== 'supervisor' || u.r !== 'supervisor')
     );
     const assessCounts = {
-      total: supervisorStaff.length,
-      notSent: supervisorStaff.filter((u) => u.evalStatus === "draft" || !u.evalStatus).length,
-      pending: supervisorStaff.filter((u) => u.evalStatus === "self_submitted").length,
-      forwarded: supervisorStaff.filter((u) => u.evalStatus === "unit_evaluated" || u.evalStatus === "dept_evaluated").length,
-      done: supervisorStaff.filter((u) => u.evalStatus === "dean_approved").length
+      total: supervisorEmployee.length,
+      notSent: supervisorEmployee.filter((u) => u.evalStatus === "draft" || !u.evalStatus).length,
+      pending: supervisorEmployee.filter((u) => u.evalStatus === "self_submitted").length,
+      forwarded: supervisorEmployee.filter((u) => u.evalStatus === "unit_evaluated" || u.evalStatus === "dept_evaluated").length,
+      done: supervisorEmployee.filter((u) => u.evalStatus === "dean_approved").length
     };
 
     const statusBadge = (user: any) => {
@@ -112,18 +112,18 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       };
     }, [isDirty.value, onDirtyChange]);
 
-    const getDraftKey = (staff: any) => `${currentUser.sso || currentUser.n}:${staff.sso || staff.n}`;
+    const getDraftKey = (employee: any) => `${currentUser.sso || currentUser.n}:${employee.sso || employee.n}`;
     const markDirty = () => {
       setIsDirty(true);
       setSavedAt("");
     };
-    const openStaff = (staff: any) => {
-      if (isDirty.value && selectedStaff.value?.sso !== staff.sso && !window.confirm("ยังไม่ได้บันทึกผลการประเมินของบุคลากรคนนี้ หากเปลี่ยนรายชื่อข้อมูลล่าสุดจะไม่ถูกบันทึก")) {
+    const openEmployee = (employee: any) => {
+      if (isDirty.value && selectedEmployee.value?.sso !== employee.sso && !window.confirm("ยังไม่ได้บันทึกผลการประเมินของบุคลากรคนนี้ หากเปลี่ยนรายชื่อข้อมูลล่าสุดจะไม่ถูกบันทึก")) {
         return;
       }
 
-      const draft = drafts[getDraftKey(staff)];
-      setSelectedStaff(staff);
+      const draft = drafts[getDraftKey(employee)];
+      setSelectedEmployee(employee);
       setMarks(draft?.marks || {});
       setFeedback(draft?.feedback || {});
       setSavedAt(draft?.savedAt || "");
@@ -142,11 +142,11 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       markDirty();
     };
     const saveDraft = () => {
-      if (!selectedStaff.value) return;
+      if (!selectedEmployee.value) return;
       const nextSavedAt = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       setDrafts?.((prev: Record<string, any>) => ({
         ...prev,
-        [getDraftKey(selectedStaff.value)]: { marks: marks.value, feedback, savedAt: nextSavedAt }
+        [getDraftKey(selectedEmployee.value)]: { marks: marks.value, feedback, savedAt: nextSavedAt }
       }));
       setSavedAt(nextSavedAt);
       setIsDirty(false);
@@ -154,7 +154,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     };
 
     const submit = () => {
-      if (!selectedStaff.value) return;
+      if (!selectedEmployee.value) return;
       const isDean = currentUser.p === 'คณบดี';
       const isDeptHead = currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || currentUser.r === 'manager_dept';
       const isUnitHead = currentUser.r === 'supervisor';
@@ -165,16 +165,16 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
 
       setSaving(true);
       setTimeout(() => {
-        let nextStatus = selectedStaff.value.evalStatus;
+        let nextStatus = selectedEmployee.value.evalStatus;
         let msg = "";
-        if (isDean) {nextStatus = 'dean_approved';msg = `อนุมัติการประเมินของ ${selectedStaff.value.t}${selectedStaff.value.n} เรียบร้อยแล้ว`;} else
-        if (isDeptHead) {nextStatus = 'dept_evaluated';msg = `ส่งผลการประเมินของ ${selectedStaff.value.t}${selectedStaff.value.n} ให้คณบดีอนุมัติเรียบร้อยแล้ว`;} else
-        if (isUnitHead) {nextStatus = 'unit_evaluated';msg = `ส่งผลการประเมินของ ${selectedStaff.value.t}${selectedStaff.value.n} ให้หัวหน้าฝ่ายเรียบร้อยแล้ว`;}
+        if (isDean) {nextStatus = 'dean_approved';msg = `อนุมัติการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} เรียบร้อยแล้ว`;} else
+        if (isDeptHead) {nextStatus = 'dept_evaluated';msg = `ส่งผลการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} ให้คณบดีอนุมัติเรียบร้อยแล้ว`;} else
+        if (isUnitHead) {nextStatus = 'unit_evaluated';msg = `ส่งผลการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} ให้หัวหน้าฝ่ายเรียบร้อยแล้ว`;}
 
-        setUsers((prev: any[]) => prev.map((u) => u.sso === selectedStaff.value.sso ? { ...u, evalStatus: nextStatus } : u));
+        setUsers((prev: any[]) => prev.map((u) => u.sso === selectedEmployee.value.sso ? { ...u, evalStatus: nextStatus } : u));
         setDrafts?.((prev: Record<string, any>) => ({
           ...prev,
-          [getDraftKey(selectedStaff.value)]: { marks: marks.value, feedback, savedAt: "ส่งผลแล้ว" }
+          [getDraftKey(selectedEmployee.value)]: { marks: marks.value, feedback, savedAt: "ส่งผลแล้ว" }
         }));
         setIsDirty(false);
         setSaving(false);
@@ -251,10 +251,10 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                         <input class="inp inp-sm" style={{ fontSize: '12px' }} placeholder=" ค้นหาชื่อบุคลากร..." value={searchTerm.value} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>}
                     <div style={{ padding: 0, maxHeight: '600px', overflowY: 'auto' }}>
-                        {supervisorMode && supervisorStaff.map((u, i) => {
-              const isSel = selectedStaff.value?.sso === u.sso;
+                        {supervisorMode && supervisorEmployee.map((u, i) => {
+              const isSel = selectedEmployee.value?.sso === u.sso;
               return (
-                <div key={u.sso || i} class={`flex ic g12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', minHeight: "72px", padding: "12px 14px" }} onClick={() => openStaff(u)}>
+                <div key={u.sso || i} class={`flex ic g12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', minHeight: "72px", padding: "12px 14px" }} onClick={() => openEmployee(u)}>
                                     <div class="av" style={{ width: "38px", height: "38px", background: 'var(--navy)', color: '#fff', fontSize: '13px', flexShrink: 0 }}>{u.n[0]}</div>
                                     <div class="flex-1" style={{ minWidth: 0 }}>
                                         <div class="flex jb g8" style={{ alignItems: "center" }}>
@@ -266,7 +266,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                 </div>);
 
             })}
-                        {supervisorMode && supervisorStaff.length === 0 && <div class="p20 muted fs12">ยังไม่มีบุคลากรในความดูแล</div>}
+                        {supervisorMode && supervisorEmployee.length === 0 && <div class="p20 muted fs12">ยังไม่มีบุคลากรในความดูแล</div>}
                         {!supervisorMode &&
             <>
                         {heads.length > 0 &&
@@ -276,15 +276,15 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                     <span class="b bg-blue text-white" style={{ fontSize: '9px', padding: '1px 6px' }}>{heads.length}</span>
                                 </div>
                                 {heads.map((u, i) => {
-                  const isSel = selectedStaff.value?.sso === u.sso;
+                  const isSel = selectedEmployee.value?.sso === u.sso;
                   return (
-                    <div key={u.sso || i} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openStaff(u)}>
+                    <div key={u.sso || i} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openEmployee(u)}>
                                             <div class="av s32" style={{ background: 'var(--blue)', color: '#fff', fontSize: '12px' }}>{u.n[0]}</div>
                                             <div class="flex-1 overflow-hidden">
                                                 <div class="flex ic jb g6">
                                                     <div class={`fw7 fs13 truncate ${isSel ? 'text-blue' : 'text-navy'}`}>{u.t}{u.n}</div>
                                                     <div class="flex g4">
-                                                        {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Staff)</span>}
+                                                        {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                         {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                         {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
                                                         {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
@@ -300,8 +300,8 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
               }
 
                         {DEPT_STRUCTURE[activeDept as keyof typeof DEPT_STRUCTURE]?.map((w, wi) => {
-                const wUsers = getStaffByGroup(w.work, true);
-                const unitList = w.units.map((un) => ({ name: un, users: getStaffByGroup(un, true) }));
+                const wUsers = getEmployeeByGroup(w.work, true);
+                const unitList = w.units.map((un) => ({ name: un, users: getEmployeeByGroup(un, true) }));
 
                 const hasAny = wUsers.length > 0 || unitList.some((un) => un.users.length > 0);
                 if (!hasAny) return null;
@@ -312,15 +312,15 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                         <span style={{ marginRight: '6px' }}></span>{w.work}
                                     </div>
                                     {wUsers.map((u, ui) => {
-                      const isSel = selectedStaff.value?.sso === u.sso;
+                      const isSel = selectedEmployee.value?.sso === u.sso;
                       return (
-                        <div key={u.sso || ui} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openStaff(u)}>
+                        <div key={u.sso || ui} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openEmployee(u)}>
                                                 <div class="av s32" style={{ background: 'var(--navy)', color: '#fff', fontSize: '12px' }}>{u.n[0]}</div>
                                                 <div class="flex-1 overflow-hidden">
                                                     <div class="flex ic jb g6">
                                                         <div class={`fw7 fs13 truncate ${isSel ? 'text-blue' : 'text-navy'}`}>{u.t}{u.n}</div>
                                                         <div class="flex g4">
-                                                            {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Staff)</span>}
+                                                            {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                             {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                             {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
                                                             {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
@@ -338,15 +338,15 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                                 <span style={{ fontSize: '14px' }}></span><span>{un.name}</span>
                                             </div>
                                             {un.users.map((u, ui) => {
-                        const isSel = selectedStaff.value?.sso === u.sso;
+                        const isSel = selectedEmployee.value?.sso === u.sso;
                         return (
-                          <div key={u.sso || ui} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openStaff(u)}>
+                          <div key={u.sso || ui} class={`flex ic g12 p12 pointer transition-all ${isSel ? 'bg-blue-lt' : 'hover-bg bg-white'}`} style={{ borderBottom: '1px solid var(--border)', borderLeft: isSel ? '4px solid var(--blue)' : '4px solid transparent' }} onClick={() => openEmployee(u)}>
                                                         <div class="av s32" style={{ background: 'var(--navy)', color: '#fff', fontSize: '12px' }}>{u.n[0]}</div>
                                                         <div class="flex-1 overflow-hidden">
                                                             <div class="flex ic jb g6">
                                                                 <div class={`fw7 fs13 truncate ${isSel ? 'text-blue' : 'text-navy'}`}>{u.t}{u.n}</div>
                                                                 <div class="flex g4">
-                                                                    {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Staff)</span>}
+                                                                    {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                                     {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                                     {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
                                                                     {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
@@ -368,7 +368,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                     </div>
                 </div>
 
-                {supervisorMode && !selectedStaff.value ?
+                {supervisorMode && !selectedEmployee.value ?
         <div class="card flex col ic jc" style={{ minHeight: "240px", padding: "30px 20px", textAlign: "center", alignSelf: "center" }}>
                         <div style={{ fontSize: "44px", lineHeight: 1, marginBottom: "14px" }}></div>
                         <div class="fw7 fs14" style={{ color: "var(--text3)" }}>เลือกบุคลากรจากรายการด้านซ้ายเพื่อเริ่มประเมิน</div>
@@ -377,16 +377,16 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
         <div class={supervisorMode ? "" : "card"} style={supervisorMode ? { minWidth: 0 } : undefined}>
                     {!supervisorMode && <div class="ch" style={{ borderBottom: '2px solid var(--blue-lt)' }}>
                         <div class="flex ic g12">
-                            {selectedStaff.value && <div class="av s44" style={{ background: 'var(--navy)', color: '#fff' }}>{selectedStaff.value.n[0]}</div>}
+                            {selectedEmployee.value && <div class="av s44" style={{ background: 'var(--navy)', color: '#fff' }}>{selectedEmployee.value.n[0]}</div>}
                             <div>
-                                <div class="ct fs18" style={{ color: 'var(--navy)' }}>{selectedStaff.value ? `${selectedStaff.value.t}${selectedStaff.value.n}` : "กรุณาเลือกบุคลากร"}</div>
-                                <div class="cs fw5">{selectedStaff.value ? `${selectedStaff.value.p} · ${selectedStaff.value.d}` : "เลือกบุคลากรจากรายการด้านซ้ายเพื่อเริ่มประเมิน"}</div>
+                                <div class="ct fs18" style={{ color: 'var(--navy)' }}>{selectedEmployee.value ? `${selectedEmployee.value.t}${selectedEmployee.value.n}` : "กรุณาเลือกบุคลากร"}</div>
+                                <div class="cs fw5">{selectedEmployee.value ? `${selectedEmployee.value.p} · ${selectedEmployee.value.d}` : "เลือกบุคลากรจากรายการด้านซ้ายเพื่อเริ่มประเมิน"}</div>
                             </div>
                         </div>
                     </div>}
-                    <div class="cb" style={{ padding: supervisorMode ? '0' : '8px 0 0', opacity: selectedStaff.value ? 1 : 0.5, pointerEvents: selectedStaff.value ? 'all' : 'none' }}>
-                        {supervisorMode && selectedStaff.value && <div class="fw8 fs15" style={{ padding: "0 0 14px", background: "var(--bg)" }}> การประเมิน: {selectedStaff.value.t}{selectedStaff.value.n}</div>}
-                        {selectedStaff.value &&
+                    <div class="cb" style={{ padding: supervisorMode ? '0' : '8px 0 0', opacity: selectedEmployee.value ? 1 : 0.5, pointerEvents: selectedEmployee.value ? 'all' : 'none' }}>
+                        {supervisorMode && selectedEmployee.value && <div class="fw8 fs15" style={{ padding: "0 0 14px", background: "var(--bg)" }}> การประเมิน: {selectedEmployee.value.t}{selectedEmployee.value.n}</div>}
+                        {selectedEmployee.value &&
             <div class={`b ${isDirty.value ? "by" : "bt"}`} style={{ marginBottom: "12px", padding: "7px 10px", whiteSpace: "normal" }}>
                                 {isDirty.value ?
               "มีผลการประเมินที่ยังไม่ได้บันทึก กรุณากดบันทึกไว้ก่อนหากต้องออกจากหน้านี้" :
@@ -491,7 +491,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
             }
 
                         <div class="flex g8 mt20" style={{ padding: supervisorMode ? '0 0 20px' : '0 20px 20px', flexWrap: "wrap" }}>
-                            <button class="btn btn-s" onClick={saveDraft} disabled={!selectedStaff.value || saving.value} style={{ minHeight: '44px', justifyContent: 'center', fontSize: '14px', fontWeight: 700, flex: "1 1 220px" }}>
+                            <button class="btn btn-s" onClick={saveDraft} disabled={!selectedEmployee.value || saving.value} style={{ minHeight: '44px', justifyContent: 'center', fontSize: '14px', fontWeight: 700, flex: "1 1 220px" }}>
                                 บันทึกผล
                             </button>
                             <button class={`btn ${saving.value ? 'btn-disabled' : 'btn-t'}`} onClick={submit} disabled={saving.value} style={{ justifyContent: 'center', minHeight: '44px', fontSize: '14px', fontWeight: 700, boxShadow: '0 4px 12px var(--blue-lt)', flex: "2 1 300px" }}>
@@ -827,7 +827,7 @@ const LegacyTeamIDP = defineComponent({ name: "LegacyTeamIDP", props: Object as 
     const [feedbacks, setFeedbacks] = useState<any>({});
     const [doneList, setDoneList] = useState<string[]>([]);
 
-    const getStaff = (unit: string) => users.filter((u) => {
+    const getEmployee = (unit: string) => users.filter((u) => {
       if (!u.d) return false;
       const parts = u.d.split(" > ");
       if (parts[0] !== activeDept.value) return false;
@@ -883,7 +883,7 @@ const LegacyTeamIDP = defineComponent({ name: "LegacyTeamIDP", props: Object as 
                                          {un}
                                     </div>
                                     <div class="p12">
-                                        {getStaff(un).map((s) => doneList.value.includes(s.id) ? null :
+                                        {getEmployee(un).map((s) => doneList.value.includes(s.id) ? null :
               <div key={s.id} class="card mb12 hover-bg transition-all pointer">
                                                 <div class="cb">
                                                     <div class="flex ic g12 mb12">
@@ -1108,7 +1108,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
         phase: phases[mockId] || item.phase
       };
     });
-    const activeStaff = team.find((item) => item.id === selectedId);
+    const activeEmployee = team.find((item) => item.id === selectedId);
     const tabs = [
     { id: "notsent", label: "ยังไม่ส่งแผน", hint: "ยังไม่เริ่มส่งแผน", c: "bgr" },
     { id: "pending", label: "รอการตรวจ/ยืนยัน", hint: "ตรวจแผนที่ส่งแล้ว", c: "by" },
@@ -1119,36 +1119,36 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
     const getTabCount = (id: string) => team.filter((item) => supervisorIDPPhaseMeta[item.phase].tab === id).length;
     const visibleTeam = team.filter((item) => supervisorIDPPhaseMeta[item.phase].tab === activeTab);
-    const gapDecisionKey = (staffId: string, gapCode: string) => `${staffId}:${gapCode}`;
+    const gapDecisionKey = (employeeId: string, gapCode: string) => `${employeeId}:${gapCode}`;
 
-    const decideGap = (staffId: string, gapCode: string, next: SupervisorIDPDecision) => {
-      if (next === "rejected" && !feedback[gapDecisionKey(staffId, gapCode)]?.trim()) {
+    const decideGap = (employeeId: string, gapCode: string, next: SupervisorIDPDecision) => {
+      if (next === "rejected" && !feedback[gapDecisionKey(employeeId, gapCode)]?.trim()) {
         alert("กรุณาระบุเหตุผลที่แผนไม่ผ่านก่อน");
         return;
       }
 
-      setDecisions((prev) => ({ ...prev, [gapDecisionKey(staffId, gapCode)]: next }));
+      setDecisions((prev) => ({ ...prev, [gapDecisionKey(employeeId, gapCode)]: next }));
     };
 
-    const continuePending = (staffId: string, gaps: any[]) => {
-      const gapDecisions = gaps.map((gap) => decisions.value[gapDecisionKey(staffId, gap.cd)]);
+    const continuePending = (employeeId: string, gaps: any[]) => {
+      const gapDecisions = gaps.map((gap) => decisions.value[gapDecisionKey(employeeId, gap.cd)]);
       if (gapDecisions.some((item) => !item)) {
         alert("กรุณาตรวจทุกแผนก่อนดำเนินการต่อ");
         return;
       }
 
       const rejected = gapDecisions.some((item) => item === "rejected");
-      setPhases((prev) => ({ ...prev, [staffId]: rejected ? "rejected" : "forwarded" }));
+      setPhases((prev) => ({ ...prev, [employeeId]: rejected ? "rejected" : "forwarded" }));
       setSelectedId(null);
       setActiveTab(rejected ? "rejected" : "pending");
     };
 
-    if (activeStaff) {
-      const meta = supervisorIDPPhaseMeta[activeStaff.phase];
-      const pendingPlan = activeStaff.phase === "pending";
-      const forwardedPlan = activeStaff.phase === "forwarded";
-      const rejectedPlan = activeStaff.phase === "rejected";
-      const timelineMode = activeStaff.phase === "inprogress" || activeStaff.phase === "done";
+    if (activeEmployee) {
+      const meta = supervisorIDPPhaseMeta[activeEmployee.phase];
+      const pendingPlan = activeEmployee.phase === "pending";
+      const forwardedPlan = activeEmployee.phase === "forwarded";
+      const rejectedPlan = activeEmployee.phase === "rejected";
+      const timelineMode = activeEmployee.phase === "inprogress" || activeEmployee.phase === "done";
 
       return (
         <>
@@ -1157,47 +1157,47 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
                     <div class="flex ic g8">
                         <button class="btn btn-s btn-sm" onClick={() => setSelectedId(null)}>กลับหน้าติดตามทีม</button>
                         <span class="muted">/</span>
-                        <span class="fw7 fs13">{activeStaff.n}</span>
+                        <span class="fw7 fs13">{activeEmployee.n}</span>
                     </div>
                     <span class={`b ${meta.badge}`}>{meta.label}</span>
                 </div>
 
                 <div class="card mb14" style={{ borderLeft: `4px solid ${timelineMode ? "var(--teal)" : pendingPlan ? "var(--yellow)" : "var(--red)"}` }}>
                     <div class="cb flex ic g12" style={{ flexWrap: "wrap" }}>
-                        <div class="av" style={{ width: "44px", height: "44px", background: "var(--navy)", fontSize: "16px" }}>{activeStaff.n[0]}</div>
+                        <div class="av" style={{ width: "44px", height: "44px", background: "var(--navy)", fontSize: "16px" }}>{activeEmployee.n[0]}</div>
                         <div style={{ flex: 1 }}>
-                            <div class="fw8 fs15">{activeStaff.n}</div>
-                            <div class="muted fs12">{activeStaff.p} · {activeStaff.unit}</div>
+                            <div class="fw8 fs15">{activeEmployee.n}</div>
+                            <div class="muted fs12">{activeEmployee.p} · {activeEmployee.unit}</div>
                         </div>
-                        {activeStaff.sent && <div class="muted fs12">ส่งแผน {activeStaff.sent}</div>}
+                        {activeEmployee.sent && <div class="muted fs12">ส่งแผน {activeEmployee.sent}</div>}
                     </div>
                 </div>
 
-                {activeStaff.phase === "notsent" &&
+                {activeEmployee.phase === "notsent" &&
           <div class="card">
                         <div class="ch"><div class="ct">ยังไม่ส่งแผน IDP</div><div class="cs">แสดงเฉพาะ Competency Gap ที่ทำไว้แล้ว</div></div>
-                        <GapRows gaps={activeStaff.gaps} />
+                        <GapRows gaps={activeEmployee.gaps} />
                     </div>
           }
 
                 {rejectedPlan &&
           <div class="card">
                         <div class="ch"><div class="ct">แผนไม่ผ่าน</div><div class="cs">บุคลากรต้องกลับไปแก้แผนที่ไม่ผ่านก่อนส่งใหม่</div></div>
-                        <GapRows gaps={activeStaff.gaps} decisions={decisions.value} staffId={activeStaff.id} feedback={feedback} />
+                        <GapRows gaps={activeEmployee.gaps} decisions={decisions.value} employeeId={activeEmployee.id} feedback={feedback} />
                     </div>
           }
 
                 {forwardedPlan &&
           <div class="card">
                         <div class="ch"><div class="ct">แผนผ่านการตรวจจากหัวหน้างานแล้ว</div><div class="cs">อยู่ระหว่างรอหัวหน้าฝ่ายตรวจสอบต่อ</div></div>
-                        <GapRows gaps={activeStaff.gaps} decisions={decisions.value} staffId={activeStaff.id} feedback={feedback} />
+                        <GapRows gaps={activeEmployee.gaps} decisions={decisions.value} employeeId={activeEmployee.id} feedback={feedback} />
                     </div>
           }
 
                 {pendingPlan &&
           <>
-                        {activeStaff.gaps.map((gap: any) => {
-              const key = gapDecisionKey(activeStaff.id, gap.cd);
+                        {activeEmployee.gaps.map((gap: any) => {
+              const key = gapDecisionKey(activeEmployee.id, gap.cd);
               const decision = decisions.value[key];
               return (
                 <div key={gap.cd} class="card mb14" style={{ overflow: "hidden" }}>
@@ -1217,20 +1217,20 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
                                         </div>
                                         <textarea class="ta" style={{ minHeight: "46px" }} value={feedback[key] || ""} placeholder="ข้อเสนอแนะ / เหตุผลเมื่อแผนไม่ผ่าน" onChange={(event) => setFeedback((prev) => ({ ...prev, [key]: event.target.value }))} />
                                         <div class="flex g6 mt8">
-                                            <button class="btn btn-g btn-sm" onClick={() => decideGap(activeStaff.id, gap.cd, "approved")}>ผ่านแผนนี้</button>
-                                            <button class="btn btn-r btn-sm" onClick={() => decideGap(activeStaff.id, gap.cd, "rejected")}>แผนไม่ผ่าน</button>
+                                            <button class="btn btn-g btn-sm" onClick={() => decideGap(activeEmployee.id, gap.cd, "approved")}>ผ่านแผนนี้</button>
+                                            <button class="btn btn-r btn-sm" onClick={() => decideGap(activeEmployee.id, gap.cd, "rejected")}>แผนไม่ผ่าน</button>
                                         </div>
                                     </div>
                                 </div>);
 
             })}
                         <div class="flex" style={{ justifyContent: "flex-end" }}>
-                            <button class="btn btn-p" onClick={() => continuePending(activeStaff.id, activeStaff.gaps)}>ดำเนินการต่อ</button>
+                            <button class="btn btn-p" onClick={() => continuePending(activeEmployee.id, activeEmployee.gaps)}>ดำเนินการต่อ</button>
                         </div>
                     </>
           }
 
-                {timelineMode && activeStaff.gaps.map((gap: any) =>
+                {timelineMode && activeEmployee.gaps.map((gap: any) =>
           <div key={gap.cd} class="card mb14" style={{ overflow: "hidden" }}>
                         <div class="ch" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
                             <div class="flex ic g8">
@@ -1238,7 +1238,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
                                 <div class="ct">{gap.n}</div>
                                 <span class="muted fs12">{gap.cd} · Gap {gap.got - gap.exp}</span>
                             </div>
-                            <span class="b bg">{activeStaff.phase === "done" ? "เสร็จสิ้น" : "ระหว่างดำเนินการ"}</span>
+                            <span class="b bg">{activeEmployee.phase === "done" ? "เสร็จสิ้น" : "ระหว่างดำเนินการ"}</span>
                         </div>
                         <div class="cb" style={{ padding: "12px" }}>
                             {(gap.activities || []).map((activity: any) => <ActivityTimeline key={activity.title} activity={activity} />)}
@@ -1295,18 +1295,18 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
         )}
             </div>
 
-            {visibleTeam.map((staff) => {
-        const meta = supervisorIDPPhaseMeta[staff.phase];
-        const canReview = staff.phase === "pending";
+            {visibleTeam.map((employee) => {
+        const meta = supervisorIDPPhaseMeta[employee.phase];
+        const canReview = employee.phase === "pending";
         return (
-          <div key={staff.id} class="card mb12" style={{ borderLeft: `4px solid ${canReview ? "var(--orange)" : "var(--border)"}` }}>
+          <div key={employee.id} class="card mb12" style={{ borderLeft: `4px solid ${canReview ? "var(--orange)" : "var(--border)"}` }}>
                         <div class="cb flex ic g12" style={{ padding: "14px 20px", flexWrap: "wrap" }}>
-                            <div class="av" style={{ width: "44px", height: "44px", background: "var(--navy)", fontSize: "16px" }}>{staff.n[0]}</div>
+                            <div class="av" style={{ width: "44px", height: "44px", background: "var(--navy)", fontSize: "16px" }}>{employee.n[0]}</div>
                             <div style={{ flex: 1, minWidth: "220px" }}>
-                                <div class="fw8 fs14">{staff.n}</div>
-                                <div class="muted fs12">{staff.p} · {staff.unit} · <span class={`b ${meta.badge}`}>{meta.label}</span></div>
+                                <div class="fw8 fs14">{employee.n}</div>
+                                <div class="muted fs12">{employee.p} · {employee.unit} · <span class={`b ${meta.badge}`}>{meta.label}</span></div>
                             </div>
-                            <button class={`btn ${canReview ? "btn-p" : "btn-s"} btn-sm`} onClick={() => setSelectedId(staff.id)}>{canReview ? "ตรวจสอบ" : "ดูข้อมูล"}</button>
+                            <button class={`btn ${canReview ? "btn-p" : "btn-s"} btn-sm`} onClick={() => setSelectedId(employee.id)}>{canReview ? "ตรวจสอบ" : "ดูข้อมูล"}</button>
                         </div>
                     </div>);
 
@@ -1317,10 +1317,10 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
 
 
-const GapRows = ({ gaps, decisions, staffId, feedback }: any) =>
+const GapRows = ({ gaps, decisions, employeeId, feedback }: any) =>
 <div class="cb" style={{ paddingTop: "8px" }}>
         {gaps.map((gap) => {
-    const key = staffId ? `${staffId}:${gap.cd}` : "";
+    const key = employeeId ? `${employeeId}:${gap.cd}` : "";
     const decision = key ? decisions?.[key] : undefined;
     return (
       <div key={gap.cd} class="flex ic g12" style={{ padding: "12px 0", borderBottom: "1px dashed var(--border)", flexWrap: "wrap" }}>

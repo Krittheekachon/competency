@@ -57,7 +57,7 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
     const worklineSummary = Array.from(new Set(filteredReportUsers.map((user) => user.w || "ไม่ระบุสายงาน"))).
     map((workline) => `${workline.replace("สาย", "")} ${filteredReportUsers.filter((user) => (user.w || "ไม่ระบุสายงาน") === workline).length}`).
     join(" · ");
-    const totalStaff = filteredReportUsers.length;
+    const totalEmployee = filteredReportUsers.length;
     const assessed = assessedUsers.length;
     const passed = passedUsers.length;
     const failed = failedUsers.length;
@@ -304,8 +304,8 @@ const ArrowUpAZ = (props: any) => <span {...props}>A-Z</span>;const ArrowDownAZ 
             <div class="mb20" style={{ background: "var(--navy)", borderRadius: "16px", padding: "34px", color: "#fff", display: "grid", gridTemplateColumns: "1fr auto", gap: "20px", alignItems: "center" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(120px, 1fr))", gap: "0" }}>
                     {[
-          { l: "บุคลากรทั้งหมด", v: totalStaff, s: worklineSummary || "ยังไม่มีข้อมูลผู้ใช้", c: "#fff" },
-          { l: "ประเมินแล้ว", v: assessed, s: `รอ ${totalStaff - assessed} คน`, c: "#fff" },
+          { l: "บุคลากรทั้งหมด", v: totalEmployee, s: worklineSummary || "ยังไม่มีข้อมูลผู้ใช้", c: "#fff" },
+          { l: "ประเมินแล้ว", v: assessed, s: `รอ ${totalEmployee - assessed} คน`, c: "#fff" },
           { l: "ผ่านเกณฑ์", v: passed, s: `${passPct}% ของที่ประเมิน`, c: "#4ade80" },
           { l: "ไม่ผ่านเกณฑ์", v: failed, s: `${100 - passPct}% ของที่ประเมิน`, c: "#fca5a5" }].
           map((m, i) =>
@@ -830,13 +830,13 @@ export const ManagerIDP = defineComponent({ name: "ManagerIDP", props: { users: 
 
 
 const getApprovalRows = (users: any[]) => {
-  const activeStaff = users.filter((user) => user.act !== false && user.r !== "manager").slice(0, 12);
+  const activeEmployee = users.filter((user) => user.act !== false && user.r !== "manager").slice(0, 12);
   const fallback = [
   { n: "สมชาย มีสุข", t: "นาย", p: "นักวิชาการศึกษา", d: "สนับสนุนการศึกษาและวิชาการ", w: "สายสนับสนุน", sup: "กัญญารัตน์ ศรีวิชา", evaluator2: "ธนพล ไชยรักษ์" },
   { n: "มาลี ดีเสมอ", t: "นางสาว", p: "นักทรัพยากรบุคคล", d: "ทรัพยากรบุคคล", w: "สายสนับสนุน", sup: "พรพิมล บุคคลดี", evaluator2: "ธนพล ไชยรักษ์" },
   { n: "วิชัย ระบบดี", t: "นาย", p: "นักวิชาการคอมพิวเตอร์", d: "เทคโนโลยีสารสนเทศ", w: "สายสนับสนุน", sup: "ปกรณ์ ศิริวัฒน์", evaluator2: "ธนพล ไชยรักษ์" }];
 
-  const source = activeStaff.length ? activeStaff : fallback;
+  const source = activeEmployee.length ? activeEmployee : fallback;
 
   return source.map((user, index) => ({
     id: user.sso || `mock-${index}`,
@@ -1013,7 +1013,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
     const deptKeys = Object.keys(DEPT_STRUCTURE);
     const [activeDept, setActiveDept] = useState(deptKeys[0]);
 
-    const getStaffData = (unit: string) => users.filter((u) => {
+    const getEmployeeData = (unit: string) => users.filter((u) => {
       if (!u.d) return false;
       const parts = u.d.split(" > ");
       if (parts[0] !== activeDept.value) return false;
@@ -1072,7 +1072,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {getStaffData(un).map((s, si) =>
+                                                {getEmployeeData(un).map((s, si) =>
                     <tr key={si}>
                                                         <td>
                                                             <div class="flex ic g10">

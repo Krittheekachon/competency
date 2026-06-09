@@ -7,6 +7,20 @@ const form = useForm({
     remember: false,
 });
 
+const demoRoles = [
+    { role: 'admin', label: 'Admin' },
+    { role: 'hr', label: 'HR' },
+    { role: 'supervisor', label: 'Supervisor' },
+    { role: 'dept_head', label: 'Dept Head' },
+    { role: 'employee', label: 'Employee' },
+    { role: 'dean', label: 'Dean' },
+];
+
+const selectDemoRole = (role) => {
+    form.email = role;
+    form.password = 'password';
+};
+
 const submit = () => {
     form.post(route('login'), {
         onFinish: () => form.reset('password'),

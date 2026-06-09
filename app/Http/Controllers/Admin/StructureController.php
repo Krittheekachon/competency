@@ -227,20 +227,33 @@ class StructureController extends Controller
     public function storeLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+        $jobFamilyId = $request->filled('job_family_name')
+            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
+            : null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'nullable',
+                'string',
+                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('levels', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+                Rule::unique('levels', 'name')->where(fn ($query) => $query
+                    ->where('workline_id', $worklineId)
+                    ->where('job_family_id', $jobFamilyId)),
             ],
+            'expected_level' => ['nullable', 'integer', 'min:1', 'max:5'],
         ]);
 
         DB::table('levels')->insert([
             'workline_id' => $this->worklineId($data['workline_name'] ?? null),
+            'job_family_id' => $jobFamilyId,
             'name' => $data['name'],
+            'expected_level' => $data['expected_level'] ?? null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -251,28 +264,46 @@ class StructureController extends Controller
     public function updateLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+        $jobFamilyId = $request->filled('job_family_name')
+            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
+            : null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'nullable',
+                'string',
+                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
             'old_name' => [
                 'required',
                 'string',
-                Rule::exists('levels', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+                Rule::exists('levels', 'name')->where(fn ($query) => $query
+                    ->where('workline_id', $worklineId)
+                    ->where('job_family_id', $jobFamilyId)),
             ],
             'name' => [
                 'required',
                 'string',
                 'max:255',
                 Rule::unique('levels', 'name')
-                    ->where(fn ($query) => $query->where('workline_id', $worklineId))
+                    ->where(fn ($query) => $query
+                        ->where('workline_id', $worklineId)
+                        ->where('job_family_id', $jobFamilyId))
                     ->ignore($request->old_name, 'name'),
             ],
+            'expected_level' => ['nullable', 'integer', 'min:1', 'max:5'],
         ]);
 
         DB::table('levels')
             ->where('workline_id', $this->worklineId($data['workline_name'] ?? null))
+            ->where('job_family_id', $jobFamilyId)
             ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+            ->update([
+                'name' => $data['name'],
+                'expected_level' => $data['expected_level'] ?? null,
+                'updated_at' => now(),
+            ]);
 
         return back()->with('success', 'อัปเดตระดับตำแหน่งเรียบร้อยแล้ว');
     }
@@ -280,18 +311,29 @@ class StructureController extends Controller
     public function destroyLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
+        $jobFamilyId = $request->filled('job_family_name')
+            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
+            : null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'job_family_name' => [
+                'nullable',
+                'string',
+                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+            ],
             'name' => [
                 'required',
                 'string',
-                Rule::exists('levels', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
+                Rule::exists('levels', 'name')->where(fn ($query) => $query
+                    ->where('workline_id', $worklineId)
+                    ->where('job_family_id', $jobFamilyId)),
             ],
         ]);
 
         DB::table('levels')
             ->where('workline_id', $this->worklineId($data['workline_name'] ?? null))
+            ->where('job_family_id', $jobFamilyId)
             ->where('name', $data['name'])
             ->delete();
 

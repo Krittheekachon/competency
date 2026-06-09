@@ -1,31 +1,37 @@
 <script setup>
 import { router, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
-import { ManagerGap, ManagerIDP } from '../ManagerPages.vue';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
     hrSummary: {
         type: Object,
         required: true,
     },
-    hrWorklines: {
+    worklines: {
         type: Array,
         default: () => [],
     },
-    activeCycleName: {
-        type: String,
-        default: '',
+    jobFamiliesByWorkline: {
+        type: Object,
+        default: () => ({}),
     },
-    hrCycles: {
+    positionLookup: {
         type: Array,
         default: () => [],
     },
-    hrExpectationSets: {
+    positionCompetencies: {
+        type: Object,
+        default: () => ({}),
+    },
+    levelsByWorkline: {
+        type: Object,
+        default: () => ({}),
+    },
+    competencies: {
+        type: Array,
+        default: () => [],
+    },
+    learningMethods: {
         type: Array,
         default: () => [],
     },
@@ -33,104 +39,198 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    overviewUsers: {
-        type: Array,
-        default: () => [],
+    activeCycleName: {
+        type: String,
+        default: '',
     },
 });
 
+const page = usePage();
 const logout = () => router.post(route('logout'));
 
 const isSidebarOpen = ref(true);
+const activePage = ref('hr-position-competencies');
+const activeModal = ref('');
+const selectedWorkline = ref('');
+const selectedJobFamily = ref('');
+const selectedPosition = ref('');
+const dictionarySearch = ref('');
+const dictionaryType = ref('all');
+const selectedDetailCompetency = ref(null);
+const expandedDetailLevels = ref({});
+const catalogCompetencySearch = ref('');
+const catalogSearch = ref('');
+const catalogMethodFilter = ref('all');
+const catalogDeliveryFilter = ref('all');
+const catalogStatusFilter = ref('all');
+const catalogMode = ref('create');
+const catalogForm = ref({
+    id: null,
+    code: '',
+    name: '',
+    methodKey: '',
+    deliveryType: 'e_learning',
+    sourceType: 'internal',
+    provider: '',
+    cost: '',
+    hours: '',
+    competencyIds: [],
+    expectedLevels: [],
+    description: '',
+    isActive: true,
+});
+const levelOptions = [
+    { value: 1, label: 'Level 1', hint: 'พื้นฐาน / เริ่มต้น' },
+    { value: 2, label: 'Level 2', hint: 'ลงมือปฏิบัติ' },
+    { value: 3, label: 'Level 3', hint: 'พัฒนา / ทำได้ดี' },
+    { value: 4, label: 'Level 4', hint: 'ขั้นสูง / ชำนาญ' },
+    { value: 5, label: 'Level 5', hint: 'เชี่ยวชาญ' },
+];
+const deliveryTypeOptions = [
+    { value: 'e_learning', label: 'การฝึกอบรมออนไลน์ (e-Learning)' },
+    { value: 'in_class', label: 'การฝึกอบรมในห้องเรียน (In Class Training)' },
+];
 
 const sections = [
     {
-        title: 'การประเมินตนเอง',
-        items: [
-            { id: 'emp-assess', icon: '', label: 'ประเมินตนเอง' },
-            { id: 'emp-gap', icon: '', label: 'สรุปผลสมรรถนะ' },
-            { id: 'emp-idp', icon: '', label: 'แผนพัฒนา IDP' },
-            { id: 'emp-progress', icon: '', label: 'ความก้าวหน้า' },
-            { id: 'emp-idp-detail', icon: '', label: 'รายละเอียด IDP' },
-        ],
-    },
-    {
         title: 'HR',
         items: [
-            { id: 'hr-position-competencies', icon: '', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
-            { id: 'hr-cycle', icon: '', label: 'รอบการประเมิน' },
-            { id: 'hr-template', icon: '', label: 'กำหนดความคาดหวัง' },
-            { id: 'hr-catalog', icon: '', label: 'Learning Catalog' },
-        ],
-    },
-    {
-        title: 'ภาพรวมคณะ',
-        items: [
-            { id: 'hr-comp-overview', icon: '', label: 'ภาพรวม Competency คณะ' },
-            { id: 'hr-idp-overview', icon: '', label: 'ภาพรวม IDP คณะ' },
+            { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
         ],
     },
 ];
 
 const pageTitles = {
     'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
-    'hr-cycle': 'รอบการประเมิน',
-    'hr-template': 'กำหนดความคาดหวัง',
-    'hr-catalog': 'Learning Catalog',
-    'hr-comp-overview': 'ภาพรวม Competency คณะ',
-    'hr-idp-overview': 'ภาพรวม IDP คณะ',
 };
 
-const emptyStates = {
-    'hr-position-competencies': {
-        title: 'ยังไม่มีข้อมูลสมรรถนะประจำตำแหน่ง',
-        body: 'เมื่อเชื่อมข้อมูลตำแหน่งและสมรรถนะจริงแล้ว รายการกำหนดสมรรถนะจะแสดงในหน้านี้',
-    },
-    'hr-cycle': {
-        title: 'ยังไม่มีรอบการประเมินในฐานข้อมูล',
-        body: 'เพิ่มตารางและ API สำหรับรอบการประเมินก่อน หน้านี้จึงจะแสดงรอบที่เปิดใช้งานจริง',
-    },
-    'hr-template': {
-        title: 'ยังไม่มีข้อมูลความคาดหวัง',
-        body: 'พื้นที่นี้จะใช้กำหนดระดับคาดหวังเมื่อมีข้อมูล competency และตำแหน่งจากระบบจริง',
-    },
-    'hr-catalog': {
-        title: 'ยังไม่มี Learning Catalog',
-        body: 'เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะถูกดึงจากฐานข้อมูลมาแสดง',
-    },
-    'hr-comp-overview': {
-        title: 'ยังไม่มีผล Competency สำหรับภาพรวม',
-        body: 'รอผลการประเมินจริงก่อน หน้านี้จึงจะแสดงสถานะรายหน่วยงานและความเสี่ยงของคณะ',
-    },
-    'hr-idp-overview': {
-        title: 'ยังไม่มีข้อมูล IDP สำหรับภาพรวม',
-        body: 'รอแผน IDP และสถานะความคืบหน้าจริงก่อน หน้านี้จึงจะแสดงภาพรวมของคณะ',
-    },
-};
-
-const activePage = ref('hr-position-competencies');
-const activeModal = ref('');
-const page = usePage();
-const currentPageTitle = computed(() => pageTitles[activePage.value]);
-const currentEmptyState = computed(() => emptyStates[activePage.value]);
-const userInitial = computed(() => page.props.auth.user.name?.[0] || 'ง');
+const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
+const currentPageTitle = computed(() => pageTitles[activePage.value] || 'HR');
 const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
-const selectedWorkline = ref('');
-const selectedJobFamily = ref('');
-const selectedPosition = ref('');
-const worklines = computed(() => props.hrWorklines);
-const hasWorklines = computed(() => worklines.value.length > 0);
-const hasCycles = computed(() => props.hrCycles.length > 0);
-const hasExpectationSets = computed(() => props.hrExpectationSets.length > 0);
-const hasCatalogItems = computed(() => props.hrCatalogItems.length > 0);
+const worklineOptions = computed(() => props.worklines || []);
 
-const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง');
-const jobFamilyLabel = computed(() => {
-    if (!selectedWorkline.value) return 'ยังไม่มีข้อมูลกลุ่มงาน';
-    if (selectedWorkline.value === 'สายวิชาการ') return 'สายวิชาการ';
-    if (selectedWorkline.value === 'สายงานบริหาร') return 'คณะวิศวกรรมศาสตร์';
-    return selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน';
+const familiesForSelectedWorkline = computed(() => {
+    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return Object.keys(groups);
 });
+
+const rawPositionsForSelectedFamily = computed(() => {
+    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return groups[selectedJobFamily.value] || [];
+});
+
+const levelsForSelectedWorkline = computed(() => {
+    return props.levelsByWorkline?.[selectedWorkline.value] || [];
+});
+
+const positionOptions = computed(() => {
+    if (levelsForSelectedWorkline.value.length) return levelsForSelectedWorkline.value;
+    if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
+    return [];
+});
+const needsPositionBeforeMapping = computed(() => Boolean(selectedJobFamily.value && !positionOptions.value.length));
+
+const allPositionCount = computed(() => {
+    return worklineOptions.value.reduce((total, workline) => {
+        const levels = props.levelsByWorkline?.[workline] || [];
+        if (levels.length) return total + levels.length;
+
+        const families = props.jobFamiliesByWorkline?.[workline] || {};
+        return total + Object.entries(families || {}).reduce((sum, [familyName, positions]) => {
+            const count = Array.isArray(positions) && positions.length ? positions.length : 1;
+            return sum + (familyName ? count : 0);
+        }, 0);
+    }, 0);
+});
+
+const configuredPositionCount = computed(() => Object.values(props.positionCompetencies || {}).filter((items) => items.length).length);
+const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
+const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
+const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
+const currentPosition = computed(() => {
+    return (props.positionLookup || []).find((position) => {
+        return position.worklineName === selectedWorkline.value
+            && position.jobFamilyName === selectedJobFamily.value
+            && position.name === selectedPosition.value;
+    }) || null;
+});
+const currentPositionId = computed(() => currentPosition.value?.id || null);
+
+const competencyItems = computed(() => props.competencies || []);
+const competencyTypes = computed(() => {
+    return [...new Set(competencyItems.value.map((item) => item.t).filter(Boolean))];
+});
+const coreCompetencyCount = computed(() => competencyItems.value.filter((item) => item.t === 'CC').length);
+const assignedCompetencyIds = computed(() => new Set(props.positionCompetencies?.[currentPositionId.value] || []));
+const assignedCompetencies = computed(() => {
+    return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
+});
+const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
+const filteredCompetencies = computed(() => {
+    const keyword = dictionarySearch.value.trim().toLowerCase();
+
+    return competencyItems.value.filter((item) => {
+        const matchesType = dictionaryType.value === 'all' || item.t === dictionaryType.value;
+        const haystack = `${item.cd || ''} ${item.n || ''} ${item.det || ''}`.toLowerCase();
+        return matchesType && (!keyword || haystack.includes(keyword));
+    });
+});
+const availableCoreCompetencies = computed(() => {
+    return competencyItems.value.filter((item) => item.t === 'CC' && !assignedCompetencyIds.value.has(item.id));
+});
+
+const catalogItems = computed(() => props.hrCatalogItems || []);
+const filteredCatalogItems = computed(() => {
+    const keyword = catalogSearch.value.trim().toLowerCase();
+
+    return catalogItems.value.filter((item) => {
+        const haystack = `${item.code || ''} ${item.name || ''} ${item.description || ''}`.toLowerCase();
+        const matchesSearch = !keyword || haystack.includes(keyword);
+        const matchesMethod = catalogMethodFilter.value === 'all' || item.methodKey === catalogMethodFilter.value;
+        const matchesDelivery = catalogDeliveryFilter.value === 'all' || item.deliveryType === catalogDeliveryFilter.value;
+        const matchesStatus = catalogStatusFilter.value === 'all'
+            || (catalogStatusFilter.value === 'active' ? item.isActive : !item.isActive);
+
+        return matchesSearch && matchesMethod && matchesDelivery && matchesStatus;
+    });
+});
+const resetCatalogFilters = () => {
+    catalogSearch.value = '';
+    catalogMethodFilter.value = 'all';
+    catalogDeliveryFilter.value = 'all';
+    catalogStatusFilter.value = 'all';
+};
+const defaultCatalogMethodKey = () => {
+    const methods = props.learningMethods || [];
+    const formal = methods.find((method) => {
+        const key = String(method.key || '').toLowerCase();
+        const label = String(method.label || '').toLowerCase();
+        return key.includes('formal') || label.includes('formal');
+    });
+
+    return formal?.key || methods[0]?.key || '';
+};
+const filteredCatalogCompetencies = computed(() => {
+    const keyword = catalogCompetencySearch.value.trim().toLowerCase();
+    if (!keyword) return competencyItems.value;
+
+    return competencyItems.value.filter((item) => {
+        const haystack = `${item.cd || ''} ${item.n || ''} ${item.t || ''}`.toLowerCase();
+        return haystack.includes(keyword);
+    });
+});
+
+watch(worklineOptions, (next) => {
+    if (!selectedWorkline.value && next.length) selectedWorkline.value = next[0];
+}, { immediate: true });
+
+watch(familiesForSelectedWorkline, (next) => {
+    if (!next.includes(selectedJobFamily.value)) selectedJobFamily.value = next[0] || '';
+}, { immediate: true });
+
+watch(positionOptions, (next) => {
+    if (!next.includes(selectedPosition.value)) selectedPosition.value = next[0] || '';
+}, { immediate: true });
 
 const openModal = (modal) => {
     activeModal.value = modal;
@@ -138,6 +238,167 @@ const openModal = (modal) => {
 
 const closeModal = () => {
     activeModal.value = '';
+    selectedDetailCompetency.value = null;
+    expandedDetailLevels.value = {};
+};
+
+const resetCatalogForm = () => {
+    catalogMode.value = 'create';
+    catalogCompetencySearch.value = '';
+    catalogForm.value = {
+        id: null,
+        code: '',
+        name: '',
+        methodKey: defaultCatalogMethodKey(),
+        deliveryType: 'e_learning',
+        sourceType: 'internal',
+        provider: '',
+        cost: '',
+        hours: '',
+        competencyIds: [],
+        expectedLevels: [],
+        description: '',
+        isActive: true,
+    };
+};
+
+const openCatalogCreate = () => {
+    resetCatalogForm();
+    openModal('catalog');
+};
+
+const openCatalogEdit = (item) => {
+    catalogMode.value = 'edit';
+    catalogCompetencySearch.value = '';
+    catalogForm.value = {
+        id: item.id,
+        code: item.code || '',
+        name: item.name || '',
+        methodKey: item.methodKey || '',
+        deliveryType: item.deliveryType || 'e_learning',
+        sourceType: item.sourceType || 'internal',
+        provider: item.provider || '',
+        cost: item.cost ?? '',
+        hours: item.hours ?? '',
+        competencyIds: [...(item.competencyIds || [])].slice(0, 1),
+        expectedLevels: [...(item.expectedLevels || [])],
+        description: item.description || '',
+        isActive: Boolean(item.isActive),
+    };
+    openModal('catalog');
+};
+
+const catalogPayload = () => ({
+    code: catalogForm.value.code || null,
+    name: catalogForm.value.name,
+    method_key: catalogForm.value.methodKey || null,
+    delivery_type: catalogForm.value.deliveryType,
+    source_type: catalogForm.value.sourceType,
+    provider: catalogForm.value.provider || null,
+    cost: catalogForm.value.cost === '' ? null : catalogForm.value.cost,
+    hours: catalogForm.value.hours === '' ? null : catalogForm.value.hours,
+    competency_ids: catalogForm.value.competencyIds,
+    expected_levels: catalogForm.value.expectedLevels,
+    description: catalogForm.value.description || null,
+    is_active: catalogForm.value.isActive,
+});
+
+const toggleCatalogCompetency = (id) => {
+    catalogForm.value.competencyIds = catalogForm.value.competencyIds.includes(id) ? [] : [id];
+};
+
+const toggleCatalogExpectedLevel = (level) => {
+    const current = new Set(catalogForm.value.expectedLevels);
+    current.has(level) ? current.delete(level) : current.add(level);
+    catalogForm.value.expectedLevels = [...current].sort((a, b) => a - b);
+};
+
+const submitCatalog = () => {
+    if (catalogMode.value === 'edit' && catalogForm.value.id) {
+        router.put(route('hr.learning-catalogs.update', catalogForm.value.id), catalogPayload(), {
+            preserveScroll: true,
+            onSuccess: closeModal,
+        });
+        return;
+    }
+
+    router.post(route('hr.learning-catalogs.store'), catalogPayload(), {
+        preserveScroll: true,
+        onSuccess: closeModal,
+    });
+};
+
+const deleteCatalog = (item) => {
+    if (!window.confirm(`ลบ "${item.name}" ออกจาก Learning Catalog?`)) return;
+
+    router.delete(route('hr.learning-catalogs.destroy', item.id), {
+        preserveScroll: true,
+    });
+};
+
+const addCompetency = (item) => {
+    if (!currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
+
+    router.post(route('hr.position-competencies.store'), {
+        position_id: currentPositionId.value,
+        competency_id: item.id,
+    }, {
+        preserveScroll: true,
+    });
+};
+
+const addAllCoreCompetencies = () => {
+    if (!currentPositionId.value || !availableCoreCompetencies.value.length) return;
+
+    router.post(route('hr.position-competencies.store'), {
+        position_id: currentPositionId.value,
+        competency_ids: availableCoreCompetencies.value.map((item) => item.id),
+    }, {
+        preserveScroll: true,
+    });
+};
+
+const removeCompetency = (itemId) => {
+    if (!currentPositionId.value) return;
+
+    router.delete(route('hr.position-competencies.destroy'), {
+        data: {
+            position_id: currentPositionId.value,
+            competency_id: itemId,
+        },
+        preserveScroll: true,
+    });
+};
+
+const openCompetencyDetail = (item) => {
+    selectedDetailCompetency.value = item;
+    expandedDetailLevels.value = {};
+    openModal('competency-detail');
+};
+
+const toggleDetailLevel = (level) => {
+    expandedDetailLevels.value = {
+        ...expandedDetailLevels.value,
+        [level.lvl]: !expandedDetailLevels.value[level.lvl],
+    };
+};
+
+const formatCost = (cost) => {
+    if (cost === null || cost === undefined || cost === '') return 'ฟรี';
+    const number = Number(cost);
+    if (Number.isNaN(number) || number === 0) return 'ฟรี';
+    return `${number.toLocaleString('th-TH')} บาท`;
+};
+
+const deliveryTypeLabel = (value) => {
+    return deliveryTypeOptions.find((option) => option.value === value)?.label || '-';
+};
+
+const formatWeight = (weight) => {
+    if (weight === null || weight === undefined || weight === '') return '-';
+    const number = Number(weight);
+    if (Number.isNaN(number)) return '-';
+    return number.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 };
 </script>
 
@@ -168,7 +429,6 @@ const closeModal = () => {
                         type="button"
                         @click="activePage = item.id"
                     >
-                        <span class="nav-ic">{{ item.icon }}</span>
                         <span>{{ item.label }}</span>
                     </button>
                 </div>
@@ -194,7 +454,7 @@ const closeModal = () => {
                 <template v-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">
                         <div>
-                            <div class="position-kicker">competency setup</div>
+                            <div class="position-kicker">COMPETENCY SETUP</div>
                             <div class="sec-t position-title">กำหนดสมรรถนะประจำตำแหน่ง</div>
                             <div class="sec-s position-sub">
                                 เลือกตำแหน่ง แล้วกำหนดชุดสมรรถนะที่ต้องใช้ประเมิน ก่อนนำไปตั้งระดับความคาดหวังในรอบประเมิน
@@ -202,11 +462,11 @@ const closeModal = () => {
                         </div>
                         <div class="position-hero-metrics">
                             <div>
-                                <span>0</span>
+                                <span>{{ configuredPositionCount }}</span>
                                 <small>ตำแหน่งที่กำหนดแล้ว</small>
                             </div>
                             <div>
-                                <span>0</span>
+                                <span>{{ unconfiguredPositionCount }}</span>
                                 <small>ยังไม่กำหนด</small>
                             </div>
                         </div>
@@ -215,9 +475,9 @@ const closeModal = () => {
                     <div class="position-scope mb14">
                         <div class="position-workline">
                             <div class="position-scope-label">สายงาน</div>
-                            <div v-if="hasWorklines" class="position-segments">
+                            <div v-if="worklineOptions.length" class="position-segments">
                                 <button
-                                    v-for="workline in worklines"
+                                    v-for="workline in worklineOptions"
                                     :key="workline"
                                     :class="{ active: selectedWorkline === workline }"
                                     type="button"
@@ -229,17 +489,26 @@ const closeModal = () => {
                             <div v-else class="position-empty-inline">ยังไม่มีสายงาน</div>
                         </div>
                         <div class="position-picker">
-                            <div v-if="selectedWorkline === 'สายสนับสนุน'" class="fg mb0">
+                            <div class="fg mb0">
                                 <label class="lbl">กลุ่มงาน / Job Family</label>
                                 <select v-model="selectedJobFamily" class="sel">
                                     <option value="">ยังไม่มีข้อมูลกลุ่มงาน</option>
+                                    <option v-for="family in familiesForSelectedWorkline" :key="family" :value="family">
+                                        {{ family }}
+                                    </option>
                                 </select>
                             </div>
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
-                                <select v-model="selectedPosition" class="sel">
-                                    <option value="">ยังไม่มีข้อมูลตำแหน่ง</option>
+                                <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
+                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งในกลุ่มงาน</option>
+                                    <option v-for="position in positionOptions" :key="position" :value="position">
+                                        {{ position }}
+                                    </option>
                                 </select>
+                                <div v-if="needsPositionBeforeMapping" class="position-warning">
+                                    กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดสมรรถนะ
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -252,13 +521,13 @@ const closeModal = () => {
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
-                            <div class="position-card-title">0</div>
-                            <div class="position-card-sub">ยังไม่มีรายการ</div>
+                            <div class="position-card-title">{{ assignedCompetencies.length }}</div>
+                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title warn">0/0</div>
-                            <div class="position-card-sub">ยังไม่มีข้อมูล CC พื้นฐาน</div>
+                            <div class="position-card-title warn">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
+                            <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
                         </div>
                     </div>
 
@@ -267,15 +536,34 @@ const closeModal = () => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
-                                    <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนด Expected Level</div>
+                                    <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนดระดับความคาดหวัง</div>
                                 </div>
-                                <button class="btn btn-t btn-sm" disabled type="button">เพิ่ม CC ทั้งหมด</button>
+                                <button
+                                    class="btn btn-t btn-sm"
+                                    :disabled="!currentPositionId || !availableCoreCompetencies.length"
+                                    type="button"
+                                    @click="addAllCoreCompetencies"
+                                >
+                                    เพิ่ม CC ทั้งหมด
+                                </button>
                             </div>
                             <div class="assigned-list">
-                                <div class="assigned-empty">
-                                    <div class="assigned-empty-icon"></div>
-                                    <div class="fw8">ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้</div>
-                                    <div class="muted fs12">รอข้อมูลพจนานุกรมและตำแหน่งจากฐานข้อมูลจริง</div>
+                                <div v-if="!assignedCompetencies.length" class="assigned-empty">
+                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
+                                    <div class="fw8">{{ needsPositionBeforeMapping ? 'ต้องเพิ่มตำแหน่งก่อน' : 'ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้' }}</div>
+                                    <div class="muted fs12">
+                                        {{ needsPositionBeforeMapping ? 'ระบบต้องมีตำแหน่งจริงในฐานข้อมูลก่อน จึงจะบันทึกการผูกสมรรถนะได้' : 'เลือกจากพจนานุกรมด้านขวาเพื่อเพิ่มเข้าชุดนี้' }}
+                                    </div>
+                                </div>
+                                <div v-for="item in assignedCompetencies" v-else :key="item.id" class="assigned-row">
+                                    <div>
+                                        <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
+                                        <div class="dictionary-name">{{ item.n }}</div>
+                                    </div>
+                                    <div class="assigned-actions">
+                                        <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -288,289 +576,148 @@ const closeModal = () => {
                                 </div>
                             </div>
                             <div class="dictionary-tools">
-                                <input class="inp" disabled placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
-                                <select class="sel" disabled>
-                                    <option>ทั้งหมด</option>
+                                <input v-model="dictionarySearch" class="inp" placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
+                                <select v-model="dictionaryType" class="sel">
+                                    <option value="all">ทั้งหมด</option>
+                                    <option v-for="type in competencyTypes" :key="type" :value="type">{{ type }}</option>
                                 </select>
                             </div>
                             <div class="dictionary-list">
-                                <div class="assigned-empty dictionary-empty">
-                                    <div class="assigned-empty-icon"></div>
+                                <div v-if="!filteredCompetencies.length" class="assigned-empty dictionary-empty">
+                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
                                     <div class="fw8">ยังไม่มีข้อมูลสมรรถนะ</div>
                                     <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
                                 </div>
+                                <div v-for="item in filteredCompetencies" v-else :key="item.id" class="dictionary-row">
+                                    <div class="dictionary-main">
+                                        <div class="dictionary-code">
+                                            <span>{{ item.cd }}</span>
+                                            <span class="b bgr">{{ item.t }}</span>
+                                            <button class="dictionary-detail-button" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                        </div>
+                                        <div class="dictionary-name">{{ item.n }}</div>
+                                    </div>
+                                    <div class="dictionary-actions">
+                                        <button
+                                            class="btn btn-p btn-sm dictionary-add-button"
+                                            :disabled="!currentPositionId || assignedCompetencyIds.has(item.id)"
+                                            type="button"
+                                            @click="addCompetency(item)"
+                                        >
+                                            {{ assignedCompetencyIds.has(item.id) ? 'เพิ่มแล้ว' : 'เพิ่ม' }}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </aside>
-                    </div>
-                </template>
-                <template v-else-if="activePage === 'emp-assess'">
-                    <EmployeeAssess :user="{ sso: $page.props.auth.user.id }" :set-users="() => {}" />
-                </template>
-                <template v-else-if="activePage === 'emp-gap'">
-                    <EmployeeGap :set-page="(p) => activePage = p" />
-                </template>
-                <template v-else-if="activePage === 'emp-idp'">
-                    <EmployeeIDP />
-                </template>
-                <template v-else-if="activePage === 'emp-progress'">
-                    <EmployeeProgress />
-                </template>
-                <template v-else-if="activePage === 'emp-idp-detail'">
-                    <EmployeeIDPDetail />
-                </template>
-                <template v-else-if="activePage === 'hr-cycle'">
-                    <div class="hr-page-head mb20">
-                        <div>
-                            <div class="sec-t">รอบการประเมิน </div>
-                            <div class="sec-s">เปิด-ปิดรอบ กำหนดช่วงเวลา และตรวจสอบสถานะจากข้อมูลจริง</div>
-                        </div>
-                        <button class="btn btn-p" type="button" @click="openModal('cycle')">+ เปิดรอบใหม่</button>
-                    </div>
-
-                    <div class="g2 mb14">
-                        <div class="sc">
-                            <div class="sl">รอบที่กำลังเปิดอยู่</div>
-                            <div class="sv tc">0</div>
-                            <div class="ss muted">ยังไม่มีรอบประเมิน</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">ส่งแบบประเมินแล้ว</div>
-                            <div class="sv gcc">0<span class="sv-tail">/0</span></div>
-                            <div class="ss muted">รอข้อมูลการประเมิน</div>
-                        </div>
-                    </div>
-
-                    <div class="card mb14">
-                        <div class="ch">
-                            <div class="ct">รอบประเมินทั้งหมด</div>
-                            <span class="muted fs12 ml-auto">{{ props.hrCycles.length }} รายการ</span>
-                        </div>
-                        <div class="hr-table-wrap">
-                            <table class="tbl hr-fixed-table">
-                                <thead>
-                                    <tr>
-                                        <th>รอบประเมิน</th>
-                                        <th>ปี</th>
-                                        <th>รอบประเมินตนเอง</th>
-                                        <th>เวลาสิ้นสุดหัวหน้างาน</th>
-                                        <th>ส่งแล้ว</th>
-                                        <th>สถานะ</th>
-                                    </tr>
-                                </thead>
-                                <tbody v-if="!hasCycles">
-                                    <tr>
-                                        <td colspan="6">
-                                            <div class="table-empty-cell">
-                                                <div class="hr-empty-icon">∅</div>
-                                                <div>
-                                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="ch"><div class="ct"> ส่งการแจ้งเตือน</div></div>
-                        <div class="cb">
-                            <p class="muted fs13 mb16">แจ้งเตือนบุคลากรที่ยังไม่ส่งแบบประเมิน</p>
-                            <button class="btn btn-p btn-sm" disabled type="button"> ส่งแจ้งเตือน</button>
-                        </div>
-                    </div>
-                </template>
-
-                <template v-else-if="activePage === 'hr-template'">
-                    <div class="hr-page-head mb20">
-                        <div>
-                            <div class="sec-t">กำหนดความคาดหวังการประเมิน </div>
-                            <div class="sec-s">ตั้งค่า Expected Level ของแต่ละประเภทบุคลากรในแต่ละรอบการประเมิน</div>
-                        </div>
-                    </div>
-
-                    <div class="card mb14">
-                        <div class="ch"><div class="ct">① เลือกรอบการประเมิน</div></div>
-                        <div class="cb cycle-picker">
-                            <div v-if="hasCycles" class="cycle-picker"></div>
-                            <div v-else class="cycle-empty">
-                                <div class="hr-empty-icon">∅</div>
-                                <div>
-                                    <div class="fw8 fs14">ยังไม่มีรอบการประเมิน</div>
-                                    <p class="muted fs13 mb0">ต้องมีรอบประเมินก่อนจึงจะกำหนด Expected Level ได้</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="expect-tabs mb14">
-                        <button class="expect-tab on" type="button">กำหนด / แก้ไข</button>
-                        <button class="expect-tab" type="button">ดูความคาดหวังทั้งหมด <span class="b bgr">0 ชุด</span></button>
-                        <button class="btn btn-p btn-sm ml-auto" type="button" @click="openModal('expectation-import')">
-                            นำเข้าความคาดหวัง
-                        </button>
-                    </div>
-
-                    <div class="expect-layout mb14">
-                        <div class="card">
-                            <div class="ch">
-                                <div>
-                                    <div class="ct">กรองดูตามประเภทบุคลากร</div>
-                                    <div class="cs">ตัวเลือกจะมาจากข้อมูลที่ Admin ตั้งไว้</div>
-                                </div>
-                            </div>
-                            <div class="cb">
-                                <div class="fg">
-                                    <label class="lbl">สายงาน</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีสายงาน</option>
-                                    </select>
-                                </div>
-                                <div class="fg">
-                                    <label class="lbl">ตำแหน่ง</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีข้อมูลตำแหน่ง</option>
-                                    </select>
-                                </div>
-                                <div class="fg mb0">
-                                    <label class="lbl">ระดับ</label>
-                                    <select class="sel">
-                                        <option>ยังไม่มีข้อมูลระดับ</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <div class="ch">
-                                <div>
-                                    <div class="ct">ชุดความคาดหวัง</div>
-                                    <div class="cs">รอข้อมูลสมรรถนะประจำตำแหน่งและรอบประเมินจริง</div>
-                                </div>
-                                <span class="b bgr ml-auto">ยังไม่บันทึก</span>
-                            </div>
-                            <div class="hr-table-wrap">
-                                <table class="tbl hr-fixed-table">
-                                    <thead>
-                                        <tr>
-                                            <th>รหัส</th>
-                                            <th>สมรรถนะ</th>
-                                            <th>ประเภท</th>
-                                            <th>ความคาดหวัง</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody v-if="!hasExpectationSets">
-                                        <tr>
-                                            <td colspan="4">
-                                                <div class="table-empty-cell">
-                                                    <div class="hr-empty-icon">∅</div>
-                                                    <div>
-                                                        <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                        <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="hr-card-actions">
-                                <button class="btn btn-p btn-sm" type="button" @click="openModal('competency')">เพิ่มสมรรถนะ</button>
-                                <button class="btn btn-t btn-sm" disabled type="button">บันทึก Expected Level</button>
-                            </div>
-                        </div>
                     </div>
                 </template>
 
                 <template v-else-if="activePage === 'hr-catalog'">
                     <div class="hr-page-head mb20">
                         <div>
-                            <div class="sec-t">Learning Catalog </div>
+                            <div class="sec-t">Learning Catalog</div>
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
                         <div class="hr-actions">
-                            <button class="btn btn-s" disabled type="button"> ดาวน์โหลด Template</button>
-                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')"> Import Excel</button>
-                            <button class="btn btn-p" type="button" @click="openModal('catalog')">+ เพิ่มกิจกรรม</button>
+                            <button class="btn btn-p" type="button" @click="openCatalogCreate">เพิ่มกิจกรรม</button>
                         </div>
                     </div>
 
-                    <div class="g3 mb14">
-                        <div class="sc">
-                            <div class="sl">Experiential Learning</div>
-                            <div class="sv oc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">Social Learning</div>
-                            <div class="sv gcc">0</div>
-                            <div class="ss muted">กิจกรรม</div>
-                        </div>
-                        <div class="sc">
-                            <div class="sl">Formal Training</div>
-                            <div class="sv bc">0</div>
-                            <div class="ss muted">หลักสูตร</div>
+                    <div class="catalog-summary-card single mb14">
+                        <div class="catalog-summary-total">
+                            <div class="catalog-summary-number">{{ catalogItems.length }}</div>
+                            <div>
+                                <div class="catalog-summary-title">กิจกรรมทั้งหมด</div>
+                                <div class="catalog-summary-sub">รายการใน Learning Catalog</div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="ch">
                             <div class="ct">Learning Catalog</div>
-                            <span class="muted fs12 ml-auto">{{ props.hrCatalogItems.length }} รายการ</span>
+                            <span class="muted fs12 ml-auto">{{ filteredCatalogItems.length }}/{{ catalogItems.length }} รายการ</span>
+                        </div>
+                        <div class="catalog-filter-bar">
+                            <input
+                                v-model="catalogSearch"
+                                class="inp catalog-filter-search"
+                                placeholder="ค้นหารหัส / ชื่อกิจกรรม / คำอธิบาย"
+                            />
+                            <select v-model="catalogMethodFilter" class="sel catalog-filter-select">
+                                <option value="all">ทุกประเภท</option>
+                                <option v-for="method in learningMethods" :key="method.key" :value="method.key">{{ method.label }}</option>
+                            </select>
+                            <select v-model="catalogDeliveryFilter" class="sel catalog-filter-select">
+                                <option value="all">ทุกรูปแบบ</option>
+                                <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                            </select>
+                            <select v-model="catalogStatusFilter" class="sel catalog-filter-select compact">
+                                <option value="all">ทุกสถานะ</option>
+                                <option value="active">เปิดใช้</option>
+                                <option value="inactive">ปิด</option>
+                            </select>
+                            <button class="btn btn-s btn-sm" type="button" @click="resetCatalogFilters">ล้าง</button>
                         </div>
                         <div class="hr-table-wrap">
                             <table class="tbl catalog-table">
                                 <thead>
                                     <tr>
+                                        <th>รหัส</th>
                                         <th>ชื่อกิจกรรม</th>
                                         <th>ประเภท</th>
-                                        <th>ผู้จัด</th>
-                                        <th>ค่าใช้จ่าย</th>
+                                        <th>รูปแบบ</th>
                                         <th>สถานะ</th>
                                         <th></th>
                                     </tr>
                                 </thead>
-                                <tbody v-if="!hasCatalogItems">
+                                <tbody v-if="!catalogItems.length">
                                     <tr>
                                         <td colspan="6">
                                             <div class="table-empty-cell">
-                                                <div class="hr-empty-icon">∅</div>
                                                 <div>
-                                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
+                                                    <div class="fw8 fs14">ยังไม่มี Learning Catalog</div>
+                                                    <p class="muted fs13 mb0">เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะถูกดึงจากฐานข้อมูลมาแสดง</p>
                                                 </div>
                                             </div>
                                         </td>
                                     </tr>
                                 </tbody>
+                                <tbody v-else-if="!filteredCatalogItems.length">
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="table-empty-cell">
+                                                <div>
+                                                    <div class="fw8 fs14">ไม่พบรายการตาม filter</div>
+                                                    <p class="muted fs13 mb0">ลองเปลี่ยนคำค้นหา ประเภท รูปแบบ หรือสถานะอีกครั้ง</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tbody v-else>
+                                    <tr v-for="item in filteredCatalogItems" :key="item.id">
+                                        <td class="fw8">{{ item.code || '-' }}</td>
+                                        <td>
+                                            <div class="fw8">{{ item.name }}</div>
+                                        </td>
+                                        <td><span class="b bgr">{{ item.methodLabel || '-' }}</span></td>
+                                        <td>{{ deliveryTypeLabel(item.deliveryType) }}</td>
+                                        <td>
+                                            <span class="catalog-status-badge" :class="item.isActive ? 'active' : 'inactive'">
+                                                {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="catalog-actions">
+                                                <button class="btn btn-s btn-sm" type="button" @click="openCatalogEdit(item)">แก้ไข</button>
+                                                <button class="btn btn-s btn-sm danger" type="button" @click="deleteCatalog(item)">ลบ</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
                             </table>
-                        </div>
-                    </div>
-                </template>
-
-                <template v-else-if="activePage === 'hr-comp-overview'">
-                    <ManagerGap :users="props.overviewUsers" :disable-mock-data="true" />
-                </template>
-
-                <template v-else-if="activePage === 'hr-idp-overview'">
-                    <ManagerIDP :users="props.overviewUsers" :disable-mock-data="true" />
-                </template>
-
-                <template v-else>
-                    <div class="card">
-                        <div class="ch">
-                            <div class="ct">{{ currentPageTitle }}</div>
-                        </div>
-                        <div class="cb">
-                            <div class="hr-empty">
-                                <div class="hr-empty-icon">∅</div>
-                                <div>
-                                    <div class="fw8 fs14">{{ currentEmptyState.title }}</div>
-                                    <p class="muted fs13 mb0">{{ currentEmptyState.body }}</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </template>
@@ -578,179 +725,233 @@ const closeModal = () => {
         </section>
 
         <div v-if="activeModal" class="mo hr-modal" @click.self="closeModal">
-            <div class="mo-box hr-modal-box">
+            <div class="mo-box hr-modal-box" :class="{ 'catalog-modal-box': activeModal === 'catalog' }">
                 <div class="mo-h">
                     <div>
-                        <div v-if="activeModal === 'cycle'" class="ct">เปิดรอบการประเมินใหม่</div>
-                        <div v-else-if="activeModal === 'expectation-import'" class="ct">นำเข้าความคาดหวัง</div>
-                        <div v-else-if="activeModal === 'competency'" class="ct">เพิ่มสมรรถนะในชุดความคาดหวัง</div>
-                        <div v-else-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
-                        <div v-else class="ct">เพิ่มกิจกรรม Learning Catalog</div>
-                        <div class="cs">ฟอร์มนี้เตรียมไว้รอเชื่อม API และฐานข้อมูลจริง</div>
+                        <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                            <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
+                            <div class="cs">รายละเอียดสมรรถนะจากข้อมูลที่ Admin กำหนดไว้</div>
+                        </template>
+                        <template v-else>
+                            <div class="ct">{{ catalogMode === 'edit' ? 'แก้ไขกิจกรรม Learning Catalog' : 'เพิ่มกิจกรรม Learning Catalog' }}</div>
+                            <div class="cs">ข้อมูลนี้จะถูกบันทึกลง Learning Catalog เพื่อใช้ในแผนพัฒนา IDP</div>
+                        </template>
                     </div>
                     <button class="modal-close" type="button" @click="closeModal">×</button>
                 </div>
 
-                <form class="mo-b" @submit.prevent>
-                    <template v-if="activeModal === 'cycle'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">ชื่อรอบประเมิน</label>
-                                <input class="inp" placeholder="เช่น รอบประเมิน 2568" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">ปีงบประมาณ</label>
-                                <input class="inp" inputmode="numeric" placeholder="2568" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">เริ่มประเมินตนเอง</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สิ้นสุดประเมินตนเอง</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">เวลาสิ้นสุดหัวหน้างาน</label>
-                                <input class="inp" type="date" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สถานะ</label>
-                                <select class="sel">
-                                    <option>แบบร่าง</option>
-                                    <option>เปิดใช้งาน</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">หมายเหตุ</label>
-                            <textarea class="ta" placeholder="รายละเอียดเพิ่มเติมของรอบประเมิน"></textarea>
+                <div class="mo-b">
+                    <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                        <div class="competency-detail">
+                            <section class="detail-overview">
+                                <div class="detail-title">{{ selectedDetailCompetency.n }}</div>
+                                <div class="detail-meta-row">
+                                    <span>{{ selectedDetailCompetency.t }}<template v-if="selectedDetailCompetency.typeName"> - {{ selectedDetailCompetency.typeName }}</template></span>
+                                    <span>{{ selectedDetailCompetency.cd }}</span>
+                                </div>
+                                <div class="detail-description">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบายสมรรถนะ' }}</div>
+                            </section>
+
+                            <section class="detail-behavior-panel">
+                                <div class="detail-panel-head">
+                                    <div>
+                                        <div class="detail-section-label">รายละเอียดพฤติกรรมบ่งชี้</div>
+                                        <div class="detail-panel-sub">เลือกเปิดแต่ละระดับเพื่อดูพฤติกรรมและน้ำหนัก</div>
+                                    </div>
+                                </div>
+                                <div class="detail-levels">
+                                    <div v-if="!(selectedDetailCompetency.levels || []).length" class="assigned-empty detail-empty">
+                                        <div class="empty-symbol">ไม่มีข้อมูล</div>
+                                        <div class="fw8">ยังไม่มีข้อมูลระดับสมรรถนะ</div>
+                                    </div>
+                                    <article
+                                        v-for="level in selectedDetailCompetency.levels"
+                                        v-else
+                                        :key="level.id || level.lvl"
+                                        class="detail-level"
+                                        :class="{ open: expandedDetailLevels[level.lvl] }"
+                                    >
+                                        <button class="detail-level-head" type="button" @click="toggleDetailLevel(level)">
+                                            <span class="detail-level-number">Level {{ level.lvl }}</span>
+                                            <span class="detail-toggle" :class="{ open: expandedDetailLevels[level.lvl] }" aria-hidden="true"></span>
+                                        </button>
+                                        <div v-if="expandedDetailLevels[level.lvl] && level.indicators?.length" class="detail-indicators">
+                                            <div class="detail-indicator-head">
+                                                <div>ข้อ</div>
+                                                <div>พฤติกรรมบ่งชี้</div>
+                                                <div>น้ำหนัก</div>
+                                            </div>
+                                            <div
+                                                v-for="(indicator, index) in level.indicators"
+                                                :key="`${level.lvl}-${index}`"
+                                                class="detail-indicator"
+                                            >
+                                                <div class="detail-index">{{ index + 1 }}</div>
+                                                <div class="detail-copy">{{ indicator || 'ยังไม่มีรายละเอียดพฤติกรรม' }}</div>
+                                                <div class="detail-weight">{{ formatWeight(level.weights?.[index]) }}</div>
+                                            </div>
+                                        </div>
+                                        <div
+                                            v-else-if="expandedDetailLevels[level.lvl]"
+                                            class="detail-no-indicators"
+                                        >ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</div>
+                                    </article>
+                                </div>
+                            </section>
                         </div>
                     </template>
 
-                    <template v-else-if="activeModal === 'expectation-import'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">รอบการประเมิน</label>
-                                <select class="sel">
-                                    <option>ยังไม่มีรอบการประเมิน</option>
-                                </select>
+                    <form v-else class="catalog-form" @submit.prevent="submitCatalog">
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div>
+                                    <div class="catalog-section-title">1. เลือกสมรรถนะที่เกี่ยวข้อง</div>
+                                    <div class="catalog-section-sub">เลือกสมรรถนะหลักที่หลักสูตรนี้ช่วยพัฒนาหรือปิด Gap ได้ 1 รายการ</div>
+                                </div>
+                                <span class="catalog-count-pill">{{ catalogForm.competencyIds.length ? 'เลือกแล้ว' : 'ยังไม่เลือก' }}</span>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">รูปแบบการนำเข้า</label>
-                                <select class="sel">
-                                    <option>แทนที่ข้อมูลเดิม</option>
-                                    <option>เพิ่มต่อจากข้อมูลเดิม</option>
-                                </select>
+                            <input
+                                v-model="catalogCompetencySearch"
+                                class="inp catalog-input catalog-search"
+                                placeholder="ค้นหารหัสหรือชื่อสมรรถนะ เช่น CC, MC, FC"
+                            />
+                            <div class="catalog-competency-list">
+                                <button
+                                    v-for="competency in filteredCatalogCompetencies"
+                                    :key="competency.id"
+                                    class="catalog-check-row"
+                                    :class="{ selected: catalogForm.competencyIds.includes(competency.id) }"
+                                    type="button"
+                                    @click="toggleCatalogCompetency(competency.id)"
+                                >
+                                    <span class="catalog-checkbox" aria-hidden="true"></span>
+                                    <span class="catalog-competency-copy">
+                                        <span>{{ competency.cd }}</span>
+                                        <strong>{{ competency.n }}</strong>
+                                    </span>
+                                    <span class="b bgr">{{ competency.t }}</span>
+                                </button>
+                                <div v-if="!filteredCatalogCompetencies.length" class="catalog-empty-line">ไม่พบสมรรถนะที่ค้นหา</div>
                             </div>
-                        </div>
-                        <div class="upload-box">
-                            <div class="upload-ic"></div>
-                            <div>
-                                <div class="fw8 fs14">เลือกไฟล์ Expected Level</div>
-                                <div class="muted fs12">รองรับไฟล์ .xlsx เมื่อเชื่อม backend แล้ว</div>
-                            </div>
-                            <input class="inp" type="file" accept=".xlsx,.xls" />
-                        </div>
-                    </template>
 
-                    <template v-else-if="activeModal === 'competency'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">สมรรถนะ</label>
-                                <select class="sel">
-                                    <option>ยังไม่มีข้อมูลสมรรถนะ</option>
-                                </select>
+                            <div class="catalog-level-picker">
+                                <div class="catalog-level-head">
+                                    <div>
+                                        <div class="lbl">เหมาะสำหรับผู้ที่มีระดับความคาดหวัง</div>
+                                        <div class="catalog-level-help">เลือกได้มากกว่า 1 ระดับ หรือไม่ระบุก็ได้หากคู่มือไม่ได้กำหนดไว้</div>
+                                    </div>
+                                    <span class="catalog-count-pill">{{ catalogForm.expectedLevels.length ? `${catalogForm.expectedLevels.length} ระดับ` : 'ไม่ระบุ' }}</span>
+                                </div>
+                                <div class="catalog-level-options">
+                                    <button
+                                        v-for="level in levelOptions"
+                                        :key="level.value"
+                                        class="catalog-level-option"
+                                        :class="{ selected: catalogForm.expectedLevels.includes(level.value) }"
+                                        type="button"
+                                        @click="toggleCatalogExpectedLevel(level.value)"
+                                    >
+                                        <span class="catalog-level-check" aria-hidden="true"></span>
+                                        <span>
+                                            <strong>{{ level.label }}</strong>
+                                            <small>{{ level.hint }}</small>
+                                        </span>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ประเภท</label>
-                                <select class="sel">
-                                    <option>CC</option>
-                                    <option>FC</option>
-                                    <option>MC</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg">
-                            <label class="lbl">Expected Level</label>
-                            <div class="level-picker">
-                                <button v-for="level in 5" :key="level" class="level-choice" type="button">{{ level }}</button>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">หมายเหตุ</label>
-                            <textarea class="ta" placeholder="เงื่อนไขหรือคำอธิบายของระดับความคาดหวัง"></textarea>
-                        </div>
-                    </template>
+                        </section>
 
-                    <template v-else-if="activeModal === 'catalog-import'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">ประเภทข้อมูล</label>
-                                <select class="sel">
-                                    <option>Learning Catalog</option>
-                                </select>
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div class="catalog-section-title">2. กรอกรายละเอียดหลักสูตร/กิจกรรม</div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">วิธีนำเข้า</label>
-                                <select class="sel">
-                                    <option>ตรวจสอบก่อนบันทึก</option>
-                                    <option>นำเข้าเป็นแบบร่าง</option>
-                                </select>
+                            <div class="catalog-form-grid">
+                                <div class="fg">
+                                    <label class="lbl">รหัสหลักสูตร/บทเรียน</label>
+                                    <input
+                                        v-model="catalogForm.code"
+                                        autocomplete="off"
+                                        class="inp catalog-input"
+                                        placeholder="เช่น TN001"
+                                    />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ประเภทกิจกรรม</label>
+                                    <select v-model="catalogForm.methodKey" class="sel catalog-input">
+                                        <option value="">ไม่ระบุประเภท</option>
+                                        <option v-for="method in learningMethods" :key="method.key" :value="method.key">{{ method.label }}</option>
+                                    </select>
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">รูปแบบการฝึกอบรม</label>
+                                    <select v-model="catalogForm.deliveryType" class="sel catalog-input">
+                                        <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                                    </select>
+                                </div>
                             </div>
-                        </div>
-                        <div class="upload-box">
-                            <div class="upload-ic"></div>
-                            <div>
-                                <div class="fw8 fs14">เลือกไฟล์ Catalog</div>
-                                <div class="muted fs12">รอ API สำหรับ validate และ import ไฟล์ Excel</div>
+                            <div class="catalog-title-field">
+                                <label class="lbl">ชื่อกิจกรรม หรือหลักสูตร</label>
+                                <input
+                                    v-model="catalogForm.name"
+                                    autocomplete="off"
+                                    class="inp catalog-input"
+                                    required
+                                    placeholder="ชื่อกิจกรรมพัฒนา"
+                                />
                             </div>
-                            <input class="inp" type="file" accept=".xlsx,.xls" />
-                        </div>
-                    </template>
+                            <div class="fg mb0 catalog-description-field">
+                                <label class="lbl">คำอธิบายหลักสูตร</label>
+                                <textarea
+                                    v-model="catalogForm.description"
+                                    class="ta catalog-textarea"
+                                    placeholder="รายละเอียด เนื้อหา และวัตถุประสงค์ของการเรียนรู้"
+                                ></textarea>
+                            </div>
+                        </section>
 
-                    <template v-else>
-                        <div class="modal-grid">
-                            <div class="fg modal-span">
-                                <label class="lbl">ชื่อกิจกรรม / หลักสูตร</label>
-                                <input class="inp" placeholder="ชื่อกิจกรรมพัฒนา" />
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div class="catalog-section-title">3. ข้อมูลด้านการบริหารจัดการ</div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ประเภท</label>
-                                <select class="sel">
-                                    <option>Experiential Learning</option>
-                                    <option>Social Learning</option>
-                                    <option>Formal Training</option>
-                                </select>
+                            <div class="catalog-form-grid">
+                                <div class="fg">
+                                    <label class="lbl">แหล่งหลักสูตร</label>
+                                    <select v-model="catalogForm.sourceType" class="sel catalog-input">
+                                        <option value="internal">ภายในมหาวิทยาลัย</option>
+                                        <option value="external">ภายนอกมหาวิทยาลัย</option>
+                                    </select>
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ผู้จัดให้บริการ</label>
+                                    <input v-model="catalogForm.provider" autocomplete="off" class="inp catalog-input" placeholder="หน่วยงาน / บริษัทผู้จัด" />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ค่าใช้จ่าย (บาท)</label>
+                                    <input v-model="catalogForm.cost" class="inp catalog-input" min="0" step="0.01" type="number" placeholder="0" />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">จำนวนชั่วโมงการเรียนรู้</label>
+                                    <input v-model="catalogForm.hours" class="inp catalog-input" min="0" step="0.5" type="number" placeholder="เช่น 3" />
+                                </div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ผู้จัด</label>
-                                <input class="inp" placeholder="หน่วยงาน / ผู้จัด" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">ค่าใช้จ่าย</label>
-                                <input class="inp" placeholder="ฟรี / จำนวนเงิน" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สถานะ</label>
-                                <select class="sel">
-                                    <option>แบบร่าง</option>
-                                    <option>เปิดใช้</option>
-                                    <option>ปิด</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">คำอธิบาย</label>
-                            <textarea class="ta" placeholder="รายละเอียดกิจกรรมที่บุคลากรจะเห็นตอนทำ IDP"></textarea>
-                        </div>
-                    </template>
+                        </section>
 
-                    <div class="modal-actions">
-                        <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
-                        <button class="btn btn-p" disabled type="submit">บันทึกเมื่อเชื่อม backend</button>
-                    </div>
-                </form>
+                        <section class="catalog-form-section compact">
+                            <label class="catalog-active-toggle">
+                                <input v-model="catalogForm.isActive" type="checkbox" />
+                                <span>
+                                    <strong>เปิดใช้งานหลักสูตรนี้</strong>
+                                    <small>เมื่อเปิด ระบบจะนำไปแสดงเป็นหลักสูตรแนะนำให้บุคลากรที่มีคะแนนตกเกณฑ์</small>
+                                </span>
+                            </label>
+                        </section>
+
+                        <div class="modal-actions catalog-modal-actions">
+                            <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
+                            <button class="btn btn-p" type="submit">{{ catalogMode === 'edit' ? 'บันทึกการแก้ไข' : 'เพิ่มกิจกรรม' }}</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -803,10 +1004,6 @@ const closeModal = () => {
     color: #fff;
 }
 
-.content .btn.btn-t:hover {
-    background: #0c8a85;
-}
-
 .content .btn.btn-s {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -842,22 +1039,16 @@ const closeModal = () => {
     font-weight: 400;
 }
 
-.content .ct {
-    font-weight: 700;
-}
-
+.content .ct,
 .content .sl,
 .content .lbl,
-.content .tbl th {
+.content .tbl th,
+.content .fw8 {
     font-weight: 700;
 }
 
 .content .tbl td {
     font-weight: 400;
-}
-
-.content .fw8 {
-    font-weight: 700;
 }
 
 .hr-empty {
@@ -871,37 +1062,49 @@ const closeModal = () => {
     padding: 22px;
 }
 
-.hr-empty-icon {
+.hr-empty.compact {
+    min-height: 96px;
+}
+
+.catalog-summary-card {
+    display: block;
+}
+
+.catalog-summary-total {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: #fff;
+    box-shadow: var(--shadow);
     display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 18px 22px;
+}
+
+.catalog-summary-number {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--blue-lt);
+    width: 72px;
+    height: 72px;
+    border-radius: 18px;
+    background: #eff6ff;
     color: var(--blue);
-    font-size: 22px;
+    font-size: 38px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.catalog-summary-title {
+    color: var(--text);
+    font-size: 18px;
     font-weight: 800;
-    flex-shrink: 0;
 }
 
-.hr-empty.compact {
-    min-height: 118px;
-}
-
-.cycle-picker {
-    display: flex;
-    align-items: stretch;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.cycle-empty {
-    min-height: 62px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 6px 0;
+.catalog-summary-sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 2px;
 }
 
 .hr-page-head {
@@ -922,16 +1125,63 @@ const closeModal = () => {
     overflow-x: auto;
 }
 
-.hr-fixed-table {
-    min-width: 760px;
+.catalog-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(160px, 0.45fr) minmax(220px, 0.55fr) minmax(130px, 0.32fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #fbfdff;
+}
+
+.catalog-filter-search,
+.catalog-filter-select {
+    min-height: 40px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.catalog-filter-select.compact {
+    min-width: 124px;
 }
 
 .catalog-table {
-    min-width: 820px;
+    min-width: 720px;
 }
 
-.oc {
-    color: var(--orange);
+.catalog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.catalog-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.catalog-status-badge.active {
+    border: 1px solid #bbf7d0;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.catalog-status-badge.inactive {
+    border: 1px solid #fecaca;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.content .btn.btn-s.danger {
+    color: #b42318;
 }
 
 .table-empty-cell {
@@ -947,63 +1197,11 @@ const closeModal = () => {
     padding: 0;
 }
 
-.hr-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
-}
-
-.sv-tail {
-    color: var(--text3);
-    font-size: 14px;
-}
-
-.expect-tabs {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    flex-wrap: wrap;
-    border-bottom: 2px solid var(--border);
-}
-
-.expect-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 20px;
-    border: 0;
-    border-bottom: 3px solid transparent;
-    border-radius: 0;
-    margin-bottom: -2px;
-    background: transparent;
-    color: var(--text3);
-    font: inherit;
-    font-size: 13px;
-    font-weight: 800;
-    cursor: pointer;
-}
-
-.expect-tab.on {
-    border-bottom-color: var(--teal);
-    color: var(--teal);
-}
-
-.expect-layout {
-    display: grid;
-    grid-template-columns: 310px minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
-}
-
 .ml-auto {
     margin-left: auto;
 }
 
 .btn:disabled,
-.expect-tab:disabled,
 .sel:disabled,
 .inp:disabled {
     cursor: not-allowed;
@@ -1020,15 +1218,6 @@ const closeModal = () => {
     border: 1px solid var(--teal-md);
     background: var(--teal-lt);
     color: var(--teal);
-}
-
-.btn-s:disabled,
-.expect-tab:disabled,
-.sel:disabled,
-.inp:disabled {
-    background-color: #f8fafc;
-    color: var(--text3);
-    border-color: var(--border);
 }
 
 .position-hero {
@@ -1152,11 +1341,15 @@ const closeModal = () => {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
-    align-items: end;
+    align-items: start;
 }
 
-.position-picker .fg:only-child {
-    grid-column: 1 / -1;
+.position-warning {
+    margin-top: 6px;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
 }
 
 .position-board {
@@ -1175,8 +1368,8 @@ const closeModal = () => {
 }
 
 .position-card.selected {
-    border-color: var(--blue-md);
-    background: linear-gradient(180deg, #fff 0%, var(--blue-lt) 100%);
+    border-color: var(--border);
+    background: #fff;
 }
 
 .position-card-label {
@@ -1191,10 +1384,6 @@ const closeModal = () => {
     font-size: 24px;
     font-weight: 800;
     line-height: 1.2;
-}
-
-.position-card-title.ok {
-    color: var(--green);
 }
 
 .position-card-title.warn {
@@ -1252,15 +1441,39 @@ const closeModal = () => {
     text-align: center;
 }
 
-.assigned-empty-icon {
-    width: 44px;
-    height: 44px;
+.assigned-row {
     display: grid;
-    place-items: center;
-    border-radius: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
     background: #fff;
+}
+
+.assigned-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.danger-text {
+    color: var(--red);
+}
+
+.empty-symbol {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    min-height: 32px;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--blue);
     box-shadow: var(--sh);
-    font-size: 22px;
+    font-size: 12px;
+    font-weight: 800;
 }
 
 .dictionary {
@@ -1279,7 +1492,7 @@ const closeModal = () => {
 
 .dictionary-list {
     display: grid;
-    gap: 8px;
+    gap: 10px;
     max-height: 560px;
     overflow-y: auto;
     padding: 14px;
@@ -1287,6 +1500,86 @@ const closeModal = () => {
 
 .dictionary-empty {
     min-height: 340px;
+}
+
+.dictionary-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    min-height: 96px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    transition: background .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.dictionary-row:hover {
+    background: #f8fbff;
+    border-color: #bcd0ef;
+    box-shadow: 0 8px 18px rgba(15, 42, 83, 0.06);
+}
+
+.dictionary-main {
+    min-width: 0;
+}
+
+.dictionary-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.dictionary-detail-button {
+    border: 1px solid #cfe0f7;
+    border-radius: 999px;
+    background: #f8fbff;
+    color: var(--blue);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    margin-left: 4px;
+    padding: 4px 10px;
+    white-space: nowrap;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.dictionary-detail-button:hover {
+    background: #eef5ff;
+    border-color: #a9c7f2;
+    color: var(--blue2);
+}
+
+.dictionary-add-button {
+    min-width: 74px;
+    justify-content: center;
+}
+
+.dictionary-code {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.dictionary-name {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.4;
+    margin-top: 7px;
+    overflow-wrap: anywhere;
+}
+
+.dictionary-detail {
+    color: var(--text3);
+    font-size: 12px;
+    line-height: 1.55;
+    margin-top: 4px;
 }
 
 .truncate-2 {
@@ -1300,8 +1593,531 @@ const closeModal = () => {
     font-family: 'Sarabun', 'Noto Sans Thai', system-ui, sans-serif;
 }
 
+.hr-modal .btn.btn-p {
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.hr-modal .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+.hr-modal .btn.btn-s {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text2);
+}
+
 .hr-modal-box {
-    width: min(720px, calc(100vw - 36px));
+    width: min(920px, calc(100vw - 36px));
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+}
+
+.catalog-modal-box {
+    width: min(1180px, calc(100vw - 36px));
+}
+
+.catalog-form {
+    display: grid;
+    gap: 16px;
+}
+
+.catalog-form-section {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.catalog-form-section.compact {
+    padding: 14px 16px;
+}
+
+.catalog-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.catalog-section-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.catalog-section-sub {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.catalog-count-pill {
+    flex: 0 0 auto;
+    border: 1px solid #cfe0f7;
+    border-radius: 999px;
+    background: var(--blue-lt);
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 900;
+    padding: 6px 10px;
+}
+
+.catalog-title-field {
+    display: grid;
+    gap: 8px;
+}
+
+.catalog-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+}
+
+.catalog-input {
+    min-height: 48px;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+.catalog-textarea {
+    min-height: 104px;
+    border-radius: 8px;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.catalog-search {
+    width: 100%;
+}
+
+.catalog-competency-list {
+    max-height: 230px;
+    display: grid;
+    gap: 8px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.catalog-check-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 54px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+    padding: 10px 12px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.catalog-check-row.selected {
+    border-color: var(--blue-md);
+    background: #f7fbff;
+}
+
+.catalog-checkbox {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: #fff;
+}
+
+.catalog-check-row.selected .catalog-checkbox {
+    border-color: var(--blue);
+    background: var(--blue);
+}
+
+.catalog-check-row.selected .catalog-checkbox::before {
+    content: "";
+    width: 8px;
+    height: 5px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: translateY(-1px) rotate(-45deg);
+}
+
+.catalog-competency-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.catalog-competency-copy span {
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.catalog-competency-copy strong {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.catalog-empty-line {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.catalog-level-picker {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f8fbff;
+}
+
+.catalog-level-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.catalog-level-help {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 3px;
+}
+
+.catalog-level-options {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.catalog-level-option {
+    min-height: 76px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text2);
+    padding: 12px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(15, 45, 91, 0.04);
+}
+
+.catalog-level-option.selected {
+    border-color: var(--blue);
+    background: #eef6ff;
+    color: var(--blue);
+}
+
+.catalog-level-check {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
+    margin-top: 2px;
+}
+
+.catalog-level-option.selected .catalog-level-check {
+    border-color: var(--blue);
+    background: var(--blue);
+}
+
+.catalog-level-option.selected .catalog-level-check::before {
+    content: "";
+    width: 7px;
+    height: 4px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: translateY(-1px) rotate(-45deg);
+}
+
+.catalog-level-option strong {
+    display: block;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.25;
+}
+
+.catalog-level-option.selected strong {
+    color: var(--blue);
+}
+
+.catalog-level-option small {
+    display: block;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-top: 4px;
+}
+
+.catalog-active-toggle {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    cursor: pointer;
+}
+
+.catalog-active-toggle input {
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    accent-color: var(--blue);
+}
+
+.catalog-active-toggle span {
+    display: grid;
+    gap: 2px;
+}
+
+.catalog-active-toggle strong {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.catalog-active-toggle small {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.competency-detail {
+    display: grid;
+    gap: 16px;
+}
+
+.detail-overview,
+.detail-behavior-panel {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.detail-overview {
+    padding: 18px;
+}
+
+.detail-section-label {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .02em;
+}
+
+.detail-title {
+    color: var(--text);
+    font-size: 21px;
+    font-weight: 900;
+    line-height: 1.35;
+}
+
+.detail-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.detail-meta-row span {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text2);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+}
+
+.detail-description {
+    margin-top: 14px;
+    color: var(--text3);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.75;
+}
+
+.detail-copy {
+    color: var(--text3);
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.detail-panel-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.detail-panel-sub {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 3px;
+}
+
+.detail-levels {
+    display: grid;
+}
+
+.detail-level {
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+}
+
+.detail-level:last-child {
+    border-bottom: 0;
+}
+
+.detail-level.open {
+    background: #fbfdff;
+}
+
+.detail-level-head {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 16px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+.detail-level-number {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.detail-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    justify-self: end;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text3);
+    transition: transform .16s ease, color .16s ease, border-color .16s ease;
+}
+
+.detail-toggle::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+
+.detail-toggle.open {
+    color: var(--blue);
+    border-color: #cfe0f7;
+    transform: rotate(180deg);
+}
+
+.detail-indicators {
+    display: grid;
+    border-top: 1px solid var(--border);
+    background: #fff;
+}
+
+.detail-indicator-head,
+.detail-indicator {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 70px;
+    gap: 10px;
+    align-items: start;
+}
+
+.detail-indicator-head {
+    padding: 9px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid #eef3f9;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.detail-indicator {
+    padding: 12px 16px;
+    border-bottom: 1px solid #eef3f9;
+}
+
+.detail-indicator:last-child {
+    border-bottom: 0;
+}
+
+.detail-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.detail-weight {
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 900;
+    text-align: right;
+}
+
+.detail-no-indicators {
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+}
+
+.detail-empty {
+    min-height: 160px;
 }
 
 .modal-close {
@@ -1318,11 +2134,6 @@ const closeModal = () => {
     cursor: pointer;
 }
 
-.modal-close:hover {
-    background: var(--bg);
-    color: var(--text);
-}
-
 .modal-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1335,7 +2146,6 @@ const closeModal = () => {
 
 .upload-box {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr);
     gap: 12px;
     align-items: center;
     padding: 16px;
@@ -1345,42 +2155,7 @@ const closeModal = () => {
 }
 
 .upload-box .inp {
-    grid-column: 1 / -1;
     background: #fff;
-}
-
-.upload-ic {
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--blue-lt);
-    font-size: 20px;
-}
-
-.level-picker {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
-}
-
-.level-choice {
-    height: 40px;
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: #fff;
-    color: var(--navy);
-    font: inherit;
-    font-weight: 800;
-    cursor: pointer;
-}
-
-.level-choice:hover,
-.level-choice:focus {
-    border-color: var(--teal);
-    background: var(--teal-lt);
-    outline: none;
 }
 
 .modal-actions {
@@ -1396,8 +2171,7 @@ const closeModal = () => {
     .position-layout,
     .position-scope,
     .position-board,
-    .position-hero,
-    .expect-layout {
+    .position-hero {
         grid-template-columns: 1fr;
     }
 
@@ -1409,6 +2183,13 @@ const closeModal = () => {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .catalog-filter-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .catalog-level-options {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 768px) {
@@ -1436,11 +2217,6 @@ const closeModal = () => {
         grid-template-columns: 1fr;
     }
 
-    .g2,
-    .g4 {
-        grid-template-columns: 1fr;
-    }
-
     .hr-page-head {
         align-items: flex-start;
         flex-direction: column;
@@ -1452,8 +2228,49 @@ const closeModal = () => {
 
     .position-picker,
     .dictionary-tools,
-    .modal-grid {
+    .modal-grid,
+    .catalog-form-grid,
+    .catalog-level-options,
+    .catalog-filter-bar {
         grid-template-columns: 1fr;
+    }
+
+    .catalog-summary-total {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .dictionary-row {
+        grid-template-columns: 1fr;
+        min-height: 0;
+        padding: 14px;
+    }
+
+    .dictionary-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .dictionary-detail-button {
+        text-align: left;
+    }
+
+    .dictionary-add-button {
+        width: 100%;
+    }
+
+    .detail-level-head,
+    .detail-indicator-head,
+    .detail-indicator {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-indicator-head {
+        display: none;
+    }
+
+    .detail-weight {
+        text-align: left;
     }
 
     .modal-actions {
@@ -1472,6 +2289,5 @@ const closeModal = () => {
     .position-title {
         font-size: 22px;
     }
-
 }
 </style>

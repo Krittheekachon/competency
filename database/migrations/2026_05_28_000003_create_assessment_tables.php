@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('competency_type_id')->constrained('competency_types')->restrictOnDelete();
             $table->string('code')->unique();
-            $table->string('name');
+            $table->text('name');
             $table->text('detail')->nullable();
             $table->timestamps();
         });

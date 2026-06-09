@@ -12,7 +12,7 @@ const useState = (initial: any) => {
 };
 
 const getApprovalRows = (users: any[]) => {
-  const activeStaff = users
+  const activeEmployee = users
     .filter((user) => user.act !== false && user.r !== "manager")
     .slice(0, 12);
 
@@ -46,7 +46,7 @@ const getApprovalRows = (users: any[]) => {
     },
   ];
 
-  const source = activeStaff.length ? activeStaff : fallback;
+  const source = activeEmployee.length ? activeEmployee : fallback;
 
   return source.map((user, index) => ({
     id: user.sso || `mock-${index}`,

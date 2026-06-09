@@ -20,6 +20,10 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
     const [expandedLevel, setExpandedLevel] = useState<number | null>(null);
     const [sortBy, setSortBy] = useState("newest");
     const [typeFilter, setTypeFilter] = useState("ทั้งหมด");
+    const [searchTerm, setSearchTerm] = useState("");
+    const [levelFilter, setLevelFilter] = useState("ทั้งหมด");
+    const [completionFilter, setCompletionFilter] = useState("ทั้งหมด");
+    const totalCompetencies = computed(() => competencyList.value.length);
 
     useEffect(() => {
       onDirtyChange?.(isDirty.value);
@@ -102,9 +106,53 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       return `tag-${t.toLowerCase()}`;
     };
 
+    const competencyTypeSummary = computed(() => {
+      const counts = competencyList.value.reduce((summary: Record<string, number>, competency: any) => {
+        const type = getCompType(competency) || "ไม่ระบุ";
+        summary[type] = (summary[type] || 0) + 1;
+        return summary;
+      }, {});
+      const order: Record<string, number> = { CC: 1, MC: 2, FC1: 3, FC2: 4, FC: 5 };
+
+      return Object.entries(counts).sort(([typeA], [typeB]) => {
+        return (order[typeA] || 99) - (order[typeB] || 99) || typeA.localeCompare(typeB);
+      });
+    });
+
+    const levelNumbersFor = (c: any) => (c.levels || []).map((level: any) => Number(level.lvl)).filter(Boolean);
+    const hasCompleteLevels = (c: any) => {
+      const levelsByNumber = new Map((c.levels || []).map((level: any) => [Number(level.lvl), level]));
+      return [1, 2, 3, 4, 5].every((levelNumber) => {
+        const level = levelsByNumber.get(levelNumber) as any;
+        return (level?.indicators || []).length > 0;
+      });
+    };
+    const hasMissingLevels = (c: any) => !hasCompleteLevels(c);
+    const matchesSearch = (c: any) => {
+      const keyword = searchTerm.value.trim().toLowerCase();
+      if (!keyword) return true;
+
+      return `${c.cd || ""} ${c.n || ""} ${c.det || ""} ${getCompType(c) || ""}`.toLowerCase().includes(keyword);
+    };
+    const resetFilters = () => {
+      setSearchTerm("");
+      setTypeFilter("ทั้งหมด");
+      setLevelFilter("ทั้งหมด");
+      setCompletionFilter("ทั้งหมด");
+      setSortBy("newest");
+    };
+
     const sorted = computed(() => competencyList.value.filter((c) => {
       const type = getCompType(c);
-      return typeFilter.value === "ทั้งหมด" || type === typeFilter.value;
+      const matchesType = typeFilter.value === "ทั้งหมด" || type === typeFilter.value;
+      const matchesLevel = levelFilter.value === "ทั้งหมด" || levelNumbersFor(c).includes(Number(levelFilter.value));
+      const matchesCompletion =
+        completionFilter.value === "ทั้งหมด" ||
+        (completionFilter.value === "ครบ 1-5" && hasCompleteLevels(c)) ||
+        (completionFilter.value === "ยังไม่ครบ" && hasMissingLevels(c)) ||
+        (completionFilter.value === "ไม่มีระดับ" && !(c.levels || []).length);
+
+      return matchesSearch(c) && matchesType && matchesLevel && matchesCompletion;
     }).sort((a, b) => {
       if (sortBy.value === "name") return a.n.localeCompare(b.n, 'th');
       if (sortBy.value === "code") return a.cd.localeCompare(b.cd);
@@ -376,22 +424,68 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         </div> :
 
       <>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
-            <div class="flex ic g8">
-              <span class="muted fs12 fw7 uppercase tracking-wider">แสดงประเภท:</span>
-              <select class="sel sel-sm" style={{ width: "200px" }} value={typeFilter.value} onChange={(e) => setTypeFilter(e.target.value)}>
-                <option value="ทั้งหมด">ทั้งหมด (All)</option>
+          <div class="dict-summary-grid">
+            <div class="dict-summary-card">
+              <div class="dict-summary-label">สมรรถนะทั้งหมด</div>
+              <div class="dict-summary-value">{totalCompetencies.value}</div>
+              <div class="dict-summary-sub">รายการในพจนานุกรมสมรรถนะ</div>
+            </div>
+            {competencyTypeSummary.value.map(([type, count]) =>
+              <div class="dict-summary-card" key={type}>
+                <div class="dict-summary-label">ประเภท {type}</div>
+                <div class="dict-summary-value">{count}</div>
+                <div class="dict-summary-sub">สมรรถนะ</div>
+              </div>
+            )}
+          </div>
+
+          <div class="dict-filter-panel">
+            <div class="dict-search-box">
+              <label class="dict-filter-label">ค้นหา</label>
+              <input
+                class="inp dict-search-input"
+                value={searchTerm.value}
+                onInput={(e) => setSearchTerm((e.target as HTMLInputElement).value)}
+                placeholder="ค้นหารหัส ชื่อ ประเภท หรือคำอธิบาย"
+              />
+            </div>
+            <div class="dict-filter-field">
+              <label class="dict-filter-label">ประเภท</label>
+              <select class="sel" value={typeFilter.value} onChange={(e) => setTypeFilter(e.target.value)}>
+                <option value="ทั้งหมด">ทั้งหมด</option>
                 {competencyTypes.map((t) => <option key={getCompetencyTypeCode(t)} value={getCompetencyTypeCode(t)}>{getCompetencyTypeLabel(t)}</option>)}
               </select>
             </div>
-            <div class="flex ic g8">
-              <span class="muted fs12 fw7 uppercase tracking-wider">เรียงตาม:</span>
-              <select class="sel sel-sm" style={{ width: "160px" }} value={sortBy.value} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="newest">วันที่อัปเดตล่าสุด</option>
-                <option value="code">รหัสสมรรถนะ (A-Z)</option>
-                <option value="name">ชื่อสมรรถนะ (ก-ฮ)</option>
+            <div class="dict-filter-field">
+              <label class="dict-filter-label">มี Level</label>
+              <select class="sel" value={levelFilter.value} onChange={(e) => setLevelFilter(e.target.value)}>
+                <option value="ทั้งหมด">ทุกระดับ</option>
+                {[1, 2, 3, 4, 5].map((levelNumber) =>
+                  <option key={levelNumber} value={String(levelNumber)}>Level {levelNumber}</option>
+                )}
+              </select>
+            </div>
+            <div class="dict-filter-field">
+              <label class="dict-filter-label">สถานะระดับ</label>
+              <select class="sel" value={completionFilter.value} onChange={(e) => setCompletionFilter(e.target.value)}>
+                <option value="ทั้งหมด">ทั้งหมด</option>
+                <option value="ครบ 1-5">ครบ Level 1-5</option>
+                <option value="ยังไม่ครบ">ยังไม่ครบ</option>
+                <option value="ไม่มีระดับ">ไม่มีข้อมูลระดับ</option>
+              </select>
+            </div>
+            <div class="dict-filter-field">
+              <label class="dict-filter-label">เรียงตาม</label>
+              <select class="sel" value={sortBy.value} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="newest">ค่าเริ่มต้น</option>
+                <option value="code">รหัสสมรรถนะ</option>
+                <option value="name">ชื่อสมรรถนะ</option>
                 <option value="type">ประเภทสมรรถนะ</option>
               </select>
+            </div>
+            <div class="dict-filter-summary">
+              <span>{sorted.value.length}/{totalCompetencies.value} รายการ</span>
+              <button class="btn btn-s btn-sm" type="button" onClick={resetFilters}>ล้าง filter</button>
             </div>
           </div>
 
@@ -471,6 +565,16 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
       }
 
       <style>{`
+        .dict-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .dict-summary-card { background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+        .dict-summary-label { font-size: 12px; font-weight: 800; color: var(--text3); }
+        .dict-summary-value { margin-top: 6px; font-size: 34px; line-height: 1; font-weight: 900; color: var(--navy); }
+        .dict-summary-sub { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--text3); }
+        .dict-filter-panel { display: grid; grid-template-columns: minmax(260px, 1.7fr) minmax(170px, 0.9fr) minmax(150px, 0.75fr) minmax(170px, 0.9fr) minmax(160px, 0.8fr) auto; gap: 10px; align-items: end; margin-bottom: 16px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: #fff; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
+        .dict-filter-label { display: block; margin-bottom: 5px; color: var(--text3); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+        .dict-search-box, .dict-filter-field { min-width: 0; }
+        .dict-search-input { min-height: 38px; }
+        .dict-filter-summary { display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--text3); font-size: 12px; font-weight: 800; white-space: nowrap; }
         .dict-list { display: flex; flex-direction: column; gap: 4px; background: #fff; border-radius: var(--r-lg); border: 1px solid var(--border); overflow: hidden; }
         .dict-empty { display: flex; align-items: center; justify-content: center; min-height: 180px; margin-top: -1px; border: 1px dashed var(--border); border-radius: var(--r-lg); background: #fff; color: var(--text3); font-size: 14px; font-weight: 700; }
         .dict-group { border-bottom: 1px solid #f1f5f9; }
@@ -526,10 +630,19 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         .py8 { padding-top: 8px; padding-bottom: 8px; }
         .mr12 { margin-right: 12px; }
         .sel-sm { font-size: 12px; border-radius: 6px; }
+        @media (max-width: 1100px) {
+          .dict-filter-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .dict-search-box, .dict-filter-summary { grid-column: 1 / -1; }
+          .dict-filter-summary { justify-content: space-between; }
+        }
         @media (max-width: 960px) {
           .dict-main-fields { grid-template-columns: 1fr; gap: 16px; }
           .dict-code-name-fields { grid-template-columns: 1fr; }
           .dict-code-box { max-width: 260px; }
+        }
+        @media (max-width: 640px) {
+          .dict-filter-panel { grid-template-columns: 1fr; }
+          .dict-filter-summary { align-items: stretch; flex-direction: column; }
         }
       `}</style>
     </>;} });

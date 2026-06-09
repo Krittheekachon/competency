@@ -8,14 +8,15 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
+import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrg from './AdminOrg.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
+import EmployeeAssess from '../Employee/EmployeeAssess.vue';
+import EmployeeGap from '../Employee/EmployeeGap.vue';
+import EmployeeIDP from '../Employee/EmployeeIDP.vue';
+import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
+import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -90,9 +91,14 @@ const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สาย�
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
+const levelExpectationsByWorkline = ref(clone(page.props.levelExpectationsByWorkline || {}));
+const levelsByJobFamily = ref(clone(page.props.levelsByJobFamily || {}));
+const levelExpectationsByJobFamily = ref(clone(page.props.levelExpectationsByJobFamily || {}));
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
+const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
+const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -101,6 +107,9 @@ const normalizeWorklineName = (name = '') => name.replace(/^สายงาน\s
 const selectedWorklineKind = computed(() => normalizeWorklineName(userForm.value.w));
 const selectedWorklineGroups = computed(() => jobFamiliesByWorkline.value[userForm.value.w] || {});
 const levelOptionsFromDatabase = computed(() => {
+    const scopedLevels = levelsByJobFamily.value[userForm.value.w]?.[userForm.value.job] || [];
+    if (scopedLevels.length) return scopedLevels;
+
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
     if (directLevels.length) return directLevels;
     if (userForm.value.p) return [userForm.value.p];
@@ -167,6 +176,7 @@ const implementedAdminPages = new Set([
     'admin-org',
     'admin-org-structure',
     'admin-dict',
+    'admin-idp-tools',
 ]);
 watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
@@ -596,6 +606,12 @@ const logout = () => router.post(route('logout'));
                     :set-job-families-by-workline="setRef(jobFamiliesByWorkline)"
                     :levels-by-workline="levelsByWorkline"
                     :set-levels-by-workline="setRef(levelsByWorkline)"
+                    :level-expectations-by-workline="levelExpectationsByWorkline"
+                    :set-level-expectations-by-workline="setRef(levelExpectationsByWorkline)"
+                    :levels-by-job-family="levelsByJobFamily"
+                    :set-levels-by-job-family="setRef(levelsByJobFamily)"
+                    :level-expectations-by-job-family="levelExpectationsByJobFamily"
+                    :set-level-expectations-by-job-family="setRef(levelExpectationsByJobFamily)"
                     :academic-rank="academicRanks"
                     :set-academic-rank="setRef(academicRanks)"
                     :support-rank="supportRanks"
@@ -614,6 +630,14 @@ const logout = () => router.post(route('logout'));
                     :set-competencies="setRef(competencies)"
                     :competency-types="competencyTypes"
                     :on-dirty-change="() => {}"
+                />
+
+                <AdminIdpTools
+                    v-else-if="activePage === 'admin-idp-tools'"
+                    :competencies="competencies"
+                    :idp-learning-methods="idpLearningMethods"
+                    :learning-catalogs="hrCatalogItems"
+                    :learning-methods="learningMethods"
                 />
 
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>
