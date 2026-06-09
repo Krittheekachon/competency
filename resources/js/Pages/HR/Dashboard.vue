@@ -986,7 +986,15 @@ const formatWeight = (weight) => {
 
 .content .btn.btn-p {
     background: var(--blue);
-    border: none;
+    border: 1px solid var(--blue);
+    color: #fff;
+    opacity: 1;
+    visibility: visible;
+}
+
+.content .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
     color: #fff;
 }
 
@@ -1000,6 +1008,24 @@ const formatWeight = (weight) => {
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text2);
+}
+
+.content .btn.btn-s:hover {
+    background: var(--border);
+}
+
+.content .btn.btn-p {
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    opacity: 1;
+    visibility: visible;
+}
+
+.content .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
 }
 
 .content .sec-t {
