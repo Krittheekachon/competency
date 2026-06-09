@@ -14,11 +14,13 @@ class UserController extends Controller
 {
     private const ROLE_IDS = [
         'admin' => 0,
-        'hr' => 1,
-        'manager' => 2,
-        'manager_dept' => 3,
-        'employee' => 4,
-        'supervisor' => 5,
+        'supervisor' => 1,
+        'dept_head' => 2,
+        'manager_dept' => 2,
+        'employee' => 3,
+        'hr' => 4,
+        'dean' => 5,
+        'manager' => 5,
     ];
 
     public function store(Request $request): RedirectResponse
@@ -99,7 +101,11 @@ class UserController extends Controller
 
     private function userAttributes(array $data): array
     {
-        $roleKey = $data['r'];
+        $roleKey = match ($data['r']) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => $data['r'],
+        };
         $name = trim($data['fn'].' '.$data['ln']);
 
         return [

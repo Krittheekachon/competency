@@ -2,12 +2,12 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
-const selectedStaff = ref(null);
+import EmployeeAssess from '../Employee/EmployeeAssess.vue';
+import EmployeeGap from '../Employee/EmployeeGap.vue';
+import EmployeeIDP from '../Employee/EmployeeIDP.vue';
+import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
+import EmployeeProgress from '../Employee/EmployeeProgress.vue';
+const selectedEmployee = ref(null);
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -295,8 +295,8 @@ const filteredComps = computed(() =>
 const assessmentDrafts = ref({});
 const assessmentSavedAt = ref('');
 const draftTimer = ref(null);
-const selectedGapStaff = ref(null);
-const selectedIdpStaff = ref(null);
+const selectedGapEmployee = ref(null);
+const selectedIdpEmployee = ref(null);
 const idpPhaseOverrides = ref({});
 const idpReviewDecisions = ref({});
 const idpReviewFeedbacks = ref({});
@@ -334,7 +334,7 @@ const assessmentComps = [
     },
 ];
 
-const selectedAssessment = computed(() => selectedStaff.value || teamMembers.value.find((user) => user.evalStatus === 'self_submitted') || teamMembers.value[0] || null);
+const selectedAssessment = computed(() => selectedEmployee.value || teamMembers.value.find((user) => user.evalStatus === 'self_submitted') || teamMembers.value[0] || null);
 const assessmentName = computed(() => selectedAssessment.value ? `${selectedAssessment.value.t || ''}${selectedAssessment.value.n}` : '');
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
@@ -392,28 +392,28 @@ const gapResultRows = (person) => {
     }).filter((row) => row.failed);
 };
 
-const selectedGapPerson = computed(() => selectedGapStaff.value);
+const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
 
 const openGapDetail = (person) => {
     if (person.pending) return;
-    selectedGapStaff.value = person;
+    selectedGapEmployee.value = person;
 };
 
 const closeGapDetail = () => {
-    selectedGapStaff.value = null;
+    selectedGapEmployee.value = null;
 };
 
 const moveGapDetail = (step) => {
     const assessed = gapRows.value.filter((person) => !person.pending);
     const currentIndex = assessed.findIndex((person) => person.sso === selectedGapPerson.value?.sso);
     if (currentIndex < 0 || assessed.length === 0) return;
-    selectedGapStaff.value = assessed[(currentIndex + step + assessed.length) % assessed.length];
+    selectedGapEmployee.value = assessed[(currentIndex + step + assessed.length) % assessed.length];
 };
 
 const selectedIdpPerson = computed(() =>
-    idpRows.value.find((person) => person.sso === selectedIdpStaff.value?.sso) || selectedIdpStaff.value,
+    idpRows.value.find((person) => person.sso === selectedIdpEmployee.value?.sso) || selectedIdpEmployee.value,
 );
 const selectedIdpGapRows = computed(() => gapResultRows(selectedIdpPerson.value));
 const selectedIdpName = computed(() => selectedIdpPerson.value ? `${selectedIdpPerson.value.t || ''}${selectedIdpPerson.value.n}` : '');
@@ -455,11 +455,11 @@ const completeIdpReview = () => {
 };
 
 const openIdpDetail = (person) => {
-    selectedIdpStaff.value = person;
+    selectedIdpEmployee.value = person;
 };
 
 const closeIdpDetail = () => {
-    selectedIdpStaff.value = null;
+    selectedIdpEmployee.value = null;
 };
 
 const persistAssessmentDraft = (nextDraft, label = 'บันทึกร่างอัตโนมัติแล้ว') => {
@@ -499,8 +499,8 @@ const updateAssessmentFeedback = (comp, value) => {
     });
 };
 
-const selectAssessmentStaff = (person) => {
-    selectedStaff.value = person;
+const selectAssessmentEmployee = (person) => {
+    selectedEmployee.value = person;
     assessmentSavedAt.value = '';
 };
 
@@ -952,7 +952,7 @@ const logout = () => router.post(route('logout'));
                                 class="assess-person"
                                 :class="{ selected: selectedAssessment?.sso === person.sso }"
                                 type="button"
-                                @click="selectAssessmentStaff(person)"
+                                @click="selectAssessmentEmployee(person)"
                             >
                                 <div class="av row-avatar">{{ person.n[0] }}</div>
                                 <div class="row-main">

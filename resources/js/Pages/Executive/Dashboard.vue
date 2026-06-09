@@ -5,11 +5,11 @@ import ManagerGap from './ManagerGap.vue';
 import ManagerIDP from './ManagerIDP.vue';
 import ManagerAssessmentApproval from './ManagerAssessmentApproval.vue';
 import ManagerIDPApproval from './ManagerIDPApproval.vue';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
+import EmployeeAssess from '../Employee/EmployeeAssess.vue';
+import EmployeeGap from '../Employee/EmployeeGap.vue';
+import EmployeeIDP from '../Employee/EmployeeIDP.vue';
+import EmployeeProgress from '../Employee/EmployeeProgress.vue';
+import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 
 const props = defineProps({
     users: {

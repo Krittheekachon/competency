@@ -17,7 +17,7 @@ class DashboardController extends Controller
     public function index()
     {
         // ตรวจสอบว่า User ล็อกอินอยู่หรือไม่ และดึง role_id ออกมา
-        $role = auth()->user()->role_id;
+        $role = $this->normalizeRoleKey(auth()->user()->role_key ?: $this->roleKeyFromId(auth()->user()->role_id));
         $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
             'id' => $type->id,
             'code' => $type->code,
@@ -56,18 +56,25 @@ class DashboardController extends Controller
         ];
 
         return match ($role) {
-            0 => Inertia::render('Admin/Dashboard', [
+            'admin' => Inertia::render('Admin/Dashboard', [
                 'users' => $users,
                 'competencyTypes' => $competencyTypes,
                 'competencies' => $competencies,
                 ...$structureData,
                 'learningMethods' => $learningMethods,
             ]),
-            1 => Inertia::render('HR/Dashboard', [
+            'supervisor' => Inertia::render('Super/Dashboard', ['users' => $users]),
+            'dept_head' => Inertia::render('Head/Dashboard', ['users' => $users]),
+            'employee' => Inertia::render('Employee/Dashboard', [
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+                'activeCycleName' => $activeCycleName,
+                'learningMethods' => $learningMethods,
+            ]),
+            'hr' => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
                     'totalUsers' => User::count(),
-                    'hrUsers' => User::where('role_id', 1)->count(),
-                    'staffUsers' => User::where('role_id', 4)->count(),
+                    'hrUsers' => User::where('role_id', 4)->count(),
+                    'employeeUsers' => User::where('role_id', 3)->count(),
                     'source' => 'database',
                 ],
                 ...$hrStructureData,
@@ -112,7 +119,7 @@ class DashboardController extends Controller
                         'act' => true,
                     ]),
             ]),
-            2 => Inertia::render('Executive/Dashboard', [
+            'dean' => Inertia::render('Executive/Dashboard', [
                 'users' => $users,
                 'managerSummary' => $managerSummary,
                 'activeCycleName' => $activeCycleName,
@@ -124,14 +131,16 @@ class DashboardController extends Controller
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
             ]),
-            3 => Inertia::render('Head/Dashboard', ['users' => $users]),
-            4 => Inertia::render('Staff/Dashboard', [
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'activeCycleName' => $activeCycleName,
-                'learningMethods' => $learningMethods,
-            ]),
-            5 => Inertia::render('Super/Dashboard', ['users' => $users]),
             default => Inertia::render('Dashboard'),
+        };
+    }
+
+    private function normalizeRoleKey(string $roleKey): string
+    {
+        return match ($roleKey) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => $roleKey,
         };
     }
 
@@ -329,10 +338,11 @@ class DashboardController extends Controller
     {
         return match ($roleId) {
             0 => 'admin',
-            1 => 'hr',
-            2 => 'manager',
-            3 => 'dept_head',
-            5 => 'supervisor',
+            1 => 'supervisor',
+            2 => 'dept_head',
+            3 => 'employee',
+            4 => 'hr',
+            5 => 'dean',
             default => 'employee',
         };
     }

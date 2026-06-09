@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->integer('role_id')->default(4); // ค่าเริ่มต้นเป็น Staff (4)
+            $table->integer('role_id')->default(3); // ค่าเริ่มต้นเป็น Employee (3)
         });
     }
 

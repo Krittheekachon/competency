@@ -20,7 +20,7 @@ const setRef = (target) => (next) => {
 const requestedPage = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
     : null;
-const implementedStaffPages = new Set([
+const implementedEmployeePages = new Set([
     'emp-assess',
     'emp-gap',
     'emp-idp',
@@ -29,7 +29,7 @@ const implementedStaffPages = new Set([
 ]);
 
 const showSidebar = ref(true);
-const activePage = ref(implementedStaffPages.has(requestedPage) ? requestedPage : 'emp-assess');
+const activePage = ref(implementedEmployeePages.has(requestedPage) ? requestedPage : 'emp-assess');
 const currentRole = ref('employee');
 const users = ref(clone(INITIAL_USERS));
 const page = usePage();
@@ -58,17 +58,16 @@ const learningMethods = ref([
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const currentProfileUser = computed(() =>
-    users.value.find((user) => user.r === 'staff')
-    || users.value.find((user) => user.r === 'employee')
+    users.value.find((user) => user.r === 'employee')
     || users.value.find((user) => user.sso === '64020')
     || {
-        n: page.props.auth?.user?.name || 'Staff User',
+        n: page.props.auth?.user?.name || 'Employee User',
         t: '',
         sso: page.props.auth?.user?.id || 'current-user',
         p: '',
         l: '',
         w: '',
-        r: 'staff',
+        r: 'employee',
         act: true,
     },
 );
@@ -82,7 +81,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Staff - CIDP" />
+    <Head title="Employee - CIDP" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">

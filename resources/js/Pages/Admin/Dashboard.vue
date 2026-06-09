@@ -11,11 +11,11 @@ import AdminDict from './AdminDict.vue';
 import AdminOrg from './AdminOrg.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
-import EmployeeAssess from '../Staff/EmployeeAssess.vue';
-import EmployeeGap from '../Staff/EmployeeGap.vue';
-import EmployeeIDP from '../Staff/EmployeeIDP.vue';
-import EmployeeIDPDetail from '../Staff/EmployeeIDPDetail.vue';
-import EmployeeProgress from '../Staff/EmployeeProgress.vue';
+import EmployeeAssess from '../Employee/EmployeeAssess.vue';
+import EmployeeGap from '../Employee/EmployeeGap.vue';
+import EmployeeIDP from '../Employee/EmployeeIDP.vue';
+import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
+import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
