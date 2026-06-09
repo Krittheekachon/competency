@@ -23,6 +23,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    assignedCompetenciesByScope: {
+        type: Object,
+        default: () => ({}),
+    },
     learningMethods: {
         type: Array,
         default: () => [],
@@ -48,7 +52,8 @@ const selectedJobFamily = ref('');
 const selectedPosition = ref('');
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
-const assignedByScope = ref({});
+const assignedByScope = ref(props.assignedCompetenciesByScope || {});
+const savingAssignment = ref(false);
 const selectedDetailCompetency = ref(null);
 
 const sections = [
@@ -104,7 +109,7 @@ const allPositionCount = computed(() => {
     }, 0);
 });
 
-const configuredPositionCount = computed(() => 0);
+const configuredPositionCount = computed(() => Object.values(assignedByScope.value || {}).filter((items) => Array.isArray(items) && items.length).length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
 const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
@@ -177,6 +182,27 @@ const setAssignedForCurrentScope = (items) => {
         ...assignedByScope.value,
         [assignmentScopeKey.value]: items,
     };
+
+    saveAssignedForCurrentScope(items);
+};
+
+const saveAssignedForCurrentScope = (items) => {
+    if (!selectedWorkline.value || !selectedJobFamily.value || !selectedPosition.value) return;
+
+    savingAssignment.value = true;
+
+    router.post(route('hr.competency-assignments.store'), {
+        workline_name: selectedWorkline.value,
+        job_family_name: selectedJobFamily.value,
+        level_name: selectedPosition.value,
+        competency_ids: items.map((item) => item.id),
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onFinish: () => {
+            savingAssignment.value = false;
+        },
+    });
 };
 
 const addCompetency = (item) => {
@@ -197,6 +223,28 @@ const openCompetencyDetail = (item) => {
     selectedDetailCompetency.value = item;
     openModal('competency-detail');
 };
+
+const detailLevelsForDisplay = computed(() => {
+    const levels = selectedDetailCompetency.value?.levels || [];
+    const levelsByNumber = new Map(levels.map((level) => [Number(level.lvl), level]));
+    const maxLevel = Math.max(
+        5,
+        Number(selectedDetailCompetency.value?.lv || 0),
+        ...levels.map((level) => Number(level.lvl || 0)),
+    );
+
+    return Array.from({ length: maxLevel }, (_, index) => {
+        const lvl = index + 1;
+        return levelsByNumber.get(lvl) || {
+            id: `placeholder-${lvl}`,
+            lvl,
+            description: '',
+            indicators: [],
+            weights: [],
+            isPlaceholder: true,
+        };
+    });
+});
 
 const formatCost = (cost) => {
     if (cost === null || cost === undefined || cost === '') return 'ฟรี';
@@ -323,7 +371,7 @@ const formatCost = (cost) => {
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
-                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
+                            <div class="position-card-sub">{{ savingAssignment ? 'กำลังบันทึก' : (assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ') }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
@@ -337,11 +385,11 @@ const formatCost = (cost) => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
-                                    <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนด Expected Level</div>
+                                    <div class="cs">รายการสมรรถนะที่ใช้ประเมินสำหรับตำแหน่งนี้</div>
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
-                                    :disabled="!selectedPosition || !availableCoreCompetencies.length"
+                                    :disabled="savingAssignment || !selectedPosition || !availableCoreCompetencies.length"
                                     type="button"
                                     @click="addAllCoreCompetencies"
                                 >
@@ -362,7 +410,7 @@ const formatCost = (cost) => {
                                     </div>
                                     <div class="assigned-actions">
                                         <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
-                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                        <button class="btn btn-s btn-sm danger-text" :disabled="savingAssignment" type="button" @click="removeCompetency(item.id)">ลบ</button>
                                     </div>
                                 </div>
                             </div>
@@ -397,7 +445,7 @@ const formatCost = (cost) => {
                                     </div>
                                     <button
                                         class="btn btn-p btn-sm"
-                                        :disabled="!selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        :disabled="savingAssignment || !selectedPosition || assignedCompetencyIds.has(item.id)"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >
@@ -495,7 +543,7 @@ const formatCost = (cost) => {
                     <div>
                         <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
                             <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
-                            <div class="cs">รายละเอียดสมรรถนะจากข้อมูลที่ Admin กำหนดไว้</div>
+                            <div class="cs">รายละเอียดระดับและพฤติกรรมบ่งชี้ของสมรรถนะ</div>
                         </template>
                         <template v-else>
                             <div v-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
@@ -519,37 +567,54 @@ const formatCost = (cost) => {
                                 <div class="detail-copy">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบาย' }}</div>
                             </div>
 
-                            <div class="detail-levels">
-                                <div v-if="!(selectedDetailCompetency.levels || []).length" class="assigned-empty detail-empty">
-                                    <div class="empty-symbol">ไม่มีข้อมูล</div>
-                                    <div class="fw8">ยังไม่มีข้อมูลระดับสมรรถนะ</div>
+                            <div class="detail-summary-grid">
+                                <div class="detail-summary-card">
+                                    <div class="detail-summary-label">ตำแหน่ง</div>
+                                    <div class="detail-summary-value">{{ selectedPosition || 'ยังไม่ได้เลือกตำแหน่ง' }}</div>
+                                    <div class="detail-copy muted">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ jobFamilyLabel }}</div>
                                 </div>
+                            </div>
+
+                            <div class="detail-levels">
                                 <div
-                                    v-for="level in selectedDetailCompetency.levels"
-                                    v-else
+                                    v-for="level in detailLevelsForDisplay"
                                     :key="level.id || level.lvl"
                                     class="detail-level"
                                 >
+                                    <!-- Level Header -->
                                     <div class="detail-level-head">
-                                        <div>
-                                            <div class="detail-level-title">ระดับที่ {{ level.lvl }}</div>
+                                        <div class="level-badge">
+                                            {{ level.lvl }}
+                                        </div>
+                                        <div class="level-head-content">
+                                            <div class="detail-level-title">
+                                                ระดับที่ {{ level.lvl }}
+                                            </div>
                                             <div v-if="level.description" class="detail-copy">{{ level.description }}</div>
+                                            <div v-else class="detail-copy muted">รอรายละเอียดของระดับนี้</div>
+                                        </div>
+                                        <div class="level-indicator-count">
+                                            {{ level.indicators?.length || 0 }} พฤติกรรม
                                         </div>
                                     </div>
+
+                                    <!-- Indicators -->
                                     <div v-if="level.indicators?.length" class="detail-indicators">
                                         <div
                                             v-for="(indicator, index) in level.indicators"
                                             :key="`${level.lvl}-${index}`"
                                             class="detail-indicator"
                                         >
-                                            <div class="detail-weight">
-                                                <span>น้ำหนัก</span>
-                                                <strong>{{ level.weights?.[index] ?? '-' }}</strong>
+                                            <div class="indicator-number">{{ level.lvl }}.{{ index + 1 }}</div>
+                                            <div class="detail-copy indicator-text">{{ indicator }}</div>
+                                            <div class="detail-weight-pill">
+                                                {{ level.weights?.[index] ?? '-' }}
                                             </div>
-                                            <div class="detail-copy">{{ indicator }}</div>
                                         </div>
                                     </div>
-                                    <div v-else class="detail-copy muted">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</div>
+                                    <div v-else class="no-indicators">
+                                        รอข้อมูลพฤติกรรมบ่งชี้ในระดับนี้
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -618,7 +683,7 @@ const formatCost = (cost) => {
 
                     <div class="modal-actions">
                         <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
-                        <button class="btn btn-p" disabled type="submit">บันทึกเมื่อเชื่อม backend</button>
+                        <button class="btn btn-p" disabled type="submit">บันทึก</button>
                     </div>
                 </form>
             </div>
@@ -1116,6 +1181,36 @@ const formatCost = (cost) => {
     line-height: 1.65;
 }
 
+.detail-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.detail-summary-card {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+    grid-column: 1 / -1;
+}
+
+.detail-summary-label {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.detail-summary-value {
+    margin-top: 6px;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
 .detail-levels {
     display: grid;
     gap: 10px;
@@ -1126,15 +1221,52 @@ const formatCost = (cost) => {
 
 .detail-level {
     border: 1px solid var(--border);
-    border-radius: var(--r);
+    border-radius: 12px;
     background: #fff;
     overflow: hidden;
+    transition: box-shadow 0.15s;
+}
+
+.detail-level:hover {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .detail-level-head {
-    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: #f8fafc;
     border-bottom: 1px solid var(--border);
-    background: #f8fbff;
+}
+
+.level-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.level-head-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.level-indicator-count {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
 }
 
 .detail-level-title {
@@ -1143,33 +1275,55 @@ const formatCost = (cost) => {
     font-weight: 900;
 }
 
-.detail-indicators {
-    display: grid;
-}
-
 .detail-indicator {
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
-    gap: 14px;
-    padding: 12px 14px;
-    border-top: 1px solid #eef3f9;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid #f1f5f9;
 }
 
 .detail-indicator:first-child {
     border-top: 0;
 }
 
-.detail-weight {
-    color: var(--text3);
+.indicator-number {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #475569;
     font-size: 11px;
-    font-weight: 800;
-    line-height: 1.3;
+    font-weight: 900;
 }
 
-.detail-weight strong {
-    display: block;
-    color: var(--blue);
+.indicator-text {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 13px;
+    line-height: 1.65;
+    color: var(--text);
+}
+
+.detail-weight-pill {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.no-indicators {
+    padding: 16px;
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
 }
 
 .detail-empty {
@@ -1276,7 +1430,8 @@ const formatCost = (cost) => {
 
     .position-picker,
     .dictionary-tools,
-    .modal-grid {
+    .modal-grid,
+    .detail-summary-grid {
         grid-template-columns: 1fr;
     }
 

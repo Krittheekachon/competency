@@ -8,7 +8,10 @@ use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\CompetencyController as AdminCompetencyController;
 use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
+use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
+use App\Http\Controllers\MockSsoController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -22,6 +25,11 @@ Route::get('/', function () {
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
+
+if (app()->environment('local')) {
+    Route::get('/mock-sso', [MockSsoController::class, 'showLogin'])->name('mock.sso');
+    Route::post('/mock-sso', [MockSsoController::class, 'login'])->name('mock.sso.login');
+}
 
 Route::middleware('auth')->group(function () {
     Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
@@ -50,6 +58,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
+    Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
+    Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
+    Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
