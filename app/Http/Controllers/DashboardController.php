@@ -62,6 +62,8 @@ class DashboardController extends Controller
                 'competencies' => $competencies,
                 ...$structureData,
                 'learningMethods' => $learningMethods,
+                'hrCatalogItems' => $this->learningCatalogItems(),
+                'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', ['users' => $users]),
             'dept_head' => Inertia::render('Head/Dashboard', ['users' => $users]),
@@ -81,30 +83,7 @@ class DashboardController extends Controller
                 'competencies' => $competencies,
                 'learningMethods' => $learningMethods,
                 'activeCycleName' => $activeCycleName,
-                'hrCatalogItems' => DB::table('learning_catalogs')
-                    ->leftJoin('learning_method_types', 'learning_catalogs.method_type_id', '=', 'learning_method_types.id')
-                    ->select(
-                        'learning_catalogs.id',
-                        'learning_catalogs.name',
-                        'learning_catalogs.provider',
-                        'learning_catalogs.cost',
-                        'learning_catalogs.description',
-                        'learning_catalogs.is_active',
-                        'learning_method_types.key as method_key',
-                        'learning_method_types.label as method_label'
-                    )
-                    ->orderBy('learning_catalogs.name')
-                    ->get()
-                    ->map(fn (object $item) => [
-                        'id' => $item->id,
-                        'name' => $item->name,
-                        'methodKey' => $item->method_key,
-                        'methodLabel' => $item->method_label,
-                        'provider' => $item->provider ?? '',
-                        'cost' => $item->cost,
-                        'description' => $item->description ?? '',
-                        'isActive' => (bool) $item->is_active,
-                    ]),
+                'hrCatalogItems' => $this->learningCatalogItems(),
                 'overviewUsers' => User::query()
                     ->select(['name', 'email'])
                     ->get()
@@ -179,7 +158,7 @@ class DashboardController extends Controller
             ->get();
 
         $positionsByFamily = DB::table('positions')
-            ->select('job_family_id', 'name')
+            ->select('id', 'job_family_id', 'name')
             ->orderBy('name')
             ->get()
             ->groupBy('job_family_id');
@@ -217,6 +196,15 @@ class DashboardController extends Controller
                 ->where('worklineName', 'สายสนับสนุน')
                 ->mapWithKeys(fn (array $family) => [$family['name'] => $family['positions']])
                 ->all(),
+            'positionLookup' => $jobFamilies
+                ->flatMap(fn (object $family) => ($positionsByFamily[$family->id] ?? collect())
+                    ->map(fn (object $position) => [
+                        'id' => $position->id,
+                        'name' => $position->name,
+                        'jobFamilyName' => $family->name,
+                        'worklineName' => $family->workline_name,
+                    ]))
+                ->values(),
             'levels' => DB::table('levels')->orderBy('name')->pluck('name'),
             'levelsByWorkline' => DB::table('levels')
                 ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
@@ -280,6 +268,14 @@ class DashboardController extends Controller
         unset($structure['levelsByJobFamily']);
         unset($structure['levelExpectationsByJobFamily']);
 
+        $structure['positionCompetencies'] = DB::table('position_competencies')
+            ->select('position_id', 'competency_id')
+            ->orderBy('competency_id')
+            ->get()
+            ->groupBy('position_id')
+            ->map(fn ($items) => $items->pluck('competency_id')->values())
+            ->all();
+
         return $structure;
     }
 
@@ -293,7 +289,8 @@ class DashboardController extends Controller
                 'competencies.code',
                 'competencies.name',
                 'competencies.detail',
-                'competency_types.code as type_code'
+                'competency_types.code as type_code',
+                'competency_types.full_name as type_full_name'
             )
             ->orderBy('competencies.code')
             ->get()
@@ -325,6 +322,7 @@ class DashboardController extends Controller
                     'cd' => $competency->code,
                     'n' => $competency->name,
                     't' => $competency->type_code,
+                    'typeName' => $competency->type_full_name,
                     'tg' => 'tag-'.strtolower((string) $competency->type_code),
                     'det' => $competency->detail ?? '',
                     'lv' => $levels->count(),
@@ -345,5 +343,84 @@ class DashboardController extends Controller
             5 => 'dean',
             default => 'employee',
         };
+    }
+
+    private function learningCatalogItems()
+    {
+        $competencyIdsByCatalog = DB::table('learning_catalog_competency')
+            ->select('learning_catalog_id', 'competency_id')
+            ->orderBy('competency_id')
+            ->get()
+            ->groupBy('learning_catalog_id')
+            ->map(fn ($items) => $items->pluck('competency_id')->values());
+
+        return DB::table('learning_catalogs')
+            ->leftJoin('learning_method_types', 'learning_catalogs.method_type_id', '=', 'learning_method_types.id')
+            ->select(
+                'learning_catalogs.id',
+                'learning_catalogs.code',
+                'learning_catalogs.name',
+                'learning_catalogs.delivery_type',
+                'learning_catalogs.source_type',
+                'learning_catalogs.provider',
+                'learning_catalogs.cost',
+                'learning_catalogs.hours',
+                'learning_catalogs.expected_levels',
+                'learning_catalogs.description',
+                'learning_catalogs.is_active',
+                'learning_method_types.key as method_key',
+                'learning_method_types.label as method_label'
+            )
+            ->orderBy('learning_catalogs.name')
+            ->get()
+            ->map(fn (object $item) => [
+                'id' => $item->id,
+                'code' => $item->code ?? '',
+                'name' => $item->name,
+                'methodKey' => $item->method_key,
+                'methodLabel' => $item->method_label,
+                'deliveryType' => $item->delivery_type ?? 'e_learning',
+                'sourceType' => $item->source_type ?? 'internal',
+                'provider' => $item->provider ?? '',
+                'cost' => $item->cost,
+                'hours' => $item->hours,
+                'expectedLevels' => $this->decodeExpectedLevels($item->expected_levels),
+                'competencyIds' => $competencyIdsByCatalog[$item->id] ?? [],
+                'description' => $item->description ?? '',
+                'isActive' => (bool) $item->is_active,
+            ]);
+    }
+
+    private function decodeExpectedLevels($levels): array
+    {
+        if (!$levels) return [];
+
+        $decoded = is_string($levels) ? json_decode($levels, true) : $levels;
+
+        return collect(is_array($decoded) ? $decoded : [])
+            ->map(fn ($level) => (int) $level)
+            ->filter(fn ($level) => $level >= 1 && $level <= 5)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    private function idpLearningMethods()
+    {
+        return DB::table('idp_learning_methods')
+            ->select('id', 'focus_type', 'title', 'template_file_name', 'is_active')
+            ->whereIn('focus_type', ['experiential', 'social'])
+            ->orderBy('focus_type')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (object $item) => [
+                'id' => $item->id,
+                'focusType' => $item->focus_type,
+                'title' => $item->title,
+                'templateFileName' => $item->template_file_name ?? '',
+                'isActive' => (bool) $item->is_active,
+            ]);
     }
 }

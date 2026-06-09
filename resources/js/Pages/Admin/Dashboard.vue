@@ -8,6 +8,7 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
+import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrg from './AdminOrg.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -96,6 +97,8 @@ const levelExpectationsByJobFamily = ref(clone(page.props.levelExpectationsByJob
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
+const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
+const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -173,6 +176,7 @@ const implementedAdminPages = new Set([
     'admin-org',
     'admin-org-structure',
     'admin-dict',
+    'admin-idp-tools',
 ]);
 watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
@@ -626,6 +630,14 @@ const logout = () => router.post(route('logout'));
                     :set-competencies="setRef(competencies)"
                     :competency-types="competencyTypes"
                     :on-dirty-change="() => {}"
+                />
+
+                <AdminIdpTools
+                    v-else-if="activePage === 'admin-idp-tools'"
+                    :competencies="competencies"
+                    :idp-learning-methods="idpLearningMethods"
+                    :learning-catalogs="hrCatalogItems"
+                    :learning-methods="learningMethods"
                 />
 
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>

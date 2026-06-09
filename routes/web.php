@@ -7,8 +7,11 @@ use Inertia\Inertia;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\CompetencyController as AdminCompetencyController;
 use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeController;
+use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMethodController;
+use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -50,6 +53,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
+    Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
+    Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
+    Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');
+    Route::post('/admin/learning-catalogs', [AdminLearningCatalogController::class, 'store'])->name('admin.learning-catalogs.store');
+    Route::put('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'update'])->name('admin.learning-catalogs.update');
+    Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
+    Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
+    Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
