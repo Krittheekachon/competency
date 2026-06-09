@@ -22,6 +22,12 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
+const supportOrgFromGroups = (groups = {}) => Object.fromEntries(
+    Object.entries(groups || {}).map(([dept, works]) => [
+        dept,
+        (Array.isArray(works) ? works : []).map((work) => ({ work, units: [] })),
+    ]),
+);
 const adminPageStorageKey = 'admin-active-page';
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
@@ -86,8 +92,8 @@ const jobFamiliesByWorkline = ref(clone(page.props.jobFamiliesByWorkline || {}))
 const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายวิชาการ'] || {})));
 const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
 const competencyTypes = ref(clone(page.props.competencyTypes || []));
-const supportOrg = ref({});
 const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
+const supportOrg = ref(supportOrgFromGroups(supportPositionGroups.value));
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
