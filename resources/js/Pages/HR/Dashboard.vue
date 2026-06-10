@@ -31,6 +31,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    assignedCompetenciesByScope: {
+        type: Object,
+        default: () => ({}),
+    },
     learningMethods: {
         type: Array,
         default: () => [],
@@ -56,6 +60,8 @@ const selectedJobFamily = ref('');
 const selectedPosition = ref('');
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
+const assignedByScope = ref(props.assignedCompetenciesByScope || {});
+const savingAssignment = ref(false);
 const selectedDetailCompetency = ref(null);
 const expandedDetailLevels = ref({});
 const catalogCompetencySearch = ref('');
@@ -285,6 +291,26 @@ const openCatalogEdit = (item) => {
         description: item.description || '',
         isActive: Boolean(item.isActive),
     };
+
+    saveAssignedForCurrentScope(items);
+};
+
+const saveAssignedForCurrentScope = (items) => {
+    if (!selectedWorkline.value || !selectedJobFamily.value || !selectedPosition.value) return;
+
+    savingAssignment.value = true;
+
+    router.post(route('hr.competency-assignments.store'), {
+        workline_name: selectedWorkline.value,
+        job_family_name: selectedJobFamily.value,
+        level_name: selectedPosition.value,
+        competency_ids: items.map((item) => item.id),
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onFinish: () => {
+            savingAssignment.value = false;
+        },
     openModal('catalog');
 };
 
@@ -522,7 +548,7 @@ const formatWeight = (weight) => {
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
-                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
+                            <div class="position-card-sub">{{ savingAssignment ? 'กำลังบันทึก' : (assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ') }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
@@ -562,7 +588,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <div class="assigned-actions">
                                         <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
-                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                        <button class="btn btn-s btn-sm danger-text" :disabled="savingAssignment" type="button" @click="removeCompetency(item.id)">ลบ</button>
                                     </div>
                                 </div>
                             </div>
@@ -597,16 +623,14 @@ const formatWeight = (weight) => {
                                         </div>
                                         <div class="dictionary-name">{{ item.n }}</div>
                                     </div>
-                                    <div class="dictionary-actions">
-                                        <button
-                                            class="btn btn-p btn-sm dictionary-add-button"
-                                            :disabled="!currentPositionId || assignedCompetencyIds.has(item.id)"
-                                            type="button"
-                                            @click="addCompetency(item)"
-                                        >
-                                            {{ assignedCompetencyIds.has(item.id) ? 'เพิ่มแล้ว' : 'เพิ่ม' }}
-                                        </button>
-                                    </div>
+                                    <button
+                                        class="btn btn-p btn-sm"
+                                        :disabled="savingAssignment || !selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        type="button"
+                                        @click="addCompetency(item)"
+                                    >
+                                        {{ assignedCompetencyIds.has(item.id) ? 'เพิ่มแล้ว' : 'เพิ่ม' }}
+                                    </button>
                                 </div>
                             </div>
                         </aside>
@@ -730,7 +754,7 @@ const formatWeight = (weight) => {
                     <div>
                         <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
                             <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
-                            <div class="cs">รายละเอียดสมรรถนะจากข้อมูลที่ Admin กำหนดไว้</div>
+                            <div class="cs">รายละเอียดระดับและพฤติกรรมบ่งชี้ของสมรรถนะ</div>
                         </template>
                         <template v-else>
                             <div class="ct">{{ catalogMode === 'edit' ? 'แก้ไขกิจกรรม Learning Catalog' : 'เพิ่มกิจกรรม Learning Catalog' }}</div>
@@ -1976,6 +2000,34 @@ const formatWeight = (weight) => {
     line-height: 1.65;
 }
 
+.detail-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.detail-summary-card {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: #fff;
+    grid-column: 1 / -1;
+}
+
+.detail-summary-label {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.detail-summary-value {
+    margin-top: 6px;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
 .detail-panel-head {
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
@@ -1994,6 +2046,53 @@ const formatWeight = (weight) => {
 }
 
 .detail-level {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+    transition: box-shadow 0.15s;
+}
+
+.detail-level:hover {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.detail-level-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+}
+
+.level-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.level-head-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.level-indicator-count {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
     border-bottom: 1px solid var(--border);
     background: #fff;
 }
@@ -2026,6 +2125,12 @@ const formatWeight = (weight) => {
     font-weight: 900;
 }
 
+.detail-indicator {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid #f1f5f9;
 .detail-toggle {
     position: relative;
     display: inline-flex;
@@ -2079,6 +2184,43 @@ const formatWeight = (weight) => {
     font-weight: 900;
 }
 
+.indicator-number {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.indicator-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text);
+}
+
+.detail-weight-pill {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.no-indicators {
+    padding: 16px;
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
 .detail-indicator {
     padding: 12px 16px;
     border-bottom: 1px solid #eef3f9;
@@ -2229,6 +2371,7 @@ const formatWeight = (weight) => {
     .position-picker,
     .dictionary-tools,
     .modal-grid,
+    .detail-summary-grid {
     .catalog-form-grid,
     .catalog-level-options,
     .catalog-filter-bar {

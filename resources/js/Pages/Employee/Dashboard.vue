@@ -57,8 +57,10 @@ const learningMethods = ref([
 
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const serverCurrentUser = computed(() => page.props.currentUser || null);
 const currentProfileUser = computed(() =>
-    users.value.find((user) => user.r === 'employee')
+    serverCurrentUser.value
+    || users.value.find((user) => user.r === 'employee')
     || users.value.find((user) => user.sso === '64020')
     || {
         n: page.props.auth?.user?.name || 'Employee User',
@@ -71,6 +73,7 @@ const currentProfileUser = computed(() =>
         act: true,
     },
 );
+const assignedCompetencies = computed(() => page.props.currentUserCompetencies || []);
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -144,6 +147,7 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentProfileUser"
                     :set-users="setRef(users)"
+                    :competencies="assignedCompetencies"
                 />
 
                 <EmployeeGap

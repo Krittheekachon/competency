@@ -10,7 +10,10 @@ use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeCo
 use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMethodController;
 use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
+use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
+use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 
 Route::get('/', function () {
@@ -25,6 +28,11 @@ Route::get('/', function () {
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
+
+if (app()->environment('local')) {
+    Route::get('/mock-sso', [MockSsoController::class, 'showLogin'])->name('mock.sso');
+    Route::post('/mock-sso', [MockSsoController::class, 'login'])->name('mock.sso.login');
+}
 
 Route::middleware('auth')->group(function () {
     Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
@@ -62,6 +70,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
+    Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
+    Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
+    Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
     Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
     Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
     Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');
