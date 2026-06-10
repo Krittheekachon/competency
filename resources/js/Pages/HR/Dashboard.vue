@@ -311,7 +311,7 @@ const saveAssignedForCurrentScope = (items) => {
         onFinish: () => {
             savingAssignment.value = false;
         },
-    openModal('catalog');
+    });
 };
 
 const catalogPayload = () => ({
@@ -2028,6 +2028,8 @@ const formatWeight = (weight) => {
     font-weight: 900;
     line-height: 1.4;
     overflow-wrap: anywhere;
+}
+
 .detail-panel-head {
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
@@ -2131,6 +2133,8 @@ const formatWeight = (weight) => {
     gap: 12px;
     padding: 12px 16px;
     border-top: 1px solid #f1f5f9;
+}
+
 .detail-toggle {
     position: relative;
     display: inline-flex;
@@ -2221,6 +2225,8 @@ const formatWeight = (weight) => {
     color: #94a3b8;
     font-size: 13px;
     font-style: italic;
+}
+
 .detail-indicator {
     padding: 12px 16px;
     border-bottom: 1px solid #eef3f9;
@@ -2372,6 +2378,9 @@ const formatWeight = (weight) => {
     .dictionary-tools,
     .modal-grid,
     .detail-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
     .catalog-form-grid,
     .catalog-level-options,
     .catalog-filter-bar {
