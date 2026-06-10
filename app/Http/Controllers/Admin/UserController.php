@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\CompetencyAssessmentSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -23,14 +24,20 @@ class UserController extends Controller
         'manager' => 5,
     ];
 
+    public function __construct(private CompetencyAssessmentSyncService $competencyAssessmentSync)
+    {
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedData($request);
 
-        User::create([
+        $user = User::create([
             ...$this->userAttributes($data),
             'password' => Hash::make(Str::password(32)),
         ]);
+
+        $this->competencyAssessmentSync->syncUser($user);
 
         return back()->with('success', 'บันทึกผู้ใช้เรียบร้อยแล้ว');
     }
@@ -40,6 +47,7 @@ class UserController extends Controller
         $data = $this->validatedData($request, $user);
 
         $user->update($this->userAttributes($data));
+        $this->competencyAssessmentSync->syncUser($user->fresh());
 
         return back()->with('success', 'อัปเดตผู้ใช้เรียบร้อยแล้ว');
     }

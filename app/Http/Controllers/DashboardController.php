@@ -390,11 +390,15 @@ class DashboardController extends Controller
             $levelIds->push($user->level_id);
         }
 
-        if ($user->level) {
+        foreach ([$user->level, $user->position] as $levelName) {
+            if (! $levelName) {
+                continue;
+            }
+
             $worklineId = $this->worklineIdFromUser($user);
 
             $matchingLevels = DB::table('levels')
-                ->where('name', $user->level)
+                ->where('name', $levelName)
                 ->where(function ($query) use ($worklineId) {
                     $query->whereNull('workline_id');
 

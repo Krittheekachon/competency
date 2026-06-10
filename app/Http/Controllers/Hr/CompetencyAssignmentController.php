@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Services\CompetencyAssessmentSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class CompetencyAssignmentController extends Controller
 {
+    public function __construct(private CompetencyAssessmentSyncService $competencyAssessmentSync)
+    {
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -33,27 +38,7 @@ class CompetencyAssignmentController extends Controller
             ]);
         }
 
-        $level = DB::table('levels')
-            ->where('name', $data['level_name'])
-            ->where(function ($query) use ($workline, $jobFamily) {
-                $query->where('job_family_id', $jobFamily->id)
-                    ->orWhere(function ($nested) use ($workline) {
-                        $nested->whereNull('job_family_id')
-                            ->where('workline_id', $workline->id);
-                    })
-                    ->orWhere(function ($nested) {
-                        $nested->whereNull('job_family_id')
-                            ->whereNull('workline_id');
-                    });
-            })
-            ->orderByRaw('case when job_family_id is not null then 0 when workline_id is not null then 1 else 2 end')
-            ->first();
-
-        if (! $level) {
-            throw ValidationException::withMessages([
-                'level_name' => 'ไม่พบระดับตำแหน่งที่เลือก',
-            ]);
-        }
+        $level = $this->resolveLevel($data['level_name'], (int) $workline->id, (int) $jobFamily->id);
 
         $roundId = $this->activeRoundId();
         $competencyIds = collect($data['competency_ids'] ?? [])->unique()->values();
@@ -81,6 +66,8 @@ class CompetencyAssignmentController extends Controller
             }
         });
 
+        $this->competencyAssessmentSync->syncScope($roundId, $jobFamily->id, $level->id);
+
         return back()->with('success', 'บันทึกการผูกสมรรถนะกับกลุ่มงานแล้ว');
     }
 
@@ -103,5 +90,39 @@ class CompetencyAssignmentController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function resolveLevel(string $levelName, int $worklineId, int $jobFamilyId): object
+    {
+        $level = DB::table('levels')
+            ->where('name', $levelName)
+            ->where(function ($query) use ($worklineId, $jobFamilyId) {
+                $query->where('job_family_id', $jobFamilyId)
+                    ->orWhere(function ($nested) use ($worklineId) {
+                        $nested->whereNull('job_family_id')
+                            ->where('workline_id', $worklineId);
+                    })
+                    ->orWhere(function ($nested) {
+                        $nested->whereNull('job_family_id')
+                            ->whereNull('workline_id');
+                    });
+            })
+            ->orderByRaw('case when job_family_id is not null then 0 when workline_id is not null then 1 else 2 end')
+            ->first();
+
+        if ($level) {
+            return $level;
+        }
+
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'job_family_id' => $jobFamilyId,
+            'name' => $levelName,
+            'expected_level' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return DB::table('levels')->where('id', $levelId)->first();
     }
 }
