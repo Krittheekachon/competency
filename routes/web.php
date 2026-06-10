@@ -7,11 +7,14 @@ use Inertia\Inertia;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\CompetencyController as AdminCompetencyController;
 use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeController;
+use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMethodController;
+use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
 use App\Http\Controllers\MockSsoController;
+use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -52,6 +55,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/positions', [AdminStructureController::class, 'storePosition'])->name('admin.structure.positions.store');
     Route::put('/admin/structure/positions', [AdminStructureController::class, 'updatePosition'])->name('admin.structure.positions.update');
     Route::delete('/admin/structure/positions', [AdminStructureController::class, 'destroyPosition'])->name('admin.structure.positions.destroy');
+    Route::post('/admin/structure/support-departments', [AdminStructureController::class, 'storeSupportDepartment'])->name('admin.structure.support-departments.store');
+    Route::put('/admin/structure/support-departments', [AdminStructureController::class, 'updateSupportDepartment'])->name('admin.structure.support-departments.update');
+    Route::delete('/admin/structure/support-departments', [AdminStructureController::class, 'destroySupportDepartment'])->name('admin.structure.support-departments.destroy');
+    Route::post('/admin/structure/support-works', [AdminStructureController::class, 'storeSupportWork'])->name('admin.structure.support-works.store');
+    Route::put('/admin/structure/support-works', [AdminStructureController::class, 'updateSupportWork'])->name('admin.structure.support-works.update');
+    Route::delete('/admin/structure/support-works', [AdminStructureController::class, 'destroySupportWork'])->name('admin.structure.support-works.destroy');
+    Route::post('/admin/structure/support-units', [AdminStructureController::class, 'storeSupportUnit'])->name('admin.structure.support-units.store');
+    Route::put('/admin/structure/support-units', [AdminStructureController::class, 'updateSupportUnit'])->name('admin.structure.support-units.update');
+    Route::delete('/admin/structure/support-units', [AdminStructureController::class, 'destroySupportUnit'])->name('admin.structure.support-units.destroy');
     Route::post('/admin/structure/levels', [AdminStructureController::class, 'storeLevel'])->name('admin.structure.levels.store');
     Route::put('/admin/structure/levels', [AdminStructureController::class, 'updateLevel'])->name('admin.structure.levels.update');
     Route::delete('/admin/structure/levels', [AdminStructureController::class, 'destroyLevel'])->name('admin.structure.levels.destroy');
@@ -61,6 +73,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
+    Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
+    Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
+    Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');
+    Route::post('/admin/learning-catalogs', [AdminLearningCatalogController::class, 'store'])->name('admin.learning-catalogs.store');
+    Route::put('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'update'])->name('admin.learning-catalogs.update');
+    Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
+    Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
+    Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

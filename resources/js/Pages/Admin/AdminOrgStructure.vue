@@ -33,7 +33,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setAcademicDepts,
       setSupportPositionGroups,
       setAdminDepts,
-      supportOrg, setSupportOrg,
+      supportOrg: initialSupportOrg, setSupportOrg,
       users, orgSups, setOrgSups,
       setAcademicPos,
       supportPos, setSupportPos,
@@ -52,6 +52,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     let academicDepts = [...((__props as any).academicDepts || [])];
     let supportDepts = [...((__props as any).supportDepts || [])];
     let supportPositionGroups = { ...((( __props as any).supportPositionGroups) || {}) };
+    let supportOrg = { ...((initialSupportOrg as any) || {}) };
     let adminDepts = [...((__props as any).adminDepts || [])];
     let academicPos = [...((__props as any).academicPos || [])];
     let adminPos = [...((__props as any).adminPos || [])];
@@ -71,7 +72,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const [editExpectedLevel, setEditExpectedLevel] = useState("1");
     const [editFullName, setEditFullName] = useState("");
     const [editDesc, setEditDesc] = useState("");
-    const [newSupportDeptName, setNewSupportDeptName] = useState("");
     const [newSupportWorkNames, setNewSupportWorkNames] = useState<Record<string, string>>({});
     const [newSupportUnitNames, setNewSupportUnitNames] = useState<Record<string, string>>({});
     const [showAddModal, setShowAddModal] = useState(false);
@@ -130,23 +130,40 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setWorklines([...nextWorklines]);
       setStructureVersion((current: number) => current + 1);
     };
+    const normalizeWorklineName = (name = "") => String(name).replace(/^สายงาน\s*/, "").replace(/^สาย\s*/, "").trim();
+    const worklineNameByKind = (kind: string, fallback: string) => {
+      return worklines.find((name) => normalizeWorklineName(name) === kind) || fallback;
+    };
+    const supportWorklineName = () => worklineNameByKind("สนับสนุน", "สายสนับสนุน");
+    const isWorklineKind = (user: any, kind: string) => normalizeWorklineName(user?.w || "") === kind;
+    const divisionHeadOptions = users.filter((user) => isWorklineKind(user, "บริหาร") && user.r === "supervisor");
+    const workHeadOptions = users.filter((user) => isWorklineKind(user, "สนับสนุน") && ["head", "dept_head", "manager_dept"].includes(user.r));
+    const supportOrgFromGroups = (groups: Record<string, string[]> = {}) => Object.fromEntries(
+      Object.entries(groups || {}).map(([dept, works]) => [
+        dept,
+        (Array.isArray(works) ? works : []).map((work) => ({ work, units: [] }))
+      ])
+    );
     const applyJobFamiliesByWorkline = (nextGroups: Record<string, Record<string, string[]>>) => {
       jobFamiliesByWorkline = { ...nextGroups };
       academicDepts = Object.keys(jobFamiliesByWorkline["สายวิชาการ"] || jobFamiliesByWorkline["วิชาการ"] || {});
       adminDepts = Object.keys(jobFamiliesByWorkline["สายงานบริหาร"] || jobFamiliesByWorkline["สายบริหาร"] || {});
-      supportPositionGroups = jobFamiliesByWorkline["สายสนับสนุน"] || jobFamiliesByWorkline["สนับสนุน"] || {};
+      const supportName = supportWorklineName();
+      supportPositionGroups = jobFamiliesByWorkline[supportName] || jobFamiliesByWorkline["สายสนับสนุน"] || jobFamiliesByWorkline["สายงานสนับสนุน"] || jobFamiliesByWorkline["สนับสนุน"] || {};
+      supportOrg = supportOrgFromGroups(supportPositionGroups);
       supportDepts = Object.keys(supportPositionGroups);
       setJobFamiliesByWorkline(jobFamiliesByWorkline);
       setAcademicDepts(academicDepts);
       setAdminDepts(adminDepts);
       setSupportPositionGroups(supportPositionGroups);
+      setSupportOrg(supportOrg);
       setStructureVersion((current: number) => current + 1);
     };
     const applyLevelsByWorkline = (nextLevels: Record<string, string[]>) => {
       levelsByWorkline = { ...nextLevels };
       setLevelsByWorkline(levelsByWorkline);
       setAcademicRank(levelsByWorkline["สายวิชาการ"] || levelsByWorkline["วิชาการ"] || []);
-      setSupportRank(levelsByWorkline["สายสนับสนุน"] || levelsByWorkline["สนับสนุน"] || []);
+      setSupportRank(levelsByWorkline[supportWorklineName()] || levelsByWorkline["สายสนับสนุน"] || levelsByWorkline["สายงานสนับสนุน"] || levelsByWorkline["สนับสนุน"] || []);
       setStructureVersion((current: number) => current + 1);
     };
     const applyLevelExpectationsByWorkline = (nextExpectations: Record<string, Record<string, number | null>>) => {
@@ -173,6 +190,12 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       if (props.jobFamiliesByWorkline && typeof props.jobFamiliesByWorkline === "object") {
         applyJobFamiliesByWorkline(props.jobFamiliesByWorkline);
+      }
+
+      if (props.supportOrg && typeof props.supportOrg === "object") {
+        supportOrg = { ...props.supportOrg };
+        setSupportOrg(supportOrg);
+        setStructureVersion((current: number) => current + 1);
       }
 
       if (props.levelsByWorkline && typeof props.levelsByWorkline === "object") {
@@ -235,7 +258,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     };
     const worklineNameFromType = (type: string) => {
       if (type === "1") return "สายวิชาการ";
-      if (type === "2") return "สายสนับสนุน";
+      if (type === "2") return supportWorklineName();
       return "สายงานบริหาร";
     };
     const levelItemsForWorkline = (worklineName: string) => {
@@ -349,23 +372,20 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setOrgSups((current) => ({ ...current, [path]: value }));
     };
 
-    const addSupportDept = () => {
-      const name = newSupportDeptName.value.trim();
-      if (!name || supportOrg[name]) return;
-      setSupportOrg({ ...supportOrg, [name]: [] });
-      setSupportPositionGroups({ ...supportPositionGroups, [name]: [] });
-      setOrgSups((current) => ({ ...current, [name]: deptManagers[0]?.n || dean }));
-      setNewSupportDeptName("");
-    };
-
     const addSupportWork = (dept: string) => {
       const name = (newSupportWorkNames.value[dept] || "").trim();
       if (!name) return;
       const works = supportOrg[dept] || [];
       if (works.some((item: any) => item.work === name)) return;
-      setSupportOrg({ ...supportOrg, [dept]: [...works, { work: name, units: [] }] });
-      setOrgSups((current) => ({ ...current, [[dept, name].join(" > ")]: supervisors[0]?.n || "" }));
-      setNewSupportWorkNames((current) => ({ ...current, [dept]: "" }));
+      if (isSavingAddItem.value) return;
+      setIsSavingAddItem(true);
+      postStructure("admin.structure.support-works.store", { division_name: dept, name }, () => {
+        supportOrg = { ...supportOrg, [dept]: [...works, { work: name, units: [] }] };
+        setSupportOrg(supportOrg);
+        setOrgSups((current) => ({ ...current, [[dept, name].join(" > ")]: workHeadOptions[0]?.n || "" }));
+        setNewSupportWorkNames((current) => ({ ...current, [dept]: "" }));
+        setIsSavingAddItem(false);
+      });
     };
 
     const addSupportUnit = (dept: string, workName: string) => {
@@ -373,21 +393,33 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       const name = (newSupportUnitNames.value[workPath] || "").trim();
       if (!name) return;
       const works = supportOrg[dept] || [];
-      setSupportOrg({
-        ...supportOrg,
-        [dept]: works.map((item: any) =>
-        item.work === workName && !(item.units || []).includes(name) ?
-        { ...item, units: [...(item.units || []), name] } :
-        item
-        )
+      if (works.some((item: any) => item.work === workName && (item.units || []).includes(name))) return;
+      if (isSavingAddItem.value) return;
+      setIsSavingAddItem(true);
+      postStructure("admin.structure.support-units.store", {
+        workline_name: supportWorklineName(),
+        division_name: dept,
+        work_name: workName,
+        name
+      }, () => {
+        supportOrg = {
+          ...supportOrg,
+          [dept]: works.map((item: any) =>
+          item.work === workName ?
+          { ...item, units: [...(item.units || []), name] } :
+          item
+          )
+        };
+        setSupportOrg(supportOrg);
+        setNewSupportUnitNames((current) => ({ ...current, [workPath]: "" }));
+        setIsSavingAddItem(false);
       });
-      setNewSupportUnitNames((current) => ({ ...current, [workPath]: "" }));
     };
 
     const startEdit = (type: string, oldName: string, extras?: any) => {
       setEditingId({ type, oldName, ...extras });
       setNewValue(oldName);
-      const rankWorklineName = extras?.worklineName || extras?.parent || (type === "support-rank" ? "สายสนับสนุน" : "สายวิชาการ");
+      const rankWorklineName = extras?.worklineName || extras?.parent || (type === "support-rank" ? supportWorklineName() : "สายวิชาการ");
       const rankJobFamilyName = extras?.jobFamilyName || "";
       const expectedLevel = type === "rank" || type === "academic-rank" || type === "support-rank"
         ? expectedLevelForItem(rankWorklineName, oldName, rankJobFamilyName)
@@ -432,8 +464,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             const nextSupportPositionGroups = { ...supportPositionGroups };
             nextSupportPositionGroups[newValue.value] = nextSupportPositionGroups[oldName] || [];
             delete nextSupportPositionGroups[oldName];
-            putStructure("admin.structure.job-families.update", { workline_name: "สายสนับสนุน", old_name: oldName, name: newValue.value }, () => {
-              setGroupMapForWorkline("สายสนับสนุน", nextSupportPositionGroups);
+            const targetWorklineName = supportWorklineName();
+            putStructure("admin.structure.support-departments.update", { old_name: oldName, name: newValue.value }, () => {
+              supportOrg = { ...supportOrg, [newValue.value]: supportOrg[oldName] || [] };
+              delete supportOrg[oldName];
+              setSupportOrg(supportOrg);
               setEditingId(null);
             });
             return;
@@ -442,7 +477,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "custom-group-pos":
           putStructure("admin.structure.positions.update", { workline_name: workName, job_family_name: parent, old_name: oldName, name: newValue.value }, () => {
             if (type === "support-group-pos") {
-              setGroupMapForWorkline("สายสนับสนุน", {
+              setGroupMapForWorkline(supportWorklineName(), {
                 ...supportPositionGroups,
                 [parent]: (supportPositionGroups[parent] || []).map((v) => v === oldName ? newValue.value : v)
               });
@@ -460,16 +495,30 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "support-work":{
             const nextSupportOrg = { ...supportOrg };
             if (parent && nextSupportOrg[parent]) {
-              nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === oldName ? { ...w, work: newValue.value } : w);
-              setSupportOrg(nextSupportOrg);
+              putStructure("admin.structure.support-works.update", { division_name: parent, old_name: oldName, name: newValue.value }, () => {
+                nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === oldName ? { ...w, work: newValue.value } : w);
+                setSupportOrg(nextSupportOrg);
+                setEditingId(null);
+              });
+              return;
             }
             break;
           }
         case "support-unit":{
             const nextSupportOrg = { ...supportOrg };
             if (parent && workName && nextSupportOrg[parent]) {
-              nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.map((u: string) => u === oldName ? newValue.value : u) } : w);
-              setSupportOrg(nextSupportOrg);
+              putStructure("admin.structure.support-units.update", {
+                workline_name: supportWorklineName(),
+                division_name: parent,
+                work_name: workName,
+                old_name: oldName,
+                name: newValue.value
+              }, () => {
+                nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.map((u: string) => u === oldName ? newValue.value : u) } : w);
+                setSupportOrg(nextSupportOrg);
+                setEditingId(null);
+              });
+              return;
             }
             break;
           }
@@ -489,7 +538,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "rank":
         case "academic-rank":
         case "support-rank":{
-          const targetWorklineName = worklineName || parent || (type === "support-rank" ? "สายสนับสนุน" : "สายวิชาการ");
+          const targetWorklineName = worklineName || parent || (type === "support-rank" ? supportWorklineName() : "สายวิชาการ");
           const targetJobFamilyName = jobFamilyName || "";
           const expectedLevel = Number(editExpectedLevel.value || 1);
           putStructure("admin.structure.levels.update", { workline_name: targetWorklineName, job_family_name: targetJobFamilyName, old_name: oldName, name: newValue.value, expected_level: expectedLevel }, () => {
@@ -611,8 +660,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "support-dept":{
             const nextSupportPositionGroups = { ...supportPositionGroups };
             delete nextSupportPositionGroups[oldName];
-            deleteStructure("admin.structure.job-families.destroy", { workline_name: "สายสนับสนุน", name: oldName }, () => {
-              setGroupMapForWorkline("สายสนับสนุน", nextSupportPositionGroups);
+            deleteStructure("admin.structure.support-departments.destroy", { name: oldName }, () => {
+              supportOrg = { ...supportOrg };
+              delete supportOrg[oldName];
+              setSupportOrg(supportOrg);
               setEditingId(null);
             });
             return;
@@ -621,7 +672,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "custom-group-pos":
           deleteStructure("admin.structure.positions.destroy", { workline_name: workName, job_family_name: parent, name: oldName }, () => {
             if (type === "support-group-pos") {
-              setGroupMapForWorkline("สายสนับสนุน", {
+              setGroupMapForWorkline(supportWorklineName(), {
                 ...supportPositionGroups,
                 [parent]: (supportPositionGroups[parent] || []).filter((v) => v !== oldName)
               });
@@ -639,16 +690,29 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "support-work":{
             const nextSupportOrg = { ...supportOrg };
             if (parent && nextSupportOrg[parent]) {
-              nextSupportOrg[parent] = nextSupportOrg[parent].filter((w: any) => w.work !== oldName);
-              setSupportOrg(nextSupportOrg);
+              deleteStructure("admin.structure.support-works.destroy", { division_name: parent, name: oldName }, () => {
+                nextSupportOrg[parent] = nextSupportOrg[parent].filter((w: any) => w.work !== oldName);
+                setSupportOrg(nextSupportOrg);
+                setEditingId(null);
+              });
+              return;
             }
             break;
           }
         case "support-unit":{
             const nextSupportOrg = { ...supportOrg };
             if (parent && workName && nextSupportOrg[parent]) {
-              nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.filter((u: string) => u !== oldName) } : w);
-              setSupportOrg(nextSupportOrg);
+              deleteStructure("admin.structure.support-units.destroy", {
+                workline_name: supportWorklineName(),
+                division_name: parent,
+                work_name: workName,
+                name: oldName
+              }, () => {
+                nextSupportOrg[parent] = nextSupportOrg[parent].map((w: any) => w.work === workName ? { ...w, units: w.units.filter((u: string) => u !== oldName) } : w);
+                setSupportOrg(nextSupportOrg);
+                setEditingId(null);
+              });
+              return;
             }
             break;
           }
@@ -668,7 +732,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         case "rank":
         case "academic-rank":
         case "support-rank":{
-          const targetWorklineName = worklineName || parent || (type === "support-rank" ? "สายสนับสนุน" : "สายวิชาการ");
+          const targetWorklineName = worklineName || parent || (type === "support-rank" ? supportWorklineName() : "สายวิชาการ");
           const targetJobFamilyName = jobFamilyName || "";
           deleteStructure("admin.structure.levels.destroy", { workline_name: targetWorklineName, job_family_name: targetJobFamilyName, name: oldName }, () => {
             setLevelItemsForScope(targetWorklineName, targetJobFamilyName, levelItemsForScope(targetWorklineName, targetJobFamilyName).filter((v) => v !== oldName));
@@ -749,6 +813,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       "สายงานบริหาร");
 
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
+      if (addItemData.value.category === "support-dept") return { title: "เพิ่มฝ่าย", label: "ชื่อฝ่าย" };
       if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "รหัสประเภทสมรรถนะ" };
       if (addItemData.value.category === "learning") return { title: "เพิ่มประเภทการเรียนรู้", label: "ชื่อประเภทการเรียนรู้" };
       if (addItemData.value.category === "dept") return { title: `เพิ่มกลุ่มงาน${typeLabel}`, label: "ชื่อกลุ่มงาน" };
@@ -776,7 +841,22 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       const trimmedName = name.trim();
       if (trimmedName) {
         if (category === "pos" && type === "2" && !parent) return;
-        if (category === "dept") {
+        if (category === "support-dept") {
+          if (supportOrg[trimmedName]) {
+            alert(`มีฝ่าย "${trimmedName}" แล้ว`);
+            return;
+          }
+          setIsSavingAddItem(true);
+          postStructure("admin.structure.support-departments.store", { name: trimmedName }, () => {
+            supportOrg = { ...supportOrg, [trimmedName]: [] };
+            setSupportOrg(supportOrg);
+            setOrgSups((current) => ({ ...current, [trimmedName]: divisionHeadOptions[0]?.n || "" }));
+            setIsSavingAddItem(false);
+            setShowAddModal(false);
+            setAddItemData({ ...addItemData.value, name: "" });
+          });
+          return;
+        } else if (category === "dept") {
           const targetWorklineName = worklineName || worklineNameFromType(type);
           if (Object.keys(groupMapForWorkline(targetWorklineName)).includes(trimmedName)) {
             alert(`มีกลุ่มงาน "${trimmedName}" ใน${targetWorklineName}แล้ว`);
@@ -1018,10 +1098,16 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               <section class="structure-section">
                 <div class="structure-section-head">
                   <div class="fw7 fs14 text-navy">เพิ่มฝ่ายสนับสนุน</div>
-                  <div class="flex g8" style={{ minWidth: 0 }}>
-                    <input class="inp" value={newSupportDeptName.value} onChange={(e) => setNewSupportDeptName(e.target.value)} placeholder="ชื่อฝ่ายใหม่" />
-                    <button class="btn btn-s btn-sm" onClick={addSupportDept}>+ เพิ่มฝ่าย</button>
-                  </div>
+                  <button
+                    class="btn btn-s btn-sm"
+                    type="button"
+                    onClick={() => {
+                      setAddItemData({ category: "support-dept", type: "2", name: "", parent: "", grandparent: "" });
+                      setShowAddModal(true);
+                    }}
+                  >
+                    + เพิ่มฝ่าย
+                  </button>
                 </div>
               </section>
               <div class="structure-stack">
@@ -1034,7 +1120,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                       </div>
                       <select class="sel" style={{ maxWidth: "320px" }} value={orgSups[dept] || ""} onChange={(e) => setOrgHead(dept, e.target.value)}>
                         <option value="">— เลือกหัวหน้าฝ่าย —</option>
-                        {deptManagers.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
+                        {divisionHeadOptions.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
                       </select>
                     </div>
                     <div class="support-work-grid">
@@ -1050,7 +1136,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                               <div class="muted fs11">หัวหน้างาน</div>
                               <select class="sel" value={orgSups[workPath] || ""} onChange={(e) => setOrgHead(workPath, e.target.value)}>
                                 <option value="">— เลือกหัวหน้างาน —</option>
-                                {supervisors.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
+                                {workHeadOptions.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
                               </select>
                             </div>
                             <div class="support-unit-list">
@@ -1071,7 +1157,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   })}
                       <div class="support-work-card support-add-card">
                         <input class="inp" value={newSupportWorkNames.value[dept] || ""} onChange={(e) => setNewSupportWorkNames((current) => ({ ...current, [dept]: e.target.value }))} placeholder={`เพิ่มงานใต้${dept}`} />
-                        <button class="btn btn-s btn-sm" onClick={() => addSupportWork(dept)}>+ เพิ่มงาน</button>
+                        <button class="btn btn-s btn-sm" disabled={isSavingAddItem.value} onClick={() => addSupportWork(dept)}>
+                          {isSavingAddItem.value ? "กำลังเพิ่ม..." : "+ เพิ่มงาน"}
+                        </button>
                       </div>
                     </div>
                   </section>

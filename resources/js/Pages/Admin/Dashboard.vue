@@ -8,6 +8,7 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
+import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrg from './AdminOrg.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -21,6 +22,12 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
+const supportOrgFromGroups = (groups = {}) => Object.fromEntries(
+    Object.entries(groups || {}).map(([dept, works]) => [
+        dept,
+        (Array.isArray(works) ? works : []).map((work) => ({ work, units: [] })),
+    ]),
+);
 const adminPageStorageKey = 'admin-active-page';
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
@@ -85,8 +92,8 @@ const jobFamiliesByWorkline = ref(clone(page.props.jobFamiliesByWorkline || {}))
 const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายวิชาการ'] || {})));
 const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
 const competencyTypes = ref(clone(page.props.competencyTypes || []));
-const supportOrg = ref({});
 const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
+const supportOrg = ref(clone(page.props.supportOrg || supportOrgFromGroups(supportPositionGroups.value)));
 const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
@@ -96,6 +103,8 @@ const levelExpectationsByJobFamily = ref(clone(page.props.levelExpectationsByJob
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
+const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
+const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -173,6 +182,7 @@ const implementedAdminPages = new Set([
     'admin-org',
     'admin-org-structure',
     'admin-dict',
+    'admin-idp-tools',
 ]);
 watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
@@ -626,6 +636,14 @@ const logout = () => router.post(route('logout'));
                     :set-competencies="setRef(competencies)"
                     :competency-types="competencyTypes"
                     :on-dirty-change="() => {}"
+                />
+
+                <AdminIdpTools
+                    v-else-if="activePage === 'admin-idp-tools'"
+                    :competencies="competencies"
+                    :idp-learning-methods="idpLearningMethods"
+                    :learning-catalogs="hrCatalogItems"
+                    :learning-methods="learningMethods"
                 />
 
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>

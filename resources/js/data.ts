@@ -97,8 +97,7 @@ export const NAV_CONFIG = {
       items: [
         { id: "hr-position-competencies", ic: "", lb: "กำหนดสมรรถนะประจำตำแหน่ง" },
         { id: "hr-cycle", ic: "", lb: "รอบการประเมิน" },
-        { id: "hr-template", ic: "", lb: "กำหนดความคาดหวัง" },
-        { id: "hr-catalog", ic: "", lb: "Learning Catalog" }
+        { id: "hr-template", ic: "", lb: "กำหนดความคาดหวัง" }
       ]
     },
     {
@@ -125,7 +124,8 @@ export const NAV_CONFIG = {
         { id: "admin-users", ic: "", lb: "จัดการผู้ใช้งาน" },
         { id: "admin-org", ic: "", lb: "จัดการสายการบังคับบัญชา" },
         { id: "admin-org-structure", ic: "", lb: "จัดการโครงสร้างองค์กร & สมรรถนะ" },
-        { id: "admin-dict", ic: "", lb: "พจนานุกรมสมรรถนะ" }
+        { id: "admin-dict", ic: "", lb: "พจนานุกรมสมรรถนะ" },
+        { id: "admin-idp-tools", ic: "", lb: "เครื่องมือ / แนวทาง สำหรับทำแผน IDP" }
       ]
     }
   ]
@@ -151,14 +151,14 @@ export const PAGE_TITLES = {
   "hr-cycle": "รอบการประเมิน",
   "hr-template": "กำหนดความคาดหวัง",
   "hr-position-competencies": "กำหนดสมรรถนะประจำตำแหน่ง",
-  "hr-catalog": "Learning Catalog",
   "hr-monitor": "ติดตามภาพรวม",
   "hr-comp-overview": "ภาพรวม Competency คณะ",
   "hr-idp-overview": "ภาพรวม IDP คณะ",
   "admin-users": "จัดการผู้ใช้งาน",
   "admin-org": "จัดการสายการบังคับบัญชา",
   "admin-org-structure": "จัดการโครงสร้างองค์กร & สมรรถนะ",
-  "admin-dict": "พจนานุกรมสมรรถนะ"
+  "admin-dict": "พจนานุกรมสมรรถนะ",
+  "admin-idp-tools": "เครื่องมือ / แนวทาง สำหรับทำแผน IDP"
 };
 
 export const DEPT_STRUCTURE = {
@@ -185,4 +185,3 @@ export const INITIAL_COMPETENCIES = [];
 export const IDP_GAPS_DATA = [];
 
 export const IDP_ACTIVITIES_DATA = {};
-

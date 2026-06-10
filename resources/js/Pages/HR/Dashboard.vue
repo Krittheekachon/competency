@@ -15,6 +15,14 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    positionLookup: {
+        type: Array,
+        default: () => [],
+    },
+    positionCompetencies: {
+        type: Object,
+        default: () => ({}),
+    },
     levelsByWorkline: {
         type: Object,
         default: () => ({}),
@@ -55,20 +63,51 @@ const dictionaryType = ref('all');
 const assignedByScope = ref(props.assignedCompetenciesByScope || {});
 const savingAssignment = ref(false);
 const selectedDetailCompetency = ref(null);
+const expandedDetailLevels = ref({});
+const catalogCompetencySearch = ref('');
+const catalogSearch = ref('');
+const catalogMethodFilter = ref('all');
+const catalogDeliveryFilter = ref('all');
+const catalogStatusFilter = ref('all');
+const catalogMode = ref('create');
+const catalogForm = ref({
+    id: null,
+    code: '',
+    name: '',
+    methodKey: '',
+    deliveryType: 'e_learning',
+    sourceType: 'internal',
+    provider: '',
+    cost: '',
+    hours: '',
+    competencyIds: [],
+    expectedLevels: [],
+    description: '',
+    isActive: true,
+});
+const levelOptions = [
+    { value: 1, label: 'Level 1', hint: 'พื้นฐาน / เริ่มต้น' },
+    { value: 2, label: 'Level 2', hint: 'ลงมือปฏิบัติ' },
+    { value: 3, label: 'Level 3', hint: 'พัฒนา / ทำได้ดี' },
+    { value: 4, label: 'Level 4', hint: 'ขั้นสูง / ชำนาญ' },
+    { value: 5, label: 'Level 5', hint: 'เชี่ยวชาญ' },
+];
+const deliveryTypeOptions = [
+    { value: 'e_learning', label: 'การฝึกอบรมออนไลน์ (e-Learning)' },
+    { value: 'in_class', label: 'การฝึกอบรมในห้องเรียน (In Class Training)' },
+];
 
 const sections = [
     {
         title: 'HR',
         items: [
             { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
-            { id: 'hr-catalog', label: 'Learning Catalog' },
         ],
     },
 ];
 
 const pageTitles = {
     'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
-    'hr-catalog': 'Learning Catalog',
 };
 
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
@@ -93,8 +132,9 @@ const levelsForSelectedWorkline = computed(() => {
 const positionOptions = computed(() => {
     if (levelsForSelectedWorkline.value.length) return levelsForSelectedWorkline.value;
     if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
-    return selectedJobFamily.value ? [selectedJobFamily.value] : [];
+    return [];
 });
+const needsPositionBeforeMapping = computed(() => Boolean(selectedJobFamily.value && !positionOptions.value.length));
 
 const allPositionCount = computed(() => {
     return worklineOptions.value.reduce((total, workline) => {
@@ -109,23 +149,28 @@ const allPositionCount = computed(() => {
     }, 0);
 });
 
-const configuredPositionCount = computed(() => Object.values(assignedByScope.value || {}).filter((items) => Array.isArray(items) && items.length).length);
+const configuredPositionCount = computed(() => Object.values(props.positionCompetencies || {}).filter((items) => items.length).length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
 const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
-const assignmentScopeKey = computed(() => [
-    selectedWorkline.value || '-',
-    selectedJobFamily.value || '-',
-    selectedPosition.value || '-',
-].join('|'));
+const currentPosition = computed(() => {
+    return (props.positionLookup || []).find((position) => {
+        return position.worklineName === selectedWorkline.value
+            && position.jobFamilyName === selectedJobFamily.value
+            && position.name === selectedPosition.value;
+    }) || null;
+});
+const currentPositionId = computed(() => currentPosition.value?.id || null);
 
 const competencyItems = computed(() => props.competencies || []);
 const competencyTypes = computed(() => {
     return [...new Set(competencyItems.value.map((item) => item.t).filter(Boolean))];
 });
 const coreCompetencyCount = computed(() => competencyItems.value.filter((item) => item.t === 'CC').length);
-const assignedCompetencies = computed(() => assignedByScope.value[assignmentScopeKey.value] || []);
-const assignedCompetencyIds = computed(() => new Set(assignedCompetencies.value.map((item) => item.id)));
+const assignedCompetencyIds = computed(() => new Set(props.positionCompetencies?.[currentPositionId.value] || []));
+const assignedCompetencies = computed(() => {
+    return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
+});
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
@@ -141,19 +186,44 @@ const availableCoreCompetencies = computed(() => {
 });
 
 const catalogItems = computed(() => props.hrCatalogItems || []);
-const catalogMethodStats = computed(() => {
-    const methods = props.learningMethods?.length
-        ? props.learningMethods
-        : [...new Map(catalogItems.value.map((item) => [item.methodKey, {
-            key: item.methodKey,
-            label: item.methodLabel || item.methodKey,
-        }])).values()].filter((item) => item.key);
+const filteredCatalogItems = computed(() => {
+    const keyword = catalogSearch.value.trim().toLowerCase();
 
-    return methods.map((method) => ({
-        key: method.key,
-        label: method.label,
-        count: catalogItems.value.filter((item) => item.methodKey === method.key).length,
-    }));
+    return catalogItems.value.filter((item) => {
+        const haystack = `${item.code || ''} ${item.name || ''} ${item.description || ''}`.toLowerCase();
+        const matchesSearch = !keyword || haystack.includes(keyword);
+        const matchesMethod = catalogMethodFilter.value === 'all' || item.methodKey === catalogMethodFilter.value;
+        const matchesDelivery = catalogDeliveryFilter.value === 'all' || item.deliveryType === catalogDeliveryFilter.value;
+        const matchesStatus = catalogStatusFilter.value === 'all'
+            || (catalogStatusFilter.value === 'active' ? item.isActive : !item.isActive);
+
+        return matchesSearch && matchesMethod && matchesDelivery && matchesStatus;
+    });
+});
+const resetCatalogFilters = () => {
+    catalogSearch.value = '';
+    catalogMethodFilter.value = 'all';
+    catalogDeliveryFilter.value = 'all';
+    catalogStatusFilter.value = 'all';
+};
+const defaultCatalogMethodKey = () => {
+    const methods = props.learningMethods || [];
+    const formal = methods.find((method) => {
+        const key = String(method.key || '').toLowerCase();
+        const label = String(method.label || '').toLowerCase();
+        return key.includes('formal') || label.includes('formal');
+    });
+
+    return formal?.key || methods[0]?.key || '';
+};
+const filteredCatalogCompetencies = computed(() => {
+    const keyword = catalogCompetencySearch.value.trim().toLowerCase();
+    if (!keyword) return competencyItems.value;
+
+    return competencyItems.value.filter((item) => {
+        const haystack = `${item.cd || ''} ${item.n || ''} ${item.t || ''}`.toLowerCase();
+        return haystack.includes(keyword);
+    });
 });
 
 watch(worklineOptions, (next) => {
@@ -175,12 +245,51 @@ const openModal = (modal) => {
 const closeModal = () => {
     activeModal.value = '';
     selectedDetailCompetency.value = null;
+    expandedDetailLevels.value = {};
 };
 
-const setAssignedForCurrentScope = (items) => {
-    assignedByScope.value = {
-        ...assignedByScope.value,
-        [assignmentScopeKey.value]: items,
+const resetCatalogForm = () => {
+    catalogMode.value = 'create';
+    catalogCompetencySearch.value = '';
+    catalogForm.value = {
+        id: null,
+        code: '',
+        name: '',
+        methodKey: defaultCatalogMethodKey(),
+        deliveryType: 'e_learning',
+        sourceType: 'internal',
+        provider: '',
+        cost: '',
+        hours: '',
+        competencyIds: [],
+        expectedLevels: [],
+        description: '',
+        isActive: true,
+    };
+};
+
+const openCatalogCreate = () => {
+    resetCatalogForm();
+    openModal('catalog');
+};
+
+const openCatalogEdit = (item) => {
+    catalogMode.value = 'edit';
+    catalogCompetencySearch.value = '';
+    catalogForm.value = {
+        id: item.id,
+        code: item.code || '',
+        name: item.name || '',
+        methodKey: item.methodKey || '',
+        deliveryType: item.deliveryType || 'e_learning',
+        sourceType: item.sourceType || 'internal',
+        provider: item.provider || '',
+        cost: item.cost ?? '',
+        hours: item.hours ?? '',
+        competencyIds: [...(item.competencyIds || [])].slice(0, 1),
+        expectedLevels: [...(item.expectedLevels || [])],
+        description: item.description || '',
+        isActive: Boolean(item.isActive),
     };
 
     saveAssignedForCurrentScope(items);
@@ -202,55 +311,120 @@ const saveAssignedForCurrentScope = (items) => {
         onFinish: () => {
             savingAssignment.value = false;
         },
+    openModal('catalog');
+};
+
+const catalogPayload = () => ({
+    code: catalogForm.value.code || null,
+    name: catalogForm.value.name,
+    method_key: catalogForm.value.methodKey || null,
+    delivery_type: catalogForm.value.deliveryType,
+    source_type: catalogForm.value.sourceType,
+    provider: catalogForm.value.provider || null,
+    cost: catalogForm.value.cost === '' ? null : catalogForm.value.cost,
+    hours: catalogForm.value.hours === '' ? null : catalogForm.value.hours,
+    competency_ids: catalogForm.value.competencyIds,
+    expected_levels: catalogForm.value.expectedLevels,
+    description: catalogForm.value.description || null,
+    is_active: catalogForm.value.isActive,
+});
+
+const toggleCatalogCompetency = (id) => {
+    catalogForm.value.competencyIds = catalogForm.value.competencyIds.includes(id) ? [] : [id];
+};
+
+const toggleCatalogExpectedLevel = (level) => {
+    const current = new Set(catalogForm.value.expectedLevels);
+    current.has(level) ? current.delete(level) : current.add(level);
+    catalogForm.value.expectedLevels = [...current].sort((a, b) => a - b);
+};
+
+const submitCatalog = () => {
+    if (catalogMode.value === 'edit' && catalogForm.value.id) {
+        router.put(route('hr.learning-catalogs.update', catalogForm.value.id), catalogPayload(), {
+            preserveScroll: true,
+            onSuccess: closeModal,
+        });
+        return;
+    }
+
+    router.post(route('hr.learning-catalogs.store'), catalogPayload(), {
+        preserveScroll: true,
+        onSuccess: closeModal,
+    });
+};
+
+const deleteCatalog = (item) => {
+    if (!window.confirm(`ลบ "${item.name}" ออกจาก Learning Catalog?`)) return;
+
+    router.delete(route('hr.learning-catalogs.destroy', item.id), {
+        preserveScroll: true,
     });
 };
 
 const addCompetency = (item) => {
-    if (!selectedPosition.value || assignedCompetencyIds.value.has(item.id)) return;
-    setAssignedForCurrentScope([...assignedCompetencies.value, item]);
+    if (!currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
+
+    router.post(route('hr.position-competencies.store'), {
+        position_id: currentPositionId.value,
+        competency_id: item.id,
+    }, {
+        preserveScroll: true,
+    });
 };
 
 const addAllCoreCompetencies = () => {
-    if (!selectedPosition.value || !availableCoreCompetencies.value.length) return;
-    setAssignedForCurrentScope([...assignedCompetencies.value, ...availableCoreCompetencies.value]);
+    if (!currentPositionId.value || !availableCoreCompetencies.value.length) return;
+
+    router.post(route('hr.position-competencies.store'), {
+        position_id: currentPositionId.value,
+        competency_ids: availableCoreCompetencies.value.map((item) => item.id),
+    }, {
+        preserveScroll: true,
+    });
 };
 
 const removeCompetency = (itemId) => {
-    setAssignedForCurrentScope(assignedCompetencies.value.filter((item) => item.id !== itemId));
+    if (!currentPositionId.value) return;
+
+    router.delete(route('hr.position-competencies.destroy'), {
+        data: {
+            position_id: currentPositionId.value,
+            competency_id: itemId,
+        },
+        preserveScroll: true,
+    });
 };
 
 const openCompetencyDetail = (item) => {
     selectedDetailCompetency.value = item;
+    expandedDetailLevels.value = {};
     openModal('competency-detail');
 };
 
-const detailLevelsForDisplay = computed(() => {
-    const levels = selectedDetailCompetency.value?.levels || [];
-    const levelsByNumber = new Map(levels.map((level) => [Number(level.lvl), level]));
-    const maxLevel = Math.max(
-        5,
-        Number(selectedDetailCompetency.value?.lv || 0),
-        ...levels.map((level) => Number(level.lvl || 0)),
-    );
-
-    return Array.from({ length: maxLevel }, (_, index) => {
-        const lvl = index + 1;
-        return levelsByNumber.get(lvl) || {
-            id: `placeholder-${lvl}`,
-            lvl,
-            description: '',
-            indicators: [],
-            weights: [],
-            isPlaceholder: true,
-        };
-    });
-});
+const toggleDetailLevel = (level) => {
+    expandedDetailLevels.value = {
+        ...expandedDetailLevels.value,
+        [level.lvl]: !expandedDetailLevels.value[level.lvl],
+    };
+};
 
 const formatCost = (cost) => {
     if (cost === null || cost === undefined || cost === '') return 'ฟรี';
     const number = Number(cost);
     if (Number.isNaN(number) || number === 0) return 'ฟรี';
     return `${number.toLocaleString('th-TH')} บาท`;
+};
+
+const deliveryTypeLabel = (value) => {
+    return deliveryTypeOptions.find((option) => option.value === value)?.label || '-';
+};
+
+const formatWeight = (weight) => {
+    if (weight === null || weight === undefined || weight === '') return '-';
+    const number = Number(weight);
+    if (Number.isNaN(number)) return '-';
+    return number.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 };
 </script>
 
@@ -352,12 +526,15 @@ const formatCost = (cost) => {
                             </div>
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
-                                <select v-model="selectedPosition" class="sel">
-                                    <option value="">ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง</option>
+                                <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
+                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งในกลุ่มงาน</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
                                         {{ position }}
                                     </option>
                                 </select>
+                                <div v-if="needsPositionBeforeMapping" class="position-warning">
+                                    กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดสมรรถนะ
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -385,11 +562,11 @@ const formatCost = (cost) => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
-                                    <div class="cs">รายการสมรรถนะที่ใช้ประเมินสำหรับตำแหน่งนี้</div>
+                                    <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนดระดับความคาดหวัง</div>
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
-                                    :disabled="savingAssignment || !selectedPosition || !availableCoreCompetencies.length"
+                                    :disabled="!currentPositionId || !availableCoreCompetencies.length"
                                     type="button"
                                     @click="addAllCoreCompetencies"
                                 >
@@ -399,14 +576,15 @@ const formatCost = (cost) => {
                             <div class="assigned-list">
                                 <div v-if="!assignedCompetencies.length" class="assigned-empty">
                                     <div class="empty-symbol">ไม่มีข้อมูล</div>
-                                    <div class="fw8">ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้</div>
-                                    <div class="muted fs12">เลือกจากพจนานุกรมด้านขวาเพื่อเพิ่มเข้าชุดนี้</div>
+                                    <div class="fw8">{{ needsPositionBeforeMapping ? 'ต้องเพิ่มตำแหน่งก่อน' : 'ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้' }}</div>
+                                    <div class="muted fs12">
+                                        {{ needsPositionBeforeMapping ? 'ระบบต้องมีตำแหน่งจริงในฐานข้อมูลก่อน จึงจะบันทึกการผูกสมรรถนะได้' : 'เลือกจากพจนานุกรมด้านขวาเพื่อเพิ่มเข้าชุดนี้' }}
+                                    </div>
                                 </div>
                                 <div v-for="item in assignedCompetencies" v-else :key="item.id" class="assigned-row">
                                     <div>
                                         <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
                                         <div class="dictionary-name">{{ item.n }}</div>
-                                        <div class="dictionary-detail truncate-2">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
                                     </div>
                                     <div class="assigned-actions">
                                         <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
@@ -437,11 +615,13 @@ const formatCost = (cost) => {
                                     <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
                                 </div>
                                 <div v-for="item in filteredCompetencies" v-else :key="item.id" class="dictionary-row">
-                                    <div>
-                                        <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
+                                    <div class="dictionary-main">
+                                        <div class="dictionary-code">
+                                            <span>{{ item.cd }}</span>
+                                            <span class="b bgr">{{ item.t }}</span>
+                                            <button class="dictionary-detail-button" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                        </div>
                                         <div class="dictionary-name">{{ item.n }}</div>
-                                        <div class="dictionary-detail truncate-2">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
-                                        <div class="muted fs12">{{ item.lv || 0 }} ระดับ</div>
                                     </div>
                                     <button
                                         class="btn btn-p btn-sm"
@@ -464,39 +644,54 @@ const formatCost = (cost) => {
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
                         <div class="hr-actions">
-                            <button class="btn btn-s" disabled type="button">ดาวน์โหลด Template</button>
-                            <button class="btn btn-s" type="button" @click="openModal('catalog-import')">Import Excel</button>
-                            <button class="btn btn-p" type="button" @click="openModal('catalog')">เพิ่มกิจกรรม</button>
+                            <button class="btn btn-p" type="button" @click="openCatalogCreate">เพิ่มกิจกรรม</button>
                         </div>
                     </div>
 
-                    <div v-if="catalogMethodStats.length" class="g3 mb14">
-                        <div v-for="method in catalogMethodStats" :key="method.key" class="sc">
-                            <div class="sl">{{ method.label }}</div>
-                            <div class="sv bc">{{ method.count }}</div>
-                            <div class="ss muted">รายการ</div>
-                        </div>
-                    </div>
-                    <div v-else class="hr-empty compact mb14">
-                        <div>
-                            <div class="fw8 fs14">ยังไม่มีประเภทการเรียนรู้</div>
-                            <p class="muted fs13 mb0">เพิ่มประเภทการเรียนรู้จากฝั่ง Admin ก่อน แล้วหน้านี้จะแสดงสถิติ Catalog</p>
+                    <div class="catalog-summary-card single mb14">
+                        <div class="catalog-summary-total">
+                            <div class="catalog-summary-number">{{ catalogItems.length }}</div>
+                            <div>
+                                <div class="catalog-summary-title">กิจกรรมทั้งหมด</div>
+                                <div class="catalog-summary-sub">รายการใน Learning Catalog</div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="ch">
                             <div class="ct">Learning Catalog</div>
-                            <span class="muted fs12 ml-auto">{{ catalogItems.length }} รายการ</span>
+                            <span class="muted fs12 ml-auto">{{ filteredCatalogItems.length }}/{{ catalogItems.length }} รายการ</span>
+                        </div>
+                        <div class="catalog-filter-bar">
+                            <input
+                                v-model="catalogSearch"
+                                class="inp catalog-filter-search"
+                                placeholder="ค้นหารหัส / ชื่อกิจกรรม / คำอธิบาย"
+                            />
+                            <select v-model="catalogMethodFilter" class="sel catalog-filter-select">
+                                <option value="all">ทุกประเภท</option>
+                                <option v-for="method in learningMethods" :key="method.key" :value="method.key">{{ method.label }}</option>
+                            </select>
+                            <select v-model="catalogDeliveryFilter" class="sel catalog-filter-select">
+                                <option value="all">ทุกรูปแบบ</option>
+                                <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                            </select>
+                            <select v-model="catalogStatusFilter" class="sel catalog-filter-select compact">
+                                <option value="all">ทุกสถานะ</option>
+                                <option value="active">เปิดใช้</option>
+                                <option value="inactive">ปิด</option>
+                            </select>
+                            <button class="btn btn-s btn-sm" type="button" @click="resetCatalogFilters">ล้าง</button>
                         </div>
                         <div class="hr-table-wrap">
                             <table class="tbl catalog-table">
                                 <thead>
                                     <tr>
+                                        <th>รหัส</th>
                                         <th>ชื่อกิจกรรม</th>
                                         <th>ประเภท</th>
-                                        <th>ผู้จัด</th>
-                                        <th>ค่าใช้จ่าย</th>
+                                        <th>รูปแบบ</th>
                                         <th>สถานะ</th>
                                         <th></th>
                                     </tr>
@@ -513,21 +708,37 @@ const formatCost = (cost) => {
                                         </td>
                                     </tr>
                                 </tbody>
+                                <tbody v-else-if="!filteredCatalogItems.length">
+                                    <tr>
+                                        <td colspan="6">
+                                            <div class="table-empty-cell">
+                                                <div>
+                                                    <div class="fw8 fs14">ไม่พบรายการตาม filter</div>
+                                                    <p class="muted fs13 mb0">ลองเปลี่ยนคำค้นหา ประเภท รูปแบบ หรือสถานะอีกครั้ง</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
                                 <tbody v-else>
-                                    <tr v-for="item in catalogItems" :key="item.id">
+                                    <tr v-for="item in filteredCatalogItems" :key="item.id">
+                                        <td class="fw8">{{ item.code || '-' }}</td>
                                         <td>
                                             <div class="fw8">{{ item.name }}</div>
-                                            <div class="muted fs12 truncate-2">{{ item.description || 'ไม่มีคำอธิบาย' }}</div>
                                         </td>
                                         <td><span class="b bgr">{{ item.methodLabel || '-' }}</span></td>
-                                        <td>{{ item.provider || '-' }}</td>
-                                        <td>{{ formatCost(item.cost) }}</td>
+                                        <td>{{ deliveryTypeLabel(item.deliveryType) }}</td>
                                         <td>
-                                            <span class="b" :class="item.isActive ? 'bgr' : 'bgy'">
+                                            <span class="catalog-status-badge" :class="item.isActive ? 'active' : 'inactive'">
                                                 {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
                                             </span>
                                         </td>
-                                        <td><button class="btn btn-s btn-sm" disabled type="button">แก้ไข</button></td>
+                                        <td>
+                                            <div class="catalog-actions">
+                                                <button class="btn btn-s btn-sm" type="button" @click="openCatalogEdit(item)">แก้ไข</button>
+                                                <button class="btn btn-s btn-sm danger" type="button" @click="deleteCatalog(item)">ลบ</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -538,7 +749,7 @@ const formatCost = (cost) => {
         </section>
 
         <div v-if="activeModal" class="mo hr-modal" @click.self="closeModal">
-            <div class="mo-box hr-modal-box">
+            <div class="mo-box hr-modal-box" :class="{ 'catalog-modal-box': activeModal === 'catalog' }">
                 <div class="mo-h">
                     <div>
                         <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
@@ -546,146 +757,225 @@ const formatCost = (cost) => {
                             <div class="cs">รายละเอียดระดับและพฤติกรรมบ่งชี้ของสมรรถนะ</div>
                         </template>
                         <template v-else>
-                            <div v-if="activeModal === 'catalog-import'" class="ct">Import Learning Catalog</div>
-                            <div v-else class="ct">เพิ่มกิจกรรม Learning Catalog</div>
-                            <div class="cs">ฟอร์มนี้เตรียมไว้รอเชื่อม API และฐานข้อมูลจริง</div>
+                            <div class="ct">{{ catalogMode === 'edit' ? 'แก้ไขกิจกรรม Learning Catalog' : 'เพิ่มกิจกรรม Learning Catalog' }}</div>
+                            <div class="cs">ข้อมูลนี้จะถูกบันทึกลง Learning Catalog เพื่อใช้ในแผนพัฒนา IDP</div>
                         </template>
                     </div>
                     <button class="modal-close" type="button" @click="closeModal">×</button>
                 </div>
 
-                <form class="mo-b" @submit.prevent>
+                <div class="mo-b">
                     <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
                         <div class="competency-detail">
-                            <div class="detail-block">
-                                <div class="dictionary-code">
-                                    {{ selectedDetailCompetency.cd }}
-                                    <span class="b bgr">{{ selectedDetailCompetency.t }}</span>
-                                    <span class="muted">{{ selectedDetailCompetency.lv || 0 }} ระดับ</span>
-                                </div>
+                            <section class="detail-overview">
                                 <div class="detail-title">{{ selectedDetailCompetency.n }}</div>
-                                <div class="detail-copy">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบาย' }}</div>
-                            </div>
-
-                            <div class="detail-summary-grid">
-                                <div class="detail-summary-card">
-                                    <div class="detail-summary-label">ตำแหน่ง</div>
-                                    <div class="detail-summary-value">{{ selectedPosition || 'ยังไม่ได้เลือกตำแหน่ง' }}</div>
-                                    <div class="detail-copy muted">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ jobFamilyLabel }}</div>
+                                <div class="detail-meta-row">
+                                    <span>{{ selectedDetailCompetency.t }}<template v-if="selectedDetailCompetency.typeName"> - {{ selectedDetailCompetency.typeName }}</template></span>
+                                    <span>{{ selectedDetailCompetency.cd }}</span>
                                 </div>
-                            </div>
+                                <div class="detail-description">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบายสมรรถนะ' }}</div>
+                            </section>
 
-                            <div class="detail-levels">
-                                <div
-                                    v-for="level in detailLevelsForDisplay"
-                                    :key="level.id || level.lvl"
-                                    class="detail-level"
-                                >
-                                    <!-- Level Header -->
-                                    <div class="detail-level-head">
-                                        <div class="level-badge">
-                                            {{ level.lvl }}
-                                        </div>
-                                        <div class="level-head-content">
-                                            <div class="detail-level-title">
-                                                ระดับที่ {{ level.lvl }}
-                                            </div>
-                                            <div v-if="level.description" class="detail-copy">{{ level.description }}</div>
-                                            <div v-else class="detail-copy muted">รอรายละเอียดของระดับนี้</div>
-                                        </div>
-                                        <div class="level-indicator-count">
-                                            {{ level.indicators?.length || 0 }} พฤติกรรม
-                                        </div>
+                            <section class="detail-behavior-panel">
+                                <div class="detail-panel-head">
+                                    <div>
+                                        <div class="detail-section-label">รายละเอียดพฤติกรรมบ่งชี้</div>
+                                        <div class="detail-panel-sub">เลือกเปิดแต่ละระดับเพื่อดูพฤติกรรมและน้ำหนัก</div>
                                     </div>
-
-                                    <!-- Indicators -->
-                                    <div v-if="level.indicators?.length" class="detail-indicators">
+                                </div>
+                                <div class="detail-levels">
+                                    <div v-if="!(selectedDetailCompetency.levels || []).length" class="assigned-empty detail-empty">
+                                        <div class="empty-symbol">ไม่มีข้อมูล</div>
+                                        <div class="fw8">ยังไม่มีข้อมูลระดับสมรรถนะ</div>
+                                    </div>
+                                    <article
+                                        v-for="level in selectedDetailCompetency.levels"
+                                        v-else
+                                        :key="level.id || level.lvl"
+                                        class="detail-level"
+                                        :class="{ open: expandedDetailLevels[level.lvl] }"
+                                    >
+                                        <button class="detail-level-head" type="button" @click="toggleDetailLevel(level)">
+                                            <span class="detail-level-number">Level {{ level.lvl }}</span>
+                                            <span class="detail-toggle" :class="{ open: expandedDetailLevels[level.lvl] }" aria-hidden="true"></span>
+                                        </button>
+                                        <div v-if="expandedDetailLevels[level.lvl] && level.indicators?.length" class="detail-indicators">
+                                            <div class="detail-indicator-head">
+                                                <div>ข้อ</div>
+                                                <div>พฤติกรรมบ่งชี้</div>
+                                                <div>น้ำหนัก</div>
+                                            </div>
+                                            <div
+                                                v-for="(indicator, index) in level.indicators"
+                                                :key="`${level.lvl}-${index}`"
+                                                class="detail-indicator"
+                                            >
+                                                <div class="detail-index">{{ index + 1 }}</div>
+                                                <div class="detail-copy">{{ indicator || 'ยังไม่มีรายละเอียดพฤติกรรม' }}</div>
+                                                <div class="detail-weight">{{ formatWeight(level.weights?.[index]) }}</div>
+                                            </div>
+                                        </div>
                                         <div
-                                            v-for="(indicator, index) in level.indicators"
-                                            :key="`${level.lvl}-${index}`"
-                                            class="detail-indicator"
-                                        >
-                                            <div class="indicator-number">{{ level.lvl }}.{{ index + 1 }}</div>
-                                            <div class="detail-copy indicator-text">{{ indicator }}</div>
-                                            <div class="detail-weight-pill">
-                                                {{ level.weights?.[index] ?? '-' }}
-                                            </div>
-                                        </div>
+                                            v-else-if="expandedDetailLevels[level.lvl]"
+                                            class="detail-no-indicators"
+                                        >ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</div>
+                                    </article>
+                                </div>
+                            </section>
+                        </div>
+                    </template>
+
+                    <form v-else class="catalog-form" @submit.prevent="submitCatalog">
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div>
+                                    <div class="catalog-section-title">1. เลือกสมรรถนะที่เกี่ยวข้อง</div>
+                                    <div class="catalog-section-sub">เลือกสมรรถนะหลักที่หลักสูตรนี้ช่วยพัฒนาหรือปิด Gap ได้ 1 รายการ</div>
+                                </div>
+                                <span class="catalog-count-pill">{{ catalogForm.competencyIds.length ? 'เลือกแล้ว' : 'ยังไม่เลือก' }}</span>
+                            </div>
+                            <input
+                                v-model="catalogCompetencySearch"
+                                class="inp catalog-input catalog-search"
+                                placeholder="ค้นหารหัสหรือชื่อสมรรถนะ เช่น CC, MC, FC"
+                            />
+                            <div class="catalog-competency-list">
+                                <button
+                                    v-for="competency in filteredCatalogCompetencies"
+                                    :key="competency.id"
+                                    class="catalog-check-row"
+                                    :class="{ selected: catalogForm.competencyIds.includes(competency.id) }"
+                                    type="button"
+                                    @click="toggleCatalogCompetency(competency.id)"
+                                >
+                                    <span class="catalog-checkbox" aria-hidden="true"></span>
+                                    <span class="catalog-competency-copy">
+                                        <span>{{ competency.cd }}</span>
+                                        <strong>{{ competency.n }}</strong>
+                                    </span>
+                                    <span class="b bgr">{{ competency.t }}</span>
+                                </button>
+                                <div v-if="!filteredCatalogCompetencies.length" class="catalog-empty-line">ไม่พบสมรรถนะที่ค้นหา</div>
+                            </div>
+
+                            <div class="catalog-level-picker">
+                                <div class="catalog-level-head">
+                                    <div>
+                                        <div class="lbl">เหมาะสำหรับผู้ที่มีระดับความคาดหวัง</div>
+                                        <div class="catalog-level-help">เลือกได้มากกว่า 1 ระดับ หรือไม่ระบุก็ได้หากคู่มือไม่ได้กำหนดไว้</div>
                                     </div>
-                                    <div v-else class="no-indicators">
-                                        รอข้อมูลพฤติกรรมบ่งชี้ในระดับนี้
-                                    </div>
+                                    <span class="catalog-count-pill">{{ catalogForm.expectedLevels.length ? `${catalogForm.expectedLevels.length} ระดับ` : 'ไม่ระบุ' }}</span>
+                                </div>
+                                <div class="catalog-level-options">
+                                    <button
+                                        v-for="level in levelOptions"
+                                        :key="level.value"
+                                        class="catalog-level-option"
+                                        :class="{ selected: catalogForm.expectedLevels.includes(level.value) }"
+                                        type="button"
+                                        @click="toggleCatalogExpectedLevel(level.value)"
+                                    >
+                                        <span class="catalog-level-check" aria-hidden="true"></span>
+                                        <span>
+                                            <strong>{{ level.label }}</strong>
+                                            <small>{{ level.hint }}</small>
+                                        </span>
+                                    </button>
                                 </div>
                             </div>
-                        </div>
-                    </template>
+                        </section>
 
-                    <template v-else-if="activeModal === 'catalog-import'">
-                        <div class="modal-grid">
-                            <div class="fg">
-                                <label class="lbl">ประเภทข้อมูล</label>
-                                <select class="sel">
-                                    <option>Learning Catalog</option>
-                                </select>
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div class="catalog-section-title">2. กรอกรายละเอียดหลักสูตร/กิจกรรม</div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">วิธีนำเข้า</label>
-                                <select class="sel">
-                                    <option>ตรวจสอบก่อนบันทึก</option>
-                                    <option>นำเข้าเป็นแบบร่าง</option>
-                                </select>
+                            <div class="catalog-form-grid">
+                                <div class="fg">
+                                    <label class="lbl">รหัสหลักสูตร/บทเรียน</label>
+                                    <input
+                                        v-model="catalogForm.code"
+                                        autocomplete="off"
+                                        class="inp catalog-input"
+                                        placeholder="เช่น TN001"
+                                    />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ประเภทกิจกรรม</label>
+                                    <select v-model="catalogForm.methodKey" class="sel catalog-input">
+                                        <option value="">ไม่ระบุประเภท</option>
+                                        <option v-for="method in learningMethods" :key="method.key" :value="method.key">{{ method.label }}</option>
+                                    </select>
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">รูปแบบการฝึกอบรม</label>
+                                    <select v-model="catalogForm.deliveryType" class="sel catalog-input">
+                                        <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                                    </select>
+                                </div>
                             </div>
-                        </div>
-                        <div class="upload-box">
-                            <div>
-                                <div class="fw8 fs14">เลือกไฟล์ Catalog</div>
-                                <div class="muted fs12">รอ API สำหรับ validate และ import ไฟล์ Excel</div>
+                            <div class="catalog-title-field">
+                                <label class="lbl">ชื่อกิจกรรม หรือหลักสูตร</label>
+                                <input
+                                    v-model="catalogForm.name"
+                                    autocomplete="off"
+                                    class="inp catalog-input"
+                                    required
+                                    placeholder="ชื่อกิจกรรมพัฒนา"
+                                />
                             </div>
-                            <input class="inp" type="file" accept=".xlsx,.xls" />
-                        </div>
-                    </template>
+                            <div class="fg mb0 catalog-description-field">
+                                <label class="lbl">คำอธิบายหลักสูตร</label>
+                                <textarea
+                                    v-model="catalogForm.description"
+                                    class="ta catalog-textarea"
+                                    placeholder="รายละเอียด เนื้อหา และวัตถุประสงค์ของการเรียนรู้"
+                                ></textarea>
+                            </div>
+                        </section>
 
-                    <template v-else>
-                        <div class="modal-grid">
-                            <div class="fg modal-span">
-                                <label class="lbl">ชื่อกิจกรรม / หลักสูตร</label>
-                                <input class="inp" placeholder="ชื่อกิจกรรมพัฒนา" />
+                        <section class="catalog-form-section">
+                            <div class="catalog-section-head">
+                                <div class="catalog-section-title">3. ข้อมูลด้านการบริหารจัดการ</div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ประเภท</label>
-                                <select class="sel">
-                                    <option v-if="!learningMethods.length">ยังไม่มีประเภทการเรียนรู้</option>
-                                    <option v-for="method in learningMethods" v-else :key="method.key">{{ method.label }}</option>
-                                </select>
+                            <div class="catalog-form-grid">
+                                <div class="fg">
+                                    <label class="lbl">แหล่งหลักสูตร</label>
+                                    <select v-model="catalogForm.sourceType" class="sel catalog-input">
+                                        <option value="internal">ภายในมหาวิทยาลัย</option>
+                                        <option value="external">ภายนอกมหาวิทยาลัย</option>
+                                    </select>
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ผู้จัดให้บริการ</label>
+                                    <input v-model="catalogForm.provider" autocomplete="off" class="inp catalog-input" placeholder="หน่วยงาน / บริษัทผู้จัด" />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">ค่าใช้จ่าย (บาท)</label>
+                                    <input v-model="catalogForm.cost" class="inp catalog-input" min="0" step="0.01" type="number" placeholder="0" />
+                                </div>
+                                <div class="fg">
+                                    <label class="lbl">จำนวนชั่วโมงการเรียนรู้</label>
+                                    <input v-model="catalogForm.hours" class="inp catalog-input" min="0" step="0.5" type="number" placeholder="เช่น 3" />
+                                </div>
                             </div>
-                            <div class="fg">
-                                <label class="lbl">ผู้จัด</label>
-                                <input class="inp" placeholder="หน่วยงาน / ผู้จัด" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">ค่าใช้จ่าย</label>
-                                <input class="inp" placeholder="ฟรี / จำนวนเงิน" />
-                            </div>
-                            <div class="fg">
-                                <label class="lbl">สถานะ</label>
-                                <select class="sel">
-                                    <option>แบบร่าง</option>
-                                    <option>เปิดใช้</option>
-                                    <option>ปิด</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="fg mb0">
-                            <label class="lbl">คำอธิบาย</label>
-                            <textarea class="ta" placeholder="รายละเอียดกิจกรรมที่บุคลากรจะเห็นตอนทำ IDP"></textarea>
-                        </div>
-                    </template>
+                        </section>
 
-                    <div class="modal-actions">
-                        <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
-                        <button class="btn btn-p" disabled type="submit">บันทึก</button>
-                    </div>
-                </form>
+                        <section class="catalog-form-section compact">
+                            <label class="catalog-active-toggle">
+                                <input v-model="catalogForm.isActive" type="checkbox" />
+                                <span>
+                                    <strong>เปิดใช้งานหลักสูตรนี้</strong>
+                                    <small>เมื่อเปิด ระบบจะนำไปแสดงเป็นหลักสูตรแนะนำให้บุคลากรที่มีคะแนนตกเกณฑ์</small>
+                                </span>
+                            </label>
+                        </section>
+
+                        <div class="modal-actions catalog-modal-actions">
+                            <button class="btn btn-s" type="button" @click="closeModal">ยกเลิก</button>
+                            <button class="btn btn-p" type="submit">{{ catalogMode === 'edit' ? 'บันทึกการแก้ไข' : 'เพิ่มกิจกรรม' }}</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
@@ -720,7 +1010,15 @@ const formatCost = (cost) => {
 
 .content .btn.btn-p {
     background: var(--blue);
-    border: none;
+    border: 1px solid var(--blue);
+    color: #fff;
+    opacity: 1;
+    visibility: visible;
+}
+
+.content .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
     color: #fff;
 }
 
@@ -734,6 +1032,24 @@ const formatCost = (cost) => {
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text2);
+}
+
+.content .btn.btn-s:hover {
+    background: var(--border);
+}
+
+.content .btn.btn-p {
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    opacity: 1;
+    visibility: visible;
+}
+
+.content .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
 }
 
 .content .sec-t {
@@ -774,6 +1090,47 @@ const formatCost = (cost) => {
     min-height: 96px;
 }
 
+.catalog-summary-card {
+    display: block;
+}
+
+.catalog-summary-total {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: #fff;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 18px 22px;
+}
+
+.catalog-summary-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 18px;
+    background: #eff6ff;
+    color: var(--blue);
+    font-size: 38px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.catalog-summary-title {
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.catalog-summary-sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 2px;
+}
+
 .hr-page-head {
     display: flex;
     align-items: center;
@@ -792,8 +1149,63 @@ const formatCost = (cost) => {
     overflow-x: auto;
 }
 
+.catalog-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(160px, 0.45fr) minmax(220px, 0.55fr) minmax(130px, 0.32fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #fbfdff;
+}
+
+.catalog-filter-search,
+.catalog-filter-select {
+    min-height: 40px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.catalog-filter-select.compact {
+    min-width: 124px;
+}
+
 .catalog-table {
-    min-width: 820px;
+    min-width: 720px;
+}
+
+.catalog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.catalog-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.catalog-status-badge.active {
+    border: 1px solid #bbf7d0;
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.catalog-status-badge.inactive {
+    border: 1px solid #fecaca;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.content .btn.btn-s.danger {
+    color: #b42318;
 }
 
 .table-empty-cell {
@@ -953,7 +1365,15 @@ const formatCost = (cost) => {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
-    align-items: end;
+    align-items: start;
+}
+
+.position-warning {
+    margin-top: 6px;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
 }
 
 .position-board {
@@ -972,8 +1392,8 @@ const formatCost = (cost) => {
 }
 
 .position-card.selected {
-    border-color: var(--blue-md);
-    background: linear-gradient(180deg, #fff 0%, var(--blue-lt) 100%);
+    border-color: var(--border);
+    background: #fff;
 }
 
 .position-card-label {
@@ -1096,7 +1516,7 @@ const formatCost = (cost) => {
 
 .dictionary-list {
     display: grid;
-    gap: 8px;
+    gap: 10px;
     max-height: 560px;
     overflow-y: auto;
     padding: 14px;
@@ -1109,18 +1529,62 @@ const formatCost = (cost) => {
 .dictionary-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
+    gap: 14px;
     align-items: center;
-    padding: 12px;
+    min-height: 96px;
+    padding: 14px 16px;
     border: 1px solid var(--border);
-    border-radius: var(--r);
+    border-radius: 10px;
     background: #fff;
+    transition: background .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.dictionary-row:hover {
+    background: #f8fbff;
+    border-color: #bcd0ef;
+    box-shadow: 0 8px 18px rgba(15, 42, 83, 0.06);
+}
+
+.dictionary-main {
+    min-width: 0;
+}
+
+.dictionary-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.dictionary-detail-button {
+    border: 1px solid #cfe0f7;
+    border-radius: 999px;
+    background: #f8fbff;
+    color: var(--blue);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    margin-left: 4px;
+    padding: 4px 10px;
+    white-space: nowrap;
+    transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+.dictionary-detail-button:hover {
+    background: #eef5ff;
+    border-color: #a9c7f2;
+    color: var(--blue2);
+}
+
+.dictionary-add-button {
+    min-width: 74px;
+    justify-content: center;
 }
 
 .dictionary-code {
     display: flex;
     gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
     color: var(--text3);
     font-size: 12px;
     font-weight: 800;
@@ -1130,7 +1594,9 @@ const formatCost = (cost) => {
     color: var(--text);
     font-size: 14px;
     font-weight: 800;
-    margin-top: 3px;
+    line-height: 1.4;
+    margin-top: 7px;
+    overflow-wrap: anywhere;
 }
 
 .dictionary-detail {
@@ -1151,28 +1617,381 @@ const formatCost = (cost) => {
     font-family: 'Sarabun', 'Noto Sans Thai', system-ui, sans-serif;
 }
 
+.hr-modal .btn.btn-p {
+    background: var(--blue);
+    border: 1px solid var(--blue);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.hr-modal .btn.btn-p:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+}
+
+.hr-modal .btn.btn-s {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text2);
+}
+
 .hr-modal-box {
-    width: min(720px, calc(100vw - 36px));
+    width: min(920px, calc(100vw - 36px));
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+}
+
+.catalog-modal-box {
+    width: min(1180px, calc(100vw - 36px));
+}
+
+.catalog-form {
+    display: grid;
+    gap: 16px;
+}
+
+.catalog-form-section {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.catalog-form-section.compact {
+    padding: 14px 16px;
+}
+
+.catalog-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.catalog-section-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.catalog-section-sub {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.catalog-count-pill {
+    flex: 0 0 auto;
+    border: 1px solid #cfe0f7;
+    border-radius: 999px;
+    background: var(--blue-lt);
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 900;
+    padding: 6px 10px;
+}
+
+.catalog-title-field {
+    display: grid;
+    gap: 8px;
+}
+
+.catalog-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+}
+
+.catalog-input {
+    min-height: 48px;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+.catalog-textarea {
+    min-height: 104px;
+    border-radius: 8px;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.catalog-search {
+    width: 100%;
+}
+
+.catalog-competency-list {
+    max-height: 230px;
+    display: grid;
+    gap: 8px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.catalog-check-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 54px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+    padding: 10px 12px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.catalog-check-row.selected {
+    border-color: var(--blue-md);
+    background: #f7fbff;
+}
+
+.catalog-checkbox {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: #fff;
+}
+
+.catalog-check-row.selected .catalog-checkbox {
+    border-color: var(--blue);
+    background: var(--blue);
+}
+
+.catalog-check-row.selected .catalog-checkbox::before {
+    content: "";
+    width: 8px;
+    height: 5px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: translateY(-1px) rotate(-45deg);
+}
+
+.catalog-competency-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.catalog-competency-copy span {
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.catalog-competency-copy strong {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.catalog-empty-line {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.catalog-level-picker {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f8fbff;
+}
+
+.catalog-level-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.catalog-level-help {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 3px;
+}
+
+.catalog-level-options {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.catalog-level-option {
+    min-height: 76px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text2);
+    padding: 12px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(15, 45, 91, 0.04);
+}
+
+.catalog-level-option.selected {
+    border-color: var(--blue);
+    background: #eef6ff;
+    color: var(--blue);
+}
+
+.catalog-level-check {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
+    margin-top: 2px;
+}
+
+.catalog-level-option.selected .catalog-level-check {
+    border-color: var(--blue);
+    background: var(--blue);
+}
+
+.catalog-level-option.selected .catalog-level-check::before {
+    content: "";
+    width: 7px;
+    height: 4px;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: translateY(-1px) rotate(-45deg);
+}
+
+.catalog-level-option strong {
+    display: block;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1.25;
+}
+
+.catalog-level-option.selected strong {
+    color: var(--blue);
+}
+
+.catalog-level-option small {
+    display: block;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-top: 4px;
+}
+
+.catalog-active-toggle {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    cursor: pointer;
+}
+
+.catalog-active-toggle input {
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    accent-color: var(--blue);
+}
+
+.catalog-active-toggle span {
+    display: grid;
+    gap: 2px;
+}
+
+.catalog-active-toggle strong {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.catalog-active-toggle small {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .competency-detail {
     display: grid;
-    gap: 14px;
+    gap: 16px;
 }
 
-.detail-block {
-    padding: 14px;
+.detail-overview,
+.detail-behavior-panel {
     border: 1px solid var(--border);
-    border-radius: var(--r);
-    background: var(--bg);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.detail-overview {
+    padding: 18px;
+}
+
+.detail-section-label {
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .02em;
 }
 
 .detail-title {
-    margin-top: 8px;
     color: var(--text);
-    font-size: 20px;
+    font-size: 21px;
     font-weight: 900;
     line-height: 1.35;
+}
+
+.detail-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.detail-meta-row span {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text2);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+}
+
+.detail-description {
+    margin-top: 14px;
+    color: var(--text3);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.75;
 }
 
 .detail-copy {
@@ -1209,14 +2028,21 @@ const formatCost = (cost) => {
     font-weight: 900;
     line-height: 1.4;
     overflow-wrap: anywhere;
+.detail-panel-head {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.detail-panel-sub {
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 3px;
 }
 
 .detail-levels {
     display: grid;
-    gap: 10px;
-    max-height: 56vh;
-    overflow: auto;
-    padding-right: 4px;
 }
 
 .detail-level {
@@ -1267,10 +2093,34 @@ const formatCost = (cost) => {
     color: #64748b;
     font-size: 11px;
     font-weight: 700;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
 }
 
-.detail-level-title {
-    color: var(--blue);
+.detail-level:last-child {
+    border-bottom: 0;
+}
+
+.detail-level.open {
+    background: #fbfdff;
+}
+
+.detail-level-head {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 16px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+.detail-level-number {
+    color: var(--text);
     font-size: 14px;
     font-weight: 900;
 }
@@ -1281,10 +2131,57 @@ const formatCost = (cost) => {
     gap: 12px;
     padding: 12px 16px;
     border-top: 1px solid #f1f5f9;
+.detail-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    justify-self: end;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--text3);
+    transition: transform .16s ease, color .16s ease, border-color .16s ease;
 }
 
-.detail-indicator:first-child {
-    border-top: 0;
+.detail-toggle::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+
+.detail-toggle.open {
+    color: var(--blue);
+    border-color: #cfe0f7;
+    transform: rotate(180deg);
+}
+
+.detail-indicators {
+    display: grid;
+    border-top: 1px solid var(--border);
+    background: #fff;
+}
+
+.detail-indicator-head,
+.detail-indicator {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 70px;
+    gap: 10px;
+    align-items: start;
+}
+
+.detail-indicator-head {
+    padding: 9px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid #eef3f9;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 900;
 }
 
 .indicator-number {
@@ -1324,6 +2221,41 @@ const formatCost = (cost) => {
     color: #94a3b8;
     font-size: 13px;
     font-style: italic;
+.detail-indicator {
+    padding: 12px 16px;
+    border-bottom: 1px solid #eef3f9;
+}
+
+.detail-indicator:last-child {
+    border-bottom: 0;
+}
+
+.detail-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.detail-weight {
+    color: var(--blue);
+    font-size: 13px;
+    font-weight: 900;
+    text-align: right;
+}
+
+.detail-no-indicators {
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
 }
 
 .detail-empty {
@@ -1392,6 +2324,14 @@ const formatCost = (cost) => {
     .position-hero-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .catalog-filter-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .catalog-level-options {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 768px) {
@@ -1432,7 +2372,48 @@ const formatCost = (cost) => {
     .dictionary-tools,
     .modal-grid,
     .detail-summary-grid {
+    .catalog-form-grid,
+    .catalog-level-options,
+    .catalog-filter-bar {
         grid-template-columns: 1fr;
+    }
+
+    .catalog-summary-total {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .dictionary-row {
+        grid-template-columns: 1fr;
+        min-height: 0;
+        padding: 14px;
+    }
+
+    .dictionary-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .dictionary-detail-button {
+        text-align: left;
+    }
+
+    .dictionary-add-button {
+        width: 100%;
+    }
+
+    .detail-level-head,
+    .detail-indicator-head,
+    .detail-indicator {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-indicator-head {
+        display: none;
+    }
+
+    .detail-weight {
+        text-align: left;
     }
 
     .modal-actions {
