@@ -8,16 +8,10 @@ use Illuminate\Support\Facades\DB;
 
 class CompetencyAssessmentSyncService
 {
-    public function syncUser(User $user, ?int $roundId = null): void
+    public function syncUser(User $user): void
     {
-        $roundId ??= $this->activeRoundId();
-
-        if (! $roundId) {
-            return;
-        }
-
-        $competencyIds = $this->competencyIdsForUser($user, $roundId);
-        $this->syncUserAssessments($user->id, $roundId, $competencyIds);
+        $competencyIds = $this->competencyIdsForUser($user);
+        $this->syncUserAssessments($user->id, $competencyIds);
     }
 
     public function syncScope(int $roundId, int $jobFamilyId, int $levelId): void
@@ -60,35 +54,28 @@ class CompetencyAssessmentSyncService
             ->get();
 
         foreach ($users as $user) {
-            $this->syncUserAssessments($user->id, $roundId, $competencyIds);
+            $this->syncUserAssessments($user->id, $competencyIds);
         }
     }
 
-    public function syncAllActiveUsers(?int $roundId = null): void
+    public function syncAllActiveUsers(): void
     {
-        $roundId ??= $this->activeRoundId();
-
-        if (! $roundId) {
-            return;
-        }
-
         User::query()
             ->where('is_active', true)
-            ->chunkById(100, function ($users) use ($roundId): void {
+            ->chunkById(100, function ($users): void {
                 foreach ($users as $user) {
-                    $this->syncUser($user, $roundId);
+                    $this->syncUser($user);
                 }
             });
     }
 
-    private function syncUserAssessments(int $userId, int $roundId, Collection $competencyIds): void
+    private function syncUserAssessments(int $userId, Collection $competencyIds): void
     {
         $competencyIds = $competencyIds->filter()->unique()->values();
         $now = now();
 
         foreach ($competencyIds as $competencyId) {
             DB::table('assessments')->insertOrIgnore([
-                    'assessment_round_id' => $roundId,
                     'user_id' => $userId,
                     'competency_id' => $competencyId,
                     'status' => 'draft',
@@ -100,7 +87,6 @@ class CompetencyAssessmentSyncService
         }
 
         DB::table('assessments')
-            ->where('assessment_round_id', $roundId)
             ->where('user_id', $userId)
             ->when($competencyIds->isNotEmpty(), fn ($query) => $query->whereNotIn('competency_id', $competencyIds))
             ->where('status', 'draft')
@@ -118,7 +104,7 @@ class CompetencyAssessmentSyncService
             ->delete();
     }
 
-    private function competencyIdsForUser(User $user, int $roundId): Collection
+    private function competencyIdsForUser(User $user): Collection
     {
         $levelIds = $this->levelIdsForUser($user);
 
@@ -133,7 +119,6 @@ class CompetencyAssessmentSyncService
         }
 
         return DB::table('hr_expectations')
-            ->where('assessment_round_id', $roundId)
             ->whereIn('level_id', $levelIds)
             ->whereIn('job_family_id', $jobFamilyIds)
             ->pluck('competency_id')
@@ -195,16 +180,5 @@ class CompetencyAssessmentSyncService
         }
 
         return $jobFamilyIds->filter()->unique()->values();
-    }
-
-    private function activeRoundId(): ?int
-    {
-        $roundId = DB::table('assessment_rounds')
-            ->where('is_active', true)
-            ->orderByDesc('year')
-            ->orderByDesc('id')
-            ->value('id');
-
-        return $roundId ? (int) $roundId : null;
     }
 }

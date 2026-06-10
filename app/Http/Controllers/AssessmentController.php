@@ -3,16 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\Assessment;
+use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AssessmentController extends Controller
 {
+    public function __construct(private ExpectedLevelResolver $expectedLevelResolver)
+    {
+    }
+
     public function save(Request $request)
     {
         $request->validate([
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
-            'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'checked_indicators' => ['required', 'array'],
             'note' => ['nullable', 'string', 'max:2000'],
             'score' => ['required', 'numeric'],
@@ -21,11 +25,16 @@ class AssessmentController extends Controller
         $userId = auth()->id();
 
         DB::transaction(function () use ($request, $userId): void {
+            $competencyId = (int) $request->competency_id;
+            $checkedIndicators = collect($request->checked_indicators)
+                ->filter()
+                ->filter(fn ($checked, string $key): bool => str_starts_with($key, $competencyId.':'))
+                ->all();
+
             $assessment = Assessment::updateOrCreate(
                 [
                     'user_id' => $userId,
-                    'competency_id' => $request->competency_id,
-                    'assessment_round_id' => $request->assessment_round_id,
+                    'competency_id' => $competencyId,
                 ],
                 [
                     'score' => $request->score,
@@ -39,20 +48,38 @@ class AssessmentController extends Controller
                 ->where('assessment_id', $assessment->id)
                 ->delete();
 
-            foreach ($request->checked_indicators as $key => $checked) {
-                if (! $checked) {
-                    continue;
-                }
-
+            foreach (array_keys($checkedIndicators) as $key) {
                 DB::table('assessment_evidences')->insert([
                     'assessment_id' => $assessment->id,
-                    'competency_id' => $request->competency_id,
+                    'competency_id' => $competencyId,
                     'uploaded_by' => $userId,
                     'indicator_key' => $key,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
             }
+
+            $expectedLevel = $this->expectedLevelResolver->forUserCompetency(
+                $request->user(),
+                $competencyId
+            );
+            $actualLevel = round((float) $request->score, 2);
+            $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+
+            DB::table('competency_gaps')->updateOrInsert(
+                [
+                    'assessment_id' => $assessment->id,
+                    'competency_id' => $competencyId,
+                ],
+                [
+                    'expected_level' => $expectedLevel,
+                    'actual_level' => $actualLevel,
+                    'gap' => $gap,
+                    'requires_idp' => $gap !== null && $gap < 0,
+                    'status' => 'draft',
+                    'updated_at' => now(),
+                ]
+            );
         });
 
         return back()->with('flash', [
@@ -65,12 +92,10 @@ class AssessmentController extends Controller
     {
         $request->validate([
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
-            'round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
         ]);
 
         $assessment = Assessment::where('user_id', auth()->id())
             ->where('competency_id', $request->query('competency_id'))
-            ->where('assessment_round_id', $request->query('round_id'))
             ->first();
 
         if (! $assessment) {

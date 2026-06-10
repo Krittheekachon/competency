@@ -6,7 +6,6 @@ const props = defineProps<{
   user: any;
   setUsers: any;
   competencies?: any[];
-  roundId?: number;
 }>();
 
 const assignedCompetencies = computed(() => props.competencies || []);
@@ -21,7 +20,7 @@ const openCompetencyDetail = async (item: any) => {
   try {
     const res = await fetch(
       route('assessments.load')
-      + `?competency_id=${item.id}&round_id=${props.roundId || 1}`
+      + `?competency_id=${item.id}`
     );
     const data = await res.json();
     if (data.checked) checkedIndicators.value = { ...checkedIndicators.value, ...data.checked };
@@ -41,7 +40,6 @@ const saveAndClose = async () => {
 
   router.post(route('assessments.save'), {
     competency_id: selectedCompetency.value.id,
-    assessment_round_id: props.roundId || 1,
     checked_indicators: checkedIndicators.value,
     note: competencyNotes.value[noteKey.value] || '',
     score: parseFloat(currentScore.value),
@@ -100,7 +98,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
     <div class="page-head">
       <div>
         <h1>ประเมินตนเอง</h1>
-        <p>รอเชื่อมข้อมูลสมรรถนะและแบบประเมินจริง</p>
+        <!-- <p>รอเชื่อมข้อมูลสมรรถนะและแบบประเมินจริง</p> -->
       </div>
       <span class="b bgr">{{ assignedCompetencies.length ? 'พร้อมประเมิน' : 'ยังไม่มีข้อมูล' }}</span>
     </div>
