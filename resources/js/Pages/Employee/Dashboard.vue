@@ -74,6 +74,7 @@ const currentProfileUser = computed(() =>
     },
 );
 const assignedCompetencies = computed(() => page.props.currentUserCompetencies || []);
+const competencyGaps = computed(() => page.props.currentUserCompetencyGaps || []);
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -153,6 +154,7 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :gaps="competencyGaps"
                 />
 
                 <EmployeeIDP
