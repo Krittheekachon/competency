@@ -163,6 +163,36 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('job_family_id');
 
+        $supportDepartments = DB::table('support_departments')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $supportWorksByDepartment = DB::table('support_works')
+            ->select('id', 'support_department_id', 'name')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('support_department_id');
+
+        $supportUnitsByWork = DB::table('support_units')
+            ->select('support_work_id', 'name')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('support_work_id');
+
+        $supportOrg = $supportDepartments
+            ->mapWithKeys(fn (object $department) => [
+                $department->name => ($supportWorksByDepartment[$department->id] ?? collect())
+                    ->map(fn (object $work) => [
+                        'work' => $work->name,
+                        'units' => ($supportUnitsByWork[$work->id] ?? collect())
+                            ->pluck('name')
+                            ->values(),
+                    ])
+                    ->values(),
+            ])
+            ->all();
+
         $jobFamiliesWithPositions = $jobFamilies->map(fn (object $family) => [
             'id' => $family->id,
             'name' => $family->name,
@@ -196,6 +226,7 @@ class DashboardController extends Controller
                 ->where('worklineName', 'สายสนับสนุน')
                 ->mapWithKeys(fn (array $family) => [$family['name'] => $family['positions']])
                 ->all(),
+            'supportOrg' => $supportOrg,
             'positionLookup' => $jobFamilies
                 ->flatMap(fn (object $family) => ($positionsByFamily[$family->id] ?? collect())
                     ->map(fn (object $position) => [

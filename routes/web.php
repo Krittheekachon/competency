@@ -47,6 +47,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/positions', [AdminStructureController::class, 'storePosition'])->name('admin.structure.positions.store');
     Route::put('/admin/structure/positions', [AdminStructureController::class, 'updatePosition'])->name('admin.structure.positions.update');
     Route::delete('/admin/structure/positions', [AdminStructureController::class, 'destroyPosition'])->name('admin.structure.positions.destroy');
+    Route::post('/admin/structure/support-departments', [AdminStructureController::class, 'storeSupportDepartment'])->name('admin.structure.support-departments.store');
+    Route::put('/admin/structure/support-departments', [AdminStructureController::class, 'updateSupportDepartment'])->name('admin.structure.support-departments.update');
+    Route::delete('/admin/structure/support-departments', [AdminStructureController::class, 'destroySupportDepartment'])->name('admin.structure.support-departments.destroy');
+    Route::post('/admin/structure/support-works', [AdminStructureController::class, 'storeSupportWork'])->name('admin.structure.support-works.store');
+    Route::put('/admin/structure/support-works', [AdminStructureController::class, 'updateSupportWork'])->name('admin.structure.support-works.update');
+    Route::delete('/admin/structure/support-works', [AdminStructureController::class, 'destroySupportWork'])->name('admin.structure.support-works.destroy');
+    Route::post('/admin/structure/support-units', [AdminStructureController::class, 'storeSupportUnit'])->name('admin.structure.support-units.store');
+    Route::put('/admin/structure/support-units', [AdminStructureController::class, 'updateSupportUnit'])->name('admin.structure.support-units.update');
+    Route::delete('/admin/structure/support-units', [AdminStructureController::class, 'destroySupportUnit'])->name('admin.structure.support-units.destroy');
     Route::post('/admin/structure/levels', [AdminStructureController::class, 'storeLevel'])->name('admin.structure.levels.store');
     Route::put('/admin/structure/levels', [AdminStructureController::class, 'updateLevel'])->name('admin.structure.levels.update');
     Route::delete('/admin/structure/levels', [AdminStructureController::class, 'destroyLevel'])->name('admin.structure.levels.destroy');

@@ -224,6 +224,219 @@ class StructureController extends Controller
         return back()->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
     }
 
+    public function storeSupportDepartment(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', 'unique:support_departments,name'],
+        ]);
+
+        DB::table('support_departments')->insert([
+            'name' => $data['name'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'บันทึกฝ่ายเรียบร้อยแล้ว');
+    }
+
+    public function updateSupportDepartment(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'old_name' => ['required', 'string', 'exists:support_departments,name'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('support_departments', 'name')->ignore($request->old_name, 'name')],
+        ]);
+
+        DB::table('support_departments')
+            ->where('name', $data['old_name'])
+            ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+        return back()->with('success', 'อัปเดตฝ่ายเรียบร้อยแล้ว');
+    }
+
+    public function destroySupportDepartment(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'exists:support_departments,name'],
+        ]);
+
+        DB::table('support_departments')->where('name', $data['name'])->delete();
+
+        return back()->with('success', 'ลบฝ่ายเรียบร้อยแล้ว');
+    }
+
+    public function storeSupportWork(Request $request): RedirectResponse
+    {
+        $supportDepartmentId = $this->supportDepartmentId($request->string('division_name')->toString());
+
+        $data = $request->validate([
+            'division_name' => ['required', 'string', 'exists:support_departments,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('support_works', 'name')->where(fn ($query) => $query->where('support_department_id', $supportDepartmentId)),
+            ],
+        ]);
+
+        DB::table('support_works')->insert([
+            'support_department_id' => $supportDepartmentId,
+            'name' => $data['name'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'บันทึกงานเรียบร้อยแล้ว');
+    }
+
+    public function updateSupportWork(Request $request): RedirectResponse
+    {
+        $supportDepartmentId = $this->supportDepartmentId($request->string('division_name')->toString());
+
+        $data = $request->validate([
+            'division_name' => ['required', 'string', 'exists:support_departments,name'],
+            'old_name' => [
+                'required',
+                'string',
+                Rule::exists('support_works', 'name')->where(fn ($query) => $query->where('support_department_id', $supportDepartmentId)),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('support_works', 'name')
+                    ->where(fn ($query) => $query->where('support_department_id', $supportDepartmentId))
+                    ->ignore(
+                        DB::table('support_works')
+                            ->where('support_department_id', $supportDepartmentId)
+                            ->where('name', $request->old_name)
+                            ->value('id')
+                    ),
+            ],
+        ]);
+
+        DB::table('support_works')
+            ->where('support_department_id', $supportDepartmentId)
+            ->where('name', $data['old_name'])
+            ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+        return back()->with('success', 'อัปเดตงานเรียบร้อยแล้ว');
+    }
+
+    public function destroySupportWork(Request $request): RedirectResponse
+    {
+        $supportDepartmentId = $this->supportDepartmentId($request->string('division_name')->toString());
+
+        $data = $request->validate([
+            'division_name' => ['required', 'string', 'exists:support_departments,name'],
+            'name' => [
+                'required',
+                'string',
+                Rule::exists('support_works', 'name')->where(fn ($query) => $query->where('support_department_id', $supportDepartmentId)),
+            ],
+        ]);
+
+        DB::table('support_works')
+            ->where('support_department_id', $supportDepartmentId)
+            ->where('name', $data['name'])
+            ->delete();
+
+        return back()->with('success', 'ลบงานเรียบร้อยแล้ว');
+    }
+
+    public function storeSupportUnit(Request $request): RedirectResponse
+    {
+        $supportWorkId = $this->supportWorkId(
+            $request->string('work_name')->toString(),
+            $request->string('division_name')->toString()
+        );
+
+        $data = $request->validate([
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('support_units', 'name')->where(fn ($query) => $query->where('support_work_id', $supportWorkId)),
+            ],
+        ]);
+
+        DB::table('support_units')->insert([
+            'support_work_id' => $supportWorkId,
+            'name' => $data['name'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'บันทึกหน่วยงานเรียบร้อยแล้ว');
+    }
+
+    public function updateSupportUnit(Request $request): RedirectResponse
+    {
+        $supportWorkId = $this->supportWorkId(
+            $request->string('work_name')->toString(),
+            $request->string('division_name')->toString()
+        );
+
+        $data = $request->validate([
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'old_name' => [
+                'required',
+                'string',
+                Rule::exists('support_units', 'name')->where(fn ($query) => $query->where('support_work_id', $supportWorkId)),
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('support_units', 'name')
+                    ->where(fn ($query) => $query->where('support_work_id', $supportWorkId))
+                    ->ignore(
+                        DB::table('support_units')
+                            ->where('support_work_id', $supportWorkId)
+                            ->where('name', $request->old_name)
+                            ->value('id')
+                    ),
+            ],
+        ]);
+
+        DB::table('support_units')
+            ->where('support_work_id', $supportWorkId)
+            ->where('name', $data['old_name'])
+            ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+        return back()->with('success', 'อัปเดตหน่วยงานเรียบร้อยแล้ว');
+    }
+
+    public function destroySupportUnit(Request $request): RedirectResponse
+    {
+        $supportWorkId = $this->supportWorkId(
+            $request->string('work_name')->toString(),
+            $request->string('division_name')->toString()
+        );
+
+        $data = $request->validate([
+            'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'name' => [
+                'required',
+                'string',
+                Rule::exists('support_units', 'name')->where(fn ($query) => $query->where('support_work_id', $supportWorkId)),
+            ],
+        ]);
+
+        DB::table('support_units')
+            ->where('support_work_id', $supportWorkId)
+            ->where('name', $data['name'])
+            ->delete();
+
+        return back()->with('success', 'ลบหน่วยงานเรียบร้อยแล้ว');
+    }
+
     public function storeLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
@@ -411,5 +624,18 @@ class StructureController extends Controller
         }
 
         return (int) $query->value('id');
+    }
+
+    private function supportWorkId(string $name, string $departmentName): int
+    {
+        return (int) DB::table('support_works')
+            ->where('support_department_id', $this->supportDepartmentId($departmentName))
+            ->where('name', $name)
+            ->value('id');
+    }
+
+    private function supportDepartmentId(string $name): int
+    {
+        return (int) DB::table('support_departments')->where('name', $name)->value('id');
     }
 }
