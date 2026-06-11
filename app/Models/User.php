@@ -14,10 +14,10 @@ use App\Models\Role;
     'sso', 'name', 'title',
     'first_name_th', 'last_name_th',
     'first_name_en', 'last_name_en',
-    'gender', 'email', 'phone',
+    'email', 'phone',
     'workline', 'department', 'position',
-    'level', 'password', 'role_id', 'role_key',
-    'supervisor', 'evaluator2', 'evaluator3', 'is_active', 'profile_photo',
+    'level', 'password', 'role_id',
+    'is_active', 'profile_photo',
     'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3',
     'profile_affiliation', 'profile_saved',
 ])]
@@ -40,15 +40,33 @@ class User extends Authenticatable
 
     public function role()
     {
-        return $this->belongsTo(Role::class, 'role_id', 'role_id');
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    public function evaluatorLevel1()
+    {
+        return $this->belongsTo(User::class, 'supervisor_id_1');
+    }
+
+    public function evaluatorLevel2()
+    {
+        return $this->belongsTo(User::class, 'supervisor_id_2');
+    }
+
+    public function evaluatorLevel3()
+    {
+        return $this->belongsTo(User::class, 'supervisor_id_3');
     }
 
     public function hasRole(string|array $roleKey): bool
     {
+        $currentRoleKey = $this->role?->key;
+
         if (is_array($roleKey)) {
-            return in_array($this->role_key, $roleKey);
+            return in_array($currentRoleKey, $roleKey, true);
         }
-        return $this->role_key === $roleKey;
+
+        return $currentRoleKey === $roleKey;
     }
 
     public function isAdmin(): bool      { return $this->hasRole('admin'); }

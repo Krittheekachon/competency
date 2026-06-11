@@ -13,19 +13,17 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_can_create_user_and_keep_supervisor_names_with_ids(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
         $supervisor = User::factory()->create([
             'title' => 'นาย',
             'name' => 'หัวหน้า ทดสอบ',
-            'role_id' => 5,
-            'role_key' => 'supervisor',
+            'role_id' => $this->roleId('supervisor'),
         ]);
         $evaluator = User::factory()->create([
             'title' => 'นาง',
             'name' => 'ผู้บังคับ บัญชา',
-            'role_id' => 3,
-            'role_key' => 'manager_dept',
+            'role_id' => $this->roleId('dept_head'),
         ]);
 
         $this->actingAs($admin)
@@ -36,7 +34,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'ใหม่',
                 'fe' => 'Staff',
                 'le' => 'User',
-                'g' => 'ชาย',
                 'em' => 'staff001@example.com',
                 'ph' => null,
                 'w' => 'สายสนับสนุน',
@@ -44,8 +41,8 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'sup' => 'นายหัวหน้า ทดสอบ',
-                'evaluator2' => 'นางผู้บังคับ บัญชา',
+                'supervisor_id_1' => $supervisor->id,
+                'supervisor_id_2' => $evaluator->id,
                 'act' => true,
             ])
             ->assertRedirect();
@@ -53,10 +50,7 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'sso' => 'staff-001',
             'name' => 'บุคลากร ใหม่',
-            'role_id' => 3,
-            'role_key' => 'employee',
-            'supervisor' => 'นายหัวหน้า ทดสอบ',
-            'evaluator2' => 'นางผู้บังคับ บัญชา',
+            'role_id' => $this->roleId('employee'),
             'supervisor_id_1' => $supervisor->id,
             'supervisor_id_2' => $evaluator->id,
             'is_active' => true,
@@ -65,12 +59,11 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_can_update_user(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายวิชาการ', 'สาขาวิชา', 'อาจารย์', 'อาจารย์');
         $user = User::factory()->create([
             'sso' => 'staff-002',
-            'role_id' => 4,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
         ]);
 
         $this->actingAs($admin)
@@ -81,7 +74,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'ข้อมูล',
                 'fe' => 'Updated',
                 'le' => 'User',
-                'g' => 'หญิง',
                 'em' => 'updated@example.com',
                 'ph' => null,
                 'w' => 'สายวิชาการ',
@@ -89,8 +81,8 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'อาจารย์',
                 'l' => 'อาจารย์',
                 'r' => 'supervisor',
-                'sup' => null,
-                'evaluator2' => null,
+                'supervisor_id_1' => null,
+                'supervisor_id_2' => null,
                 'act' => true,
             ])
             ->assertRedirect();
@@ -99,38 +91,33 @@ class AdminUserControllerTest extends TestCase
             'id' => $user->id,
             'name' => 'แก้ไข ข้อมูล',
             'email' => 'updated@example.com',
-            'role_id' => 1,
-            'role_key' => 'supervisor',
+            'role_id' => $this->roleId('supervisor'),
             'workline' => 'สายวิชาการ',
         ]);
     }
 
     public function test_admin_can_update_three_evaluator_levels(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-three-evaluators',
-            'role_id' => 3,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
         ]);
         $supervisor = User::factory()->create([
             'title' => 'นาย',
             'name' => 'หัวหน้า หนึ่ง',
-            'role_id' => 1,
-            'role_key' => 'supervisor',
+            'role_id' => $this->roleId('supervisor'),
         ]);
         $managerDept = User::factory()->create([
             'title' => 'นาง',
             'name' => 'ผู้บังคับ สอง',
-            'role_id' => 2,
-            'role_key' => 'manager_dept',
+            'role_id' => $this->roleId('dept_head'),
         ]);
         $dean = User::factory()->create([
             'title' => 'ผศ.',
             'name' => 'คณบดี สาม',
-            'role_id' => 5,
-            'role_key' => 'dean',
+            'role_id' => $this->roleId('dean'),
         ]);
 
         $this->actingAs($admin)
@@ -141,7 +128,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'ระดับ',
                 'fe' => 'Three',
                 'le' => 'Levels',
-                'g' => 'ชาย',
                 'em' => 'three-evaluators@example.com',
                 'ph' => null,
                 'w' => 'สายสนับสนุน',
@@ -149,18 +135,15 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'sup' => 'นายหัวหน้า หนึ่ง',
-                'evaluator2' => 'นางผู้บังคับ สอง',
-                'evaluator3' => 'ผศ.คณบดี สาม',
+                'supervisor_id_1' => $supervisor->id,
+                'supervisor_id_2' => $managerDept->id,
+                'supervisor_id_3' => $dean->id,
                 'act' => true,
             ])
             ->assertRedirect();
 
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
-            'supervisor' => 'นายหัวหน้า หนึ่ง',
-            'evaluator2' => 'นางผู้บังคับ สอง',
-            'evaluator3' => 'ผศ.คณบดี สาม',
             'supervisor_id_1' => $supervisor->id,
             'supervisor_id_2' => $managerDept->id,
             'supervisor_id_3' => $dean->id,
@@ -169,12 +152,11 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_normalizes_manager_dept_alias_to_role_table_key(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-manager-dept',
-            'role_id' => 3,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
         ]);
 
         $this->actingAs($admin)
@@ -185,7 +167,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'บัญชา',
                 'fe' => 'Manager',
                 'le' => 'Dept',
-                'g' => 'หญิง',
                 'em' => 'manager-dept@example.com',
                 'ph' => null,
                 'w' => 'สายสนับสนุน',
@@ -193,41 +174,37 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'manager_dept',
-                'sup' => null,
-                'evaluator2' => null,
+                'supervisor_id_1' => null,
+                'supervisor_id_2' => null,
                 'act' => true,
             ])
             ->assertRedirect();
 
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
-            'role_id' => 2,
-            'role_key' => 'dept_head',
+            'role_id' => $this->roleId('dept_head'),
         ]);
     }
 
     public function test_admin_can_update_reporting_line_with_linked_user_ids(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-003',
             'name' => 'บุคลากร เดิม',
             'email' => 'staff003@example.com',
-            'role_id' => 4,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
         ]);
         $supervisor = User::factory()->create([
             'title' => 'นาย',
             'name' => 'หัวหน้า ใหม่',
-            'role_id' => 5,
-            'role_key' => 'supervisor',
+            'role_id' => $this->roleId('supervisor'),
         ]);
         $evaluator = User::factory()->create([
             'title' => 'นาง',
             'name' => 'ผู้บังคับ ใหม่',
-            'role_id' => 3,
-            'role_key' => 'manager_dept',
+            'role_id' => $this->roleId('dept_head'),
         ]);
 
         $this->actingAs($admin)
@@ -238,7 +215,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'เดิม',
                 'fe' => 'Staff',
                 'le' => 'User',
-                'g' => 'ชาย',
                 'em' => 'staff003@example.com',
                 'ph' => null,
                 'w' => 'สายสนับสนุน',
@@ -246,8 +222,8 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'sup' => 'นายหัวหน้า ใหม่',
-                'evaluator2' => 'นางผู้บังคับ ใหม่',
+                'supervisor_id_1' => $supervisor->id,
+                'supervisor_id_2' => $evaluator->id,
                 'act' => true,
             ])
             ->assertRedirect();
@@ -255,8 +231,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'department' => 'ฝ่ายบริหาร > งานคลังและพัสดุ',
-            'supervisor' => 'นายหัวหน้า ใหม่',
-            'evaluator2' => 'นางผู้บังคับ ใหม่',
             'supervisor_id_1' => $supervisor->id,
             'supervisor_id_2' => $evaluator->id,
         ]);
@@ -264,7 +238,7 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_cannot_use_job_family_name_as_position_when_family_has_no_positions(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายงานบริหาร', 'รองคณบดีฝ่ายบริหาร', null, 'บริหาร');
 
         $this->actingAs($admin)
@@ -276,7 +250,6 @@ class AdminUserControllerTest extends TestCase
                 'ln' => 'ตำแหน่ง',
                 'fe' => 'No',
                 'le' => 'Position',
-                'g' => 'ชาย',
                 'em' => 'no-position@example.com',
                 'ph' => null,
                 'w' => 'สายงานบริหาร',
@@ -284,8 +257,8 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'รองคณบดีฝ่ายบริหาร',
                 'l' => 'บริหาร',
                 'r' => 'employee',
-                'sup' => null,
-                'evaluator2' => null,
+                'supervisor_id_1' => null,
+                'supervisor_id_2' => null,
                 'act' => true,
             ])
             ->assertRedirect('/dashboard')
@@ -298,7 +271,7 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_can_toggle_user_status(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $user = User::factory()->create(['is_active' => true]);
 
         $this->actingAs($admin)
@@ -313,8 +286,8 @@ class AdminUserControllerTest extends TestCase
 
     public function test_admin_can_delete_user(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
-        $user = User::factory()->create(['role_id' => 4, 'role_key' => 'employee']);
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $user = User::factory()->create(['role_id' => $this->roleId('employee')]);
 
         $this->actingAs($admin)
             ->delete(route('admin.users.destroy', $user))
@@ -356,5 +329,10 @@ class AdminUserControllerTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function roleId(string $key): int
+    {
+        return (int) DB::table('roles')->where('key', $key)->value('id');
     }
 }

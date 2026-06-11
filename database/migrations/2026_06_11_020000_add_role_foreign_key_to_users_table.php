@@ -9,6 +9,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         DB::table('users')
             ->leftJoin('roles', 'users.role_id', '=', 'roles.role_id')
             ->whereNull('roles.role_id')
@@ -28,6 +32,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->dropForeign('users_role_id_foreign');
         });

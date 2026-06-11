@@ -45,15 +45,12 @@ class ProfileController extends Controller
             'last_name_th' => $lastNameTh,
             'first_name_en' => $data['first_name_en'] ?? '',
             'last_name_en' => $data['last_name_en'] ?? '',
-            'gender' => $data['gender'] ?? '',
             'email' => $data['email'] ?: $user->email,
             'phone' => $data['phone'] ?? '',
             'workline' => $data['workline'] ?? '',
             'department' => $data['department'] ?? '',
             'position' => $data['position'] ?? '',
             'level' => $data['level'] ?? '',
-            'supervisor' => $data['supervisor'] ?? '',
-            'evaluator2' => $data['evaluator2'] ?? '',
             'profile_photo' => $data['profile_photo'] ?? null,
         ]);
 
@@ -77,41 +74,50 @@ class ProfileController extends Controller
             'ln' => $user->last_name_th ?: '',
             'fe' => $user->first_name_en ?: '',
             'le' => $user->last_name_en ?: '',
-            'g' => $user->gender ?: '',
             'em' => $user->email ?: '',
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $user->department ?: '',
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
-            'r' => $this->normalizeRoleKey($user->role_key ?: $this->roleKeyFromId($user->role_id)),
-            'sup' => $user->supervisor ?: '',
-            'evaluator2' => $user->evaluator2 ?: '',
+            'r' => $this->roleKeyForUser($user),
+            'sup' => $this->displayNameForUser($user->evaluatorLevel1),
+            'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'photo' => $user->profile_photo ?: '',
             'act' => (bool) $user->is_active,
         ];
     }
 
+    private function displayNameForUser(?\App\Models\User $user): string
+    {
+        if (! $user) {
+            return '';
+        }
+
+        return trim(($user->title ?: '').$user->name);
+    }
+
     private function roleKeyFromId(?int $roleId): string
     {
-        return match ($roleId) {
-            0 => 'admin',
-            1 => 'supervisor',
-            2 => 'dept_head',
-            3 => 'employee',
-            4 => 'hr',
-            5 => 'dean',
-            default => 'employee',
-        };
+        return \DB::table('roles')->where('id', $roleId)->value('key') ?: 'employee';
     }
 
     private function normalizeRoleKey(string $roleKey): string
     {
         return match ($roleKey) {
-            'dept_head' => 'manager_dept',
-            'dean' => 'manager',
+            'manager_dept' => 'dept_head',
+            'manager' => 'dean',
             default => $roleKey,
         };
+    }
+
+    private function roleKeyForUser($user): string
+    {
+        $roleKey = $user->relationLoaded('role')
+            ? $user->role?->key
+            : \DB::table('roles')->where('id', $user->role_id)->value('key');
+
+        return $this->normalizeRoleKey($roleKey ?: $this->roleKeyFromId($user->role_id));
     }
 
     /**

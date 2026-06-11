@@ -20,17 +20,16 @@ class RoleController extends Controller
     public function updateRole(Request $request, $id)
     {
         $request->validate([
-            'role_key' => 'required|exists:roles,role_key',
+            'role_key' => 'required|exists:roles,key',
         ]);
 
         $role = \DB::table('roles')
-                   ->where('role_key', $request->role_key)
+                   ->where('key', $request->role_key)
                    ->first();
 
         $user = User::findOrFail($id);
         $user->update([
-            'role_key' => $role->role_key,
-            'role_id'  => $role->role_id,
+            'role_id'  => $role->id,
         ]);
 
         return response()->json([

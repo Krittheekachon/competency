@@ -10,13 +10,14 @@ class MockSsoController extends Controller
 {
     public function showLogin()
     {
-        $users = User::orderBy('role_id')
+        $users = User::with('role')
+            ->orderBy('role_id')
             ->orderBy('name')
             ->get()
             ->map(fn (User $user) => [
                 'id'       => $user->sso ?? (string) $user->id,
                 'name'     => ($user->title ?? '') . $user->name,
-                'role'     => $user->role_key,
+                'role'     => $user->role?->key ?? 'employee',
                 'workline' => $user->workline ?? '',
                 'division' => $user->division ?? '',
                 'position' => $user->position ?? '',
