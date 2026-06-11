@@ -62,6 +62,8 @@ const editingUserKey = ref(null);
 const isSavingUser = ref(false);
 const orgEditMode = ref(false);
 const modalReturnPage = ref('admin-users');
+const supervisorSearch = ref('');
+const evaluator2Search = ref('');
 const userForm = ref({
     db_id: null,
     sso: '',
@@ -84,6 +86,8 @@ const userForm = ref({
     r: 'employee',
     sup: '',
     evaluator2: '',
+    supervisor_id_1: '',
+    supervisor_id_2: '',
     act: true,
 });
 
@@ -216,12 +220,64 @@ const currentProfileUser = computed(() =>
 );
 const evaluatorOptions = computed(() =>
     users.value
-        .filter((user) => user.sso !== editingUserKey.value)
+        .filter((user) => user.db_id)
         .map((user) => ({
-            key: user.sso || `${user.t || ''}${user.n}`,
-            value: `${user.t || ''}${user.n}`,
+            key: user.db_id,
+            value: Number(user.db_id),
+            name: user.n,
             label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+            searchText: [
+                user.db_id,
+                user.sso,
+                user.t,
+                user.n,
+                user.p,
+                user.w,
+                user.d,
+                user.r,
+            ].filter(Boolean).join(' ').toLowerCase(),
         })),
+);
+const selectedEvaluatorId = (value) => {
+    const id = Number(value);
+
+    return Number.isFinite(id) && id > 0 ? id : '';
+};
+const supervisorIdFromUser = (user, idKey, nameKey) => {
+    const explicitId = selectedEvaluatorId(user?.[idKey]);
+    if (explicitId) return explicitId;
+
+    const storedName = (user?.[nameKey] || '').trim();
+    if (!storedName) return '';
+
+    return evaluatorOptions.value.find((person) =>
+        person.name === storedName
+        || person.label === storedName
+        || person.label.startsWith(storedName),
+    )?.value || '';
+};
+const evaluatorFromId = (id) =>
+    evaluatorOptions.value.find((person) => person.value === selectedEvaluatorId(id)) || null;
+const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
+    const needle = query.trim().toLowerCase();
+    const selectedId = selectedEvaluatorId(selectedValue);
+    const blockedId = selectedEvaluatorId(blockedValue);
+
+    return evaluatorOptions.value.filter((person) =>
+        (person.value === selectedId || person.value !== blockedId)
+        && (
+            person.value === selectedId
+            || !needle
+            || person.searchText.includes(needle)
+            || person.label.toLowerCase().includes(needle)
+        ),
+    );
+};
+const supervisorOptions = computed(() =>
+    filteredEvaluatorOptions(supervisorSearch.value, userForm.value.supervisor_id_1, userForm.value.supervisor_id_2),
+);
+const evaluator2Options = computed(() =>
+    filteredEvaluatorOptions(evaluator2Search.value, userForm.value.supervisor_id_2, userForm.value.supervisor_id_1),
 );
 
 const requestPageChange = (page) => {
@@ -242,57 +298,6 @@ const syncOrgPath = () => {
     const form = userForm.value;
 
     form.d = [form.job, form.unit].filter(Boolean).join(' > ');
-    if (!orgEditMode.value) syncOrgSupervisors();
-};
-
-const findUserName = (predicate) => {
-    const found = users.value.find(predicate);
-    return found ? `${found.t || ''}${found.n}` : '';
-};
-
-const syncOrgSupervisors = () => {
-    const form = userForm.value;
-    const deptKey = form.job || form.dept || adminDepts.value[0];
-    const orgHead = orgSups.value[deptKey] || orgSups.value[adminDepts.value[0]] || '';
-
-    if (isSupportWorkline.value) {
-        form.sup = findUserName((user) =>
-            user.r === 'supervisor'
-            && user.d
-            && form.d
-            && (
-                user.d === form.d
-                || user.d.startsWith(form.job)
-                || user.d === form.job
-            ),
-        );
-        form.evaluator2 = findUserName((user) =>
-            user.r === 'manager_dept'
-            && user.d
-            && form.job
-            && user.d.startsWith(form.job),
-        ) || orgHead;
-        return;
-    }
-
-    if (isAcademicWorkline.value) {
-        form.sup = findUserName((user) =>
-            user.r === 'supervisor'
-            && user.w === form.w
-            && (user.p === form.job || user.d === form.job),
-        );
-        form.evaluator2 = orgHead;
-        return;
-    }
-
-    if (isAdminWorkline.value) {
-        form.sup = orgHead;
-        form.evaluator2 = orgHead;
-        return;
-    }
-
-    form.sup = '';
-    form.evaluator2 = '';
 };
 
 const resetOrgSelection = () => {
@@ -302,8 +307,6 @@ const resetOrgSelection = () => {
     userForm.value.d = '';
     userForm.value.p = '';
     userForm.value.l = '';
-    userForm.value.sup = '';
-    userForm.value.evaluator2 = '';
 };
 
 const handleWorklineChange = () => {
@@ -337,7 +340,6 @@ const handlePositionChange = () => {
     if (!directLevels.length && userForm.value.p) {
         userForm.value.l = userForm.value.p;
     }
-    syncOrgSupervisors();
 };
 
 const resetUserForm = (data = null) => {
@@ -345,6 +347,8 @@ const resetUserForm = (data = null) => {
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
 
     editingUserKey.value = data?.sso || null;
+    supervisorSearch.value = '';
+    evaluator2Search.value = '';
     userForm.value = {
         db_id: data?.db_id || null,
         sso: data?.sso || '',
@@ -367,8 +371,24 @@ const resetUserForm = (data = null) => {
         r: data?.r || 'employee',
         sup: data?.sup || '',
         evaluator2: data?.evaluator2 || '',
+        supervisor_id_1: supervisorIdFromUser(data, 'supervisor_id_1', 'sup'),
+        supervisor_id_2: supervisorIdFromUser(data, 'supervisor_id_2', 'evaluator2'),
         act: data?.act !== false,
     };
+};
+
+const handleSupervisorChange = () => {
+    userForm.value.supervisor_id_1 = selectedEvaluatorId(userForm.value.supervisor_id_1);
+    if (userForm.value.supervisor_id_1 && userForm.value.supervisor_id_1 === selectedEvaluatorId(userForm.value.supervisor_id_2)) {
+        userForm.value.supervisor_id_2 = '';
+    }
+};
+
+const handleEvaluator2Change = () => {
+    userForm.value.supervisor_id_2 = selectedEvaluatorId(userForm.value.supervisor_id_2);
+    if (userForm.value.supervisor_id_2 && userForm.value.supervisor_id_2 === selectedEvaluatorId(userForm.value.supervisor_id_1)) {
+        userForm.value.supervisor_id_1 = '';
+    }
 };
 
 const openModal = (type, data = null) => {
@@ -412,6 +432,9 @@ const saveUser = () => {
         return;
     }
 
+    const supervisor1 = evaluatorFromId(form.supervisor_id_1);
+    const supervisor2 = evaluatorFromId(form.supervisor_id_2);
+
     const nextUser = {
         ...form,
         db_id: form.db_id,
@@ -431,8 +454,10 @@ const saveUser = () => {
         unit: form.unit.trim(),
         p: form.p.trim(),
         l: form.l.trim(),
-        sup: form.sup.trim(),
-        evaluator2: form.evaluator2.trim(),
+        sup: supervisor1?.name || '',
+        evaluator2: supervisor2?.name || '',
+        supervisor_id_1: supervisor1?.value || null,
+        supervisor_id_2: supervisor2?.value || null,
         act: Boolean(form.act),
     };
 
@@ -783,54 +808,52 @@ const logout = () => router.post(route('logout'));
                     </div>
                     <div class="fg">
                         <label class="lbl req">หัวหน้างาน</label>
+                        <input
+                            v-model="supervisorSearch"
+                            class="inp modal-input evaluator-search"
+                            placeholder="ค้นหาหัวหน้างาน"
+                        />
                         <select
-                            v-if="orgEditMode"
-                            v-model="userForm.sup"
+                            v-model.number="userForm.supervisor_id_1"
                             class="sel modal-input"
+                            @change="handleSupervisorChange"
                         >
                             <option value="">— เลือกหัวหน้างาน —</option>
                             <option
-                                v-for="person in evaluatorOptions"
+                                v-for="person in supervisorOptions"
                                 :key="`sup-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
+                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <input
-                            v-else
-                            v-model="userForm.sup"
-                            class="inp modal-input"
-                            disabled
-                            placeholder="ยึดตามโครงสร้างองค์กร (หัวหน้างาน)"
-                        />
                     </div>
                 </div>
 
                 <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</label>
+                        <input
+                            v-model="evaluator2Search"
+                            class="inp modal-input evaluator-search"
+                            placeholder="ค้นหาผู้บังคับบัญชา"
+                        />
                         <select
-                            v-if="orgEditMode"
-                            v-model="userForm.evaluator2"
+                            v-model.number="userForm.supervisor_id_2"
                             class="sel modal-input"
+                            @change="handleEvaluator2Change"
                         >
                             <option value="">— เลือกผู้บังคับบัญชา —</option>
                             <option
-                                v-for="person in evaluatorOptions"
+                                v-for="person in evaluator2Options"
                                 :key="`evaluator2-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
+                            <option v-if="evaluator2Options.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <input
-                            v-else
-                            v-model="userForm.evaluator2"
-                            class="inp modal-input"
-                            disabled
-                            placeholder="ยึดตามโครงสร้างองค์กร (ผู้บังคับบัญชา)"
-                        />
                     </div>
                 </div>
 
@@ -912,6 +935,10 @@ const logout = () => router.post(route('logout'));
 .modal-input:disabled {
     background: #eef2f7;
     color: #94a3b8;
+}
+
+.evaluator-search {
+    margin-bottom: 8px;
 }
 
 .req::after {

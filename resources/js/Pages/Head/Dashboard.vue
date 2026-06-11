@@ -22,7 +22,7 @@ const requestedPage = ref(typeof window !== 'undefined'
     : null);
 const rememberedHeadState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || 'dh-idp',
+    activePage: requestedPage.value || 'sup-gap',
 }, 'HeadDashboardStable');
 
 const showSidebar = computed({
@@ -32,7 +32,7 @@ const showSidebar = computed({
     },
 });
 const activePage = computed({
-    get: () => rememberedHeadState.value.activePage || 'dh-idp',
+    get: () => rememberedHeadState.value.activePage || 'sup-gap',
     set: (value) => {
         rememberedHeadState.value.activePage = value;
     },
@@ -61,7 +61,25 @@ const learningMethods = ref([
 
 const authRoleKey = computed(() => normalizeRoleKey(page.props.auth?.user?.role_key || 'manager_dept'));
 const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.manager_dept || ROLES_CONFIG.supervisor);
-const navSections = computed(() => NAV_CONFIG.supervisor || []);
+const navSections = computed(() => [
+    {
+        sec: 'ของฉัน (บุคลากร)',
+        items: [
+            { id: 'emp-assess', ic: '', lb: 'ประเมินตนเอง' },
+            { id: 'emp-gap', ic: '', lb: 'ผล Competency Gap' },
+            { id: 'emp-idp', ic: '', lb: 'IDP ของฉัน' },
+            { id: 'emp-progress', ic: '', lb: 'อัปเดตความก้าวหน้า' },
+            { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
+        ],
+    },
+    {
+        sec: 'จัดการทีม',
+        items: [
+            { id: 'sup-gap', ic: '', lb: 'ผลการประเมินของทีม' },
+            { id: 'dh-idp', ic: '', lb: 'IDP & ติดตามทีม' },
+        ],
+    },
+]);
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
@@ -71,7 +89,6 @@ const implementedPages = new Set([
     'emp-idp',
     'emp-progress',
     'emp-idp-detail',
-    'dh-assess',
     'sup-gap',
     'dh-idp',
 ]);
@@ -297,6 +314,7 @@ const assessmentSavedAt = ref('');
 const draftTimer = ref(null);
 const selectedGapEmployee = ref(null);
 const selectedIdpEmployee = ref(null);
+const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
 const idpReviewDecisions = ref({});
 const idpReviewFeedbacks = ref({});
@@ -395,6 +413,64 @@ const gapResultRows = (person) => {
 const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
+const teamHeatmapCompetencies = [
+    { code: 'CC-001', title: 'Service Mind' },
+    { code: 'CC-002', title: 'Integrity' },
+    { code: 'CC-003', title: 'Teamwork' },
+    { code: 'FC2-061', title: 'Digital Literacy' },
+    { code: 'FC2-062', title: 'Data & Reporting' },
+];
+const fallbackGapPattern = [
+    [-0.5, -1, -1.25, -2.25, -1],
+    [0, 0, 0, 0, 0],
+    [0, -1, -1.25, -2.25, -0.75],
+    [-0.5, -1, -1.25, -2.25, -1],
+    [0, -1, 0, -2.25, -1],
+    [-0.5, 0, -1.25, -2.25, -0.75],
+];
+const formatTeamGap = (value) => {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) return '-';
+    return numberValue.toFixed(2).replace(/\.00$/, '').replace(/0$/, '').replace(/\.$/, '');
+};
+const teamHeatmapRows = computed(() => teamMembers.value.map((person, index) => {
+    const resultRows = gapResultRows(person);
+    const fallback = fallbackGapPattern[index % fallbackGapPattern.length];
+    const scores = teamHeatmapCompetencies.map((comp, compIndex) => {
+        const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
+        return Number(matching?.gap ?? fallback[compIndex] ?? 0);
+    });
+    const missingCount = scores.filter((score) => score < 0).length;
+
+    return {
+        ...person,
+        scores,
+        assessed: person.evalStatus !== 'draft' && Boolean(person.evalStatus),
+        missingCount,
+        summary: missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง',
+    };
+}));
+const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
+const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
+const teamMetricStats = computed(() => teamHeatmapCompetencies.map((comp, index) => {
+    const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
+    const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    return { ...comp, average };
+}));
+const teamStrongest = computed(() => [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0]);
+const teamWeakest = computed(() => [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0]);
+const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
+    const gapCount = gapResultRows(person).filter((row) => row.failed).length || normalizeGaps(person).length;
+    const phaseMeta = idpStatusFor(person.phase);
+    return {
+        ...person,
+        missingCount: gapCount,
+        statusLabel: person.phase === 'notsent' ? 'ร่าง' : phaseMeta.label,
+        statusClass: person.phase === 'done' ? 'bg' : person.phase === 'rejected' ? 'br' : person.phase === 'inprogress' ? 'bb' : 'bgr',
+        updatedAt: person.updatedAt || person.sentDate || `2026-06-${String(10 + index).padStart(2, '0')}`,
+    };
+}));
+const idpRequiredCount = computed(() => idpOverviewRows.value.filter((row) => row.missingCount > 0).length);
 
 const openGapDetail = (person) => {
     if (person.pending) return;
@@ -517,7 +593,7 @@ watchEffect(() => {
     }
 
     if (!implementedPages.has(activePage.value)) {
-        activePage.value = 'dh-idp';
+        activePage.value = 'sup-gap';
     }
 
     if (page.props.users?.length) {
@@ -606,59 +682,59 @@ const logout = () => router.post(route('logout'));
 
                 <template v-else-if="activePage === 'dh-idp'">
                     <template v-if="!selectedIdpPerson">
-                        <div class="mb20">
-                            <div class="sec-t">IDP & ติดตามทีม</div>
-                            <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
-                        </div>
-
-                        <div class="g4 idp-summary mb20">
-                            <button
-                                v-for="tab in idpTabs"
-                                :key="tab.id"
-                                class="sc stat-button"
-                                :class="{ selected: activeIdpTab === tab.id }"
-                                type="button"
-                                @click="activeIdpTab = tab.id"
-                            >
-                                <div class="sl">{{ tab.label }}</div>
-                                <div class="sv" :class="tab.cls">{{ tab.count }}</div>
-                                <div class="ss muted">คน</div>
-                            </button>
-                        </div>
-
-                        <div class="tab-bar">
-                            <div
-                                v-for="tab in idpTabs"
-                                :key="tab.id"
-                                class="tab"
-                                :class="{ on: activeIdpTab === tab.id }"
-                                @click="activeIdpTab = tab.id"
-                            >
-                                {{ tab.label }} <span class="b" :class="tab.cls || 'bgr'">{{ tab.count }}</span>
+                        <div class="team-page-head mb20">
+                            <div>
+                                <div class="sec-t">ติดตาม IDP ทีม</div>
+                                <div class="sec-s">ตารางรวม Direct Reports ที่มี Competency Gap พร้อมสถานะปัจจุบันและ mirror view แบบอ่านอย่างเดียว</div>
                             </div>
+                            <span class="b bb">{{ idpRequiredCount }} คนต้องทำ IDP</span>
                         </div>
 
-                        <div v-for="row in visibleIdpRows" :key="row.sso" class="card team-row">
-                            <div class="av row-avatar">{{ row.n[0] }}</div>
-                            <div class="row-main">
-                                <div class="fw8 fs14">{{ `${row.t || ''}${row.n}` }}</div>
-                                <div class="muted fs12">{{ row.p }} · {{ row.d || row.p }}</div>
+                        <div class="card team-table-card">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">Team Overview Table</div>
+                                    <div class="cs">คลิกดูรายละเอียดเพื่อดูแผน IDP แบบ read-only และฝาก coaching comment</div>
+                                </div>
                             </div>
-                            <span class="b" :class="idpStatusFor(row.phase).cls">
-                                {{ idpStatusFor(row.phase).label }}
-                            </span>
-                            <button
-                                class="btn btn-sm idp-row-action"
-                                :class="{ primary: row.phase === 'pending' }"
-                                type="button"
-                                @click="openIdpDetail(row)"
-                            >
-                                {{ row.phase === 'pending' ? 'ตรวจสอบ' : 'ดูข้อมูล' }}
-                            </button>
-                        </div>
-
-                        <div v-if="visibleIdpRows.length === 0" class="card empty-card">
-                            {{ teamMembers.length === 0 ? 'ยังไม่มีข้อมูลบุคลากรในหน่วยงาน' : 'ไม่มีรายการในสถานะนี้' }}
+                            <div class="team-table-wrap">
+                                <table class="team-table">
+                                    <thead>
+                                        <tr>
+                                            <th>บุคลากร</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>สมรรถนะที่ต้องทำ IDP</th>
+                                            <th>Current Status</th>
+                                            <th>อัปเดตล่าสุด</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="row in idpOverviewRows" :key="row.sso">
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${row.t || ''}${row.n}` }}</strong>
+                                                    <small>{{ row.d || row.p }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ row.p }}</td>
+                                            <td>
+                                                <span class="b br">{{ row.missingCount || 0 }} สมรรถนะ</span>
+                                            </td>
+                                            <td>
+                                                <span class="b" :class="row.statusClass">{{ row.statusLabel }}</span>
+                                            </td>
+                                            <td>{{ row.updatedAt }}</td>
+                                            <td class="tr">
+                                                <button class="btn btn-s btn-sm" type="button" @click="openIdpDetail(row)">ดูรายละเอียด</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="idpOverviewRows.length === 0" class="empty-card">
+                                ยังไม่มีข้อมูลบุคลากรในหน่วยงาน
+                            </div>
                         </div>
                     </template>
 
@@ -683,7 +759,7 @@ const logout = () => router.post(route('logout'));
                             <div v-if="selectedIdpPerson.sentAt" class="muted fs12">{{ selectedIdpPerson.sentAt }}</div>
                         </div>
 
-                        <div v-if="selectedIdpPerson.phase === 'pending'" class="idp-review-space">
+                        <div v-if="allowIdpReview && selectedIdpPerson.phase === 'pending'" class="idp-review-space">
                             <div v-for="row in selectedIdpGapRows" :key="row.id" class="card idp-review-card">
                                 <div class="idp-review-head">
                                     <div class="flex ic g8">
@@ -791,59 +867,84 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'sup-gap'">
-                    <div class="mb20">
-                        <div class="sec-t">Competency Gap ทีม</div>
-                        <div class="sec-s">วิเคราะห์ผลการประเมินและจุดอ่อนของทีม</div>
+                    <div class="team-page-head mb20">
+                        <div>
+                            <div class="sec-t">Competency Gap ทีม</div>
+                            <div class="sec-s">Dashboard, Heatmap และการจัดกลุ่มพนักงานตามศักยภาพของ Direct Reports</div>
+                        </div>
+                        <div class="flex g8" style="flex-wrap: wrap">
+                            <button class="btn btn-s btn-sm" type="button">Export PDF</button>
+                            <button class="btn btn-s btn-sm" type="button">Export Excel</button>
+                        </div>
                     </div>
 
-                    <div v-if="assessedGapRows.length === 0" class="card empty-card">
+                    <div v-if="teamAssessedRows.length === 0" class="card empty-card">
                         ยังไม่ได้รับผลการประเมินจากผู้ใต้บังคับบัญชา
                     </div>
 
                     <template v-else>
                         <template v-if="!selectedGapPerson">
-                            <div class="g3 mb20">
-                                <div class="sc navy-top"><div class="sl">บุคลากรทั้งหมด</div><div class="sv">{{ gapRows.length }}</div><div class="ss muted">คน</div></div>
-                                <div class="sc blue-top"><div class="sl">ประเมินแล้ว</div><div class="sv bc">{{ assessedGapRows.length }}</div><div class="ss muted">คน</div></div>
-                                <div class="sc red-top"><div class="sl">พบ Gap</div><div class="sv rc">{{ foundGapRows.length }}</div><div class="ss muted">คน</div></div>
+                            <div class="g3 team-metrics mb20">
+                                <div class="sc">
+                                    <div class="sl">ประเมินเสร็จแล้ว</div>
+                                    <div class="sv bc">{{ teamAssessedRows.length }}/{{ teamHeatmapRows.length }}</div>
+                                    <div class="ss muted">เทียบกับลูกน้องทั้งหมด</div>
+                                </div>
+                                <div class="sc">
+                                    <div class="sl">จุดแข็งของทีม</div>
+                                    <div class="sv bc">{{ teamStrongest?.code || '-' }}</div>
+                                    <div class="ss muted">{{ teamTalentRows.length }} คนผ่านเกณฑ์</div>
+                                </div>
+                                <div class="sc">
+                                    <div class="sl">จุดอ่อนของทีม</div>
+                                    <div class="sv rc">{{ teamWeakest?.code || '-' }}</div>
+                                    <div class="ss muted">{{ idpRequiredCount }} คน Gap ติดลบ</div>
+                                </div>
                             </div>
 
-                            <div class="g2 team-grid">
-                                <div class="card">
-                                    <div class="ch"><div class="ct">สมรรถนะที่ทีมต้องพัฒนา</div><div class="cs">เรียงตามจำนวนคนที่ไม่ผ่านเกณฑ์</div></div>
-                                    <div v-for="comp in gapCompetencies" :key="comp.name" class="gap-item">
-                                        <span class="tag-cc">{{ comp.type }}</span>
-                                        <div class="gap-main">
-                                            <div class="gap-title">
-                                                <span class="fw8 fs13">{{ comp.name }}</span>
-                                                <span class="rc fw8 fs12">{{ comp.count }} คน</span>
-                                            </div>
-                                            <div class="pw mt8"><div class="pb red-bar" /></div>
-                                        </div>
+                            <div class="card team-table-card">
+                                <div class="team-card-head">
+                                    <div>
+                                        <div class="ct">Team Gap Heatmap</div>
+                                        <div class="cs">Gap = Actual Score - Expected Score, แดงคือต่ำกว่าความคาดหวัง เขียวคือผ่านเกณฑ์</div>
                                     </div>
                                 </div>
-
-                                <div class="card">
-                                    <div class="ch"><div class="ct">รายชื่อและสถานะ Gap รายบุคคล</div></div>
-                                    <button
-                                        v-for="person in gapRows"
-                                        :key="person.sso"
-                                        class="gap-person gap-person-button"
-                                        :disabled="person.pending"
-                                        type="button"
-                                        @click="openGapDetail(person)"
-                                    >
-                                        <div class="av row-avatar" :class="{ mutedAvatar: person.pending }">{{ person.n[0] }}</div>
-                                        <div class="row-main">
-                                            <div class="fw8 fs13" :class="{ muted: person.pending }">{{ `${person.t || ''}${person.n}` }}</div>
-                                            <div v-if="person.pending" class="muted fs11">รอการประเมิน</div>
-                                            <div v-else-if="person.gaps.length" class="flex g5 mt6" style="flex-wrap: wrap">
-                                                <span v-for="gap in person.gaps" :key="gap" class="b br">△ {{ gap }}</span>
-                                            </div>
-                                            <div v-else class="gcc fs11 mt4">ผ่านทุกข้อ</div>
-                                        </div>
-                                        <span v-if="!person.pending" class="bc fw8 fs13">ดู →</span>
-                                    </button>
+                                <div class="team-table-wrap">
+                                    <table class="team-table heatmap-table">
+                                        <thead>
+                                            <tr>
+                                                <th>บุคลากร</th>
+                                                <th v-for="comp in teamHeatmapCompetencies" :key="comp.code">{{ comp.code }}</th>
+                                                <th>สรุป</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr
+                                                v-for="row in teamHeatmapRows"
+                                                :key="row.sso"
+                                                :class="{ disabled: !row.assessed }"
+                                                @click="row.assessed && openGapDetail(row)"
+                                            >
+                                                <td>
+                                                    <div class="person-cell">
+                                                        <strong>{{ `${row.t || ''}${row.n}` }}</strong>
+                                                        <small>{{ row.p }}</small>
+                                                    </div>
+                                                </td>
+                                                <td v-for="(score, scoreIndex) in row.scores" :key="`${row.sso}-${scoreIndex}`">
+                                                    <span
+                                                        class="gap-chip"
+                                                        :class="{ ok: Number(score) >= 0, bad: Number(score) < 0 }"
+                                                    >
+                                                        {{ formatTeamGap(score) }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="b" :class="row.missingCount ? 'br' : 'bb'">{{ row.summary }}</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </template>
@@ -877,14 +978,18 @@ const logout = () => router.post(route('logout'));
                                         <div>Gap</div>
                                         <div>สถานะ</div>
                                     </div>
-                                    <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row">
+                                    <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row gap-result-body">
                                         <div class="fw8">{{ row.title }}</div>
                                         <div><span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span></div>
                                         <div><span class="score-pill navy">{{ row.expected }}</span></div>
                                         <div><span class="score-pill blue">{{ row.selfScore }}</span></div>
-                                        <div><span class="score-pill red-soft">{{ row.headScore }}</span></div>
-                                        <div class="rc fw8">{{ row.gap }}</div>
-                                        <div><span class="b br">{{ row.failed ? 'ไม่ผ่าน' : 'ผ่าน' }}</span></div>
+                                        <div><span class="score-pill evaluator">{{ row.headScore }}</span></div>
+                                        <div>
+                                            <span class="gap-chip" :class="{ ok: Number(row.gap) >= 0, bad: Number(row.gap) < 0 }">
+                                                {{ formatTeamGap(row.gap) }}
+                                            </span>
+                                        </div>
+                                        <div><span class="b" :class="row.failed ? 'br' : 'bb'">{{ row.failed ? 'ไม่ผ่าน' : 'ผ่าน' }}</span></div>
                                     </div>
                                     <div v-if="selectedGapRows.length === 0" class="empty-card">
                                         ผ่านทุกสมรรถนะ
@@ -1105,6 +1210,130 @@ const logout = () => router.post(route('logout'));
 
 .idp-summary {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.team-page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.team-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.team-table-card {
+    overflow: hidden;
+}
+
+.team-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 20px 22px;
+    border-bottom: 1px solid var(--border);
+}
+
+.team-table-wrap {
+    overflow-x: auto;
+    padding: 20px 22px;
+}
+
+.team-table {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: collapse;
+}
+
+.team-table th,
+.team-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.team-table th {
+    background: #f8fafc;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.team-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.heatmap-table tbody tr {
+    cursor: pointer;
+}
+
+.heatmap-table tbody tr:hover {
+    background: var(--blue-lt);
+}
+
+.heatmap-table tbody tr.disabled {
+    cursor: default;
+    opacity: 0.56;
+}
+
+.person-cell {
+    display: grid;
+    gap: 4px;
+}
+
+.person-cell strong {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.person-cell small {
+    color: var(--text3);
+    font-size: 12px;
+}
+
+.gap-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 22px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0 7px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.gap-chip::before {
+    margin-right: 3px;
+    font-size: 9px;
+    line-height: 1;
+}
+
+.gap-chip.bad {
+    border-color: #b45309;
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+/* .gap-chip.bad::before {
+    content: '!';
+} */
+
+.gap-chip.ok {
+    border-color: var(--blue);
+    background: var(--blue-lt);
+    color: var(--blue);
+}
+
+.gap-chip.ok::before {
+    content: '=';
 }
 
 .idp-row-action {
@@ -1541,13 +1770,16 @@ const logout = () => router.post(route('logout'));
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 28px 26px;
+    padding: 34px 32px;
+    min-height: 146px;
+    flex-wrap: wrap;
 }
 
 .gap-detail-avatar {
-    width: 60px;
-    height: 60px;
+    width: 74px;
+    height: 74px;
     background: var(--navy);
+    font-size: 18px;
     flex-shrink: 0;
 }
 
@@ -1569,25 +1801,29 @@ const logout = () => router.post(route('logout'));
 }
 
 .gap-result-row > div {
-    padding: 13px 14px;
+    padding: 18px 16px;
 }
 
 .gap-result-head {
-    background: var(--bg);
+    background: #f8fafc;
     color: var(--text3);
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 900;
+}
+
+.gap-result-body:hover {
+    background: var(--blue-lt);
 }
 
 .score-pill {
-    width: 42px;
-    height: 42px;
+    width: 52px;
+    height: 52px;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    font-weight: 800;
+    font-size: 16px;
+    font-weight: 900;
 }
 
 .score-pill.navy {
@@ -1600,9 +1836,10 @@ const logout = () => router.post(route('logout'));
     color: var(--blue);
 }
 
-.score-pill.red-soft {
-    background: var(--red-bg);
-    color: var(--red);
+.score-pill.evaluator {
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #c2410c;
 }
 
 .tag-fc {

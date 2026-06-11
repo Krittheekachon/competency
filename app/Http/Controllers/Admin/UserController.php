@@ -101,6 +101,8 @@ class UserController extends Controller
             'r' => ['required', Rule::in(array_keys(self::ROLE_IDS))],
             'sup' => ['nullable', 'string', 'max:255'],
             'evaluator2' => ['nullable', 'string', 'max:255'],
+            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id', 'different:supervisor_id_2'],
+            'supervisor_id_2' => ['nullable', 'integer', 'exists:users,id'],
             'act' => ['boolean'],
         ], [
             'ph.regex' => 'กรุณากรอกเบอร์โทรศัพท์ในรูปแบบ 0xx-xxx-xxxx',
@@ -115,6 +117,8 @@ class UserController extends Controller
             default => $data['r'],
         };
         $name = trim($data['fn'].' '.$data['ln']);
+        $supervisorId1 = $data['supervisor_id_1'] ?? null;
+        $supervisorId2 = $data['supervisor_id_2'] ?? null;
 
         return [
             'sso' => $data['sso'],
@@ -133,12 +137,21 @@ class UserController extends Controller
             'level' => $data['l'] ?? null,
             'role_id' => self::ROLE_IDS[$roleKey],
             'role_key' => $roleKey,
-            'supervisor' => $data['sup'] ?? null,
-            'evaluator2' => $data['evaluator2'] ?? null,
-            'supervisor_id_1' => $this->userIdFromDisplayName($data['sup'] ?? null),
-            'supervisor_id_2' => $this->userIdFromDisplayName($data['evaluator2'] ?? null),
+            'supervisor' => $this->userNameFromId($supervisorId1) ?? ($data['sup'] ?? null),
+            'evaluator2' => $this->userNameFromId($supervisorId2) ?? ($data['evaluator2'] ?? null),
+            'supervisor_id_1' => $supervisorId1,
+            'supervisor_id_2' => $supervisorId2,
             'is_active' => $data['act'] ?? true,
         ];
+    }
+
+    private function userNameFromId(?int $id): ?string
+    {
+        if (! $id) {
+            return null;
+        }
+
+        return User::query()->whereKey($id)->value('name');
     }
 
     private function userIdFromDisplayName(?string $displayName): ?int
