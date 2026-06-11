@@ -1001,7 +1001,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       <div class="structure-tabs mb20">
         <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>สายงาน/กลุ่มงาน/ตำแหน่ง</button>
-        <button class={`structure-tab ${activeTab.value === "support-chain" ? "active" : ""}`} onClick={() => setActiveTab("support-chain")}>งาน/ฝ่าย</button>
         <button class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
         <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
       </div>
@@ -1056,7 +1055,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                                     <button class="btn-link opacity-0 group-hover:opacity-100" style={{ fontSize: '12px' }} onClick={() => startEdit("custom-group-pos", item, { parent: group, workName: wl })}>✎</button>
                                   </div>
                                 )}
-                                {positions.length === 0 && <div class="structure-empty">ยังไม่มีตำแหน่ง ระบบจะใช้กลุ่มงานนี้เป็นตำแหน่ง</div>}
+                                {positions.length === 0 && <div class="structure-empty">ยังไม่มีตำแหน่งในกลุ่มงานนี้</div>}
                               </div>
                               {positions.length > POSITION_PREVIEW_LIMIT &&
                                 <button
@@ -1086,84 +1085,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 {worklines.length === 0 &&
                   <div class="structure-empty">ยังไม่มีข้อมูลสายงาน</div>
                 }
-              </div>
-            </div> :
-          activeTab.value === "support-chain" ?
-          <div class="structure-pane">
-              <div class="structure-heading">ฝ่าย/งาน สายสนับสนุน</div>
-              <div class="structure-note">
-                <b>กำหนดได้สูงสุดอย่างละ 1 คน</b>
-                <span>หัวหน้าฝ่ายใช้บทบาทผู้บังคับบัญชา ส่วนหัวหน้างานใช้บทบาทหัวหน้างาน หน้าเพิ่มผู้ใช้จะอ้างอิงค่าจากหน้านี้โดยอัตโนมัติ</span>
-              </div>
-              <section class="structure-section">
-                <div class="structure-section-head">
-                  <div class="fw7 fs14 text-navy">เพิ่มฝ่ายสนับสนุน</div>
-                  <button
-                    class="btn btn-s btn-sm"
-                    type="button"
-                    onClick={() => {
-                      setAddItemData({ category: "support-dept", type: "2", name: "", parent: "", grandparent: "" });
-                      setShowAddModal(true);
-                    }}
-                  >
-                    + เพิ่มฝ่าย
-                  </button>
-                </div>
-              </section>
-              <div class="structure-stack">
-                {Object.keys(supportOrg).map((dept) =>
-              <section key={dept} class="structure-section">
-                    <div class="structure-section-head">
-                      <div>
-                        <div class="fw8 fs14 text-navy">{dept}</div>
-                        <div class="muted fs11">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</div>
-                      </div>
-                      <select class="sel" style={{ maxWidth: "320px" }} value={orgSups[dept] || ""} onChange={(e) => setOrgHead(dept, e.target.value)}>
-                        <option value="">— เลือกหัวหน้าฝ่าย —</option>
-                        {divisionHeadOptions.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
-                      </select>
-                    </div>
-                    <div class="support-work-grid">
-                      {(supportOrg[dept] || []).map((work: any) => {
-                    const workPath = [dept, work.work].join(" > ");
-                    return (
-                      <div key={work.work} class="support-work-card">
-                            <div class="support-work-head">
-                              <div class="fw8 fs13 text-navy">{work.work}</div>
-                              <button class="btn-link" onClick={() => startEdit("support-work", work.work, { parent: dept })}>✎</button>
-                            </div>
-                            <div class="support-head-select">
-                              <div class="muted fs11">หัวหน้างาน</div>
-                              <select class="sel" value={orgSups[workPath] || ""} onChange={(e) => setOrgHead(workPath, e.target.value)}>
-                                <option value="">— เลือกหัวหน้างาน —</option>
-                                {workHeadOptions.map((user) => <option key={user.sso} value={user.n}>{user.t}{user.n} · {user.p}</option>)}
-                              </select>
-                            </div>
-                            <div class="support-unit-list">
-                              {(work.units || []).map((unit: string) =>
-                          <div key={unit} class="support-unit-row">
-                                  <span>{unit}</span>
-                                  <button class="btn-link" onClick={() => startEdit("support-unit", unit, { parent: dept, workName: work.work })}>✎</button>
-                                </div>
-                          )}
-                              {(work.units || []).length === 0 && <div class="structure-empty">ยังไม่มีหน่วย</div>}
-                            </div>
-                            <div class="support-unit-add">
-                              <input class="inp" value={newSupportUnitNames.value[workPath] || ""} onChange={(e) => setNewSupportUnitNames((current) => ({ ...current, [workPath]: e.target.value }))} placeholder="เพิ่มหน่วยใต้ งานนี้" />
-                              <button class="btn btn-s btn-sm" onClick={() => addSupportUnit(dept, work.work)}>+ เพิ่มหน่วย</button>
-                            </div>
-                          </div>);
-
-                  })}
-                      <div class="support-work-card support-add-card">
-                        <input class="inp" value={newSupportWorkNames.value[dept] || ""} onChange={(e) => setNewSupportWorkNames((current) => ({ ...current, [dept]: e.target.value }))} placeholder={`เพิ่มงานใต้${dept}`} />
-                        <button class="btn btn-s btn-sm" disabled={isSavingAddItem.value} onClick={() => addSupportWork(dept)}>
-                          {isSavingAddItem.value ? "กำลังเพิ่ม..." : "+ เพิ่มงาน"}
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-              )}
               </div>
             </div> :
           activeTab.value === "dept" ?

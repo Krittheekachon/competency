@@ -190,6 +190,157 @@ class AdminLearningCatalogTest extends TestCase
             ]);
     }
 
+    public function test_admin_cannot_store_learning_catalog_with_invalid_delivery_or_inactive_method(): void
+    {
+        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        DB::table('learning_method_types')->insert([
+            'key' => 'inactive-method',
+            'label' => 'Inactive Method',
+            'description' => 'Inactive Method',
+            'is_active' => false,
+            'sort_order' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => 'BAD-001',
+                'name' => 'หลักสูตรข้อมูลผิด',
+                'method_key' => 'inactive-method',
+                'delivery_type' => 'field_trip',
+                'source_type' => 'internal',
+                'provider' => null,
+                'cost' => null,
+                'hours' => null,
+                'expected_levels' => [],
+                'competency_ids' => [],
+                'description' => null,
+                'is_active' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['method_key', 'delivery_type']);
+
+        $this->assertDatabaseMissing('learning_catalogs', [
+            'code' => 'BAD-001',
+        ]);
+    }
+
+    public function test_admin_cannot_map_learning_catalog_to_more_than_one_competency(): void
+    {
+        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $this->createLearningMethod('formal', 'Formal Learning');
+        $firstCompetencyId = $this->createCompetency('CC-010', 'Customer First');
+        $secondCompetencyId = $this->createCompetency('CC-011', 'Expertise');
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => 'MAP-001',
+                'name' => 'หลักสูตรผูกหลายสมรรถนะ',
+                'method_key' => 'formal',
+                'delivery_type' => 'e_learning',
+                'source_type' => 'internal',
+                'provider' => null,
+                'cost' => 0,
+                'hours' => 1,
+                'expected_levels' => [],
+                'competency_ids' => [$firstCompetencyId, $secondCompetencyId],
+                'description' => null,
+                'is_active' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['competency_ids']);
+
+        $this->assertDatabaseMissing('learning_catalogs', [
+            'code' => 'MAP-001',
+        ]);
+        $this->assertDatabaseMissing('learning_catalog_competency', [
+            'competency_id' => $firstCompetencyId,
+        ]);
+    }
+
+    public function test_learning_catalog_expected_levels_are_nullable_and_normalized(): void
+    {
+        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $this->createLearningMethod('formal', 'Formal Learning');
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => 'LV-001',
+                'name' => 'หลักสูตรไม่ระบุระดับ',
+                'method_key' => 'formal',
+                'delivery_type' => 'e_learning',
+                'source_type' => 'internal',
+                'provider' => null,
+                'cost' => 0,
+                'hours' => 1,
+                'expected_levels' => [],
+                'competency_ids' => [],
+                'description' => null,
+                'is_active' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $catalogId = DB::table('learning_catalogs')->where('code', 'LV-001')->value('id');
+
+        $this->assertNull(DB::table('learning_catalogs')->where('id', $catalogId)->value('expected_levels'));
+
+        $this->actingAs($adminUser)
+            ->put(route('admin.learning-catalogs.update', $catalogId), [
+                'code' => 'LV-001',
+                'name' => 'หลักสูตรไม่ระบุระดับ',
+                'method_key' => 'formal',
+                'delivery_type' => 'e_learning',
+                'source_type' => 'internal',
+                'provider' => null,
+                'cost' => 0,
+                'hours' => 1,
+                'expected_levels' => [4, 2, 2],
+                'competency_ids' => [],
+                'description' => null,
+                'is_active' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame([2, 4], json_decode(DB::table('learning_catalogs')->where('id', $catalogId)->value('expected_levels'), true));
+    }
+
+    public function test_deleting_learning_catalog_removes_competency_mapping(): void
+    {
+        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $competencyId = $this->createCompetency('CC-020', 'Result Driven');
+        $catalogId = DB::table('learning_catalogs')->insertGetId([
+            'code' => 'DEL-001',
+            'name' => 'หลักสูตรที่จะลบ',
+            'delivery_type' => 'in_class',
+            'source_type' => 'internal',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('learning_catalog_competency')->insert([
+            'learning_catalog_id' => $catalogId,
+            'competency_id' => $competencyId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($adminUser)
+            ->delete(route('admin.learning-catalogs.destroy', $catalogId))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('learning_catalogs', [
+            'id' => $catalogId,
+        ]);
+        $this->assertDatabaseMissing('learning_catalog_competency', [
+            'learning_catalog_id' => $catalogId,
+            'competency_id' => $competencyId,
+        ]);
+    }
+
     private function createLearningMethod(string $key, string $label): int
     {
         return DB::table('learning_method_types')->insertGetId([

@@ -3,19 +3,10 @@
     <div>
       <div class="sec-t">จัดการโครงสร้างองค์กร </div>
       <div class="sec-s">
-        กำหนดกลุ่มงานและสายการบังคับบัญชา ·
-        {{ viewModel === 'dept' ? 'มุมมองรายกลุ่มงาน' : 'มุมมองสายงานบังคับบัญชา' }}
+        กำหนดกลุ่มงานและสายการบังคับบัญชา
       </div>
     </div>
     <div class="flex g8">
-      <button
-        class="btn btn-s"
-        :class="{ 'btn-p': viewModel === 'dept' }"
-        style="border-radius: 12px"
-        @click="setDeptView"
-      >
-         รายกลุ่มงาน
-      </button>
       <button
         class="btn btn-s"
         :class="{ 'btn-p': viewModel === 'hierarchy' }"
@@ -120,6 +111,7 @@
                   <th>ตำแหน่ง</th>
                   <th>ผู้ประเมินคนที่ 1 (หัวหน้างาน)</th>
                   <th>ผู้ประเมินคนที่ 2 (ผู้บังคับบัญชา)</th>
+                  <th>ผู้ประเมินคนที่ 3 (คณบดี)</th>
                   <th>บทบาท</th>
                   <th style="width: 130px"></th>
                 </tr>
@@ -175,6 +167,13 @@
                     </div>
                     <span v-else class="fs11 muted">—</span>
                   </td>
+                  <td style="min-width: 140px">
+                    <div v-if="user.evaluator3" class="flex ic g6">
+                      <span class="fs11 evaluator-icon"></span>
+                      <span class="fs12 evaluator-name">{{ user.evaluator3 }}</span>
+                    </div>
+                    <span v-else class="fs11 muted">—</span>
+                  </td>
                   <td>
                     <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
                       {{ roleBadge(user.r).label }}
@@ -210,126 +209,121 @@
   </div>
 
   <div v-else-if="viewModel === 'hierarchy'" class="anim-fade-in">
-    <div class="card shadow-sm overflow-hidden hierarchy-card">
-      <div class="p32 hierarchy-header">
-        <div class="flex ic g12 mb16 wrap">
-          <div
-            class="breadcrumb-item"
-            :class="{ active: drillPath.length === 0 }"
-            @click="popDrillPath(-1)"
+    <section class="hierarchy-shell">
+      <div class="hierarchy-path">
+        <button
+          class="path-chip"
+          :class="{ active: drillPath.length === 0 }"
+          type="button"
+          @click="popDrillPath(-1)"
+        >
+          คณะวิศวกรรมศาสตร์
+        </button>
+        <template v-for="(item, index) in drillPath" :key="`${item.sso || item.n}-${index}`">
+          <span class="path-separator">/</span>
+          <button
+            class="path-chip"
+            :class="{ active: index === drillPath.length - 1 }"
+            type="button"
+            @click="popDrillPath(index)"
           >
-            <span class="breadcrumb-icon"></span> คณะวิศวกรรมศาสตร์
-          </div>
-          <template v-for="(item, index) in drillPath" :key="`${item.sso || item.n}-${index}`">
-            <div class="breadcrumb-separator">›</div>
-            <div
-              class="breadcrumb-item"
-              :class="{ active: index === drillPath.length - 1 }"
-              @click="popDrillPath(index)"
-            >
-              {{ item.n }}
-            </div>
-          </template>
-        </div>
+            {{ item.n }}
+          </button>
+        </template>
+      </div>
 
-        <div class="flex ic jb">
-          <div class="fs13 fw5 hierarchy-context">
-            {{
-              drillPath.length === 0
-                ? ' ระดับผู้บริหารคณะ'
-                : ` รายชื่อผู้ที่มีหัวหน้างานเป็น: ${drillPath[drillPath.length - 1].n}`
-            }}
-          </div>
+      <div class="hierarchy-filterbar">
+        <div class="filter-field">
+          <label>สายงาน</label>
+          <select v-model="hierarchyWorklineFilter" class="sel">
+            <option :value="ALL_WORKLINES">ทุกสายงาน</option>
+            <option v-for="workline in props.worklines" :key="workline" :value="workline">
+              {{ workline }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>กลุ่มงาน</label>
+          <select v-model="hierarchyGroupFilter" class="sel">
+            <option v-for="group in hierarchyGroupOptions" :key="group" :value="group">
+              {{ group }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>ตำแหน่ง</label>
+          <select v-model="hierarchyPositionFilter" class="sel">
+            <option v-for="position in hierarchyPositionOptions" :key="position" :value="position">
+              {{ position }}
+            </option>
+          </select>
         </div>
       </div>
 
-      <div class="hierarchy-body">
-        <div class="table-scroll">
-          <table class="tbl tbl-clean tbl-org tbl-explorer">
-            <thead>
-              <tr>
-                <th style="padding-left: 32px; width: 40%">ชื่อ-นามสกุล / สังกัด</th>
-                <th>ตำแหน่งสายงานหลัก</th>
-                <th>บทบาท / ผู้ประเมิน</th>
-                <th style="width: 140px; text-align: right; padding-right: 32px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(user, index) in currentHierarchyUsers"
-                :key="user.sso || index"
-                :class="{ 'row-drill': hasSubordinates(user) }"
-                @click="pushDrillPath(user)"
-              >
-                <td style="padding-left: 32px; padding-top: 24px; padding-bottom: 24px">
-                  <div class="flex ic g12">
-                    <div class="av s36 hierarchy-avatar">{{ avatarInitial(user) }}</div>
-                    <div class="flex col">
-                      <div class="flex ic g6">
-                        <span class="fw8 fs16 hierarchy-name">{{ user.t }}{{ user.n }}</span>
-                        <span
-                          v-if="user.d"
-                          class="fs13 fw5 text-gray-400 whitespace-nowrap overflow-hidden truncate hierarchy-dept"
-                          :title="user.d"
-                        >
-                          ({{ formatDept(user.d) }})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td style="padding-top: 24px; padding-bottom: 24px; max-width: 200px">
-                  <div
-                    class="fw7 fs14 whitespace-nowrap overflow-hidden truncate hierarchy-position"
-                    :title="user.p || ''"
-                  >
-                    {{ user.p || '—' }}
-                  </div>
-                  <div
-                    class="muted fs12 whitespace-nowrap overflow-hidden truncate hierarchy-level"
-                    :title="getDisplayLevel(user) || ''"
-                  >
-                    {{ getDisplayLevel(user) || '—' }}
-                  </div>
-                </td>
-                <td style="padding-top: 24px; padding-bottom: 24px">
-                  <div class="flex ic g10">
-                    <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
-                      {{ roleBadge(user.r).label }}
-                    </span>
-                    <template v-if="hasSubordinates(user)">
-                      <span class="badge-sub">ผู้รับการประเมิน {{ subordinateCount(user) }} คน</span>
-                      <span class="drill-arrow">›</span>
-                    </template>
-                  </div>
-                  <div class="muted fs12 evaluator-summary">
-                    <span class="fw6">คนที่ 1 (หัวหน้างาน):</span> {{ user.sup || '—' }}
-                    <span v-if="user.evaluator2">
-                      · <span class="fw6">คนที่ 2 (ผู้บังคับบัญชา):</span> {{ user.evaluator2 }}
-                    </span>
-                  </div>
-                </td>
-                <td
-                  style="padding-right: 40px; text-align: right; padding-top: 24px; padding-bottom: 24px"
-                  @click.stop
-                >
-                  <button class="btn-settings" title="แก้ไขผู้ใช้" @click="openModal('modal-user', user)">⚙</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+      <div class="hierarchy-panel">
+        <div class="hierarchy-list-head">
+          <span>บุคลากร</span>
+          <span>ตำแหน่งหลัก</span>
+          <span>บทบาท / ผู้ประเมิน</span>
+          <span></span>
         </div>
 
-        <div v-if="currentHierarchyUsers.length === 0" class="flex col ic jc empty-hierarchy">
-          <div class="empty-hierarchy-icon"></div>
-          <div class="fw8 fs18 mb6 empty-hierarchy-title">ยังไม่มีผู้รับการประเมินถัดไป</div>
-          <div class="muted fs14 empty-hierarchy-text">
+        <div v-if="currentHierarchyUsers.length" class="hierarchy-list">
+          <article
+            v-for="(user, index) in currentHierarchyUsers"
+            :key="user.sso || index"
+            class="hierarchy-row"
+            :class="{ drillable: hasSubordinates(user) }"
+            @click="pushDrillPath(user)"
+          >
+            <div class="person-cell-main">
+              <div class="av hierarchy-avatar">{{ avatarInitial(user) }}</div>
+              <div class="person-copy">
+                <div class="hierarchy-name">{{ user.t }}{{ user.n }}</div>
+                <div class="hierarchy-dept" :title="user.d || ''">{{ formatDept(user.d) }}</div>
+              </div>
+            </div>
+
+            <div class="hierarchy-position-block">
+              <strong :title="user.p || ''">{{ user.p || '—' }}</strong>
+              <span :title="getDisplayLevel(user) || ''">{{ getDisplayLevel(user) || '—' }}</span>
+            </div>
+
+            <div class="hierarchy-role-block">
+              <div class="role-pill-row">
+                <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
+                  {{ roleBadge(user.r).label }}
+                </span>
+                <span v-if="hasSubordinates(user)" class="badge-sub">
+                  ผู้รับการประเมิน {{ subordinateCount(user) }} คน
+                </span>
+              </div>
+              <div class="evaluator-summary">{{ evaluatorLine(user) }}</div>
+            </div>
+
+            <div class="hierarchy-actions" @click.stop>
+              <button class="btn btn-s btn-xs" type="button" @click="openModal('modal-user', user)">แก้ไข</button>
+              <button
+                v-if="hasSubordinates(user)"
+                class="drill-button"
+                type="button"
+                @click="pushDrillPath(user)"
+              >
+                ดูลูกทีม
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="empty-hierarchy">
+          <div class="empty-hierarchy-title">ยังไม่มีผู้รับการประเมินถัดไป</div>
+          <div class="empty-hierarchy-text">
             ไม่พบผู้ที่มีหัวหน้างานเป็น {{ drillPath[drillPath.length - 1]?.n }}
           </div>
           <button class="btn btn-s mt24" @click="popDrillPath(drillPath.length - 2)">ย้อนกลับหนึ่งระดับ</button>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 
   <div v-else class="chain-page anim-fade-in">
@@ -473,6 +467,7 @@ type User = {
   r?: string;
   sup?: string;
   evaluator2?: string;
+  evaluator3?: string;
   act?: boolean;
 };
 
@@ -492,13 +487,18 @@ const props = defineProps<{
 }>();
 
 const ALL_WORKLINES = 'ทั้งหมด';
+const ALL_GROUPS = 'ทุกกลุ่มงาน';
+const ALL_POSITIONS = 'ทุกตำแหน่ง';
 
-const viewModel = ref<'dept' | 'hierarchy' | 'chain'>('dept');
+const viewModel = ref<'dept' | 'hierarchy' | 'chain'>('hierarchy');
 const showFilter = ref(false);
 const filterType = ref(props.worklines[0] || 'สายวิชาการ');
 const search = ref('');
 const deptSearch = ref('');
 const selectedDept = ref('');
+const hierarchyWorklineFilter = ref(ALL_WORKLINES);
+const hierarchyGroupFilter = ref(ALL_GROUPS);
+const hierarchyPositionFilter = ref(ALL_POSITIONS);
 const drillPath = ref<User[]>([]);
 const ROLE_NODE_OPTIONS = ['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี'];
 const defaultChain = ref<string[]>(['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี']);
@@ -572,6 +572,33 @@ const chainUnits = computed(() => chainUnitNames.value.map((name) => {
   };
 }));
 
+const hierarchyGroupOptions = computed(() => {
+  const groups = props.users
+    .filter((user) => hierarchyWorklineFilter.value === ALL_WORKLINES || user.w === hierarchyWorklineFilter.value)
+    .map((user) => getTopDept(user))
+    .filter(Boolean);
+
+  return [ALL_GROUPS, ...Array.from(new Set(groups)).sort((a, b) => a.localeCompare(b, 'th'))];
+});
+
+const hierarchyPositionOptions = computed(() => {
+  const positions = props.users
+    .filter((user) => hierarchyWorklineFilter.value === ALL_WORKLINES || user.w === hierarchyWorklineFilter.value)
+    .filter((user) => hierarchyGroupFilter.value === ALL_GROUPS || getTopDept(user) === hierarchyGroupFilter.value)
+    .map((user) => user.p || '')
+    .filter(Boolean);
+
+  return [ALL_POSITIONS, ...Array.from(new Set(positions)).sort((a, b) => a.localeCompare(b, 'th'))];
+});
+
+const matchesHierarchyFilters = (user: User) => {
+  const matchesWorkline = hierarchyWorklineFilter.value === ALL_WORKLINES || user.w === hierarchyWorklineFilter.value;
+  const matchesGroup = hierarchyGroupFilter.value === ALL_GROUPS || getTopDept(user) === hierarchyGroupFilter.value;
+  const matchesPosition = hierarchyPositionFilter.value === ALL_POSITIONS || user.p === hierarchyPositionFilter.value;
+
+  return matchesWorkline && matchesGroup && matchesPosition;
+};
+
 const listUsers = computed(() => {
   if (isSearchActive.value) {
     const keyword = search.value.toLowerCase();
@@ -590,12 +617,32 @@ const listUsers = computed(() => {
 });
 
 const currentHierarchyUsers = computed(() => {
-  if (drillPath.value.length === 0) {
-    return props.users.filter((user) => !user.sup);
-  }
+  const scopeUsers = drillPath.value.length === 0
+    ? props.users
+    : props.users.filter((user) => user.sup === drillPath.value[drillPath.value.length - 1].n);
 
-  const leader = drillPath.value[drillPath.value.length - 1];
-  return props.users.filter((user) => user.sup === leader.n);
+  return scopeUsers.filter(matchesHierarchyFilters);
+});
+
+watch(hierarchyWorklineFilter, () => {
+  hierarchyGroupFilter.value = ALL_GROUPS;
+  hierarchyPositionFilter.value = ALL_POSITIONS;
+});
+
+watch(hierarchyGroupFilter, () => {
+  hierarchyPositionFilter.value = ALL_POSITIONS;
+});
+
+watch(hierarchyGroupOptions, (options) => {
+  if (!options.includes(hierarchyGroupFilter.value)) {
+    hierarchyGroupFilter.value = ALL_GROUPS;
+  }
+});
+
+watch(hierarchyPositionOptions, (options) => {
+  if (!options.includes(hierarchyPositionFilter.value)) {
+    hierarchyPositionFilter.value = ALL_POSITIONS;
+  }
 });
 
 watch(
@@ -611,10 +658,6 @@ watch(
 );
 
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
-
-const setDeptView = () => {
-  viewModel.value = 'dept';
-};
 
 const setHierarchyView = () => {
   viewModel.value = 'hierarchy';
@@ -687,6 +730,7 @@ const roleBadge = (role?: string): RoleBadge => {
 
 const hasSubordinates = (user: User) => props.users.some((subordinate) => subordinate.sup === user.n);
 const subordinateCount = (user: User) => props.users.filter((subordinate) => subordinate.sup === user.n).length;
+const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้างาน): ${user.sup || '—'} · คนที่ 2 (ผู้บังคับบัญชา): ${user.evaluator2 || '—'} · คนที่ 3 (คณบดี): ${user.evaluator3 || '—'}`;
 
 const popDrillPath = (index: number) => {
   drillPath.value = index === -1 ? [] : drillPath.value.slice(0, index + 1);
@@ -1048,166 +1092,257 @@ const resetUnitChain = (unitName: string) => {
   overflow-wrap: anywhere;
 }
 
-.hierarchy-card {
-  border-radius: 20px;
+.hierarchy-shell {
+  display: grid;
+  gap: 14px;
 }
 
-.hierarchy-header {
-  background: #fff;
-  border-bottom: 1px solid #edf2f7;
-}
-
-.hierarchy-context {
-  color: var(--text3);
-}
-
-.hierarchy-body {
-  min-height: 520px;
-  background: #fff;
-}
-
-.breadcrumb-item {
-  cursor: pointer;
+.hierarchy-path {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--text3);
-  border-radius: 6px;
-  transition: 0.2s;
-  padding: 4px 8px;
-  margin-left: -8px;
+  gap: 8px;
+  min-height: 44px;
+  overflow-x: auto;
 }
 
-.breadcrumb-item:hover {
-  background: #f1f5f9;
+.hierarchy-filterbar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-field label {
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.filter-field .sel {
+  min-height: 40px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.path-chip {
+  flex: 0 0 auto;
+  border: 1px solid #dbe5f1;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 34px;
+  padding: 0 13px;
+}
+
+.path-chip.active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
   color: var(--blue);
 }
 
-.breadcrumb-item.active {
-  color: var(--navy);
-}
-
-.breadcrumb-icon {
-  font-size: 20px;
-}
-
-.breadcrumb-separator {
+.path-separator {
   color: #cbd5e1;
-  font-weight: 200;
-  font-size: 18px;
-  margin: 0 2px;
+  font-weight: 800;
 }
 
-.tbl-explorer th {
+.hierarchy-panel {
+  overflow: hidden;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.hierarchy-list-head,
+.hierarchy-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.25fr) minmax(180px, 0.8fr) minmax(320px, 1.25fr) minmax(150px, auto);
+  gap: 18px;
+  align-items: center;
+}
+
+.hierarchy-list-head {
+  min-height: 48px;
+  padding: 0 22px;
+  border-bottom: 1px solid #edf2f8;
+  background: #fbfdff;
+  color: #94a3b8;
   font-size: 11px;
+  font-weight: 900;
   text-transform: uppercase;
-  color: var(--text3);
-  letter-spacing: 0.1em;
-  padding: 16px 12px;
-  background: #fcfcfc;
-  border-bottom: 1px solid #edf2f7;
 }
 
-.tbl-explorer td {
-  padding: 16px 12px;
-  border-bottom: 1px solid #f8fafc;
-  vertical-align: middle;
+.hierarchy-row {
+  min-height: 118px;
+  padding: 18px 22px;
+  border-bottom: 1px solid #eef2f7;
+  transition: background 160ms ease, box-shadow 160ms ease;
 }
 
-.row-drill {
+.hierarchy-row:last-child {
+  border-bottom: 0;
+}
+
+.hierarchy-row.drillable {
   cursor: pointer;
-  transition: 0.15s;
 }
 
-.row-drill:hover td {
-  background: #fcfdfe !important;
+.hierarchy-row.drillable:hover {
+  background: #fbfdff;
+  box-shadow: inset 4px 0 0 var(--blue);
+}
+
+.person-cell-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
 .hierarchy-avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
   background: var(--navy);
   color: #fff;
-  border: none;
   font-size: 14px;
-  font-weight: 700;
-  border-radius: 50%;
-  flex-shrink: 0;
+  font-weight: 850;
+}
+
+.person-copy {
+  min-width: 0;
 }
 
 .hierarchy-name {
+  overflow: hidden;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 900;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hierarchy-dept {
-  max-width: 240px;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hierarchy-position {
-  line-height: 1.3;
+.hierarchy-position-block,
+.hierarchy-role-block {
+  min-width: 0;
+}
+
+.hierarchy-position-block strong {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hierarchy-position-block span {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .badge-sub {
-  font-size: 10px;
-  font-weight: 800;
+  border-radius: 999px;
   background: #eff6ff;
   color: var(--blue);
-  padding: 3px 10px;
-  border-radius: 20px;
-  transition: 0.2s;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 6px 9px;
+  white-space: nowrap;
 }
 
-.drill-arrow {
-  font-size: 16px;
-  color: #cbd5e1;
-  transition: 0.2s;
+.evaluator-summary {
+  margin-top: 9px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
-.row-drill:hover .drill-arrow {
+.hierarchy-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.drill-button {
+  min-height: 30px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
   color: var(--blue);
-  transform: translateX(3px);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 10px;
 }
 
-.row-drill:hover .badge-sub {
+.drill-button:hover {
+  border-color: var(--blue);
   background: var(--blue);
   color: #fff;
 }
 
-.evaluator-summary {
-  margin-top: 8px;
-}
-
-.btn-settings {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: var(--text3);
-  font-size: 14px;
-  transition: 0.15s;
-  cursor: pointer;
-}
-
-.btn-settings:hover {
-  border-color: var(--blue);
-  background: var(--blue-lt);
-  color: var(--blue);
-}
-
 .empty-hierarchy {
-  padding: 120px 20px;
+  display: grid;
+  justify-items: center;
+  padding: 96px 20px;
   color: var(--text3);
+  text-align: center;
 }
 
-.empty-hierarchy-icon {
-  font-size: 56px;
-  margin-bottom: 20px;
+.empty-hierarchy-title {
+  color: var(--navy);
+  font-size: 18px;
+  font-weight: 900;
 }
 
 .empty-hierarchy-text {
-  max-width: 300px;
-  text-align: center;
+  max-width: 360px;
+  margin-top: 8px;
   line-height: 1.6;
 }
 
@@ -1466,7 +1601,43 @@ const resetUnitChain = (unitName: string) => {
   opacity: 0.72;
 }
 
+@media (max-width: 1100px) {
+  .hierarchy-list-head {
+    display: none;
+  }
+
+  .hierarchy-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  .hierarchy-actions {
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 720px) {
+  .hierarchy-filterbar {
+    grid-template-columns: 1fr;
+  }
+
+  .hierarchy-row {
+    padding: 16px;
+  }
+
+  .person-cell-main {
+    align-items: flex-start;
+  }
+
+  .hierarchy-name,
+  .hierarchy-dept,
+  .hierarchy-position-block strong,
+  .hierarchy-position-block span {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .chain-section-head {
     flex-direction: column;
   }

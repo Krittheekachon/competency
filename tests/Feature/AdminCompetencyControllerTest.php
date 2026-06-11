@@ -218,6 +218,46 @@ class AdminCompetencyControllerTest extends TestCase
         ]);
     }
 
+    public function test_admin_cannot_create_competency_with_duplicate_code(): void
+    {
+        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $type = CompetencyType::create([
+            'code' => 'CC',
+            'full_name' => 'Core Competency',
+            'description' => 'สมรรถนะหลัก',
+        ]);
+        Competency::create([
+            'competency_type_id' => $type->id,
+            'code' => 'CC-001',
+            'name' => 'การบริการที่ดี',
+            'detail' => 'ให้บริการด้วยความเข้าใจ',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.competencies.store'), [
+                'competency_type_id' => $type->id,
+                'code' => 'CC-001',
+                'name' => 'การมุ่งผลสัมฤทธิ์',
+                'detail' => 'รหัสซ้ำแต่ชื่อไม่ซ้ำ',
+                'levels' => [
+                    [
+                        'level' => 1,
+                        'description' => '',
+                        'indicators' => [
+                            ['description' => 'ติดตามผลการทำงาน', 'weight' => 0.25],
+                        ],
+                    ],
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['code']);
+
+        $this->assertSame(1, Competency::query()->where('code', 'CC-001')->count());
+        $this->assertDatabaseMissing('competencies', [
+            'name' => 'การมุ่งผลสัมฤทธิ์',
+        ]);
+    }
+
     public function test_admin_can_import_competencies_from_template_csv_with_thai_headers(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);

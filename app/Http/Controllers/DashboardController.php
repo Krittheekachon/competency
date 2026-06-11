@@ -125,6 +125,12 @@ class DashboardController extends Controller
 
     private function dashboardUserPayload(User $user): array
     {
+        $department = $this->currentDepartmentForUser($user);
+        $structureIssues = [
+            ...$this->structureIssuesForUser($user, $department),
+            ...$this->reportingLineIssuesForUser($user),
+        ];
+
         return [
             'db_id' => $user->id,
             'sso' => $user->sso ?: (string) $user->id,
@@ -138,14 +144,158 @@ class DashboardController extends Controller
             'em' => $user->email,
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
-            'd' => $user->department ?: '',
+            'd' => $department,
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'r' => $user->role_key ?: $this->roleKeyFromId($user->role_id),
             'sup' => $user->supervisor ?: '',
             'evaluator2' => $user->evaluator2 ?: '',
+            'evaluator3' => $user->evaluator3 ?: '',
             'act' => (bool) $user->is_active,
+            'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
+            'structureIssues' => $structureIssues,
         ];
+    }
+
+    private function currentDepartmentForUser(User $user): string
+    {
+        $currentJobFamily = $this->currentJobFamilyNameForUser($user);
+
+        if (!$currentJobFamily) {
+            return $user->department ?: '';
+        }
+
+        $suffix = $this->departmentSuffix($user->department ?: '');
+
+        return $currentJobFamily.$suffix;
+    }
+
+    private function currentJobFamilyNameForUser(User $user): ?string
+    {
+        if ($user->position_id) {
+            return DB::table('positions')
+                ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+                ->where('positions.id', $user->position_id)
+                ->value('job_families.name');
+        }
+
+        if (!$user->workline || !$user->position) {
+            return null;
+        }
+
+        $matches = DB::table('positions')
+            ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
+            ->where('worklines.name', $user->workline)
+            ->where('positions.name', $user->position)
+            ->pluck('job_families.name')
+            ->unique()
+            ->values();
+
+        return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    private function departmentSuffix(string $department): string
+    {
+        $parts = explode(' > ', $department, 2);
+
+        return isset($parts[1]) ? ' > '.$parts[1] : '';
+    }
+
+    private function structureIssuesForUser(User $user, string $department): array
+    {
+        $issues = [];
+
+        if (!$user->workline) {
+            $issues[] = 'ยังไม่ได้กำหนดสายงาน';
+
+            return $issues;
+        }
+
+        $worklineId = DB::table('worklines')->where('name', $user->workline)->value('id');
+        if (!$worklineId) {
+            $issues[] = 'สายงานนี้ไม่มีในโครงสร้างปัจจุบัน';
+
+            return $issues;
+        }
+
+        $jobFamilyName = $this->jobFamilyNameFromDepartment($department);
+        $jobFamilyId = $jobFamilyName
+            ? DB::table('job_families')
+                ->where('workline_id', $worklineId)
+                ->where('name', $jobFamilyName)
+                ->value('id')
+            : null;
+
+        if (!$jobFamilyId) {
+            $issues[] = 'กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน';
+        }
+
+        if ($user->position) {
+            $positionExists = $jobFamilyId
+                ? DB::table('positions')
+                    ->where('job_family_id', $jobFamilyId)
+                    ->where('name', $user->position)
+                    ->exists()
+                : false;
+
+            if (!$positionExists) {
+                $issues[] = 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน';
+            }
+        } else {
+            $issues[] = 'ยังไม่ได้กำหนดตำแหน่ง';
+        }
+
+        if ($user->level) {
+            $levelExists = DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->where('name', $user->level)
+                ->when($jobFamilyId, function ($query) use ($jobFamilyId) {
+                    $query->where(function ($query) use ($jobFamilyId) {
+                        $query->whereNull('job_family_id')
+                            ->orWhere('job_family_id', $jobFamilyId);
+                    });
+                })
+                ->exists();
+
+            if (!$levelExists) {
+                $issues[] = 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน';
+            }
+        } else {
+            $issues[] = 'ยังไม่ได้กำหนดระดับตำแหน่ง';
+        }
+
+        return $issues;
+    }
+
+    private function jobFamilyNameFromDepartment(string $department): string
+    {
+        return trim(explode(' > ', $department)[0] ?? '');
+    }
+
+    private function reportingLineIssuesForUser(User $user): array
+    {
+        $roleKey = $user->role_key ?: $this->roleKeyFromId($user->role_id);
+
+        if (in_array($roleKey, ['dean', 'manager'], true)) {
+            return [];
+        }
+
+        if ($roleKey === 'supervisor' && trim((string) $user->evaluator2) === '') {
+            return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
+        }
+
+        if (in_array($roleKey, ['manager_dept', 'dept_head'], true) && trim((string) $user->evaluator3) === '') {
+            return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
+        }
+
+        $hasAnyEvaluator = collect([
+            $user->supervisor,
+            $user->evaluator2,
+            $user->evaluator3,
+        ])->contains(fn ($name) => trim((string) $name) !== '');
+
+        return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้างาน'];
     }
 
     private function adminStructurePayload(): array

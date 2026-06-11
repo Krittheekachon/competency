@@ -2,7 +2,6 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import {
-    INITIAL_USERS,
     NAV_CONFIG,
     PAGE_TITLES,
     ROLES_CONFIG,
@@ -56,7 +55,7 @@ const activePage = computed({
 const currentRole = ref('admin');
 const page = usePage();
 const competencies = ref(clone(page.props.competencies || []));
-const users = ref(clone(page.props.users?.length ? page.props.users : INITIAL_USERS));
+const users = ref(clone(page.props.users || []));
 const activeModal = ref(null);
 const editingUserKey = ref(null);
 const isSavingUser = ref(false);
@@ -84,7 +83,10 @@ const userForm = ref({
     r: 'employee',
     sup: '',
     evaluator2: '',
+    evaluator3: '',
     act: true,
+    structureStatus: 'ok',
+    structureIssues: [],
 });
 
 const worklines = ref(clone(page.props.worklines || []));
@@ -118,9 +120,8 @@ const levelOptionsFromDatabase = computed(() => {
 
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
     if (directLevels.length) return directLevels;
-    if (userForm.value.p) return [userForm.value.p];
 
-    return positionOptions.value;
+    return [];
 });
 const isAcademicWorkline = computed(() => selectedWorklineKind.value === 'วิชาการ');
 const isSupportWorkline = computed(() => selectedWorklineKind.value === 'สนับสนุน');
@@ -130,6 +131,11 @@ const jobOptions = computed(() => {
     if (!userForm.value.w) return [];
 
     return Object.keys(selectedWorklineGroups.value);
+});
+const legacyJobOption = computed(() => {
+    const job = userForm.value.job;
+
+    return job && !jobOptions.value.includes(job) ? job : '';
 });
 const selectedSupportWork = computed(() =>
     selectedDeptWorks.value.find((item) => item.work === userForm.value.job),
@@ -143,12 +149,22 @@ const positionOptions = computed(() => {
     if (!userForm.value.job) return [];
 
     const positions = selectedWorklineGroups.value[userForm.value.job] || [];
-    return positions.length ? positions : [userForm.value.job];
+    return positions;
+});
+const legacyPositionOption = computed(() => {
+    const position = userForm.value.p;
+
+    return position && !positionOptions.value.includes(position) ? position : '';
 });
 const levelOptions = computed(() => {
     if (!userForm.value.w) return [];
 
     return levelOptionsFromDatabase.value;
+});
+const legacyLevelOption = computed(() => {
+    const level = userForm.value.l;
+
+    return level && !levelOptions.value.includes(level) ? level : '';
 });
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
@@ -184,6 +200,13 @@ const implementedAdminPages = new Set([
     'admin-dict',
     'admin-idp-tools',
 ]);
+
+watchEffect(() => {
+    if (Array.isArray(page.props.users)) {
+        users.value = clone(page.props.users);
+    }
+});
+
 watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
@@ -214,15 +237,36 @@ const currentProfileUser = computed(() =>
         act: true,
     },
 );
-const evaluatorOptions = computed(() =>
+const personOption = (user) => ({
+    key: user.sso || `${user.t || ''}${user.n}`,
+    value: `${user.t || ''}${user.n}`,
+    label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+});
+
+const supervisorOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .map((user) => ({
-            key: user.sso || `${user.t || ''}${user.n}`,
-            value: `${user.t || ''}${user.n}`,
-            label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
-        })),
+        .filter((user) => user.r === 'supervisor')
+        .map(personOption),
 );
+
+const managerDeptOptions = computed(() =>
+    users.value
+        .filter((user) => user.sso !== editingUserKey.value)
+        .filter((user) => ['manager_dept', 'dept_head'].includes(user.r))
+        .map(personOption),
+);
+
+const deanOptions = computed(() =>
+    users.value
+        .filter((user) => user.sso !== editingUserKey.value)
+        .filter((user) => ['dean', 'manager'].includes(user.r))
+        .map(personOption),
+);
+
+const canPickEvaluator1 = computed(() => !['supervisor', 'manager_dept', 'manager', 'dean'].includes(userForm.value.r));
+const canPickEvaluator2 = computed(() => !['manager_dept', 'manager', 'dean'].includes(userForm.value.r));
+const canPickEvaluator3 = computed(() => !['manager', 'dean'].includes(userForm.value.r));
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -242,7 +286,6 @@ const syncOrgPath = () => {
     const form = userForm.value;
 
     form.d = [form.job, form.unit].filter(Boolean).join(' > ');
-    if (!orgEditMode.value) syncOrgSupervisors();
 };
 
 const findUserName = (predicate) => {
@@ -293,6 +336,7 @@ const syncOrgSupervisors = () => {
 
     form.sup = '';
     form.evaluator2 = '';
+    form.evaluator3 = '';
 };
 
 const resetOrgSelection = () => {
@@ -304,6 +348,7 @@ const resetOrgSelection = () => {
     userForm.value.l = '';
     userForm.value.sup = '';
     userForm.value.evaluator2 = '';
+    userForm.value.evaluator3 = '';
 };
 
 const handleWorklineChange = () => {
@@ -333,11 +378,12 @@ const handleUnitChange = () => {
 
 const handlePositionChange = () => {
     userForm.value.l = '';
-    const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    if (!directLevels.length && userForm.value.p) {
-        userForm.value.l = userForm.value.p;
-    }
-    syncOrgSupervisors();
+};
+
+const handleRoleChange = () => {
+    if (!canPickEvaluator1.value) userForm.value.sup = '';
+    if (!canPickEvaluator2.value) userForm.value.evaluator2 = '';
+    if (!canPickEvaluator3.value) userForm.value.evaluator3 = '';
 };
 
 const resetUserForm = (data = null) => {
@@ -367,8 +413,12 @@ const resetUserForm = (data = null) => {
         r: data?.r || 'employee',
         sup: data?.sup || '',
         evaluator2: data?.evaluator2 || '',
+        evaluator3: data?.evaluator3 || '',
         act: data?.act !== false,
+        structureStatus: data?.structureStatus || 'ok',
+        structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
     };
+    handleRoleChange();
 };
 
 const openModal = (type, data = null) => {
@@ -396,13 +446,25 @@ const saveUser = () => {
     }
     const form = userForm.value;
     syncOrgPath();
-    if (!form.l && form.p && !(levelsByWorkline.value[form.w] || []).length) {
-        form.l = form.p;
-    }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
     if (!form.sso.trim() || !thaiName) {
         alert('กรุณากรอก ID และชื่อผู้ใช้');
+        return;
+    }
+
+    if (!form.w || !form.job || !form.p || !form.l) {
+        alert('กรุณาเลือกสายงาน กลุ่มงาน ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
+        return;
+    }
+
+    if (!positionOptions.value.includes(form.p)) {
+        alert('กรุณาให้ Admin เพิ่มตำแหน่งงานในกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
+        return;
+    }
+
+    if (!levelOptions.value.includes(form.l)) {
+        alert('กรุณาให้ Admin เพิ่มระดับตำแหน่งในสายงานหรือกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
 
@@ -433,6 +495,7 @@ const saveUser = () => {
         l: form.l.trim(),
         sup: form.sup.trim(),
         evaluator2: form.evaluator2.trim(),
+        evaluator3: form.evaluator3.trim(),
         act: Boolean(form.act),
     };
 
@@ -442,19 +505,20 @@ const saveUser = () => {
             window.sessionStorage.setItem(adminPageStorageKey, modalReturnPage.value);
         }
 
-        if (responsePage.props.users?.length) {
+        if (Array.isArray(responsePage.props.users)) {
             users.value = clone(responsePage.props.users);
             closeModal();
             return;
         }
 
-        if (editingUserKey.value) {
-            users.value = users.value.map((user) => user.sso === editingUserKey.value ? { ...user, ...nextUser } : user);
-        } else {
-            users.value = [nextUser, ...users.value];
-        }
-
-        closeModal();
+        router.reload({
+            only: ['users'],
+            preserveScroll: true,
+            onSuccess: (page) => {
+                users.value = clone(page.props.users || []);
+                closeModal();
+            },
+        });
     };
 
     const onError = (errors) => {
@@ -476,11 +540,11 @@ const saveUser = () => {
     };
 
     if (nextUser.db_id) {
-        router.put(route('admin.users.update', nextUser.db_id), nextUser, options);
+        router.put(`/admin/users/${nextUser.db_id}`, nextUser, options);
         return;
     }
 
-    router.post(route('admin.users.store'), nextUser, options);
+    router.post('/admin/users', nextUser, options);
 };
 
 const goProfile = () => router.visit(route('profile.edit'));
@@ -670,6 +734,13 @@ const logout = () => router.post(route('logout'));
                      ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
 
+                <div v-if="userForm.structureStatus === 'invalid' && userForm.structureIssues.length" class="admin-user-warning">
+                    <div class="admin-user-warning-title">ต้องตรวจสอบข้อมูลผู้ใช้นี้</div>
+                    <ul>
+                        <li v-for="issue in userForm.structureIssues" :key="issue">{{ issue }}</li>
+                    </ul>
+                </div>
+
                 <div v-if="!orgEditMode" class="fg">
                     <label class="lbl req">ID</label>
                     <input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" />
@@ -739,40 +810,71 @@ const logout = () => router.post(route('logout'));
                         <label class="lbl req">กลุ่มงาน</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
                             <option value="">— เลือกกลุ่มงาน —</option>
+                            <option v-if="legacyJobOption" :value="legacyJobOption">
+                                {{ legacyJobOption }} (ข้อมูลเดิม)
+                            </option>
                             <option v-for="job in jobOptions" :key="job" :value="job">
                                 {{ job }}
                             </option>
                         </select>
+                        <div v-if="legacyJobOption" class="modal-help warning">
+                            กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกกลุ่มงานใหม่ก่อนบันทึก
+                        </div>
                     </div>
                 </div>
 
                 <div v-if="!orgEditMode && userForm.job" class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
-                        <select v-model="userForm.p" class="sel modal-input" @change="handlePositionChange">
-                            <option value="">— เลือกตำแหน่ง —</option>
+                        <select
+                            v-model="userForm.p"
+                            class="sel modal-input"
+                            :disabled="!positionOptions.length && !legacyPositionOption"
+                            @change="handlePositionChange"
+                        >
+                            <option v-if="positionOptions.length" value="">— เลือกตำแหน่ง —</option>
+                            <option v-else value="">ยังไม่มีตำแหน่งในกลุ่มงาน</option>
+                            <option v-if="legacyPositionOption" :value="legacyPositionOption">
+                                {{ legacyPositionOption }} (ข้อมูลเดิม)
+                            </option>
                             <option v-for="position in positionOptions" :key="position" :value="position">
                                 {{ position }}
                             </option>
                         </select>
+                        <div v-if="legacyPositionOption" class="modal-help warning">
+                            ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน กรุณาเลือกตำแหน่งใหม่ก่อนบันทึก
+                        </div>
+                        <div v-if="!positionOptions.length" class="modal-help">
+                            กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดผู้ใช้
+                        </div>
                     </div>
                     <div v-if="userForm.p" class="fg">
                         <label class="lbl req">ระดับตำแหน่ง</label>
-                        <select v-model="userForm.l" class="sel modal-input">
-                            <option value="">— เลือกระดับตำแหน่ง —</option>
+                        <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption">
+                            <option v-if="levelOptions.length" value="">— เลือกระดับตำแหน่ง —</option>
+                            <option v-else value="">ยังไม่มีระดับตำแหน่งในสายงานหรือกลุ่มงาน</option>
+                            <option v-if="legacyLevelOption" :value="legacyLevelOption">
+                                {{ legacyLevelOption }} (ข้อมูลเดิม)
+                            </option>
                             <option v-for="level in levelOptions" :key="level" :value="level">
                                 {{ level }}
                             </option>
                         </select>
+                        <div v-if="legacyLevelOption" class="modal-help warning">
+                            ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกระดับใหม่ก่อนบันทึก
+                        </div>
+                        <div v-if="!levelOptions.length" class="modal-help">
+                            กรุณาให้ Admin เพิ่มระดับตำแหน่งก่อนกำหนดผู้ใช้
+                        </div>
                     </div>
                 </div>
 
                 <div class="modal-divider"></div>
 
-                <div class="modal-grid">
-                    <div class="fg">
+                <div class="evaluator-section">
+                    <div class="fg evaluator-role-field">
                         <label class="lbl req">บทบาทในระบบ</label>
-                        <select v-model="userForm.r" class="sel modal-input">
+                        <select v-model="userForm.r" class="sel modal-input" @change="handleRoleChange">
                             <option value="employee">บุคลากร</option>
                             <option value="supervisor">หัวหน้างาน</option>
                             <option value="manager_dept">ผู้บังคับบัญชา</option>
@@ -781,56 +883,94 @@ const logout = () => router.post(route('logout'));
                             <option value="admin">ผู้ดูแลระบบ</option>
                         </select>
                     </div>
-                    <div class="fg">
-                        <label class="lbl req">หัวหน้างาน</label>
+
+                    <div class="evaluator-grid">
+                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator1 }">
+                        <div class="evaluator-card-head">
+                            <div>
+                                <span class="evaluator-step">ลำดับที่ 1</span>
+                                <label class="lbl">เช่น หัวหน้างาน</label>
+                            </div>
+                            <span class="evaluator-state">{{ canPickEvaluator1 ? 'ข้ามได้' : 'ปิด' }}</span>
+                        </div>
                         <select
-                            v-if="orgEditMode"
                             v-model="userForm.sup"
                             class="sel modal-input"
+                            :disabled="!canPickEvaluator1"
                         >
-                            <option value="">— เลือกหัวหน้างาน —</option>
+                            <option value="">
+                                {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
+                            </option>
                             <option
-                                v-for="person in evaluatorOptions"
+                                v-for="person in supervisorOptions"
                                 :key="`sup-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
                         </select>
-                        <input
-                            v-else
-                            v-model="userForm.sup"
-                            class="inp modal-input"
-                            disabled
-                            placeholder="ยึดตามโครงสร้างองค์กร (หัวหน้างาน)"
-                        />
+                        <div v-if="!supervisorOptions.length" class="modal-help">
+                            ยังไม่มีผู้ใช้ role หัวหน้างาน
+                        </div>
                     </div>
-                </div>
 
-                <div class="modal-grid">
-                    <div class="fg">
-                        <label class="lbl req">หัวหน้าฝ่าย (ผู้บังคับบัญชา)</label>
+                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator2 }">
+                        <div class="evaluator-card-head">
+                            <div>
+                                <span class="evaluator-step">ลำดับที่ 2</span>
+                                <label class="lbl">เช่น หัวหน้าฝ่าย / ผู้บังคับบัญชา</label>
+                            </div>
+                            <span class="evaluator-state">{{ canPickEvaluator2 ? 'ข้ามได้' : 'ปิด' }}</span>
+                        </div>
                         <select
-                            v-if="orgEditMode"
                             v-model="userForm.evaluator2"
                             class="sel modal-input"
+                            :disabled="!canPickEvaluator2"
                         >
-                            <option value="">— เลือกผู้บังคับบัญชา —</option>
+                            <option value="">
+                                {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
+                            </option>
                             <option
-                                v-for="person in evaluatorOptions"
+                                v-for="person in managerDeptOptions"
                                 :key="`evaluator2-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
                         </select>
-                        <input
-                            v-else
-                            v-model="userForm.evaluator2"
-                            class="inp modal-input"
-                            disabled
-                            placeholder="ยึดตามโครงสร้างองค์กร (ผู้บังคับบัญชา)"
-                        />
+                        <div v-if="!managerDeptOptions.length" class="modal-help">
+                            ยังไม่มีผู้ใช้ role ผู้บังคับบัญชา
+                        </div>
+                    </div>
+
+                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator3 }">
+                        <div class="evaluator-card-head">
+                            <div>
+                                <span class="evaluator-step">ลำดับที่ 3</span>
+                                <label class="lbl">เช่น คณบดี</label>
+                            </div>
+                            <span class="evaluator-state">{{ canPickEvaluator3 ? 'ข้ามได้' : 'ปิด' }}</span>
+                        </div>
+                        <select
+                            v-model="userForm.evaluator3"
+                            class="sel modal-input"
+                            :disabled="!canPickEvaluator3"
+                        >
+                            <option value="">
+                                {{ canPickEvaluator3 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
+                            </option>
+                            <option
+                                v-for="person in deanOptions"
+                                :key="`dean-${person.key}`"
+                                :value="person.value"
+                            >
+                                {{ person.label }}
+                            </option>
+                        </select>
+                        <div v-if="!deanOptions.length" class="modal-help">
+                            ยังไม่มีผู้ใช้ role คณบดี
+                        </div>
+                    </div>
                     </div>
                 </div>
 
@@ -881,6 +1021,33 @@ const logout = () => router.post(route('logout'));
     font-size: 13px;
 }
 
+.admin-user-warning {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.admin-user-warning-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.admin-user-warning ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.admin-user-warning li {
+    margin: 3px 0;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.45;
+}
+
 .org-edit-summary {
     margin-bottom: 16px;
     padding: 12px 14px;
@@ -911,6 +1078,93 @@ const logout = () => router.post(route('logout'));
 
 .modal-input:disabled {
     background: #eef2f7;
+    color: #94a3b8;
+}
+
+.modal-help {
+    margin-top: 7px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.modal-help.warning {
+    color: #c2410c;
+}
+
+.evaluator-section {
+    margin: 2px 0 16px;
+    padding: 14px;
+    border: 1px solid #dbe5f1;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.evaluator-role-field {
+    margin-bottom: 14px;
+    max-width: 360px;
+}
+
+.evaluator-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.evaluator-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #dbe5f1;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.evaluator-card.disabled {
+    background: #f8fafc;
+}
+
+.evaluator-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    margin-bottom: 8px;
+}
+
+.evaluator-step {
+    display: block;
+    margin-bottom: 3px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.evaluator-card .lbl {
+    margin-bottom: 0;
+    color: var(--text);
+    line-height: 1.3;
+}
+
+.evaluator-state {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1;
+    padding: 5px 8px;
+}
+
+.evaluator-card.disabled .evaluator-state {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+.evaluator-card.disabled .lbl,
+.evaluator-card.disabled .evaluator-step {
     color: #94a3b8;
 }
 
@@ -967,6 +1221,14 @@ const logout = () => router.post(route('logout'));
     .modal-grid,
     .modal-grid.single-col {
         grid-template-columns: 1fr;
+    }
+
+    .evaluator-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .evaluator-role-field {
+        max-width: none;
     }
 }
 </style>

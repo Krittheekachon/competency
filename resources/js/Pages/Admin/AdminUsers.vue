@@ -17,6 +17,17 @@
     @close="showImport = false"
   />
 
+  <div class="user-dashboard-grid mb14">
+    <div class="user-metric">
+      <span>ผู้ใช้ทั้งหมด</span>
+      <strong>{{ props.users.length }}</strong>
+    </div>
+    <div class="user-metric warning">
+      <span>ต้องตรวจสอบ</span>
+      <strong>{{ invalidStructureCount }}</strong>
+    </div>
+  </div>
+
   <div class="card mb14">
     <div class="ch filter-row">
       <input v-model="search" class="inp search-input" placeholder=" ค้นหาชื่อ / ID..." />
@@ -25,6 +36,20 @@
         <option>ทุกสายงาน</option>
         <option v-for="workline in worklineOptions" :key="workline" :value="workline">
           {{ workline }}
+        </option>
+      </select>
+
+      <select v-model="departmentFilter" class="sel department-select">
+        <option>ทุกกลุ่มงาน</option>
+        <option v-for="department in departmentOptions" :key="department" :value="department">
+          {{ department }}
+        </option>
+      </select>
+
+      <select v-model="positionFilter" class="sel position-select-filter">
+        <option>ทุกตำแหน่ง</option>
+        <option v-for="position in positionOptions" :key="position" :value="position">
+          {{ position }}
         </option>
       </select>
 
@@ -49,11 +74,9 @@
             <th>ID</th>
             <th style="min-width: 180px">ชื่อ-นามสกุล</th>
             <th>สายงาน</th>
-            <th style="min-width: 200px">หน่วยงาน / สังกัด</th>
+            <th style="min-width: 200px">กลุ่มงาน</th>
             <th>ตำแหน่ง</th>
             <th>ระดับตำแหน่ง</th>
-            <th>หัวหน้างาน</th>
-            <th>ผู้บังคับบัญชา</th>
             <th style="min-width: 160px">บทบาทในระบบ</th>
             <th>สถานะ</th>
             <th></th>
@@ -69,7 +92,16 @@
                   <span v-else>{{ avatarInitial(user) }}</span>
                 </div>
                 <div class="flex col">
-                  <span class="fw6 fs13">{{ user.t }}{{ user.n }}</span>
+                  <span class="fw6 fs13 user-name-line">
+                    {{ user.t }}{{ user.n }}
+                    <span
+                      v-if="hasInvalidStructure(user)"
+                      class="structure-warning-badge"
+                      :title="structureIssueText(user)"
+                    >
+                      ! ต้องตรวจสอบ
+                    </span>
+                  </span>
                 </div>
               </div>
             </td>
@@ -92,8 +124,6 @@
               </div>
             </td>
             <td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td>
-            <td class="muted fs12 person-cell">{{ user.sup || '—' }}</td>
-            <td class="muted fs12 person-cell">{{ user.evaluator2 || '—' }}</td>
             <td>
               <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
                 {{ roleBadge(user.r).label }}
@@ -134,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { ExcelImportModal } from '../../Components/SharedUI.vue';
 
@@ -152,6 +182,8 @@ type User = {
   sup?: string;
   evaluator2?: string;
   act?: boolean;
+  structureStatus?: string;
+  structureIssues?: string[];
 };
 
 type RoleBadge = {
@@ -173,6 +205,8 @@ const props = defineProps<{
 const showImport = ref(false);
 const search = ref('');
 const worklineFilter = ref('ทุกสายงาน');
+const departmentFilter = ref('ทุกกลุ่มงาน');
+const positionFilter = ref('ทุกตำแหน่ง');
 const roleFilter = ref('ทุกบทบาท (Role)');
 const statusFilter = ref('ทุกสถานะ');
 const roleOptions = [
@@ -190,6 +224,48 @@ const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
 const worklineOptions = computed(() => props.worklines || []);
 const isActive = (user: User) => user.act !== false;
+const hasInvalidStructure = (user: User) => user.structureStatus === 'invalid';
+const structureIssueText = (user: User) => (user.structureIssues || []).join('\n') || 'ข้อมูลโครงสร้างไม่ตรงกับ master data ปัจจุบัน';
+const topDepartment = (user: User) => (user.d || '').split(' > ')[0]?.trim() || '';
+const invalidStructureCount = computed(() => props.users.filter(hasInvalidStructure).length);
+const departmentOptions = computed(() => {
+  const departments = props.users
+    .filter((user) => worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value)
+    .map(topDepartment)
+    .filter(Boolean);
+
+  return Array.from(new Set(departments)).sort((a, b) => a.localeCompare(b, 'th'));
+});
+const positionOptions = computed(() => {
+  const positions = props.users
+    .filter((user) => worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value)
+    .filter((user) => departmentFilter.value === 'ทุกกลุ่มงาน' || topDepartment(user) === departmentFilter.value)
+    .map((user) => user.p || '')
+    .filter(Boolean);
+
+  return Array.from(new Set(positions)).sort((a, b) => a.localeCompare(b, 'th'));
+});
+
+watch(worklineFilter, () => {
+  departmentFilter.value = 'ทุกกลุ่มงาน';
+  positionFilter.value = 'ทุกตำแหน่ง';
+});
+
+watch(departmentFilter, () => {
+  positionFilter.value = 'ทุกตำแหน่ง';
+});
+
+watch(departmentOptions, (options) => {
+  if (departmentFilter.value !== 'ทุกกลุ่มงาน' && !options.includes(departmentFilter.value)) {
+    departmentFilter.value = 'ทุกกลุ่มงาน';
+  }
+});
+
+watch(positionOptions, (options) => {
+  if (positionFilter.value !== 'ทุกตำแหน่ง' && !options.includes(positionFilter.value)) {
+    positionFilter.value = 'ทุกตำแหน่ง';
+  }
+});
 
 const roleBadge = (role?: string): RoleBadge => {
   switch (role) {
@@ -234,11 +310,13 @@ const filteredUsers = computed(() => {
       || name.toLowerCase().includes(keyword)
       || id.toLowerCase().includes(keyword);
     const matchesWorkline = worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value;
+    const matchesDepartment = departmentFilter.value === 'ทุกกลุ่มงาน' || topDepartment(user) === departmentFilter.value;
+    const matchesPosition = positionFilter.value === 'ทุกตำแหน่ง' || user.p === positionFilter.value;
     const matchesRole = roleFilter.value === 'ทุกบทบาท (Role)' || roleName(user.r) === roleFilter.value;
     const matchesStatus = statusFilter.value === 'ทุกสถานะ'
       || (statusFilter.value === 'ปกติ / ใช้งาน' ? isActive(user) : !isActive(user));
 
-    return matchesSearch && matchesWorkline && matchesRole && matchesStatus;
+    return matchesSearch && matchesWorkline && matchesDepartment && matchesPosition && matchesRole && matchesStatus;
   });
 });
 
@@ -279,19 +357,31 @@ const deleteUser = (user: User) => {
   const displayName = `${user.t || ''}${user.n || ''}`.trim() || user.sso || 'ผู้ใช้นี้';
   if (!confirm(`ต้องการลบ ${displayName} ใช่ไหม?`)) return;
 
-  const previousUsers = [...props.users];
-
   window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
-  props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
 
-  router.delete(route('admin.users.destroy', user.db_id), {
-    preserveScroll: true,
-    preserveState: true,
-    onError: () => {
-      props.setUsers(previousUsers);
-      alert('ไม่สามารถลบผู้ใช้ได้');
-    },
-  });
+  try {
+    router.delete(`/admin/users/${user.db_id}`, {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: (page) => {
+        if (Array.isArray(page.props.users)) {
+          props.setUsers(page.props.users as User[]);
+          return;
+        }
+
+        props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
+      },
+      onError: () => {
+        alert('ไม่สามารถลบผู้ใช้ได้');
+      },
+      onCancel: () => {
+        alert('คำสั่งลบถูกยกเลิก');
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    alert('ไม่สามารถส่งคำสั่งลบผู้ใช้ได้');
+  }
 };
 </script>
 
@@ -328,25 +418,70 @@ const deleteUser = (user: User) => {
   color: #fff;
 }
 
+.user-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.user-metric {
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.user-metric span {
+  display: block;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-metric strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--navy);
+  font-size: 30px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.user-metric.warning strong {
+  color: #c2410c;
+}
+
 .filter-row {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(210px, 1.5fr) minmax(130px, 0.9fr) minmax(170px, 1.2fr) minmax(160px, 1.1fr) minmax(160px, 1fr) minmax(120px, 0.8fr);
   gap: 8px;
 }
 
 .search-input {
-  max-width: 260px;
+  width: 100%;
+  max-width: none;
 }
 
 .workline-select {
-  width: 160px;
+  width: 100%;
+}
+
+.department-select {
+  width: 100%;
+}
+
+.position-select-filter {
+  width: 100%;
 }
 
 .role-select {
-  width: 180px;
+  width: 100%;
 }
 
 .status-select {
-  width: 130px;
+  width: 100%;
 }
 
 .table-scroll {
@@ -364,6 +499,29 @@ const deleteUser = (user: User) => {
   height: 32px;
   font-size: 12px;
   background: var(--navy);
+}
+
+.user-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.structure-warning-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .workline-badge {
@@ -409,5 +567,31 @@ const deleteUser = (user: User) => {
   padding: 40px;
   text-align: center;
   color: var(--text3);
+}
+
+@media (max-width: 980px) {
+  .user-dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .user-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .search-input,
+  .workline-select,
+  .department-select,
+  .position-select-filter,
+  .role-select,
+  .status-select {
+    width: 100%;
+    max-width: none;
+  }
 }
 </style>
