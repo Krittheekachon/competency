@@ -62,7 +62,7 @@ class UserController extends Controller
             'r' => $this->normalizeRoleKey((string) $request->input('r', '')),
         ]);
 
-        $roleKeys = DB::table('roles')->pluck($this->roleKeyColumn())->all();
+        $roleKeys = DB::table('roles')->pluck('key')->all();
 
         $data = $request->validate([
             'sso' => [
@@ -76,7 +76,6 @@ class UserController extends Controller
             'ln' => ['required', 'string', 'max:120'],
             'fe' => ['nullable', 'string', 'max:120'],
             'le' => ['nullable', 'string', 'max:120'],
-            'g' => ['nullable', 'string', 'max:30'],
             'em' => [
                 'required',
                 'email',
@@ -89,16 +88,15 @@ class UserController extends Controller
             'p' => [Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
             'l' => ['required', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
-            'sup' => ['nullable', 'string', 'max:255'],
-            'evaluator2' => ['nullable', 'string', 'max:255'],
-            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id', 'different:supervisor_id_2'],
+            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id'],
             'supervisor_id_2' => ['nullable', 'integer', 'exists:users,id'],
-            'evaluator3' => ['nullable', 'string', 'max:255'],
             'supervisor_id_3' => ['nullable', 'integer', 'exists:users,id'],
             'act' => ['boolean'],
         ], [
             'ph.regex' => 'กรุณากรอกเบอร์โทรศัพท์ในรูปแบบ 0xx-xxx-xxxx',
         ]);
+
+        $this->validateEvaluatorRoles($data);
 
         return $this->validatedStructureData($data);
     }
@@ -106,7 +104,7 @@ class UserController extends Controller
     private function userAttributes(array $data): array
     {
         $roleKey = $this->normalizeRoleKey($data['r']);
-        $role = DB::table('roles')->where($this->roleKeyColumn(), $roleKey)->first();
+        $role = DB::table('roles')->where('key', $roleKey)->first(['id', 'key']);
 
         if (! $role) {
             throw ValidationException::withMessages([
@@ -127,7 +125,6 @@ class UserController extends Controller
             'last_name_th' => $data['ln'],
             'first_name_en' => $data['fe'] ?? null,
             'last_name_en' => $data['le'] ?? null,
-            'gender' => $data['g'] ?? null,
             'email' => $data['em'],
             'phone' => $data['ph'] ?? null,
             'workline' => $data['w'],
@@ -136,13 +133,10 @@ class UserController extends Controller
             'level' => $data['l'] ?? null,
             'position_id' => $data['_position_id'],
             'level_id' => $data['_level_id'],
-            'role_id' => $role->{$this->roleIdColumn()},
-            'supervisor' => $this->userNameFromId($supervisorId1) ?? ($data['sup'] ?? null),
-            'evaluator2' => $this->userNameFromId($supervisorId2) ?? ($data['evaluator2'] ?? null),
-            'evaluator3' => $this->userNameFromId($supervisorId3) ?? ($data['evaluator3'] ?? null),
-            'supervisor_id_1' => $supervisorId1 ?: $this->userIdFromDisplayName($data['sup'] ?? null),
-            'supervisor_id_2' => $supervisorId2 ?: $this->userIdFromDisplayName($data['evaluator2'] ?? null),
-            'supervisor_id_3' => $supervisorId3 ?: $this->userIdFromDisplayName($data['evaluator3'] ?? null),
+            'role_id' => $role->id,
+            'supervisor_id_1' => $data['supervisor_id_1'] ?? null,
+            'supervisor_id_2' => $data['supervisor_id_2'] ?? null,
+            'supervisor_id_3' => $data['supervisor_id_3'] ?? null,
             'is_active' => $data['act'] ?? true,
         ];
 
@@ -160,25 +154,6 @@ class UserController extends Controller
         }
 
         return User::query()->whereKey($id)->value('name');
-    }
-
-    private function userIdFromDisplayName(?string $displayName): ?int
-    {
-        $displayName = trim((string) $displayName);
-
-        if ($displayName === '') {
-            return null;
-        }
-
-        return User::query()
-            ->get(['id', 'title', 'name'])
-            ->first(function (User $user) use ($displayName) {
-                $name = trim($user->name);
-                $nameWithTitle = trim(($user->title ?? '').$user->name);
-
-                return $displayName === $name || $displayName === $nameWithTitle;
-            })
-            ?->id;
     }
 
     private function validatedStructureData(array $data): array
@@ -241,6 +216,32 @@ class UserController extends Controller
         $data['_level_id'] = $levelId;
 
         return $data;
+    }
+
+    private function validateEvaluatorRoles(array $data): void
+    {
+        $expectedRoles = [
+            'supervisor_id_1' => 'supervisor',
+            'supervisor_id_2' => 'dept_head',
+            'supervisor_id_3' => 'dean',
+        ];
+
+        foreach ($expectedRoles as $field => $roleKey) {
+            if (empty($data[$field])) {
+                continue;
+            }
+
+            $exists = User::query()
+                ->whereKey($data[$field])
+                ->whereHas('role', fn ($query) => $query->where('key', $roleKey))
+                ->exists();
+
+            if (! $exists) {
+                throw ValidationException::withMessages([
+                    $field => 'กรุณาเลือกผู้ประเมินให้ตรงกับบทบาทที่กำหนด',
+                ]);
+            }
+        }
     }
 
     private function jobFamilyNameFromDepartment(string $department): string

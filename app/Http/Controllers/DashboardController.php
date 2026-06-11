@@ -26,7 +26,10 @@ class DashboardController extends Controller
             'desc' => $type->description,
         ]);
         $competencies = $this->competencyPayload();
-        $users = User::with('role')->orderBy('name')->get()->map(fn (User $user) => $this->dashboardUserPayload($user));
+        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3'])
+            ->orderBy('name')
+            ->get()
+            ->map(fn (User $user) => $this->dashboardUserPayload($user));
         $activeCycleName = 'รอบประเมินปัจจุบัน';
         $learningMethods = DB::table('learning_method_types')
             ->where('is_active', true)
@@ -83,8 +86,8 @@ class DashboardController extends Controller
             'hr' => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
                     'totalUsers' => User::count(),
-                    'hrUsers' => User::where('role_id', 4)->count(),
-                    'employeeUsers' => User::where('role_id', 3)->count(),
+                    'hrUsers' => User::where('role_id', $this->roleIdByKey('hr'))->count(),
+                    'employeeUsers' => User::where('role_id', $this->roleIdByKey('employee'))->count(),
                     'source' => 'database',
                 ],
                 ...$hrStructureData,
@@ -152,7 +155,6 @@ class DashboardController extends Controller
             'ln' => $user->last_name_th ?: '',
             'fe' => $user->first_name_en ?: '',
             'le' => $user->last_name_en ?: '',
-            'g' => $user->gender ?: 'ไม่ระบุ',
             'em' => $user->email,
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
@@ -162,16 +164,25 @@ class DashboardController extends Controller
             'position_id' => $user->position_id,
             'level_id' => $user->level_id,
             'r' => $roleKey,
-            'sup' => $user->supervisor ?: '',
-            'evaluator2' => $user->evaluator2 ?: '',
             'supervisor_id_1' => $user->supervisor_id_1,
             'supervisor_id_2' => $user->supervisor_id_2,
-            'evaluator3' => $user->evaluator3 ?: '',
             'supervisor_id_3' => $user->supervisor_id_3,
+            'sup' => $this->displayNameForUser($user->evaluatorLevel1),
+            'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
+            'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
             'act' => (bool) $user->is_active,
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
         ];
+    }
+
+    private function displayNameForUser(?User $user): string
+    {
+        if (! $user) {
+            return '';
+        }
+
+        return trim(($user->title ?: '').$user->name);
     }
 
     private function currentDepartmentForUser(User $user): string
@@ -302,19 +313,19 @@ class DashboardController extends Controller
             return [];
         }
 
-        if ($roleKey === 'dept_head' && trim((string) $user->evaluator2) === '') {
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
-        if ($roleKey === 'supervisor' && trim((string) $user->evaluator3) === '') {
+        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
             return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
         $hasAnyEvaluator = collect([
-            $user->supervisor,
-            $user->evaluator2,
-            $user->evaluator3,
-        ])->contains(fn ($name) => trim((string) $name) !== '');
+            $user->supervisor_id_1,
+            $user->supervisor_id_2,
+            $user->supervisor_id_3,
+        ])->contains(fn ($id) => filled($id));
 
         return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้างาน'];
     }
@@ -912,7 +923,7 @@ class DashboardController extends Controller
 
     private function roleKeyFromId(int $roleId): string
     {
-        $roleKey = DB::table('roles')->where($this->roleIdColumn(), $roleId)->value($this->roleKeyColumn());
+        $roleKey = DB::table('roles')->where('id', $roleId)->value('key');
 
         return $roleKey ? $this->normalizeRoleKey($roleKey) : 'employee';
     }
@@ -921,11 +932,10 @@ class DashboardController extends Controller
     {
         $roleKeyColumn = $this->roleKeyColumn();
         $roleKey = $user->relationLoaded('role')
-            ? ($user->role?->{$roleKeyColumn} ?? $user->role?->role_key ?? $user->role?->key)
-            : DB::table('roles')->where($this->roleIdColumn(), $user->role_id)->value($roleKeyColumn);
-        $userRoleKey = Schema::hasColumn('users', 'role_key') ? $user->role_key : null;
+            ? $user->role?->key
+            : DB::table('roles')->where('id', $user->role_id)->value('key');
 
-        return $this->normalizeRoleKey($roleKey ?: ($userRoleKey ?: $this->roleKeyFromId($user->role_id)));
+        return $this->normalizeRoleKey($roleKey ?: $this->roleKeyFromId($user->role_id));
     }
 
     private function rolesPayload()
@@ -934,36 +944,19 @@ class DashboardController extends Controller
         $roleKeyColumn = $this->roleKeyColumn();
 
         return DB::table('roles')
-            ->orderBy($roleIdColumn)
-            ->get([$roleIdColumn, $roleKeyColumn, 'name_th', 'name_en'])
-            ->map(function (object $role) use ($roleIdColumn, $roleKeyColumn) {
-                $key = $this->normalizeRoleKey((string) $role->{$roleKeyColumn});
-                $thaiLabels = [
-                    'supervisor' => 'ผู้บังคับบัญชา',
-                    'dept_head' => 'หัวหน้างาน',
-                    'employee' => 'บุคลากร',
-                    'hr' => 'งานทรัพยากรบุคคล',
-                    'admin' => 'ผู้ดูแลระบบ',
-                    'dean' => 'ผู้บริหารคณะ',
-                ];
-
-                return [
-                    'id' => $role->{$roleIdColumn},
-                    'key' => $key,
-                    'label' => $thaiLabels[$key] ?? $role->name_th,
-                    'labelEn' => $role->name_en,
-                ];
-            });
+            ->orderBy('id')
+            ->get(['id', 'key', 'name_th', 'name_en'])
+            ->map(fn (object $role) => [
+                'id' => $role->id,
+                'key' => $role->key,
+                'label' => $role->name_th,
+                'labelEn' => $role->name_en,
+            ]);
     }
 
-    private function roleKeyColumn(): string
+    private function roleIdByKey(string $roleKey): ?int
     {
-        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
-    }
-
-    private function roleIdColumn(): string
-    {
-        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
+        return DB::table('roles')->where('key', $roleKey)->value('id');
     }
 
     private function learningCatalogItems()

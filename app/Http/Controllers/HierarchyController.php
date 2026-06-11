@@ -12,27 +12,23 @@ class HierarchyController extends Controller
     // ดึงสายการบังคับบัญชาทั้งหมด
     public function index()
     {
-        if (Schema::hasColumn('users', 'role_key')) {
-            $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'supervisor', 'evaluator2', 'department', 'position')
-                ->where('is_active', true)
-                ->get();
-        } else {
-            $users = DB::table('users')
-                ->leftJoin('roles', 'users.role_id', '=', 'roles.'.$this->roleIdColumn())
-                ->where('users.is_active', true)
-                ->select(
-                    'users.sso',
-                    'users.name',
-                    'users.first_name_th',
-                    'users.last_name_th',
-                    DB::raw('roles.'.$this->roleKeyColumn().' as role_key'),
-                    'users.supervisor',
-                    'users.evaluator2',
-                    'users.department',
-                    'users.position',
-                )
-                ->get();
-        }
+        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2'])
+            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'supervisor_id_1', 'supervisor_id_2', 'department', 'position')
+            ->where('is_active', true)
+            ->get()
+            ->map(fn (User $user) => [
+                'sso' => $user->sso,
+                'name' => $user->name,
+                'first_name_th' => $user->first_name_th,
+                'last_name_th' => $user->last_name_th,
+                'role_key' => $user->role?->key,
+                'supervisor_id_1' => $user->supervisor_id_1,
+                'supervisor_id_2' => $user->supervisor_id_2,
+                'supervisor' => $this->displayNameForUser($user->evaluatorLevel1),
+                'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
+                'department' => $user->department,
+                'position' => $user->position,
+            ]);
 
         return response()->json($users);
     }
@@ -40,26 +36,19 @@ class HierarchyController extends Controller
     // ดึงรายชื่อตาม role (ไว้ใช้ใน dropdown)
     public function byRole(string $roleKey)
     {
-        if (Schema::hasColumn('users', 'role_key')) {
-            $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'position')
-                ->where('role_key', $roleKey)
-                ->where('is_active', true)
-                ->get();
-        } else {
-            $users = DB::table('users')
-                ->join('roles', 'users.role_id', '=', 'roles.'.$this->roleIdColumn())
-                ->where('roles.'.$this->roleKeyColumn(), $roleKey)
-                ->where('users.is_active', true)
-                ->select(
-                    'users.sso',
-                    'users.name',
-                    'users.first_name_th',
-                    'users.last_name_th',
-                    DB::raw('roles.'.$this->roleKeyColumn().' as role_key'),
-                    'users.position',
-                )
-                ->get();
-        }
+        $users = User::with('role')
+            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'position')
+            ->whereHas('role', fn ($query) => $query->where('key', $roleKey))
+            ->where('is_active', true)
+            ->get()
+            ->map(fn (User $user) => [
+                'sso' => $user->sso,
+                'name' => $user->name,
+                'first_name_th' => $user->first_name_th,
+                'last_name_th' => $user->last_name_th,
+                'role_key' => $user->role?->key,
+                'position' => $user->position,
+            ]);
 
         return response()->json($users);
     }
@@ -68,15 +57,15 @@ class HierarchyController extends Controller
     public function update(Request $request, string $sso)
     {
         $request->validate([
-            'supervisor'  => 'nullable|string',
-            'evaluator2'  => 'nullable|string',
+            'supervisor_id_1' => 'nullable|integer|exists:users,id',
+            'supervisor_id_2' => 'nullable|integer|exists:users,id',
         ]);
 
         $user = User::where('sso', $sso)->firstOrFail();
 
         $user->update([
-            'supervisor'  => $request->supervisor,
-            'evaluator2'  => $request->evaluator2,
+            'supervisor_id_1' => $request->supervisor_id_1,
+            'supervisor_id_2' => $request->supervisor_id_2,
         ]);
 
         return response()->json([
@@ -90,7 +79,7 @@ class HierarchyController extends Controller
     {
         $request->validate([
             'path'       => 'required|string',
-            'supervisor' => 'required|string',
+            'supervisor_id' => 'required|integer|exists:users,id',
         ]);
 
         // อัพเดท user ทุกคนที่อยู่ใน department/work นั้น
@@ -100,23 +89,22 @@ class HierarchyController extends Controller
         if (count($parts) === 1) {
             // อัพเดทระดับ dept → เปลี่ยน evaluator2
             User::where('department', 'LIKE', $parts[0] . '%')
-                ->update(['evaluator2' => $request->supervisor]);
+                ->update(['supervisor_id_2' => $request->supervisor_id]);
         } elseif (count($parts) === 2) {
             // อัพเดทระดับ work → เปลี่ยน supervisor
             User::where('department', 'LIKE', $parts[0] . ' > ' . $parts[1] . '%')
-                ->update(['supervisor' => $request->supervisor]);
+                ->update(['supervisor_id_1' => $request->supervisor_id]);
         }
 
         return response()->json(['message' => 'OrgSup updated']);
     }
 
-    private function roleKeyColumn(): string
+    private function displayNameForUser(?User $user): string
     {
-        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
-    }
+        if (! $user) {
+            return '';
+        }
 
-    private function roleIdColumn(): string
-    {
-        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
+        return trim(($user->title ?: '').$user->name);
     }
 }

@@ -29,7 +29,6 @@ class ProfileUpdateRequest extends FormRequest
             'last_name_th' => ['nullable', 'string', 'max:255'],
             'first_name_en' => ['nullable', 'string', 'max:255'],
             'last_name_en' => ['nullable', 'string', 'max:255'],
-            'gender' => ['nullable', 'string', 'max:255'],
             'email' => [
                 'nullable',
                 'string',
@@ -43,8 +42,6 @@ class ProfileUpdateRequest extends FormRequest
             'department' => ['nullable', 'string', 'max:255'],
             'position' => ['nullable', 'string', 'max:255'],
             'level' => ['nullable', 'string', 'max:255'],
-            'supervisor' => ['nullable', 'string', 'max:255'],
-            'evaluator2' => ['nullable', 'string', 'max:255'],
             'profile_photo' => ['nullable', 'string'],
         ];
     }

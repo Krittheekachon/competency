@@ -24,23 +24,17 @@ class RoleController extends Controller
         $roleIdColumn = $this->roleIdColumn();
 
         $request->validate([
-            'role_key' => 'required|exists:roles,'.$roleKeyColumn,
+            'role_key' => 'required|exists:roles,key',
         ]);
 
-        $role = DB::table('roles')
-                   ->where($roleKeyColumn, $request->role_key)
+        $role = \DB::table('roles')
+                   ->where('key', $request->role_key)
                    ->first();
 
         $user = User::findOrFail($id);
-        $attributes = [
-            'role_id' => $role->{$roleIdColumn},
-        ];
-
-        if (Schema::hasColumn('users', 'role_key')) {
-            $attributes['role_key'] = $role->{$roleKeyColumn};
-        }
-
-        $user->update($attributes);
+        $user->update([
+            'role_id'  => $role->id,
+        ]);
 
         return response()->json([
             'message' => 'Role updated',

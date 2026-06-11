@@ -23,20 +23,21 @@ class DatabaseSeeder extends Seeder
             ->value('id');
 
         $users = [
-            ['name' => 'Admin User',      'email' => 'admin@test.com',   'role_id' => 0, 'role_key' => 'admin'],
-            ['name' => 'HR User',         'email' => 'hr@test.com',      'role_id' => 4, 'role_key' => 'hr'],
-            ['name' => 'Supervisor User', 'email' => 'supervisor@test.com', 'role_id' => 1, 'role_key' => 'supervisor'],
-            ['name' => 'Department Head User', 'email' => 'dept_head@test.com', 'role_id' => 2, 'role_key' => 'dept_head'],
-            ['name' => 'Employee User',   'email' => 'employee@test.com', 'role_id' => 3, 'role_key' => 'employee', 'workline' => 'วิชาการ', 'level' => 'รองศาสตราจารย์', 'level_id' => $employeeLevelId],
-            ['name' => 'Dean User',       'email' => 'dean@test.com',    'role_id' => 5, 'role_key' => 'dean'],
+            ['name' => 'Admin User',      'email' => 'admin@test.com',   'role' => 'admin'],
+            ['name' => 'HR User',         'email' => 'hr@test.com',      'role' => 'hr'],
+            ['name' => 'Supervisor User', 'email' => 'supervisor@test.com', 'role' => 'supervisor'],
+            ['name' => 'Department Head User', 'email' => 'dept_head@test.com', 'role' => 'dept_head'],
+            ['name' => 'Employee User',   'email' => 'employee@test.com', 'role' => 'employee', 'workline' => 'วิชาการ', 'level' => 'รองศาสตราจารย์', 'level_id' => $employeeLevelId],
+            ['name' => 'Dean User',       'email' => 'dean@test.com',    'role' => 'dean'],
         ];
 
         foreach ($users as $user) {
+            $roleId = DB::table('roles')->where('key', $user['role'])->value('id');
+
             $attributes = [
                 'name' => $user['name'],
                 'password' => Hash::make('password'),
-                'role_id' => $user['role_id'],
-                'role_key' => $user['role_key'],
+                'role_id' => $roleId,
             ];
 
             if (array_key_exists('workline', $user)) {

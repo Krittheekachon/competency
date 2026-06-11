@@ -16,8 +16,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'role_id' => 0,
-            'role_key' => 'admin',
+            'role_id' => $this->roleId('admin'),
         ]);
 
         $worklineId = DB::table('worklines')->insertGetId([
@@ -40,8 +39,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
         User::factory()->create([
             'name' => 'ZZ Existing User',
-            'role_id' => 3,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
             'workline' => 'สายสนับสนุน',
             'department' => 'กลุ่มงานเก่า > หน่วยเดิม',
             'position' => 'นักทรัพยากรบุคคล',
@@ -62,8 +60,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'role_id' => 0,
-            'role_key' => 'admin',
+            'role_id' => $this->roleId('admin'),
         ]);
 
         DB::table('worklines')->insert([
@@ -74,8 +71,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
         User::factory()->create([
             'name' => 'ZZ Orphaned User',
-            'role_id' => 3,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
             'workline' => 'สายสนับสนุน',
             'department' => 'กลุ่มงานที่ถูกลบ',
             'position' => 'ตำแหน่งที่ถูกลบ',
@@ -101,8 +97,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'role_id' => 0,
-            'role_key' => 'admin',
+            'role_id' => $this->roleId('admin'),
         ]);
 
         $worklineId = DB::table('worklines')->insertGetId([
@@ -132,15 +127,14 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
         User::factory()->create([
             'name' => 'ZZ No Evaluator User',
-            'role_id' => 3,
-            'role_key' => 'employee',
+            'role_id' => $this->roleId('employee'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor' => null,
-            'evaluator2' => null,
-            'evaluator3' => null,
+            'supervisor_id_1' => null,
+            'supervisor_id_2' => null,
+            'supervisor_id_3' => null,
         ]);
 
         $this->actingAs($admin)
@@ -158,22 +152,20 @@ class AdminDashboardUserStructureSyncTest extends TestCase
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'role_id' => 0,
-            'role_key' => 'admin',
+            'role_id' => $this->roleId('admin'),
         ]);
         $this->createValidStructure();
 
         User::factory()->create([
             'name' => 'ZZ Supervisor Missing Evaluator',
-            'role_id' => 1,
-            'role_key' => 'supervisor',
+            'role_id' => $this->roleId('supervisor'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor' => null,
-            'evaluator2' => null,
-            'evaluator3' => 'คณบดี ทดสอบ',
+            'supervisor_id_1' => null,
+            'supervisor_id_2' => null,
+            'supervisor_id_3' => null,
         ]);
 
         $this->actingAs($admin)
@@ -190,22 +182,20 @@ class AdminDashboardUserStructureSyncTest extends TestCase
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'role_id' => 0,
-            'role_key' => 'admin',
+            'role_id' => $this->roleId('admin'),
         ]);
         $this->createValidStructure();
 
         User::factory()->create([
             'name' => 'ZZ Manager Dept Missing Evaluator',
-            'role_id' => 2,
-            'role_key' => 'manager_dept',
+            'role_id' => $this->roleId('dept_head'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor' => null,
-            'evaluator2' => null,
-            'evaluator3' => null,
+            'supervisor_id_1' => null,
+            'supervisor_id_2' => null,
+            'supervisor_id_3' => null,
         ]);
 
         $this->actingAs($admin)
@@ -244,5 +234,10 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function roleId(string $key): int
+    {
+        return (int) DB::table('roles')->where('key', $key)->value('id');
     }
 }

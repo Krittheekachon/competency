@@ -18,7 +18,6 @@ return new class extends Migration
             $table->string('last_name_th')->nullable()->after('first_name_th');
             $table->string('first_name_en')->nullable()->after('last_name_th');
             $table->string('last_name_en')->nullable()->after('first_name_en');
-            $table->string('gender')->nullable()->after('last_name_en');
             $table->string('phone', 12)->nullable()->after('email');
             $table->string('workline')->nullable()->after('phone');
             $table->string('department')->nullable()->after('workline');
@@ -44,7 +43,6 @@ return new class extends Migration
                 'last_name_th',
                 'first_name_en',
                 'last_name_en',
-                'gender',
                 'phone',
                 'workline',
                 'department',

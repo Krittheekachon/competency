@@ -72,7 +72,6 @@ const userForm = ref({
     ln: '',
     fe: '',
     le: '',
-    g: 'ชาย',
     em: '',
     ph: '',
     w: '',
@@ -83,11 +82,8 @@ const userForm = ref({
     p: '',
     l: '',
     r: 'employee',
-    sup: '',
-    evaluator2: '',
     supervisor_id_1: '',
     supervisor_id_2: '',
-    evaluator3: '',
     supervisor_id_3: '',
     act: true,
     structureStatus: 'ok',
@@ -306,8 +302,8 @@ const roleLabel = (role = '') => {
         || 'ไม่ระบุบทบาท';
 };
 const personOption = (user) => ({
-    key: user.sso || `${user.t || ''}${user.n}`,
-    value: `${user.t || ''}${user.n}`,
+    key: user.db_id || user.sso || `${user.t || ''}${user.n}`,
+    value: user.db_id,
     label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''} · role: ${roleLabel(user.r)}`,
 });
 
@@ -429,48 +425,9 @@ const findUserName = (predicate) => {
 
 const syncOrgSupervisors = () => {
     const form = userForm.value;
-    const deptKey = form.job || form.dept || adminDepts.value[0];
-    const orgHead = orgSups.value[deptKey] || orgSups.value[adminDepts.value[0]] || '';
-
-    if (isSupportWorkline.value) {
-        form.sup = findUserName((user) =>
-            normalizeUserRoleKey(user.r) === 'dept_head'
-            && user.d
-            && form.d
-            && (
-                user.d === form.d
-                || user.d.startsWith(form.job)
-                || user.d === form.job
-            ),
-        );
-        form.evaluator2 = findUserName((user) =>
-            normalizeUserRoleKey(user.r) === 'supervisor'
-            && user.d
-            && form.job
-            && user.d.startsWith(form.job),
-        ) || orgHead;
-        return;
-    }
-
-    if (isAcademicWorkline.value) {
-        form.sup = findUserName((user) =>
-            normalizeUserRoleKey(user.r) === 'dept_head'
-            && user.w === form.w
-            && (user.p === form.job || user.d === form.job),
-        );
-        form.evaluator2 = orgHead;
-        return;
-    }
-
-    if (isAdminWorkline.value) {
-        form.sup = orgHead;
-        form.evaluator2 = orgHead;
-        return;
-    }
-
-    form.sup = '';
-    form.evaluator2 = '';
-    form.evaluator3 = '';
+    form.supervisor_id_1 = '';
+    form.supervisor_id_2 = '';
+    form.supervisor_id_3 = '';
 };
 
 const resetOrgSelection = () => {
@@ -480,9 +437,9 @@ const resetOrgSelection = () => {
     userForm.value.d = '';
     userForm.value.p = '';
     userForm.value.l = '';
-    userForm.value.sup = '';
-    userForm.value.evaluator2 = '';
-    userForm.value.evaluator3 = '';
+    userForm.value.supervisor_id_1 = '';
+    userForm.value.supervisor_id_2 = '';
+    userForm.value.supervisor_id_3 = '';
 };
 
 const handleWorklineChange = () => {
@@ -547,7 +504,6 @@ const resetUserForm = (data = null) => {
         ln: data?.ln || lastNameParts.join(' '),
         fe: data?.fe || '',
         le: data?.le || '',
-        g: data?.g || 'ชาย',
         em: data?.em || '',
         ph: data?.ph || '',
         w: data?.w || worklines.value[0] || '',
@@ -558,12 +514,9 @@ const resetUserForm = (data = null) => {
         p: data?.p || '',
         l: data?.l || '',
         r: normalizeUserRoleKey(data?.r || 'employee'),
-        sup: data?.sup || '',
-        evaluator2: data?.evaluator2 || '',
-        supervisor_id_1: supervisorIdFromUser(data, 'supervisor_id_1', 'sup'),
-        supervisor_id_2: supervisorIdFromUser(data, 'supervisor_id_2', 'evaluator2'),
-        evaluator3: data?.evaluator3 || '',
-        supervisor_id_3: supervisorIdFromUser(data, 'supervisor_id_3', 'evaluator3'),
+        supervisor_id_1: data?.supervisor_id_1 || '',
+        supervisor_id_2: data?.supervisor_id_2 || '',
+        supervisor_id_3: data?.supervisor_id_3 || '',
         act: data?.act !== false,
         structureStatus: data?.structureStatus || 'ok',
         structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
@@ -668,12 +621,9 @@ const saveUser = () => {
         unit: form.unit.trim(),
         p: (isDeanRole.value ? form.job : form.p).trim(),
         l: form.l.trim(),
-        sup: supervisor1?.displayName || '',
-        evaluator2: supervisor2?.displayName || '',
-        evaluator3: supervisor3?.displayName || '',
-        supervisor_id_1: selectedEvaluatorId(form.supervisor_id_1),
-        supervisor_id_2: selectedEvaluatorId(form.supervisor_id_2),
-        supervisor_id_3: selectedEvaluatorId(form.supervisor_id_3),
+        supervisor_id_1: form.supervisor_id_1 || null,
+        supervisor_id_2: form.supervisor_id_2 || null,
+        supervisor_id_3: form.supervisor_id_3 || null,
         act: Boolean(form.act),
     };
 

@@ -18,7 +18,7 @@ class MockSsoController extends Controller
             ->map(fn (User $user) => [
                 'id'       => $user->sso ?? (string) $user->id,
                 'name'     => ($user->title ?? '') . $user->name,
-                'role'     => $this->roleKeyForUser($user),
+                'role'     => $user->role?->key ?? 'employee',
                 'workline' => $user->workline ?? '',
                 'division' => $user->division ?? '',
                 'position' => $user->position ?? '',

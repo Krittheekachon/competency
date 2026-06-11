@@ -22,7 +22,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
       lastName: initialName.lastName,
       firstNameEng: user?.fe || "",
       lastNameEng: user?.le || "",
-      gender: user?.g || "",
       workline: user?.w || "",
       group: user?.d || "",
       position: user?.p || "",
@@ -47,7 +46,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
         lastName: nextName.lastName,
         firstNameEng: user?.fe || "",
         lastNameEng: user?.le || "",
-        gender: user?.g || "",
         workline: user?.w || "",
         group: user?.d || "",
         position: user?.p || "",
@@ -114,7 +112,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
         sso: form.value.sso,
         fe: form.value.firstNameEng,
         le: form.value.lastNameEng,
-        g: form.value.gender,
         w: form.value.workline,
         d: form.value.group,
         p: form.value.position,
@@ -185,7 +182,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
                 lastName: nextName.lastName,
                 firstNameEng: user?.fe || "",
                 lastNameEng: user?.le || "",
-                gender: user?.g || "",
                 workline: user?.w || "",
                 group: user?.d || "",
                 position: user?.p || "",
@@ -220,7 +216,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
                   {detail("ชื่อ-นามสกุล", profileName)}
                   {detail("First Name", form.value.firstNameEng)}
                   {detail("Last Name", form.value.lastNameEng)}
-                  {detail("เพศ", form.value.gender)}
                   {detail("อีเมล", form.value.email)}
                   {detail("เบอร์โทรศัพท์", form.value.phone)}
                   {detail("สังกัด/หน่วยงาน", form.value.affiliation)}
@@ -255,15 +250,6 @@ interface ProfileProps {user: any;onSave: (nextUser: any) => void;onDirtyChange?
               <div class="fg">
                 <label class="lbl">Last Name <span class="required">*</span></label>
                 <input class="inp" value={form.value.lastNameEng} onChange={(e) => setValue("lastNameEng", e.target.value)} required />
-              </div>
-              <div class="fg">
-                <label class="lbl">เพศ <span class="required">*</span></label>
-                <select class="sel" value={form.value.gender} onChange={(e) => setValue("gender", e.target.value)} required>
-                  <option value="">— เลือกเพศ —</option>
-                  <option value="ชาย">ชาย</option>
-                  <option value="หญิง">หญิง</option>
-                  <option value="อื่นๆ">อื่นๆ</option>
-                </select>
               </div>
               <div class="fg">
                 <label class="lbl">อีเมล</label>
