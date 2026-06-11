@@ -130,7 +130,6 @@ const levelsForSelectedWorkline = computed(() => {
 });
 
 const positionOptions = computed(() => {
-    if (levelsForSelectedWorkline.value.length) return levelsForSelectedWorkline.value;
     if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
     return [];
 });
@@ -138,12 +137,9 @@ const needsPositionBeforeMapping = computed(() => Boolean(selectedJobFamily.valu
 
 const allPositionCount = computed(() => {
     return worklineOptions.value.reduce((total, workline) => {
-        const levels = props.levelsByWorkline?.[workline] || [];
-        if (levels.length) return total + levels.length;
-
         const families = props.jobFamiliesByWorkline?.[workline] || {};
         return total + Object.entries(families || {}).reduce((sum, [familyName, positions]) => {
-            const count = Array.isArray(positions) && positions.length ? positions.length : 1;
+            const count = Array.isArray(positions) ? positions.length : 0;
             return sum + (familyName ? count : 0);
         }, 0);
     }, 0);

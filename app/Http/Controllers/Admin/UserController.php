@@ -7,9 +7,11 @@ use App\Models\User;
 use App\Services\CompetencyAssessmentSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -74,7 +76,7 @@ class UserController extends Controller
 
     private function validatedData(Request $request, ?User $user = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'sso' => [
                 'required',
                 'string',
@@ -95,30 +97,32 @@ class UserController extends Controller
             ],
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => ['required', 'string', 'max:120'],
-            'd' => ['nullable', 'string', 'max:255'],
-            'p' => ['nullable', 'string', 'max:120'],
-            'l' => ['nullable', 'string', 'max:120'],
+            'd' => ['required', 'string', 'max:255'],
+            'p' => ['required', 'string', 'max:120'],
+            'l' => ['required', 'string', 'max:120'],
             'r' => ['required', Rule::in(array_keys(self::ROLE_IDS))],
             'sup' => ['nullable', 'string', 'max:255'],
             'evaluator2' => ['nullable', 'string', 'max:255'],
             'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id', 'different:supervisor_id_2'],
             'supervisor_id_2' => ['nullable', 'integer', 'exists:users,id'],
+            'evaluator3' => ['nullable', 'string', 'max:255'],
             'act' => ['boolean'],
         ], [
             'ph.regex' => 'กรุณากรอกเบอร์โทรศัพท์ในรูปแบบ 0xx-xxx-xxxx',
         ]);
+
+        return $this->validatedStructureData($data);
     }
 
     private function userAttributes(array $data): array
     {
         $roleKey = match ($data['r']) {
             'manager' => 'dean',
-            'manager_dept' => 'dept_head',
             default => $data['r'],
         };
         $name = trim($data['fn'].' '.$data['ln']);
-        $supervisorId1 = $data['supervisor_id_1'] ?? null;
-        $supervisorId2 = $data['supervisor_id_2'] ?? null;
+        $supervisorId1 = $data['supervisor_id_1'] ?? $this->userIdFromDisplayName($data['sup'] ?? null);
+        $supervisorId2 = $data['supervisor_id_2'] ?? $this->userIdFromDisplayName($data['evaluator2'] ?? null);
 
         return [
             'sso' => $data['sso'],
@@ -135,12 +139,16 @@ class UserController extends Controller
             'department' => $data['d'] ?? null,
             'position' => $data['p'] ?? null,
             'level' => $data['l'] ?? null,
+            'position_id' => $data['_position_id'],
+            'level_id' => $data['_level_id'],
             'role_id' => self::ROLE_IDS[$roleKey],
             'role_key' => $roleKey,
             'supervisor' => $this->userNameFromId($supervisorId1) ?? ($data['sup'] ?? null),
             'evaluator2' => $this->userNameFromId($supervisorId2) ?? ($data['evaluator2'] ?? null),
+            'evaluator3' => $data['evaluator3'] ?? null,
             'supervisor_id_1' => $supervisorId1,
             'supervisor_id_2' => $supervisorId2,
+            'supervisor_id_3' => $this->userIdFromDisplayName($data['evaluator3'] ?? null),
             'is_active' => $data['act'] ?? true,
         ];
     }
@@ -171,5 +179,66 @@ class UserController extends Controller
                 return $displayName === $name || $displayName === $nameWithTitle;
             })
             ?->id;
+    }
+
+    private function validatedStructureData(array $data): array
+    {
+        $worklineId = DB::table('worklines')->where('name', $data['w'])->value('id');
+
+        if (!$worklineId) {
+            throw ValidationException::withMessages([
+                'w' => 'กรุณาเลือกสายงานที่กำหนดไว้ในระบบ',
+            ]);
+        }
+
+        $jobFamilyName = $this->jobFamilyNameFromDepartment($data['d']);
+        $jobFamily = $jobFamilyName
+            ? DB::table('job_families')
+                ->where('workline_id', $worklineId)
+                ->where('name', $jobFamilyName)
+                ->first(['id'])
+            : null;
+
+        if (!$jobFamily) {
+            throw ValidationException::withMessages([
+                'd' => 'กรุณาเลือกกลุ่มงานที่กำหนดไว้ในสายงานนี้',
+            ]);
+        }
+
+        $positionId = DB::table('positions')
+            ->where('job_family_id', $jobFamily->id)
+            ->where('name', $data['p'])
+            ->value('id');
+
+        if (!$positionId) {
+            throw ValidationException::withMessages([
+                'p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในกลุ่มงานนี้',
+            ]);
+        }
+
+        $levelId = DB::table('levels')
+            ->where('workline_id', $worklineId)
+            ->where('name', $data['l'])
+            ->where(function ($query) use ($jobFamily) {
+                $query->whereNull('job_family_id')
+                    ->orWhere('job_family_id', $jobFamily->id);
+            })
+            ->value('id');
+
+        if (!$levelId) {
+            throw ValidationException::withMessages([
+                'l' => 'กรุณาเลือกระดับตำแหน่งที่กำหนดไว้ในสายงานหรือกลุ่มงานนี้',
+            ]);
+        }
+
+        $data['_position_id'] = $positionId;
+        $data['_level_id'] = $levelId;
+
+        return $data;
+    }
+
+    private function jobFamilyNameFromDepartment(string $department): string
+    {
+        return trim(explode(' > ', $department)[0] ?? '');
     }
 }

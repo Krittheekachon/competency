@@ -17,8 +17,8 @@ use App\Models\Role;
     'gender', 'email', 'phone',
     'workline', 'department', 'position',
     'level', 'password', 'role_id', 'role_key',
-    'supervisor', 'evaluator2', 'is_active', 'profile_photo',
-    'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2',
+    'supervisor', 'evaluator2', 'evaluator3', 'is_active', 'profile_photo',
+    'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3',
     'profile_affiliation', 'profile_saved',
 ])]
 #[Hidden(['password', 'remember_token'])]

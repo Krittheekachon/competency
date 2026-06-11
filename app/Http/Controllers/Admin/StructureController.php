@@ -36,6 +36,8 @@ class StructureController extends Controller
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
+        $this->syncUserWorklineName($data['old_name'], $data['name']);
+
         return back()->with('success', 'อัปเดตสายงานเรียบร้อยแล้ว');
     }
 
@@ -104,6 +106,8 @@ class StructureController extends Controller
             ->where('workline_id', $worklineId)
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+        $this->syncUserDepartmentPrefix($data['workline_name'] ?? null, $data['old_name'], $data['name']);
 
         return back()->with('success', 'อัปเดตกลุ่มงานเรียบร้อยแล้ว');
     }
@@ -191,6 +195,13 @@ class StructureController extends Controller
             ->where('job_family_id', $jobFamilyId)
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+        $this->syncUserPositionName(
+            $data['workline_name'] ?? null,
+            $data['job_family_name'],
+            $data['old_name'],
+            $data['name']
+        );
 
         return back()->with('success', 'อัปเดตตำแหน่งเรียบร้อยแล้ว');
     }
@@ -518,6 +529,13 @@ class StructureController extends Controller
                 'updated_at' => now(),
             ]);
 
+        $this->syncUserLevelName(
+            $data['workline_name'] ?? null,
+            $data['job_family_name'] ?? null,
+            $data['old_name'],
+            $data['name']
+        );
+
         return back()->with('success', 'อัปเดตระดับตำแหน่งเรียบร้อยแล้ว');
     }
 
@@ -613,6 +631,79 @@ class StructureController extends Controller
         }
 
         return DB::table('worklines')->where('name', $name)->value('id');
+    }
+
+    private function syncUserWorklineName(string $oldName, string $newName): void
+    {
+        DB::table('users')
+            ->where('workline', $oldName)
+            ->update([
+                'workline' => $newName,
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function syncUserDepartmentPrefix(?string $worklineName, string $oldName, string $newName): void
+    {
+        $query = DB::table('users')
+            ->select('id', 'department')
+            ->where(function ($query) use ($oldName) {
+                $query->where('department', $oldName)
+                    ->orWhere('department', 'like', $oldName.' > %');
+            });
+
+        if ($worklineName) {
+            $query->where('workline', $worklineName);
+        }
+
+        foreach ($query->get() as $user) {
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update([
+                    'department' => $newName.substr($user->department, strlen($oldName)),
+                    'updated_at' => now(),
+                ]);
+        }
+    }
+
+    private function syncUserPositionName(?string $worklineName, string $jobFamilyName, string $oldName, string $newName): void
+    {
+        $query = DB::table('users')
+            ->where('position', $oldName)
+            ->where(function ($query) use ($jobFamilyName) {
+                $query->where('department', $jobFamilyName)
+                    ->orWhere('department', 'like', $jobFamilyName.' > %');
+            });
+
+        if ($worklineName) {
+            $query->where('workline', $worklineName);
+        }
+
+        $query->update([
+            'position' => $newName,
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function syncUserLevelName(?string $worklineName, ?string $jobFamilyName, string $oldName, string $newName): void
+    {
+        $query = DB::table('users')->where('level', $oldName);
+
+        if ($worklineName) {
+            $query->where('workline', $worklineName);
+        }
+
+        if ($jobFamilyName) {
+            $query->where(function ($query) use ($jobFamilyName) {
+                $query->where('department', $jobFamilyName)
+                    ->orWhere('department', 'like', $jobFamilyName.' > %');
+            });
+        }
+
+        $query->update([
+            'level' => $newName,
+            'updated_at' => now(),
+        ]);
     }
 
     private function jobFamilyId(string $name, ?string $worklineName = null): int
