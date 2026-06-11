@@ -1,173 +1,541 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref } from 'vue';
+import { router } from '@inertiajs/vue3';
 
-const props = defineProps<{ user: any; setUsers: any }>();
+const props = defineProps<{
+  user: any;
+  setUsers: any;
+  competencies?: any[];
+}>();
 
-const assessDraftKey = `cidp-employee-assess:${props.user?.sso || 'default'}`;
+const assignedCompetencies = computed(() => props.competencies || []);
+const selectedCompetency = ref<any | null>(null);
+const checkedIndicators = ref<Record<string, boolean>>({});
+const competencyNotes = ref<Record<string, string>>({});
+const isSaving = ref(false);
 
-const readStorage = (key: string, fallback: any) => {
-  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
-};
-const writeStorage = (key: string, value: any) => {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-};
+const openCompetencyDetail = async (item: any) => {
+  selectedCompetency.value = item;
 
-const expanded = ref<number | null>(null);
-const scores = ref<any>(readStorage(assessDraftKey, { 0: 3, 1: 4, 2: 2, 3: 3, 4: 2 }));
-
-watch(scores, (val) => writeStorage(assessDraftKey, val), { deep: true });
-
-const submitEval = () => {
-  props.setUsers((prev: any[]) =>
-    prev.map((u: any) => u.sso === props.user.sso ? { ...u, evalStatus: 'self_submitted' } : u)
-  );
-  alert('ส่งแบบประเมินให้หัวหน้าสำเร็จ!\nสถานะเปลี่ยนเป็น self_submitted');
-};
-
-const saveAssessDraft = () => {
-  writeStorage(assessDraftKey, scores.value);
-  alert('บันทึกร่างเรียบร้อย');
-};
-
-const sections: any = {
-  CC: [
-    { cd: 'CC-001', n: 'การบริการที่ดี', levels: { 1: ['รับเรื่องและตอบคำถามพื้นฐานตามแนวทางที่กำหนด', 'แสดงมารยาทที่เหมาะสมต่อผู้รับบริการ', 'ส่งต่อเรื่องที่เกินขอบเขตให้ผู้เกี่ยวข้อง'], 2: ['ตอบสนองความต้องการผู้รับบริการได้ทันท่วงที', 'ให้ข้อมูลที่ถูกต้องและครบถ้วนแก่ผู้รับบริการ', 'แสดงความเป็นมิตร ยิ้มแย้ม ให้บริการด้วยใจ'], 3: ['ติดตามผลจนผู้รับบริการได้รับคำตอบ', 'ปรับวิธีสื่อสารให้เหมาะกับสถานการณ์', 'ประสานงานเพื่อแก้ปัญหาบริการที่ซับซ้อนขึ้น'], 4: ['คาดการณ์ปัญหาบริการและป้องกันล่วงหน้า', 'ปรับปรุงขั้นตอนบริการให้ลดความผิดพลาดซ้ำ', 'เป็นที่ปรึกษาให้เพื่อนร่วมงานด้านการบริการ'], 5: ['กำหนดมาตรฐานบริการที่ยกระดับประสบการณ์ผู้รับบริการ', 'ใช้ข้อเสนอแนะเพื่อพัฒนาระบบบริการทั้งหน่วยงาน', 'สร้างวัฒนธรรมบริการที่ดีอย่างต่อเนื่อง'] } },
-    { cd: 'CC-003', n: 'การทำงานเป็นทีม', levels: { 1: ['รับผิดชอบงานของตนในทีมตามที่ได้รับมอบหมาย', 'รับฟังข้อมูลพื้นฐานจากสมาชิกทีม', 'แจ้งปัญหาที่กระทบงานทีมได้'], 2: ['แบ่งปันข้อมูลและทรัพยากรกับทีมอย่างเต็มที่', 'รับฟังความคิดเห็นผู้อื่นด้วยใจเปิดกว้าง', 'ช่วยเหลือเพื่อนร่วมงานเมื่อมีปัญหา'], 3: ['ประสานงานให้สมาชิกทำงานร่วมกันได้ต่อเนื่อง', 'จัดการความเห็นต่างด้วยเหตุผล', 'สนับสนุนให้ทีมส่งมอบงานตามเป้าหมาย'], 4: ['เชื่อมทีมข้ามหน่วยเพื่อแก้ปัญหาร่วมกัน', 'สร้างบรรยากาศที่สมาชิกกล้าแลกเปลี่ยน', 'โค้ชสมาชิกให้ทำงานร่วมกันได้มีประสิทธิภาพ'], 5: ['ออกแบบรูปแบบความร่วมมือที่ทีมอื่นนำไปใช้ได้', 'ขับเคลื่อนทีมผ่านสถานการณ์ซับซ้อน', 'สร้างเครือข่ายความร่วมมือระยะยาว'] } },
-    { cd: 'CC-004', n: 'จริยธรรมและความซื่อสัตย์', levels: { 1: ['ปฏิบัติตามกฎ ระเบียบ และคำแนะนำที่เกี่ยวข้อง', 'หลีกเลี่ยงการใช้ข้อมูลโดยไม่เหมาะสม', 'รายงานข้อผิดพลาดของตนตามจริง'], 2: ['ปฏิบัติงานด้วยความซื่อสัตย์สุจริต', 'รักษาความลับขององค์กรได้เป็นอย่างดี', 'ยึดมั่นในหลักจริยธรรมวิชาชีพ'], 3: ['ตัดสินใจโดยคำนึงถึงผลกระทบทางจริยธรรม', 'ชี้แจงข้อมูลอย่างโปร่งใสตรวจสอบได้', 'เตือนหรือแนะนำเพื่อนร่วมงานเมื่อพบความเสี่ยง'], 4: ['จัดการประเด็นจริยธรรมที่ซับซ้อนด้วยความรอบคอบ', 'ส่งเสริมระบบงานที่โปร่งใสและลดผลประโยชน์ทับซ้อน', 'เป็นแบบอย่างด้านความรับผิดชอบ'], 5: ['วางแนวปฏิบัติด้านจริยธรรมให้หน่วยงาน', 'สร้างความเชื่อมั่นต่อผู้มีส่วนได้ส่วนเสีย', 'ขับเคลื่อนวัฒนธรรมความซื่อสัตย์อย่างยั่งยืน'] } },
-  ],
-  MC: [],
-  FC: [
-    { cd: 'FC2-061', n: 'การใช้เทคโนโลยีดิจิทัล', levels: { 1: ['ใช้เครื่องมือดิจิทัลพื้นฐานตามขั้นตอน', 'จัดเก็บไฟล์งานให้ค้นหาได้', 'ขอความช่วยเหลือเมื่อพบปัญหาการใช้งาน'], 2: ['ใช้โปรแกรมสำนักงานได้คล่องแคล่ว', 'เลือกเครื่องมือดิจิทัลที่เหมาะกับงานประจำ', 'รักษาความปลอดภัยข้อมูลพื้นฐานได้'], 3: ['ใช้เครื่องมือดิจิทัลช่วยวิเคราะห์และติดตามงาน', 'ประยุกต์ใช้ระบบร่วมงานออนไลน์ได้', 'ใช้ AI เบื้องต้นเพื่อเพิ่มประสิทธิภาพงานอย่างเหมาะสม'], 4: ['ปรับปรุงกระบวนการงานด้วยเทคโนโลยี', 'แนะนำเครื่องมือดิจิทัลให้ทีมใช้งานร่วมกัน', 'ประเมินความเสี่ยงข้อมูลจากการใช้เครื่องมือใหม่'], 5: ['ออกแบบแนวทางดิจิทัลที่สร้างผลลัพธ์ระดับหน่วยงาน', 'ผลักดันการใช้เทคโนโลยีอย่างมีธรรมาภิบาล', 'ติดตามแนวโน้มเทคโนโลยีเพื่อยกระดับงาน'] } },
-    { cd: 'FC2-062', n: 'การวิเคราะห์ข้อมูล', levels: { 1: ['รวบรวมข้อมูลจากแหล่งที่กำหนดได้', 'ตรวจสอบข้อมูลเบื้องต้นตามแบบฟอร์ม', 'สรุปข้อเท็จจริงง่าย ๆ จากข้อมูลที่มี'], 2: ['จัดหมวดหมู่และตรวจความครบถ้วนของข้อมูล', 'เปรียบเทียบข้อมูลพื้นฐานเพื่อหาความต่าง', 'สร้างตารางหรือกราฟพื้นฐานประกอบรายงาน'], 3: ['วิเคราะห์ข้อมูลอย่างเป็นระบบตามโจทย์งาน', 'นำเสนอข้อมูลในรูปแบบที่เข้าใจง่าย', 'ใช้ข้อมูลสนับสนุนการตัดสินใจและแก้ปัญหา'], 4: ['วิเคราะห์ข้อมูลหลายมิติและตรวจความน่าเชื่อถือ', 'อธิบายแนวโน้มและปัจจัยที่เกี่ยวข้อง', 'เสนอทางเลือกจากผลวิเคราะห์ให้ผู้เกี่ยวข้อง'], 5: ['ออกแบบกรอบวิเคราะห์ข้อมูลให้ทีมใช้ร่วมกัน', 'คาดการณ์ผลกระทบจากข้อมูลเชิงลึก', 'พัฒนาการใช้ข้อมูลเพื่อยกระดับการตัดสินใจ'] } },
-  ],
+  try {
+    const res = await fetch(
+      route('assessments.load')
+      + `?competency_id=${item.id}`
+    );
+    const data = await res.json();
+    if (data.checked) checkedIndicators.value = { ...checkedIndicators.value, ...data.checked };
+    if (data.note) competencyNotes.value[String(item.id)] = data.note;
+  } catch {
+    // ถ้า load ไม่ได้ ใช้ค่าเดิม
+  }
 };
 
-const typeConfig: any = {
-  CC: { label: 'CC — Core Competency', tag: 'tag-cc', tagLabel: 'CC', color: '#1E40AF' },
-  MC: { label: 'MC — Managerial Competency', tag: 'tag-mc', tagLabel: 'MC', color: '#6D28D9' },
-  FC: { label: 'FC — Functional Competency', tag: 'tag-fc', tagLabel: 'FC', color: '#065f46' },
+const closeCompetencyDetail = () => {
+  selectedCompetency.value = null;
 };
 
-const scoreLabels = ['ต่ำมาก', 'ต่ำ', 'พอใช้', 'ดี', 'ดีมาก'];
+const saveAndClose = async () => {
+  if (!selectedCompetency.value || isSaving.value) return;
+  isSaving.value = true;
 
-const getBehaviors = (item: any, score?: number) => {
-  if (!score) return [];
-  return item.levels[score] || [];
-};
-
-// flatten all items with global index
-const allItems: { type: string; item: any; globalIdx: number }[] = [];
-Object.entries(sections).forEach(([type, items]: any) => {
-  items.forEach((item: any) => {
-    allItems.push({ type, item, globalIdx: allItems.length });
+  router.post(route('assessments.save'), {
+    competency_id: selectedCompetency.value.id,
+    checked_indicators: checkedIndicators.value,
+    note: competencyNotes.value[noteKey.value] || '',
+    score: parseFloat(currentScore.value),
+  }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      closeCompetencyDetail();
+    },
+    onError: () => {
+      alert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
+    },
+    onFinish: () => {
+      isSaving.value = false;
+    },
   });
+};
+
+const indicatorKey = (level: any, index: number) => `${selectedCompetency.value?.id || 'item'}:${level.id || level.lvl}:${index}`;
+const selectedCount = (level: any) => (level.indicators || []).filter((_: any, index: number) => checkedIndicators.value[indicatorKey(level, index)]).length;
+const totalIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
+const selectedIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + selectedCount(level), 0));
+const currentScore = computed(() => (selectedIndicators.value * 0.25).toFixed(2));
+const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
+
+const flattenedIndicators = computed(() => {
+  const rows: any[] = [];
+  (selectedCompetency.value?.levels || []).forEach((level: any, levelIndex: number) => {
+    (level.indicators || []).forEach((indicator: string, indicatorIndex: number) => {
+      rows.push({ level, levelIndex, indicator, indicatorIndex, key: indicatorKey(level, indicatorIndex) });
+    });
+  });
+  return rows;
 });
+
+const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
+  const key = indicatorKey(level, indicatorIndex);
+  const position = flattenedIndicators.value.findIndex((row) => row.key === key);
+  if (position <= 0) return true;
+  return Boolean(checkedIndicators.value[flattenedIndicators.value[position - 1].key]);
+};
+
+const handleIndicatorChange = (level: any, indicatorIndex: number) => {
+  const key = indicatorKey(level, indicatorIndex);
+  const position = flattenedIndicators.value.findIndex((row) => row.key === key);
+
+  if (!checkedIndicators.value[key]) {
+    flattenedIndicators.value.slice(position + 1).forEach((row) => {
+      checkedIndicators.value[row.key] = false;
+    });
+  }
+};
 </script>
 
 <template>
-  <div>
-    <div class="flex ic jb mb20">
+  <section class="employee-page">
+    <div class="page-head">
       <div>
-        <div class="sec-t">ประเมินตนเอง </div>
-        <div class="sec-s">รอบปี 2568 · กรอกให้ครบทุกสมรรถนะแล้วกด "ส่งให้หัวหน้า"</div>
+        <h1>ประเมินตนเอง</h1>
+        <!-- <p>รอเชื่อมข้อมูลสมรรถนะและแบบประเมินจริง</p> -->
       </div>
-      <span class="b by">draft</span>
+      <span class="b bgr">{{ assignedCompetencies.length ? 'พร้อมประเมิน' : 'ยังไม่มีข้อมูล' }}</span>
     </div>
 
-    <div style="background: var(--yellow-bg); border: 1px solid #FDE68A; border-radius: var(--r); padding: 10px 14px; margin-bottom: 20px; font-size: 12px; color: var(--yellow);">
-       กรุณาเลือกคะแนนที่ตรงกับความสามารถที่คุณทำได้จริง อ้างอิงพฤติกรรมบ่งชี้ด้านล่าง
+    <div v-if="assignedCompetencies.length" class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">สมรรถนะที่ต้องประเมิน</div>
+        <div class="summary-value">{{ assignedCompetencies.length }}</div>
+        <div class="summary-copy">รายการที่ HR ผูกกับกลุ่มงาน/ระดับของคุณ</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">ประเมินตนเองแล้ว</div>
+        <div class="summary-value">0</div>
+        <div class="summary-copy">รอพัฒนาแบบฟอร์มให้คะแนนจริง</div>
+      </div>
     </div>
 
-    <template v-for="[type, items] in Object.entries(sections)" :key="type">
-      <div v-if="items && items.length > 0" style="margin-bottom: 24px;">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid var(--border);">
-          <span :style="{ background: typeConfig[type].color, color: '#fff', padding: '3px 10px', borderRadius: '5px', fontSize: '11px', fontWeight: 800 }">
-            {{ typeConfig[type].tagLabel }}
-          </span>
-          <span style="font-size: 14px; font-weight: 700; color: var(--text);">{{ typeConfig[type].label }}</span>
+    <div v-if="assignedCompetencies.length" class="content-card">
+      <div class="card-head">
+        <div>
+          <h2>หัวข้อสมรรถนะที่ต้องประเมิน</h2>
+          <p>รายการนี้มาจากการผูก Competency กับกลุ่มงานโดย HR</p>
+        </div>
+      </div>
+      <div class="competency-list">
+        <button v-for="item in assignedCompetencies" :key="item.id" class="competency-row" type="button" @click="openCompetencyDetail(item)">
+          <div>
+            <div class="competency-title">
+              <span class="type-tag">{{ item.t || '-' }}</span>
+              <span>{{ item.cd }} · {{ item.n }}</span>
+            </div>
+            <div class="competency-detail">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
+          </div>
+          <div class="row-actions">
+            <span class="level-pill">Expected {{ item.expectedLevel || '-' }}</span>
+            <span class="detail-link">รายละเอียด</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div v-else class="empty-card">
+      <div class="empty-title">ยังไม่มีหัวข้อสมรรถนะที่ต้องประเมิน</div>
+      <div class="empty-copy">เมื่อเชื่อมข้อมูลจริงแล้ว รายการสมรรถนะและแบบประเมินจะแสดงที่นี่</div>
+    </div>
+
+    <div v-if="selectedCompetency" class="modal-backdrop" @click.self="closeCompetencyDetail">
+      <div class="detail-modal">
+        <div class="modal-head">
+          <div>
+            <div class="modal-code">
+              <span class="type-tag">{{ selectedCompetency.t || '-' }}</span>
+              <span>{{ selectedCompetency.cd }}</span>
+            </div>
+            <h2>{{ selectedCompetency.n }}</h2>
+            <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
+          </div>
+          <button class="btn btn-s btn-sm" type="button" @click="closeCompetencyDetail">ปิด</button>
         </div>
 
-        <template v-for="item in items" :key="item.cd">
-          <div
-            v-if="allItems.find(i => i.item.cd === item.cd)"
-            class="ac"
-            style="margin-bottom: 8px;"
-          >
-            <div
-              class="ah"
-              style="background: #fff; cursor: pointer;"
-              @click="expanded = expanded === allItems.find(i => i.item.cd === item.cd)!.globalIdx ? null : allItems.find(i => i.item.cd === item.cd)!.globalIdx"
-            >
-              <span :class="typeConfig[type].tag" style="flex-shrink: 0;">{{ typeConfig[type].tagLabel }}</span>
-              <span class="fw7 fs13" style="flex: 1; margin-left: 2px;">{{ item.n }}</span>
-              <span :style="{ fontSize: '12px', fontWeight: 700, color: scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] ? 'var(--teal)' : 'var(--red)' }">
-                {{ scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] ? scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] + ' / 5 ✓' : 'ยังไม่กรอก' }}
-              </span>
-              <span style="margin-left: 10px; color: var(--text3); font-size: 12px;">
-                {{ expanded === allItems.find(i => i.item.cd === item.cd)!.globalIdx ? '▴' : '▾' }}
-              </span>
-            </div>
-
-            <div :class="['ab', expanded === allItems.find(i => i.item.cd === item.cd)!.globalIdx ? 'open' : '']">
-              <div style="margin-bottom: 14px;">
-                <div class="lbl mb6" style="font-size: 11px;">พฤติกรรมบ่งชี้ (ใช้ประกอบการตัดสิน)</div>
-                <template v-if="scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx]">
-                  <div class="fs11" style="padding: 8px 10px; border-radius: 8px; background: var(--blue-lt); color: var(--blue); margin-bottom: 8px;">
-                    ระดับ {{ scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] }}: {{ scoreLabels[scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] - 1] }}
-                  </div>
-                  <ul class="blist">
-                    <li v-for="(b, i) in getBehaviors(item, scores[allItems.find(ai => ai.item.cd === item.cd)!.globalIdx])" :key="i">{{ b }}</li>
-                  </ul>
-                </template>
-                <div v-else class="muted fs12">เลือกคะแนนความสามารถเพื่อดูพฤติกรรมบ่งชี้ของระดับนั้น</div>
-              </div>
-
-              <div class="lbl mb8">คะแนนความสามารถของคุณ <span style="color: var(--red);">*</span></div>
-              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px;">
-                <div
-                  v-for="k in [1,2,3,4,5]"
-                  :key="k"
-                  :style="{
-                    border: `2px solid ${scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] === k ? 'var(--teal)' : 'var(--border)'}`,
-                    borderRadius: '10px', padding: '14px 8px', cursor: 'pointer',
-                    background: scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] === k ? 'var(--teal-lt)' : '#fff',
-                    transition: '.15s', textAlign: 'center'
-                  }"
-                  @click="scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] = k"
-                >
-                  <div :style="{ fontSize: '26px', fontWeight: 800, color: scores[allItems.find(i => i.item.cd === item.cd)!.globalIdx] === k ? 'var(--teal)' : 'var(--navy)', lineHeight: 1 }">{{ k }}</div>
-                  <div style="font-size: 10px; color: var(--text3); margin-top: 4px;">{{ scoreLabels[k - 1] }}</div>
-                </div>
-              </div>
-
-              <div class="divider" />
-              <div class="lbl mb8" style="font-size: 11px;">แนบหลักฐานประกอบ <span class="lbl-opt">(ถ้ามี)</span></div>
-              <div class="g2">
-                <div class="upload-area" style="padding: 12px;">
-                  <div style="font-size: 18px; margin-bottom: 4px;"></div>
-                  <div class="fw6 fs12">อัปโหลดไฟล์</div>
-                  <div class="muted fs11">PDF, Word, Excel, รูปภาพ</div>
-                </div>
-                <div>
-                  <div class="fg">
-                    <label class="lbl" style="font-weight: 500; font-size: 11px;">URL หลักฐาน</label>
-                    <input class="inp" style="font-size: 12px;" placeholder="https://..." />
-                  </div>
-                  <div class="fg mb0">
-                    <label class="lbl" style="font-weight: 500; font-size: 11px;">คำอธิบาย</label>
-                    <textarea class="ta" style="min-height: 48px; font-size: 12px;" placeholder="อธิบายสั้นๆ..." />
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div class="modal-body">
+          <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
+            <div class="empty-title">ยังไม่มีรายละเอียดระดับ</div>
+            <div class="empty-copy">เมื่อ Admin เพิ่มระดับและพฤติกรรม รายละเอียดจะแสดงที่นี่</div>
           </div>
-        </template>
-      </div>
-    </template>
 
-    <div class="flex g8 mt4" style="padding-top: 4px;">
-      <button class="btn btn-t" @click="submitEval"> ส่งให้หัวหน้า</button>
-      <button class="btn btn-s" @click="saveAssessDraft">บันทึกร่าง</button>
+          <section v-for="level in selectedCompetency.levels" v-else :key="level.id || level.lvl" class="emp-level-section">
+            <div class="emp-level-head">
+              <div>
+                <h3>{{ level.label || `ระดับ ${level.lvl}` }}</h3>
+                <p>เลือกแล้ว {{ selectedCount(level) }}/{{ level.indicators?.length || 0 }} พฤติกรรม</p>
+              </div>
+              <span
+                class="emp-level-status"
+                :class="{
+                  idle: selectedCount(level) === 0,
+                  done: selectedCount(level) === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0
+                }"
+              >
+                {{
+                  selectedCount(level) === 0
+                    ? 'ยังไม่เริ่ม'
+                    : selectedCount(level) === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0
+                      ? 'ครบระดับ'
+                      : 'กำลังประเมิน'
+                }}
+              </span>
+            </div>
+
+            <div class="emp-indicator-list">
+              <label v-for="(indicator, index) in level.indicators" :key="index" class="emp-indicator-row">
+                <input
+                  v-model="checkedIndicators[indicatorKey(level, index)]"
+                  :disabled="!isIndicatorUnlocked(level, index)"
+                  type="checkbox"
+                  @change="handleIndicatorChange(level, index)"
+                />
+                <span class="emp-indicator-copy">
+                  <strong>ข้อ {{ level.lvl }}.{{ index + 1 }}</strong>
+                  <small>{{ indicator }}</small>
+                </span>
+
+                <em
+                  v-if="isIndicatorUnlocked(level, index) && !checkedIndicators[indicatorKey(level, index)]"
+                  class="next-pill"
+                >
+                  ลำดับถัดไป
+                </em>
+              </label>
+
+              <div v-if="!level.indicators?.length" class="emp-indicator-empty">
+                ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้
+              </div>
+            </div>
+          </section>
+
+          <section v-if="selectedCompetency.levels?.length" class="emp-note-section">
+            <label for="competency-note">ความคิดเห็นต่อสมรรถนะนี้</label>
+            <textarea
+              id="competency-note"
+              v-model="competencyNotes[noteKey]"
+              placeholder="อธิบายเหตุผลประกอบการประเมินสมรรถนะนี้..."
+            />
+          </section>
+        </div>
+
+        <div class="modal-foot">
+          <span>คะแนนปัจจุบัน {{ currentScore }}/5.00 จาก {{ selectedIndicators }}/{{ totalIndicators }} พฤติกรรม</span>
+          <button class="btn btn-t" type="button" :disabled="isSaving" @click="saveAndClose">
+            {{ isSaving ? 'กำลังบันทึก...' : 'บันทึกและปิด' }}
+            <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
+          </button>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
 </template>
+
+<style scoped>
+.employee-page { display: grid; gap: 20px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
+.page-head p { margin: 8px 0 0; color: var(--text3); font-size: 13px; }
+.summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.summary-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+.summary-label { color: var(--text3); font-size: 12px; font-weight: 700; }
+.summary-value { color: var(--text); font-size: 28px; font-weight: 900; line-height: 1.1; margin-top: 10px; }
+.summary-copy { color: var(--text3); font-size: 12px; margin-top: 6px; }
+.content-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card-head { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.card-head h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 900; }
+.card-head p { margin: 6px 0 0; color: var(--text3); font-size: 12px; }
+.competency-list { display: grid; gap: 10px; padding: 16px 20px; }
+.competency-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.competency-row:hover { border-color: rgba(37, 99, 235, .35); box-shadow: 0 12px 28px rgba(15, 23, 42, .08); }
+.competency-title { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; font-weight: 900; }
+.type-tag {
+  min-width: 28px;
+  border-radius: 8px;
+  background: var(--blue-lt);
+  color: var(--blue);
+  padding: 4px 7px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 900;
+}
+.competency-detail { margin-top: 6px; color: var(--text3); font-size: 12px; }
+.level-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--green-bg, #ecfdf5);
+  color: var(--green, #047857);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.detail-link { color: var(--blue); font-size: 12px; font-weight: 900; }
+.empty-card {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 32px;
+  text-align: center;
+}
+.empty-title { color: var(--text); font-size: 16px; font-weight: 900; }
+.empty-copy { color: var(--text3); font-size: 13px; margin-top: 8px; }
+.compact { min-height: 160px; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, .48);
+  backdrop-filter: blur(2px);
+  padding: 12px;
+}
+.detail-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, calc(100vw - 24px));
+  height: min(760px, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
+  min-height: 0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, .28);
+  overflow: hidden;
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex: 0 0 auto;
+  padding: 24px 28px 22px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+}
+.modal-code { display: flex; align-items: center; gap: 10px; color: var(--text3); font-size: 12px; font-weight: 900; }
+.modal-head h2 { margin: 12px 0 0; color: var(--text); font-size: 24px; font-weight: 900; line-height: 1.15; }
+.modal-head p { margin: 6px 0 0; color: var(--text3); font-size: 12px; }
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px 28px;
+  overflow-y: auto;
+  background: #f6f8fb;
+}
+.emp-level-section {
+  display: block;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+}
+.emp-level-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  background: #eefafa;
+  border-bottom: 1px solid var(--border);
+}
+.emp-level-head h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 900; }
+.emp-level-head p { margin: 5px 0 0; color: var(--text3); font-size: 12px; }
+.emp-level-status {
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.emp-level-status.idle {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.emp-level-status.done {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+.emp-indicator-list { display: block; width: 100%; background: #fff; }
+.emp-indicator-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.emp-indicator-row:hover { background: #f8fafc; }
+.emp-indicator-row:last-child { border-bottom: 0; }
+.emp-indicator-row:has(input:disabled) {
+  background: #fafbfc;
+  color: #9aa6b2;
+  cursor: not-allowed;
+}
+.emp-indicator-row input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  accent-color: var(--teal);
+}
+.emp-indicator-row input:focus,
+.emp-indicator-row input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.emp-indicator-row input:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.emp-indicator-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+.emp-indicator-row strong { display: block; color: var(--text); font-size: 12px; font-weight: 900; }
+.emp-indicator-row small {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: initial;
+  word-break: break-word;
+}
+.emp-indicator-row:has(input:disabled) small { color: #94a3b8; }
+.emp-indicator-row em {
+  display: block;
+  margin-top: 6px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+.emp-indicator-empty { padding: 14px 16px; color: var(--text3); font-size: 12px; }
+.emp-note-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+}
+.emp-note-section label { color: var(--text); font-size: 13px; font-weight: 900; }
+.emp-note-section textarea {
+  min-height: 110px;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  outline: none;
+}
+.emp-note-section textarea:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(15, 170, 167, .12);
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex: 0 0 auto;
+  min-height: 64px;
+  padding: 12px 26px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+  color: var(--text3);
+  font-size: 12px;
+}
+.modal-foot .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 132px;
+  border-radius: 10px;
+  background: var(--teal, #0faaa7);
+  color: #fff;
+  border-color: var(--teal, #0faaa7);
+  opacity: 1;
+  visibility: visible;
+}
+.next-pill {
+  flex: 0 0 auto;
+  margin-left: auto;
+  align-self: center;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.modal-foot small { font-size: 11px; opacity: .85; }
+@media (max-width: 760px) {
+  .page-head { align-items: flex-start; flex-direction: column; }
+  .summary-grid { grid-template-columns: 1fr; }
+  .competency-row { align-items: flex-start; flex-direction: column; }
+  .row-actions { width: 100%; justify-content: space-between; }
+  .modal-head,
+  .modal-foot { flex-direction: column; align-items: stretch; }
+  .modal-body,
+  .modal-head,
+  .modal-foot { padding-left: 16px; padding-right: 16px; }
+}
+</style>
