@@ -34,10 +34,10 @@ class UserController extends Controller
     {
         $data = $this->validatedData($request);
 
-        $user = User::create([
-            ...$this->userAttributes($data),
-            'password' => Hash::make(Str::password(32)),
-        ]);
+        $user = User::create(array_merge(
+            $this->userAttributes($data),
+            ['password' => Hash::make(Str::password(32))]
+        ));
 
         $this->competencyAssessmentSync->syncUser($user);
 
@@ -103,7 +103,7 @@ class UserController extends Controller
             'r' => ['required', Rule::in(array_keys(self::ROLE_IDS))],
             'sup' => ['nullable', 'string', 'max:255'],
             'evaluator2' => ['nullable', 'string', 'max:255'],
-            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id', 'different:supervisor_id_2'],
+            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id', Rule::different('supervisor_id_2')],
             'supervisor_id_2' => ['nullable', 'integer', 'exists:users,id'],
             'evaluator3' => ['nullable', 'string', 'max:255'],
             'act' => ['boolean'],
@@ -121,8 +121,8 @@ class UserController extends Controller
             default => $data['r'],
         };
         $name = trim($data['fn'].' '.$data['ln']);
-        $supervisorId1 = $data['supervisor_id_1'] ?? $this->userIdFromDisplayName($data['sup'] ?? null);
-        $supervisorId2 = $data['supervisor_id_2'] ?? $this->userIdFromDisplayName($data['evaluator2'] ?? null);
+        $supervisorId1 = $data['supervisor_id_1'] ?? null;
+        $supervisorId2 = $data['supervisor_id_2'] ?? null;
 
         return [
             'sso' => $data['sso'],
@@ -143,11 +143,11 @@ class UserController extends Controller
             'level_id' => $data['_level_id'],
             'role_id' => self::ROLE_IDS[$roleKey],
             'role_key' => $roleKey,
-            'supervisor' => $this->userNameFromId($supervisorId1) ?? ($data['sup'] ?? null),
-            'evaluator2' => $this->userNameFromId($supervisorId2) ?? ($data['evaluator2'] ?? null),
+            'supervisor' => $data['sup'] ?? null,
+            'evaluator2' => $data['evaluator2'] ?? null,
             'evaluator3' => $data['evaluator3'] ?? null,
-            'supervisor_id_1' => $supervisorId1,
-            'supervisor_id_2' => $supervisorId2,
+            'supervisor_id_1' => $this->userIdFromDisplayName($data['sup'] ?? null),
+            'supervisor_id_2' => $this->userIdFromDisplayName($data['evaluator2'] ?? null),
             'supervisor_id_3' => $this->userIdFromDisplayName($data['evaluator3'] ?? null),
             'is_active' => $data['act'] ?? true,
         ];
