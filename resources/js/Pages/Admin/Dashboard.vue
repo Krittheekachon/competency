@@ -111,6 +111,14 @@ const supportRanks = ref(clone(levelsByWorkline.value['สายสนับส�
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
+const roleOptions = computed(() => page.props.roles || [
+    { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
+    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
+    { id: 2, key: 'dept_head', label: 'ผู้บังคับบัญชา' },
+    { id: 3, key: 'employee', label: 'บุคลากร' },
+    { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
+    { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
+]);
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -241,10 +249,20 @@ const currentProfileUser = computed(() =>
         act: true,
     },
 );
+const normalizeUserRoleKey = (role = '') => ({
+    manager_dept: 'dept_head',
+    manager: 'dean',
+}[role] || role);
+const roleLabel = (role = '') => {
+    const normalizedRole = normalizeUserRoleKey(role);
+    return roleOptions.value.find((option) => option.key === normalizedRole)?.label
+        || normalizedRole
+        || 'ไม่ระบุบทบาท';
+};
 const personOption = (user) => ({
     key: user.sso || `${user.t || ''}${user.n}`,
     value: `${user.t || ''}${user.n}`,
-    label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+    label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''} · role: ${roleLabel(user.r)}`,
 });
 
 const evaluatorOptions = computed(() =>
@@ -305,27 +323,27 @@ const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
 const supervisorOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => user.r === 'supervisor')
+        .filter((user) => normalizeUserRoleKey(user.r) === 'supervisor')
         .map(personOption),
 );
 
 const managerDeptOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => ['manager_dept', 'dept_head'].includes(user.r))
+        .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
         .map(personOption),
 );
 
 const deanOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => ['dean', 'manager'].includes(user.r))
+        .filter((user) => normalizeUserRoleKey(user.r) === 'dean')
         .map(personOption),
 );
 
-const canPickEvaluator1 = computed(() => !['supervisor', 'manager_dept', 'manager', 'dean'].includes(userForm.value.r));
-const canPickEvaluator2 = computed(() => !['manager_dept', 'manager', 'dean'].includes(userForm.value.r));
-const canPickEvaluator3 = computed(() => !['manager', 'dean'].includes(userForm.value.r));
+const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -475,7 +493,7 @@ const resetUserForm = (data = null) => {
         unit: org.unit,
         p: data?.p || '',
         l: data?.l || '',
-        r: data?.r || 'employee',
+        r: normalizeUserRoleKey(data?.r || 'employee'),
         sup: data?.sup || '',
         evaluator2: data?.evaluator2 || '',
         supervisor_id_1: supervisorIdFromUser(data, 'supervisor_id_1', 'sup'),
@@ -959,12 +977,13 @@ const logout = () => router.post(route('logout'));
                     <div class="fg evaluator-role-field">
                         <label class="lbl req">บทบาทในระบบ</label>
                         <select v-model="userForm.r" class="sel modal-input" @change="handleRoleChange">
-                            <option value="employee">บุคลากร</option>
-                            <option value="supervisor">หัวหน้างาน</option>
-                            <option value="manager_dept">ผู้บังคับบัญชา</option>
-                            <option value="manager">ผู้บริหารคณะ</option>
-                            <option value="hr">งานทรัพยากรบุคคล</option>
-                            <option value="admin">ผู้ดูแลระบบ</option>
+                            <option
+                                v-for="role in roleOptions"
+                                :key="`role-${role.key}`"
+                                :value="role.key"
+                            >
+                                {{ role.label }}
+                            </option>
                         </select>
                     </div>
 

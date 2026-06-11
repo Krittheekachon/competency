@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('comp_level_indicators', 'weight')) {
+            return;
+        }
+
         Schema::table('comp_level_indicators', function (Blueprint $table) {
             $table->decimal('weight', 5, 2)->default(0)->after('description');
         });
@@ -18,6 +22,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (! Schema::hasColumn('comp_level_indicators', 'weight')) {
+            return;
+        }
+
         Schema::table('comp_level_indicators', function (Blueprint $table) {
             $table->dropColumn('weight');
         });

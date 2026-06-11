@@ -167,7 +167,7 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_update_user_role_to_manager_dept(): void
+    public function test_admin_normalizes_manager_dept_alias_to_role_table_key(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
@@ -202,7 +202,7 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'role_id' => 2,
-            'role_key' => 'manager_dept',
+            'role_key' => 'dept_head',
         ]);
     }
 

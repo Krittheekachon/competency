@@ -8,13 +8,20 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_assessment_round_id_foreign');
-        DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_assessment_round_id_user_id_unique');
-        DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_round_user_competency_unique');
+        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+
+        if (! $isSqlite) {
+            DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_assessment_round_id_foreign');
+            DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_assessment_round_id_user_id_unique');
+            DB::statement('ALTER TABLE assessments DROP CONSTRAINT IF EXISTS assessments_round_user_competency_unique');
+        }
+
         DB::statement('DROP INDEX IF EXISTS assessments_assessment_round_id_user_id_unique');
         DB::statement('DROP INDEX IF EXISTS assessments_round_user_competency_unique');
 
-        DB::statement(<<<'SQL'
+        $orderBy = $isSqlite ? 'updated_at DESC, id DESC' : 'updated_at DESC NULLS LAST, id DESC';
+
+        DB::statement(<<<SQL
             DELETE FROM assessments
             WHERE id IN (
                 SELECT id
@@ -23,7 +30,7 @@ return new class extends Migration
                         id,
                         ROW_NUMBER() OVER (
                             PARTITION BY user_id, competency_id
-                            ORDER BY updated_at DESC NULLS LAST, id DESC
+                            ORDER BY {$orderBy}
                         ) AS row_number
                     FROM assessments
                 ) duplicates
@@ -31,7 +38,7 @@ return new class extends Migration
             )
         SQL);
 
-        if (Schema::hasColumn('assessments', 'assessment_round_id')) {
+        if (! $isSqlite && Schema::hasColumn('assessments', 'assessment_round_id')) {
             Schema::table('assessments', function ($table): void {
                 $table->dropColumn('assessment_round_id');
             });
