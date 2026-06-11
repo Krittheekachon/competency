@@ -208,6 +208,82 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             );
     }
 
+    public function test_dashboard_marks_employee_when_assigned_supervisor_is_no_longer_supervisor(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Admin User',
+            'role_id' => $this->roleId('admin'),
+        ]);
+        $this->createValidStructure();
+
+        $formerSupervisor = User::factory()->create([
+            'name' => 'MM Former Supervisor',
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'HR',
+            'position' => 'นักทรัพยากรบุคคล',
+            'level' => 'ปฏิบัติการ',
+        ]);
+
+        User::factory()->create([
+            'name' => 'ZZ Staff With Former Supervisor',
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'HR',
+            'position' => 'นักทรัพยากรบุคคล',
+            'level' => 'ปฏิบัติการ',
+            'supervisor_id_1' => $formerSupervisor->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Dashboard')
+                ->where('users.2.n', 'ZZ Staff With Former Supervisor')
+                ->where('users.2.structureStatus', 'invalid')
+                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว')
+            );
+    }
+
+    public function test_dashboard_marks_employee_when_assigned_supervisor_moves_to_department_head(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Admin User',
+            'role_id' => $this->roleId('admin'),
+        ]);
+        $this->createValidStructure();
+
+        $movedSupervisor = User::factory()->create([
+            'name' => 'MM Moved Supervisor',
+            'role_id' => $this->roleId('dept_head'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'HR',
+            'position' => 'นักทรัพยากรบุคคล',
+            'level' => 'ปฏิบัติการ',
+        ]);
+
+        User::factory()->create([
+            'name' => 'ZZ Staff With Moved Supervisor',
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'HR',
+            'position' => 'นักทรัพยากรบุคคล',
+            'level' => 'ปฏิบัติการ',
+            'supervisor_id_1' => $movedSupervisor->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Dashboard')
+                ->where('users.2.n', 'ZZ Staff With Moved Supervisor')
+                ->where('users.2.structureStatus', 'invalid')
+                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว')
+            );
+    }
+
     private function createValidStructure(): void
     {
         $worklineId = DB::table('worklines')->insertGetId([

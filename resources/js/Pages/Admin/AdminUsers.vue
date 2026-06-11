@@ -69,17 +69,28 @@
 
     <div class="table-scroll">
       <table class="tbl">
+        <colgroup>
+          <col class="col-id" />
+          <col class="col-name" />
+          <col class="col-workline" />
+          <col class="col-dept" />
+          <col class="col-position" />
+          <col class="col-level" />
+          <col class="col-role" />
+          <col class="col-status" />
+          <col class="col-actions" />
+        </colgroup>
         <thead>
           <tr>
             <th>ID</th>
-            <th style="min-width: 180px">ชื่อ-นามสกุล</th>
+            <th>ชื่อ-นามสกุล</th>
             <th>สายงาน</th>
-            <th style="min-width: 200px">กลุ่มงาน</th>
+            <th>กลุ่มงาน</th>
             <th>ตำแหน่ง</th>
             <th>ระดับตำแหน่ง</th>
-            <th style="min-width: 160px">บทบาทในระบบ</th>
-            <th>สถานะ</th>
-            <th></th>
+            <th>บทบาทในระบบ</th>
+            <th class="center-cell">สถานะ</th>
+            <th class="right-cell"></th>
           </tr>
         </thead>
         <tbody>
@@ -118,24 +129,24 @@
                 {{ formatDept(user.d) }}
               </div>
             </td>
-            <td class="fs12 position-cell">
+            <td class="position-cell">
               <div class="whitespace-nowrap overflow-hidden truncate full-width" :title="user.p || ''">
                 {{ user.p || '—' }}
               </div>
             </td>
-            <td class="muted fs11">{{ getDisplayLevel(user) || '—' }}</td>
-            <td>
+            <td class="level-cell">{{ getDisplayLevel(user) || '—' }}</td>
+            <td class="role-cell">
               <span class="b" :class="roleBadge(user.r).className" :style="roleBadge(user.r).style">
                 {{ roleBadge(user.r).label }}
               </span>
             </td>
-            <td>
+            <td class="center-cell">
               <span class="b" :class="isActive(user) ? 'bg' : 'br'">
                 {{ isActive(user) ? 'ปกติ' : 'ระงับ' }}
               </span>
             </td>
-            <td>
-              <div class="flex g4">
+            <td class="right-cell">
+              <div class="row-actions">
                 <button class="btn btn-s btn-xs" type="button" @click="openModal('modal-user', user)">
                   แก้ไข
                 </button>
@@ -143,7 +154,9 @@
                   class="btn btn-r btn-xs status-btn"
                   type="button"
                   :class="isActive(user) ? 'suspend' : 'activate'"
-                  @click="toggleStatus(user.sso)"
+                  :disabled="isCurrentUser(user) && isActive(user)"
+                  :title="statusActionTitle(user)"
+                  @click="toggleStatus(user)"
                 >
                   {{ isActive(user) ? 'ระงับ' : 'เปิด' }}
                 </button>
@@ -165,7 +178,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { ExcelImportModal } from '../../Components/SharedUI.vue';
 
 type User = {
@@ -209,6 +222,8 @@ const departmentFilter = ref('ทุกกลุ่มงาน');
 const positionFilter = ref('ทุกตำแหน่ง');
 const roleFilter = ref('ทุกบทบาท (Role)');
 const statusFilter = ref('ทุกสถานะ');
+const page = usePage();
+const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
 const roleOptions = [
   'บุคลากร',
   'หัวหน้างาน',
@@ -224,6 +239,14 @@ const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
 const worklineOptions = computed(() => props.worklines || []);
 const isActive = (user: User) => user.act !== false;
+const isCurrentUser = (user: User) => Boolean(user.db_id && Number(user.db_id) === currentUserId.value);
+const statusActionTitle = (user: User) => {
+  if (isCurrentUser(user) && isActive(user)) {
+    return 'ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่ได้';
+  }
+
+  return isActive(user) ? 'ระงับบัญชีผู้ใช้นี้' : 'เปิดใช้งานบัญชีผู้ใช้นี้';
+};
 const hasInvalidStructure = (user: User) => user.structureStatus === 'invalid';
 const structureIssueText = (user: User) => (user.structureIssues || []).join('\n') || 'ข้อมูลโครงสร้างไม่ตรงกับ master data ปัจจุบัน';
 const topDepartment = (user: User) => (user.d || '').split(' > ')[0]?.trim() || '';
@@ -281,12 +304,12 @@ const roleBadge = (role?: string): RoleBadge => {
         style: { background: '#e0f2fe', color: '#0369a1' },
       };
     case 'supervisor':
-    case 'dept_head':
       return {
         label: 'หัวหน้างาน',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
+    case 'dept_head':
     case 'manager_dept':
       return {
         label: 'ผู้บังคับบัญชา',
@@ -320,27 +343,34 @@ const filteredUsers = computed(() => {
   });
 });
 
-const toggleStatus = (sso?: string) => {
-  if (!sso) return;
-
-  const user = props.users.find(u => u.sso === sso);
-  if (!user) return;
+const toggleStatus = (user: User) => {
   if (!user.db_id) {
     alert('ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่');
     return;
   }
 
   const nextActive = !isActive(user);
+  if (!nextActive && isCurrentUser(user)) {
+    alert('ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่ได้');
+    return;
+  }
+
   const previousUsers = [...props.users];
+  const userKey = user.db_id;
 
   window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
-  props.setUsers((users) => users.map((u) => (u.sso === sso ? { ...u, act: nextActive } : u)));
+  props.setUsers((users) => users.map((u) => (u.db_id === userKey ? { ...u, act: nextActive } : u)));
 
   router.patch(route('admin.users.status', user.db_id), {
     act: nextActive,
   }, {
     preserveScroll: true,
     preserveState: true,
+    onSuccess: (page) => {
+      if (Array.isArray(page.props.users)) {
+        props.setUsers(page.props.users as User[]);
+      }
+    },
     onError: () => {
       props.setUsers(previousUsers);
       alert('ไม่สามารถบันทึกสถานะผู้ใช้ลงฐานข้อมูลได้');
@@ -488,10 +518,66 @@ const deleteUser = (user: User) => {
   overflow-x: auto;
 }
 
+.tbl {
+  table-layout: fixed;
+  min-width: 1220px;
+}
+
+.tbl th,
+.tbl td {
+  vertical-align: middle;
+}
+
+.tbl th {
+  white-space: nowrap;
+}
+
+.tbl td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.col-id {
+  width: 7%;
+}
+
+.col-name {
+  width: 18%;
+}
+
+.col-workline {
+  width: 9%;
+}
+
+.col-dept {
+  width: 16%;
+}
+
+.col-position {
+  width: 14%;
+}
+
+.col-level {
+  width: 9%;
+}
+
+.col-role {
+  width: 10%;
+}
+
+.col-status {
+  width: 7%;
+}
+
+.col-actions {
+  width: 10%;
+}
+
 .id-cell {
   font-family: monospace;
   font-size: 11px;
   color: var(--text3);
+  white-space: nowrap;
 }
 
 .user-avatar {
@@ -529,12 +615,44 @@ const deleteUser = (user: User) => {
 }
 
 .dept-cell {
-  max-width: 300px;
+  max-width: 100%;
 }
 
-.position-cell,
-.person-cell {
-  max-width: 140px;
+.position-cell {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.level-cell {
+  max-width: 100%;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.role-cell {
+  white-space: nowrap;
+}
+
+.center-cell {
+  text-align: center;
+}
+
+.right-cell {
+  text-align: right;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .full-width {
@@ -549,6 +667,14 @@ const deleteUser = (user: User) => {
 .status-btn.activate {
   background: #dcfce7;
   color: #15803d;
+}
+
+.status-btn:disabled {
+  cursor: not-allowed;
+  border-color: #e5e7eb;
+  background: #f3f6fb;
+  color: #94a3b8;
+  opacity: 1;
 }
 
 .delete-btn {

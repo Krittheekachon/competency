@@ -282,6 +282,32 @@ class AdminUserControllerTest extends TestCase
             'id' => $user->id,
             'is_active' => false,
         ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.users.status', $user), ['act' => true])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_admin_cannot_suspend_own_active_account(): void
+    {
+        $admin = User::factory()->create([
+            'role_id' => $this->roleId('admin'),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.users.status', $admin), ['act' => false])
+            ->assertSessionHasErrors('act');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $admin->id,
+            'is_active' => true,
+        ]);
     }
 
     public function test_admin_can_delete_user(): void
