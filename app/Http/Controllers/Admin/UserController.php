@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Services\CompetencyAssessmentSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,31 +14,14 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
-    private const ROLE_IDS = [
-        'admin' => 0,
-        'supervisor' => 1,
-        'dept_head' => 2,
-        'manager_dept' => 2,
-        'employee' => 3,
-        'hr' => 4,
-        'dean' => 5,
-        'manager' => 5,
-    ];
-
-    public function __construct(private CompetencyAssessmentSyncService $competencyAssessmentSync)
-    {
-    }
-
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedData($request);
 
-        $user = User::create([
+        User::create([
             ...$this->userAttributes($data),
             'password' => Hash::make(Str::password(32)),
         ]);
-
-        $this->competencyAssessmentSync->syncUser($user);
 
         return back()->with('success', 'บันทึกผู้ใช้เรียบร้อยแล้ว');
     }
@@ -49,7 +31,6 @@ class UserController extends Controller
         $data = $this->validatedData($request, $user);
 
         $user->update($this->userAttributes($data));
-        $this->competencyAssessmentSync->syncUser($user->fresh());
 
         return back()->with('success', 'อัปเดตผู้ใช้เรียบร้อยแล้ว');
     }
@@ -76,6 +57,12 @@ class UserController extends Controller
 
     private function validatedData(Request $request, ?User $user = null): array
     {
+        $request->merge([
+            'r' => $this->normalizeRoleKey((string) $request->input('r', '')),
+        ]);
+
+        $roleKeys = DB::table('roles')->pluck('role_key')->all();
+
         $data = $request->validate([
             'sso' => [
                 'required',
@@ -100,7 +87,7 @@ class UserController extends Controller
             'd' => ['required', 'string', 'max:255'],
             'p' => ['required', 'string', 'max:120'],
             'l' => ['required', 'string', 'max:120'],
-            'r' => ['required', Rule::in(array_keys(self::ROLE_IDS))],
+            'r' => ['required', Rule::in($roleKeys)],
             'sup' => ['nullable', 'string', 'max:255'],
             'evaluator2' => ['nullable', 'string', 'max:255'],
             'evaluator3' => ['nullable', 'string', 'max:255'],
@@ -114,10 +101,15 @@ class UserController extends Controller
 
     private function userAttributes(array $data): array
     {
-        $roleKey = match ($data['r']) {
-            'manager' => 'dean',
-            default => $data['r'],
-        };
+        $roleKey = $this->normalizeRoleKey($data['r']);
+        $role = DB::table('roles')->where('role_key', $roleKey)->first(['role_id', 'role_key']);
+
+        if (! $role) {
+            throw ValidationException::withMessages([
+                'r' => 'กรุณาเลือกบทบาทในระบบที่กำหนดไว้',
+            ]);
+        }
+
         $name = trim($data['fn'].' '.$data['ln']);
 
         return [
@@ -137,8 +129,8 @@ class UserController extends Controller
             'level' => $data['l'] ?? null,
             'position_id' => $data['_position_id'],
             'level_id' => $data['_level_id'],
-            'role_id' => self::ROLE_IDS[$roleKey],
-            'role_key' => $roleKey,
+            'role_id' => $role->role_id,
+            'role_key' => $role->role_key,
             'supervisor' => $data['sup'] ?? null,
             'evaluator2' => $data['evaluator2'] ?? null,
             'evaluator3' => $data['evaluator3'] ?? null,
@@ -227,5 +219,14 @@ class UserController extends Controller
     private function jobFamilyNameFromDepartment(string $department): string
     {
         return trim(explode(' > ', $department)[0] ?? '');
+    }
+
+    private function normalizeRoleKey(string $roleKey): string
+    {
+        return match ($roleKey) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => $roleKey,
+        };
     }
 }

@@ -17,8 +17,7 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        // ตรวจสอบว่า User ล็อกอินอยู่หรือไม่ และดึง role_id ออกมา
-        $role = $this->normalizeRoleKey(auth()->user()->role_key ?: $this->roleKeyFromId(auth()->user()->role_id));
+        $role = $this->roleKeyForUser(auth()->user());
         $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
             'id' => $type->id,
             'code' => $type->code,
@@ -26,7 +25,7 @@ class DashboardController extends Controller
             'desc' => $type->description,
         ]);
         $competencies = $this->competencyPayload();
-        $users = User::orderBy('name')->get()->map(fn (User $user) => $this->dashboardUserPayload($user));
+        $users = User::with('role')->orderBy('name')->get()->map(fn (User $user) => $this->dashboardUserPayload($user));
         $activeCycleName = 'รอบประเมินปัจจุบัน';
         $learningMethods = DB::table('learning_method_types')
             ->where('is_active', true)
@@ -55,6 +54,7 @@ class DashboardController extends Controller
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
                 'users' => $users,
+                'roles' => $this->rolesPayload(),
                 'competencyTypes' => $competencyTypes,
                 'competencies' => $competencies,
                 ...$structureData,
@@ -126,10 +126,13 @@ class DashboardController extends Controller
     private function dashboardUserPayload(User $user): array
     {
         $department = $this->currentDepartmentForUser($user);
-        $structureIssues = [
-            ...$this->structureIssuesForUser($user, $department),
-            ...$this->reportingLineIssuesForUser($user),
-        ];
+        $roleKey = $this->roleKeyForUser($user);
+        $structureIssues = $roleKey === 'admin'
+            ? []
+            : [
+                ...$this->structureIssuesForUser($user, $department),
+                ...$this->reportingLineIssuesForUser($user),
+            ];
 
         return [
             'db_id' => $user->id,
@@ -149,7 +152,7 @@ class DashboardController extends Controller
             'l' => $user->level ?: '',
             'position_id' => $user->position_id,
             'level_id' => $user->level_id,
-            'r' => $user->role_key ?: $this->roleKeyFromId($user->role_id),
+            'r' => $roleKey,
             'sup' => $user->supervisor ?: '',
             'evaluator2' => $user->evaluator2 ?: '',
             'evaluator3' => $user->evaluator3 ?: '',
@@ -277,9 +280,9 @@ class DashboardController extends Controller
 
     private function reportingLineIssuesForUser(User $user): array
     {
-        $roleKey = $user->role_key ?: $this->roleKeyFromId($user->role_id);
+        $roleKey = $this->roleKeyForUser($user);
 
-        if (in_array($roleKey, ['dean', 'manager'], true)) {
+        if (in_array($roleKey, ['admin', 'dean'], true)) {
             return [];
         }
 
@@ -839,15 +842,31 @@ class DashboardController extends Controller
 
     private function roleKeyFromId(int $roleId): string
     {
-        return match ($roleId) {
-            0 => 'admin',
-            1 => 'supervisor',
-            2 => 'dept_head',
-            3 => 'employee',
-            4 => 'hr',
-            5 => 'dean',
-            default => 'employee',
-        };
+        $roleKey = DB::table('roles')->where('role_id', $roleId)->value('role_key');
+
+        return $roleKey ? $this->normalizeRoleKey($roleKey) : 'employee';
+    }
+
+    private function roleKeyForUser(User $user): string
+    {
+        $roleKey = $user->relationLoaded('role')
+            ? $user->role?->role_key
+            : DB::table('roles')->where('role_id', $user->role_id)->value('role_key');
+
+        return $this->normalizeRoleKey($roleKey ?: ($user->role_key ?: $this->roleKeyFromId($user->role_id)));
+    }
+
+    private function rolesPayload()
+    {
+        return DB::table('roles')
+            ->orderBy('role_id')
+            ->get(['role_id', 'role_key', 'name_th', 'name_en'])
+            ->map(fn (object $role) => [
+                'id' => $role->role_id,
+                'key' => $role->role_key,
+                'label' => $role->name_th,
+                'labelEn' => $role->name_en,
+            ]);
     }
 
     private function learningCatalogItems()
