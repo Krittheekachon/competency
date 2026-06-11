@@ -5,18 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class MockSsoController extends Controller
 {
     public function showLogin()
     {
-        $users = User::orderBy('role_id')
+        $users = User::with('role')
+            ->orderBy('role_id')
             ->orderBy('name')
             ->get()
             ->map(fn (User $user) => [
                 'id'       => $user->sso ?? (string) $user->id,
                 'name'     => ($user->title ?? '') . $user->name,
-                'role'     => $user->role_key,
+                'role'     => $this->roleKeyForUser($user),
                 'workline' => $user->workline ?? '',
                 'division' => $user->division ?? '',
                 'position' => $user->position ?? '',
@@ -40,5 +42,14 @@ class MockSsoController extends Controller
         Auth::login($user);
 
         return redirect()->route('dashboard');
+    }
+
+    private function roleKeyForUser(User $user): string
+    {
+        if (Schema::hasColumn('users', 'role_key') && $user->role_key) {
+            return $user->role_key;
+        }
+
+        return $user->role?->role_key ?? $user->role?->key ?? 'employee';
     }
 }

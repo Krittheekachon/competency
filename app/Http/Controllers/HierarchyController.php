@@ -5,15 +5,34 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HierarchyController extends Controller
 {
     // ดึงสายการบังคับบัญชาทั้งหมด
     public function index()
     {
-        $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'supervisor', 'evaluator2', 'department', 'position')
-            ->where('is_active', true)
-            ->get();
+        if (Schema::hasColumn('users', 'role_key')) {
+            $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'supervisor', 'evaluator2', 'department', 'position')
+                ->where('is_active', true)
+                ->get();
+        } else {
+            $users = DB::table('users')
+                ->leftJoin('roles', 'users.role_id', '=', 'roles.'.$this->roleIdColumn())
+                ->where('users.is_active', true)
+                ->select(
+                    'users.sso',
+                    'users.name',
+                    'users.first_name_th',
+                    'users.last_name_th',
+                    DB::raw('roles.'.$this->roleKeyColumn().' as role_key'),
+                    'users.supervisor',
+                    'users.evaluator2',
+                    'users.department',
+                    'users.position',
+                )
+                ->get();
+        }
 
         return response()->json($users);
     }
@@ -21,10 +40,26 @@ class HierarchyController extends Controller
     // ดึงรายชื่อตาม role (ไว้ใช้ใน dropdown)
     public function byRole(string $roleKey)
     {
-        $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'position')
-            ->where('role_key', $roleKey)
-            ->where('is_active', true)
-            ->get();
+        if (Schema::hasColumn('users', 'role_key')) {
+            $users = User::select('sso', 'name', 'first_name_th', 'last_name_th', 'role_key', 'position')
+                ->where('role_key', $roleKey)
+                ->where('is_active', true)
+                ->get();
+        } else {
+            $users = DB::table('users')
+                ->join('roles', 'users.role_id', '=', 'roles.'.$this->roleIdColumn())
+                ->where('roles.'.$this->roleKeyColumn(), $roleKey)
+                ->where('users.is_active', true)
+                ->select(
+                    'users.sso',
+                    'users.name',
+                    'users.first_name_th',
+                    'users.last_name_th',
+                    DB::raw('roles.'.$this->roleKeyColumn().' as role_key'),
+                    'users.position',
+                )
+                ->get();
+        }
 
         return response()->json($users);
     }
@@ -73,5 +108,15 @@ class HierarchyController extends Controller
         }
 
         return response()->json(['message' => 'OrgSup updated']);
+    }
+
+    private function roleKeyColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
+    }
+
+    private function roleIdColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
     }
 }

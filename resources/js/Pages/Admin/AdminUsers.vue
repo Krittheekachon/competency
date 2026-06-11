@@ -268,6 +268,21 @@ watch(positionOptions, (options) => {
 });
 
 const roleBadge = (role?: string): RoleBadge => {
+  if (['dept_head', 'manager_dept'].includes(role || '')) {
+    return {
+      label: 'หัวหน้างาน',
+      className: 'bg',
+      style: { background: '#fff7ed', color: '#c2410c' },
+    };
+  }
+  if (role === 'supervisor') {
+    return {
+      label: 'ผู้บังคับบัญชา',
+      className: 'bg',
+      style: { background: '#f0f9ff', color: '#0284c7' },
+    };
+  }
+
   switch (role) {
     case 'admin':
       return { label: 'ผู้ดูแลระบบ', className: 'bp' };
@@ -280,14 +295,14 @@ const roleBadge = (role?: string): RoleBadge => {
         className: 'bg',
         style: { background: '#e0f2fe', color: '#0369a1' },
       };
-    case 'supervisor':
     case 'dept_head':
+    case 'manager_dept':
       return {
         label: 'หัวหน้างาน',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
-    case 'manager_dept':
+    case 'supervisor':
       return {
         label: 'ผู้บังคับบัญชา',
         className: 'bg',

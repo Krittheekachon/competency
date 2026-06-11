@@ -2,8 +2,9 @@
   admin: { lbl: "ผู้ดูแลระบบ", name: "วิชัย ระบบดี", av: "ว", pos: "ผู้ดูแลระบบคณะ", col: "#7C3AED" },
   hr: { lbl: "งานทรัพยากรบุคคล", name: "คุณมาลี ดีเสมอ", av: "ม", pos: "งานทรัพยากรบุคคล", col: "#2563EB" },
   employee: { lbl: "บุคลากร", name: "สมชาย มีสุข", av: "ส", pos: "นักวิชาการศึกษา · สายสนับสนุน", col: "#0EA5A0" },
-  supervisor: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้างานสนับสนุนการศึกษาและวิชาการ", col: "#EA580C" },
-  manager_dept: { lbl: "ผู้บังคับบัญชา", name: "ผศ.ดร.ธนพล ไชยรักษ์", av: "ธ", pos: "รองคณบดีฝ่ายบริหาร", col: "#D97706" },
+  dept_head: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้างานสนับสนุนการศึกษาและวิชาการ", col: "#EA580C" },
+  supervisor: { lbl: "ผู้บังคับบัญชา", name: "ผศ.ดร.ธนพล ไชยรักษ์", av: "ธ", pos: "รองคณบดีฝ่ายบริหาร", col: "#D97706" },
+  manager_dept: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้างานสนับสนุนการศึกษาและวิชาการ", col: "#EA580C" },
   manager: { lbl: "ผู้บริหารคณะ", name: "รศ.ดร.กิตติพงศ์ แสงทอง", av: "ก", pos: "คณบดี", col: "#0F2D5B" }
 };
 
@@ -40,6 +41,25 @@ export const NAV_CONFIG = {
       ]
     }
   ],
+  dept_head: [
+    {
+      sec: "ของฉัน (บุคลากร)",
+      items: [
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+      ]
+    },
+    {
+      sec: "จัดการทีม",
+      items: [
+        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
+      ]
+    }
+  ],
   manager_dept: [
     {
       sec: "ของฉัน (บุคลากร)",
@@ -54,9 +74,8 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "sup-assess", ic: "", lb: "ประเมินลูกน้อง" },
         { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
-        { id: "sup-idp", ic: "", lb: "IDP & ติดตามทีม" }
+        { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
   ],

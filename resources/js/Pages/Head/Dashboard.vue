@@ -13,16 +13,21 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
-const normalizeRoleKey = (role) => role === 'dept_head' ? 'manager_dept' : role;
+const normalizeRoleKey = (role) => ({
+    manager_dept: 'dept_head',
+    manager: 'dean',
+}[role] || role || 'dept_head');
+const defaultPageForRole = (role) => normalizeRoleKey(role) === 'supervisor' ? 'dh-assess' : 'sup-gap';
 
 const page = usePage();
 const users = ref(clone(page.props.users || []));
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
     : null);
+const initialRoleKey = normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || 'dept_head');
 const rememberedHeadState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || 'sup-gap',
+    activePage: requestedPage.value || defaultPageForRole(initialRoleKey),
 }, 'HeadDashboardStable');
 
 const showSidebar = computed({
@@ -32,7 +37,7 @@ const showSidebar = computed({
     },
 });
 const activePage = computed({
-    get: () => rememberedHeadState.value.activePage || 'sup-gap',
+    get: () => rememberedHeadState.value.activePage || defaultPageForRole(initialRoleKey),
     set: (value) => {
         rememberedHeadState.value.activePage = value;
     },
@@ -59,9 +64,10 @@ const learningMethods = ref([
     },
 ]);
 
-const authRoleKey = computed(() => normalizeRoleKey(page.props.auth?.user?.role_key || 'manager_dept'));
-const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.manager_dept || ROLES_CONFIG.supervisor);
-const navSections = computed(() => [
+const authRoleKey = computed(() => normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
+const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.dept_head || ROLES_CONFIG.supervisor);
+const navSections = computed(() => {
+    const sections = [
     {
         sec: 'ของฉัน (บุคลากร)',
         items: [
@@ -79,7 +85,20 @@ const navSections = computed(() => [
             { id: 'dh-idp', ic: '', lb: 'IDP & ติดตามทีม' },
         ],
     },
-]);
+    ];
+
+    if (authRoleKey.value !== 'supervisor') return sections;
+
+    return sections.map((section, index) => index === 1
+        ? {
+            ...section,
+            items: [
+                { id: 'dh-assess', ic: '', lb: 'อนุมัติผลการประเมิน' },
+                ...section.items,
+            ],
+        }
+        : section);
+});
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
@@ -91,12 +110,15 @@ const implementedPages = new Set([
     'emp-idp-detail',
     'sup-gap',
     'dh-idp',
+    'dh-assess',
 ]);
 
 const currentUser = computed(() =>
-    users.value.find((user) => user.sso === authUserId.value)
+    page.props.currentUser
+    || users.value.find((user) => String(user.db_id || '') === authUserId.value)
+    || users.value.find((user) => user.sso === authUserId.value)
     || users.value.find((user) => user.n === authUserName.value)
-    || users.value.find((user) => ['supervisor', 'manager_dept', 'dept_head'].includes(user.r))
+    || users.value.find((user) => normalizeRoleKey(user.r) === authRoleKey.value)
     || {
         sso: authUserId.value || 'current-head',
         t: '',
@@ -220,14 +242,52 @@ const MOCK_TEAM = [
     },
 ];
 
+const personNames = (user) => [
+    user?.n,
+    `${user?.t || ''}${user?.n || ''}`,
+].map((name) => String(name || '').trim()).filter(Boolean);
+const isSamePersonName = (storedName, user) => personNames(user).includes(String(storedName || '').trim());
+const isAssignedReviewer = (user, reviewer) => {
+    const reviewerId = Number(reviewer?.db_id);
+    const reviewerRole = normalizeRoleKey(reviewer?.r || authRoleKey.value);
+
+    if (reviewerRole === 'dept_head') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_1) === reviewerId)
+            || isSamePersonName(user.sup, reviewer)
+        );
+    }
+
+    if (reviewerRole === 'supervisor') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_2) === reviewerId)
+            || isSamePersonName(user.evaluator2, reviewer)
+        );
+    }
+
+    if (reviewerRole === 'dean') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_3) === reviewerId)
+            || isSamePersonName(user.evaluator3, reviewer)
+        );
+    }
+
+    return (
+        (reviewerId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === reviewerId))
+        || isSamePersonName(user.sup, reviewer)
+        || isSamePersonName(user.evaluator2, reviewer)
+        || isSamePersonName(user.evaluator3, reviewer)
+    );
+};
+const isReviewerRole = (role) => ['supervisor', 'manager_dept', 'dept_head', 'manager', 'dean'].includes(role);
+
 const teamMembers = computed(() => {
-    const real = users.value.filter((user) =>
+    return users.value.filter((user) =>
         user.sso !== currentUser.value.sso
-        && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
-        && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
+        && isAssignedReviewer(user, currentUser.value)
+        && !isReviewerRole(user.r)
         && user.act !== false,
     );
-    return real.length > 0 ? real : MOCK_TEAM;
 });
 // const teamMembers = computed(() => {
 //     return users.value.filter((user) =>
@@ -593,7 +653,7 @@ watchEffect(() => {
     }
 
     if (!implementedPages.has(activePage.value)) {
-        activePage.value = 'sup-gap';
+        activePage.value = defaultPageForRole(authRoleKey.value);
     }
 
     if (page.props.users?.length) {

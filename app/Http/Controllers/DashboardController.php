@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia; 
 use Inertia\Response;
 
@@ -62,8 +63,16 @@ class DashboardController extends Controller
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
-            'supervisor' => Inertia::render('Super/Dashboard', ['users' => $users]),
-            'dept_head' => Inertia::render('Head/Dashboard', ['users' => $users]),
+            'supervisor' => Inertia::render('Head/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'supervisor',
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+            ]),
+            'dept_head' => Inertia::render('Head/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'dept_head',
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+            ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
@@ -158,6 +167,7 @@ class DashboardController extends Controller
             'supervisor_id_1' => $user->supervisor_id_1,
             'supervisor_id_2' => $user->supervisor_id_2,
             'evaluator3' => $user->evaluator3 ?: '',
+            'supervisor_id_3' => $user->supervisor_id_3,
             'act' => (bool) $user->is_active,
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
@@ -245,8 +255,12 @@ class DashboardController extends Controller
                     ->where('name', $user->position)
                     ->exists()
                 : false;
+            $roleKey = $this->roleKeyForUser($user);
+            $usesJobFamilyAsPosition = $roleKey === 'dean'
+                && $jobFamilyName !== ''
+                && $user->position === $jobFamilyName;
 
-            if (!$positionExists) {
+            if (!$positionExists && !$usesJobFamilyAsPosition) {
                 $issues[] = 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน';
             }
         } else {
@@ -288,11 +302,11 @@ class DashboardController extends Controller
             return [];
         }
 
-        if ($roleKey === 'supervisor' && trim((string) $user->evaluator2) === '') {
+        if ($roleKey === 'dept_head' && trim((string) $user->evaluator2) === '') {
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
-        if (in_array($roleKey, ['manager_dept', 'dept_head'], true) && trim((string) $user->evaluator3) === '') {
+        if ($roleKey === 'supervisor' && trim((string) $user->evaluator3) === '') {
             return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
@@ -898,31 +912,58 @@ class DashboardController extends Controller
 
     private function roleKeyFromId(int $roleId): string
     {
-        $roleKey = DB::table('roles')->where('role_id', $roleId)->value('role_key');
+        $roleKey = DB::table('roles')->where($this->roleIdColumn(), $roleId)->value($this->roleKeyColumn());
 
         return $roleKey ? $this->normalizeRoleKey($roleKey) : 'employee';
     }
 
     private function roleKeyForUser(User $user): string
     {
+        $roleKeyColumn = $this->roleKeyColumn();
         $roleKey = $user->relationLoaded('role')
-            ? $user->role?->role_key
-            : DB::table('roles')->where('role_id', $user->role_id)->value('role_key');
+            ? ($user->role?->{$roleKeyColumn} ?? $user->role?->role_key ?? $user->role?->key)
+            : DB::table('roles')->where($this->roleIdColumn(), $user->role_id)->value($roleKeyColumn);
+        $userRoleKey = Schema::hasColumn('users', 'role_key') ? $user->role_key : null;
 
-        return $this->normalizeRoleKey($roleKey ?: ($user->role_key ?: $this->roleKeyFromId($user->role_id)));
+        return $this->normalizeRoleKey($roleKey ?: ($userRoleKey ?: $this->roleKeyFromId($user->role_id)));
     }
 
     private function rolesPayload()
     {
+        $roleIdColumn = $this->roleIdColumn();
+        $roleKeyColumn = $this->roleKeyColumn();
+
         return DB::table('roles')
-            ->orderBy('role_id')
-            ->get(['role_id', 'role_key', 'name_th', 'name_en'])
-            ->map(fn (object $role) => [
-                'id' => $role->role_id,
-                'key' => $role->role_key,
-                'label' => $role->name_th,
-                'labelEn' => $role->name_en,
-            ]);
+            ->orderBy($roleIdColumn)
+            ->get([$roleIdColumn, $roleKeyColumn, 'name_th', 'name_en'])
+            ->map(function (object $role) use ($roleIdColumn, $roleKeyColumn) {
+                $key = $this->normalizeRoleKey((string) $role->{$roleKeyColumn});
+                $thaiLabels = [
+                    'supervisor' => 'ผู้บังคับบัญชา',
+                    'dept_head' => 'หัวหน้างาน',
+                    'employee' => 'บุคลากร',
+                    'hr' => 'งานทรัพยากรบุคคล',
+                    'admin' => 'ผู้ดูแลระบบ',
+                    'dean' => 'ผู้บริหารคณะ',
+                ];
+
+                return [
+                    'id' => $role->{$roleIdColumn},
+                    'key' => $key,
+                    'label' => $thaiLabels[$key] ?? $role->name_th,
+                    'labelEn' => $role->name_en,
+                ];
+            });
+    }
+
+    private function roleKeyColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
+    }
+
+    private function roleIdColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
     }
 
     private function learningCatalogItems()

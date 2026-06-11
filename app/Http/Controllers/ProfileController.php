@@ -7,7 +7,9 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redirect;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -84,7 +86,7 @@ class ProfileController extends Controller
             'd' => $user->department ?: '',
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
-            'r' => $this->normalizeRoleKey($user->role_key ?: $this->roleKeyFromId($user->role_id)),
+            'r' => $this->normalizeRoleKey($this->roleKeyForUser($user)),
             'sup' => $user->supervisor ?: '',
             'evaluator2' => $user->evaluator2 ?: '',
             'photo' => $user->profile_photo ?: '',
@@ -94,21 +96,38 @@ class ProfileController extends Controller
 
     private function roleKeyFromId(?int $roleId): string
     {
-        return match ($roleId) {
-            0 => 'admin',
-            1 => 'supervisor',
-            2 => 'dept_head',
-            3 => 'employee',
-            4 => 'hr',
-            5 => 'dean',
-            default => 'employee',
-        };
+        if (! $roleId) {
+            return 'employee';
+        }
+
+        $roleKey = DB::table('roles')->where($this->roleIdColumn(), $roleId)->value($this->roleKeyColumn());
+
+        return $roleKey ?: 'employee';
+    }
+
+    private function roleKeyForUser($user): string
+    {
+        if (Schema::hasColumn('users', 'role_key') && $user->role_key) {
+            return $user->role_key;
+        }
+
+        return $this->roleKeyFromId($user->role_id);
+    }
+
+    private function roleKeyColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
+    }
+
+    private function roleIdColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
     }
 
     private function normalizeRoleKey(string $roleKey): string
     {
         return match ($roleKey) {
-            'dept_head' => 'manager_dept',
+            'manager_dept' => 'dept_head',
             'dean' => 'manager',
             default => $roleKey,
         };

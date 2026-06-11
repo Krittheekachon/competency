@@ -296,6 +296,41 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_create_dean_without_master_position(): void
+    {
+        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $this->createStructure('สายงานบริหาร', 'คณบดี', null, 'บริหาร');
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'sso' => 'dean-no-position',
+                't' => 'รศ.',
+                'fn' => 'คณบดี',
+                'ln' => 'ทดสอบ',
+                'fe' => 'Dean',
+                'le' => 'User',
+                'g' => 'ชาย',
+                'em' => 'dean-no-position@example.com',
+                'ph' => null,
+                'w' => 'สายงานบริหาร',
+                'd' => 'คณบดี',
+                'p' => '',
+                'l' => 'บริหาร',
+                'r' => 'dean',
+                'sup' => null,
+                'evaluator2' => null,
+                'act' => true,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('users', [
+            'sso' => 'dean-no-position',
+            'position' => 'คณบดี',
+            'position_id' => null,
+            'role_key' => 'dean',
+        ]);
+    }
+
     public function test_admin_can_toggle_user_status(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);

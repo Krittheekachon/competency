@@ -88,6 +88,7 @@ const userForm = ref({
     supervisor_id_1: '',
     supervisor_id_2: '',
     evaluator3: '',
+    supervisor_id_3: '',
     act: true,
     structureStatus: 'ok',
     structureIssues: [],
@@ -113,8 +114,8 @@ const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const roleOptions = computed(() => page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
-    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
-    { id: 2, key: 'dept_head', label: 'ผู้บังคับบัญชา' },
+    { id: 1, key: 'supervisor', label: 'ผู้บังคับบัญชา' },
+    { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -220,6 +221,51 @@ watchEffect(() => {
 });
 
 watchEffect(() => {
+    if (Array.isArray(page.props.worklines)) {
+        worklines.value = clone(page.props.worklines);
+    }
+
+    if (page.props.jobFamiliesByWorkline && typeof page.props.jobFamiliesByWorkline === 'object') {
+        jobFamiliesByWorkline.value = clone(page.props.jobFamiliesByWorkline);
+    }
+
+    if (Array.isArray(page.props.academicJobFamilies)) {
+        academicPositions.value = clone(page.props.academicJobFamilies);
+    }
+
+    if (Array.isArray(page.props.adminJobFamilies)) {
+        adminDepts.value = clone(page.props.adminJobFamilies);
+        adminPositions.value = clone(page.props.adminJobFamilies);
+    }
+
+    if (page.props.supportPositionGroups && typeof page.props.supportPositionGroups === 'object') {
+        supportPositionGroups.value = clone(page.props.supportPositionGroups);
+    }
+
+    if (page.props.supportOrg && typeof page.props.supportOrg === 'object') {
+        supportOrg.value = clone(page.props.supportOrg);
+    } else {
+        supportOrg.value = supportOrgFromGroups(supportPositionGroups.value);
+    }
+
+    if (page.props.levelsByWorkline && typeof page.props.levelsByWorkline === 'object') {
+        levelsByWorkline.value = clone(page.props.levelsByWorkline);
+    }
+
+    if (page.props.levelExpectationsByWorkline && typeof page.props.levelExpectationsByWorkline === 'object') {
+        levelExpectationsByWorkline.value = clone(page.props.levelExpectationsByWorkline);
+    }
+
+    if (page.props.levelsByJobFamily && typeof page.props.levelsByJobFamily === 'object') {
+        levelsByJobFamily.value = clone(page.props.levelsByJobFamily);
+    }
+
+    if (page.props.levelExpectationsByJobFamily && typeof page.props.levelExpectationsByJobFamily === 'object') {
+        levelExpectationsByJobFamily.value = clone(page.props.levelExpectationsByJobFamily);
+    }
+});
+
+watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
         requestedPage.value = null;
@@ -272,6 +318,7 @@ const evaluatorOptions = computed(() =>
             key: user.db_id,
             value: Number(user.db_id),
             name: user.n,
+            displayName: `${user.t || ''}${user.n}`,
             label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
             searchText: [
                 user.db_id,
@@ -305,6 +352,15 @@ const supervisorIdFromUser = (user, idKey, nameKey) => {
 };
 const evaluatorFromId = (id) =>
     evaluatorOptions.value.find((person) => person.value === selectedEvaluatorId(id)) || null;
+const reviewerOption = (user) =>
+    evaluatorOptions.value.find((person) => person.value === Number(user.db_id))
+    || {
+        key: user.db_id,
+        value: Number(user.db_id),
+        name: user.n,
+        displayName: `${user.t || ''}${user.n}`,
+        label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+    };
 const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
     const needle = query.trim().toLowerCase();
     const selectedId = selectedEvaluatorId(selectedValue);
@@ -323,27 +379,28 @@ const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
 const supervisorOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => normalizeUserRoleKey(user.r) === 'supervisor')
-        .map(personOption),
+        .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
+        .map(reviewerOption),
 );
 
 const managerDeptOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
-        .map(personOption),
+        .filter((user) => normalizeUserRoleKey(user.r) === 'supervisor')
+        .map(reviewerOption),
 );
 
 const deanOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
         .filter((user) => normalizeUserRoleKey(user.r) === 'dean')
-        .map(personOption),
+        .map(reviewerOption),
 );
 
 const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
-const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator2 = computed(() => !['admin', 'supervisor', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -377,7 +434,7 @@ const syncOrgSupervisors = () => {
 
     if (isSupportWorkline.value) {
         form.sup = findUserName((user) =>
-            user.r === 'supervisor'
+            normalizeUserRoleKey(user.r) === 'dept_head'
             && user.d
             && form.d
             && (
@@ -387,7 +444,7 @@ const syncOrgSupervisors = () => {
             ),
         );
         form.evaluator2 = findUserName((user) =>
-            user.r === 'manager_dept'
+            normalizeUserRoleKey(user.r) === 'supervisor'
             && user.d
             && form.job
             && user.d.startsWith(form.job),
@@ -397,7 +454,7 @@ const syncOrgSupervisors = () => {
 
     if (isAcademicWorkline.value) {
         form.sup = findUserName((user) =>
-            user.r === 'supervisor'
+            normalizeUserRoleKey(user.r) === 'dept_head'
             && user.w === form.w
             && (user.p === form.job || user.d === form.job),
         );
@@ -442,7 +499,7 @@ const handleDeptChange = () => {
 
 const handleJobChange = () => {
     userForm.value.unit = '';
-    userForm.value.p = '';
+    userForm.value.p = isDeanRole.value ? userForm.value.job : '';
     userForm.value.l = '';
     syncOrgPath();
 };
@@ -462,9 +519,16 @@ const handlePositionChange = () => {
 };
 
 const handleRoleChange = () => {
+    if (isDeanRole.value && userForm.value.job) {
+        userForm.value.p = userForm.value.job;
+    }
+
     if (!canPickEvaluator1.value) userForm.value.sup = '';
     if (!canPickEvaluator2.value) userForm.value.evaluator2 = '';
     if (!canPickEvaluator3.value) userForm.value.evaluator3 = '';
+    if (!canPickEvaluator1.value) userForm.value.supervisor_id_1 = '';
+    if (!canPickEvaluator2.value) userForm.value.supervisor_id_2 = '';
+    if (!canPickEvaluator3.value) userForm.value.supervisor_id_3 = '';
 };
 
 const resetUserForm = (data = null) => {
@@ -499,6 +563,7 @@ const resetUserForm = (data = null) => {
         supervisor_id_1: supervisorIdFromUser(data, 'supervisor_id_1', 'sup'),
         supervisor_id_2: supervisorIdFromUser(data, 'supervisor_id_2', 'evaluator2'),
         evaluator3: data?.evaluator3 || '',
+        supervisor_id_3: supervisorIdFromUser(data, 'supervisor_id_3', 'evaluator3'),
         act: data?.act !== false,
         structureStatus: data?.structureStatus || 'ok',
         structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
@@ -518,6 +583,10 @@ const handleEvaluator2Change = () => {
     if (userForm.value.supervisor_id_2 && userForm.value.supervisor_id_2 === selectedEvaluatorId(userForm.value.supervisor_id_1)) {
         userForm.value.supervisor_id_1 = '';
     }
+};
+
+const handleEvaluator3Change = () => {
+    userForm.value.supervisor_id_3 = selectedEvaluatorId(userForm.value.supervisor_id_3);
 };
 
 const openModal = (type, data = null) => {
@@ -545,6 +614,9 @@ const saveUser = () => {
     }
     const form = userForm.value;
     syncOrgPath();
+    if (isDeanRole.value && form.job) {
+        form.p = form.job;
+    }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
     if (!form.sso.trim() || !thaiName) {
@@ -552,12 +624,12 @@ const saveUser = () => {
         return;
     }
 
-    if (!form.w || !form.job || !form.p || !form.l) {
+    if (!form.w || !form.job || (!isDeanRole.value && !form.p) || !form.l) {
         alert('กรุณาเลือกสายงาน กลุ่มงาน ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
         return;
     }
 
-    if (!positionOptions.value.includes(form.p)) {
+    if (!isDeanRole.value && !positionOptions.value.includes(form.p)) {
         alert('กรุณาให้ Admin เพิ่มตำแหน่งงานในกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
@@ -575,6 +647,7 @@ const saveUser = () => {
 
     const supervisor1 = evaluatorFromId(form.supervisor_id_1);
     const supervisor2 = evaluatorFromId(form.supervisor_id_2);
+    const supervisor3 = evaluatorFromId(form.supervisor_id_3);
 
     const nextUser = {
         ...form,
@@ -593,11 +666,14 @@ const saveUser = () => {
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
-        p: form.p.trim(),
+        p: (isDeanRole.value ? form.job : form.p).trim(),
         l: form.l.trim(),
-        sup: form.sup.trim(),
-        evaluator2: form.evaluator2.trim(),
-        evaluator3: form.evaluator3.trim(),
+        sup: supervisor1?.displayName || '',
+        evaluator2: supervisor2?.displayName || '',
+        evaluator3: supervisor3?.displayName || '',
+        supervisor_id_1: selectedEvaluatorId(form.supervisor_id_1),
+        supervisor_id_2: selectedEvaluatorId(form.supervisor_id_2),
+        supervisor_id_3: selectedEvaluatorId(form.supervisor_id_3),
         act: Boolean(form.act),
     };
 
@@ -926,7 +1002,7 @@ const logout = () => router.post(route('logout'));
                 </div>
 
                 <div v-if="!orgEditMode && userForm.job" class="modal-grid">
-                    <div class="fg">
+                    <div v-if="!isDeanRole" class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
                         <select
                             v-model="userForm.p"
@@ -950,7 +1026,14 @@ const logout = () => router.post(route('logout'));
                             กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดผู้ใช้
                         </div>
                     </div>
-                    <div v-if="userForm.p" class="fg">
+                    <div v-else class="fg">
+                        <label class="lbl">ตำแหน่ง</label>
+                        <input :value="userForm.job" class="inp modal-input" disabled />
+                        <div class="modal-help">
+                            บทบาทคณบดีใช้กลุ่มงานเป็นตำแหน่งโดยอัตโนมัติ
+                        </div>
+                    </div>
+                    <div v-if="userForm.p || isDeanRole" class="fg">
                         <label class="lbl req">ระดับตำแหน่ง</label>
                         <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption">
                             <option v-if="levelOptions.length" value="">— เลือกระดับตำแหน่ง —</option>
@@ -997,9 +1080,10 @@ const logout = () => router.post(route('logout'));
                             <span class="evaluator-state">{{ canPickEvaluator1 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
                         <select
-                            v-model="userForm.sup"
+                            v-model="userForm.supervisor_id_1"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator1"
+                            @change="handleSupervisorChange"
                         >
                             <option value="">
                                 {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
@@ -1027,9 +1111,10 @@ const logout = () => router.post(route('logout'));
                             <span class="evaluator-state">{{ canPickEvaluator2 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
                         <select
-                            v-model="userForm.evaluator2"
+                            v-model="userForm.supervisor_id_2"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator2"
+                            @change="handleEvaluator2Change"
                         >
                             <option value="">
                                 {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
@@ -1057,9 +1142,10 @@ const logout = () => router.post(route('logout'));
                             <span class="evaluator-state">{{ canPickEvaluator3 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
                         <select
-                            v-model="userForm.evaluator3"
+                            v-model="userForm.supervisor_id_3"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator3"
+                            @change="handleEvaluator3Change"
                         >
                             <option value="">
                                 {{ canPickEvaluator3 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}

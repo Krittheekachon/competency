@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Role;
 
 #[Fillable([
@@ -40,15 +41,20 @@ class User extends Authenticatable
 
     public function role()
     {
-        return $this->belongsTo(Role::class, 'role_id', 'role_id');
+        return $this->belongsTo(Role::class, 'role_id', Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id');
     }
 
     public function hasRole(string|array $roleKey): bool
     {
+        $currentRoleKey = $this->role_key
+            ?? $this->role?->role_key
+            ?? $this->role?->key
+            ?? null;
+
         if (is_array($roleKey)) {
-            return in_array($this->role_key, $roleKey);
+            return in_array($currentRoleKey, $roleKey, true);
         }
-        return $this->role_key === $roleKey;
+        return $currentRoleKey === $roleKey;
     }
 
     public function isAdmin(): bool      { return $this->hasRole('admin'); }

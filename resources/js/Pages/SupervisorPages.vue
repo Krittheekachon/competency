@@ -16,14 +16,14 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const supervisorMode = ['supervisor', 'manager_dept'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || currentUser.r === 'manager_dept';if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = u.sup === currentUser.n || u.evaluator2 === currentUser.n;const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const currentUserId = Number(currentUser.db_id);const currentUserNames = [currentUser.n, `${currentUser.t || ""}${currentUser.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);const isSamePersonName = (name: string) => currentUserNames.includes(String(name || "").trim());const isAssignedReviewer = (u: any) => currentUserId > 0 && [u.supervisor_id_1, u.supervisor_id_2, u.supervisor_id_3].some((id) => Number(id) === currentUserId) || isSamePersonName(u.sup) || isSamePersonName(u.evaluator2) || isSamePersonName(u.evaluator3);const supervisorMode = ['supervisor', 'manager_dept', 'dept_head'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี' || currentUser.r === 'dean' || currentUser.r === 'manager';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || ['manager_dept', 'dept_head'].includes(currentUser.r);if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = isAssignedReviewer(u);const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
         return reviewerAccess && (supervisorMode || matchesDept) && matchesSearch;
       });
 
-    const isLevelBoss = (u: any) => ['supervisor', 'manager_dept', 'manager'].includes(u.r);
+    const isLevelBoss = (u: any) => ['supervisor', 'manager_dept', 'dept_head', 'manager', 'dean'].includes(u.r);
     const heads = filteredUsers.filter((u) => isLevelBoss(u));
     const getEmployeeByGroup = (group: string, excludeBoss = false) => filteredUsers.filter((u) => {
       const parts = u.d.split(" > ");
@@ -72,7 +72,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     const [savedAt, setSavedAt] = useState("");
     const supervisorEmployee = filteredUsers.filter((u) =>
     u.sso !== currentUser.sso &&
-    !['manager_dept', 'manager'].includes(u.r) && (
+    !['manager_dept', 'dept_head', 'manager', 'dean'].includes(u.r) && (
     currentUser.r !== 'supervisor' || u.r !== 'supervisor')
     );
     const assessCounts = {
@@ -156,7 +156,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
     const submit = () => {
       if (!selectedEmployee.value) return;
       const isDean = currentUser.p === 'คณบดี';
-      const isDeptHead = currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || currentUser.r === 'manager_dept';
+      const isDeptHead = currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || ['manager_dept', 'dept_head'].includes(currentUser.r);
       const isUnitHead = currentUser.r === 'supervisor';
 
       if (!isDean && Object.keys(marks.value).length < mockComps.length) {
@@ -495,7 +495,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                 บันทึกผล
                             </button>
                             <button class={`btn ${saving.value ? 'btn-disabled' : 'btn-t'}`} onClick={submit} disabled={saving.value} style={{ justifyContent: 'center', minHeight: '44px', fontSize: '14px', fontWeight: 700, boxShadow: '0 4px 12px var(--blue-lt)', flex: "2 1 300px" }}>
-                                {saving.value ? "กำลังบันทึก..." : currentUser.p === 'คณบดี' ? " เซ็นอนุมัติการประเมิน" : currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || currentUser.r === 'manager_dept' ? " ยืนยันผลและส่งให้คณบดี" : " ส่งผลการประเมินให้หัวหน้าฝ่าย"}
+                                {saving.value ? "กำลังบันทึก..." : currentUser.p === 'คณบดี' ? " เซ็นอนุมัติการประเมิน" : currentUser.p.includes('รอง') || currentUser.p.includes('ผู้ช่วย') || ['manager_dept', 'dept_head'].includes(currentUser.r) ? " ยืนยันผลและส่งให้คณบดี" : " ส่งผลการประเมินให้หัวหน้าฝ่าย"}
                             </button>
                         </div>
                     </div>
@@ -550,11 +550,17 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     [],
     ["การทำงานเป็นทีม", "การใช้เทคโนโลยีดิจิทัล"]];
 
+    const currentUserId = Number(currentUser?.db_id);
+    const currentUserNames = [currentUser?.n, `${currentUser?.t || ""}${currentUser?.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);
+    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId) ||
+      currentUserNames.includes(String(user.sup || "").trim()) ||
+      currentUserNames.includes(String(user.evaluator2 || "").trim()) ||
+      currentUserNames.includes(String(user.evaluator3 || "").trim());
     const directGapPeople = users.filter((user) =>
     currentUser &&
-    user.sso !== currentUser.sso && (
-    user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
-    !["manager_dept", "manager"].includes(user.r) && (
+    user.sso !== currentUser.sso &&
+    isAssignedReviewer(user) &&
+    !["manager_dept", "dept_head", "manager", "dean"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
     const gapPeople = directGapPeople.map((user, index) => {
@@ -1088,11 +1094,17 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
     const [decisions, setDecisions] = useState<Record<string, SupervisorIDPDecision>>({});
     const [feedback, setFeedback] = useState<Record<string, string>>({});
 
+    const currentUserId = Number(currentUser?.db_id);
+    const currentUserNames = [currentUser?.n, `${currentUser?.t || ""}${currentUser?.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);
+    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId) ||
+      currentUserNames.includes(String(user.sup || "").trim()) ||
+      currentUserNames.includes(String(user.evaluator2 || "").trim()) ||
+      currentUserNames.includes(String(user.evaluator3 || "").trim());
     const directReports = users.filter((user) =>
     currentUser &&
-    user.sso !== currentUser.sso && (
-    user.evaluator2 === currentUser.n || user.sup === currentUser.n) &&
-    !["manager_dept", "manager"].includes(user.r) && (
+    user.sso !== currentUser.sso &&
+    isAssignedReviewer(user) &&
+    !["manager_dept", "dept_head", "manager", "dean"].includes(user.r) && (
     currentUser.r !== "supervisor" || user.r !== "supervisor")
     );
     const team = directReports.map((report, index) => {
