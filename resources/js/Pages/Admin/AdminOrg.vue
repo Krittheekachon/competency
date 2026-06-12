@@ -295,7 +295,7 @@
                   {{ roleBadge(user.r).label }}
                 </span>
                 <span v-if="hasSubordinates(user)" class="badge-sub">
-                  ผู้รับการประเมิน {{ subordinateCount(user) }} คน
+                  ต้องประเมิน {{ subordinateCount(user) }} คน
                 </span>
               </div>
               <div class="evaluator-summary">{{ evaluatorLine(user) }}</div>
@@ -309,16 +309,18 @@
                 type="button"
                 @click="pushDrillPath(user)"
               >
-                ดูลูกทีม
+                ดูผู้รับการประเมิน
               </button>
             </div>
           </article>
         </div>
 
         <div v-else class="empty-hierarchy">
-          <div class="empty-hierarchy-title">ยังไม่มีผู้รับการประเมินถัดไป</div>
+          <div class="empty-hierarchy-title">ยังไม่มีผู้รับการประเมิน</div>
           <div class="empty-hierarchy-text">
-            ไม่พบผู้ที่มีหัวหน้างานเป็น {{ drillPath[drillPath.length - 1]?.n }}
+            {{ drillPath.length
+              ? `ไม่พบผู้รับการประเมินของ ${drillPath[drillPath.length - 1]?.n}`
+              : 'ไม่พบผู้ที่ต้องประเมินบุคลากรตามเงื่อนไขนี้' }}
           </div>
           <button class="btn btn-s mt24" @click="popDrillPath(drillPath.length - 2)">ย้อนกลับหนึ่งระดับ</button>
         </div>
@@ -457,6 +459,7 @@
 import { computed, ref, watch } from 'vue';
 
 type User = {
+  db_id?: number | null;
   sso?: string;
   t?: string;
   n: string;
@@ -468,6 +471,9 @@ type User = {
   sup?: string;
   evaluator2?: string;
   evaluator3?: string;
+  supervisor_id_1?: number | null;
+  supervisor_id_2?: number | null;
+  supervisor_id_3?: number | null;
   act?: boolean;
 };
 
@@ -618,8 +624,8 @@ const listUsers = computed(() => {
 
 const currentHierarchyUsers = computed(() => {
   const scopeUsers = drillPath.value.length === 0
-    ? props.users
-    : props.users.filter((user) => user.sup === drillPath.value[drillPath.value.length - 1].n);
+    ? props.users.filter(hasSubordinates)
+    : subordinatesFor(drillPath.value[drillPath.value.length - 1]).map((assignment) => assignment.user);
 
   return scopeUsers.filter(matchesHierarchyFilters);
 });
@@ -745,8 +751,36 @@ const roleBadge = (role?: string): RoleBadge => {
   }
 };
 
-const hasSubordinates = (user: User) => props.users.some((subordinate) => subordinate.sup === user.n);
-const subordinateCount = (user: User) => props.users.filter((subordinate) => subordinate.sup === user.n).length;
+const displayNameForUser = (user: User) => `${user.t || ''}${user.n || ''}`.trim();
+const isAssignedEvaluator = (subordinate: User, evaluator: User) => {
+  if (evaluator.db_id) {
+    return [subordinate.supervisor_id_1, subordinate.supervisor_id_2, subordinate.supervisor_id_3]
+      .some((id) => Number(id) === Number(evaluator.db_id));
+  }
+
+  const evaluatorNames = [evaluator.n, displayNameForUser(evaluator)].filter(Boolean);
+
+  return [subordinate.sup, subordinate.evaluator2, subordinate.evaluator3]
+    .some((name) => evaluatorNames.includes(name || ''));
+};
+const subordinatesFor = (user: User) => props.users
+  .filter((subordinate) => subordinate !== user && isAssignedEvaluator(subordinate, user))
+  .map((subordinate) => ({
+    user: subordinate,
+    levels: [
+      Number(subordinate.supervisor_id_1) === Number(user.db_id) || subordinate.sup === user.n || subordinate.sup === displayNameForUser(user)
+        ? 'ลำดับที่ 1'
+        : '',
+      Number(subordinate.supervisor_id_2) === Number(user.db_id) || subordinate.evaluator2 === user.n || subordinate.evaluator2 === displayNameForUser(user)
+        ? 'ลำดับที่ 2'
+        : '',
+      Number(subordinate.supervisor_id_3) === Number(user.db_id) || subordinate.evaluator3 === user.n || subordinate.evaluator3 === displayNameForUser(user)
+        ? 'ลำดับที่ 3'
+        : '',
+    ].filter(Boolean),
+  }));
+const hasSubordinates = (user: User) => subordinatesFor(user).length > 0;
+const subordinateCount = (user: User) => subordinatesFor(user).length;
 const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้างาน): ${user.sup || '—'} · คนที่ 2 (ผู้บังคับบัญชา): ${user.evaluator2 || '—'} · คนที่ 3 (คณบดี): ${user.evaluator3 || '—'}`;
 
 const popDrillPath = (index: number) => {

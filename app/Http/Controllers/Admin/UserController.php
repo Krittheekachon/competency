@@ -42,6 +42,12 @@ class UserController extends Controller
             'act' => ['required', 'boolean'],
         ]);
 
+        if ($request->user()?->is($user) && $data['act'] === false) {
+            throw ValidationException::withMessages([
+                'act' => 'ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่ได้',
+            ]);
+        }
+
         $user->update([
             'is_active' => $data['act'],
         ]);

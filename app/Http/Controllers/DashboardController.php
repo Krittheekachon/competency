@@ -321,7 +321,12 @@ class DashboardController extends Controller
             return [];
         }
 
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_2) {
+        $evaluatorRoleIssues = $this->evaluatorRoleIssuesForUser($user);
+        if ($evaluatorRoleIssues !== []) {
+            return $evaluatorRoleIssues;
+        }
+
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
@@ -336,6 +341,21 @@ class DashboardController extends Controller
         ])->contains(fn ($id) => filled($id));
 
         return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้างาน'];
+    }
+
+    private function evaluatorRoleIssuesForUser(User $user): array
+    {
+        $expectedEvaluators = [
+            ['user' => $user->evaluatorLevel1, 'role' => 'supervisor', 'issue' => 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว'],
+            ['user' => $user->evaluatorLevel2, 'role' => 'dept_head', 'issue' => 'ผู้ประเมินลำดับที่ 2 ไม่ใช่ผู้บังคับบัญชาแล้ว'],
+            ['user' => $user->evaluatorLevel3, 'role' => 'dean', 'issue' => 'ผู้ประเมินลำดับที่ 3 ไม่ใช่ผู้บริหารคณะแล้ว'],
+        ];
+
+        return collect($expectedEvaluators)
+            ->filter(fn (array $evaluator) => $evaluator['user'] && $this->roleKeyForUser($evaluator['user']) !== $evaluator['role'])
+            ->pluck('issue')
+            ->values()
+            ->all();
     }
 
     private function adminStructurePayload(): array

@@ -313,10 +313,11 @@ const roleLabel = (role = '') => {
         || normalizedRole
         || 'ไม่ระบุบทบาท';
 };
+const primaryJobFamily = (department = '') => department.split(' > ')[0]?.trim() || 'ไม่มีกลุ่มงาน';
 const personOption = (user) => ({
     key: user.db_id || user.sso || `${user.t || ''}${user.n}`,
     value: user.db_id,
-    label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''} · role: ${roleLabel(user.r)}`,
+    label: `${user.t || ''}${user.n} · ${primaryJobFamily(user.d)} · ${roleLabel(user.r)}`,
 });
 
 const evaluatorOptions = computed(() =>
