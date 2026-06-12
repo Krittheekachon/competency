@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Role;
 
 #[Fillable([
@@ -36,8 +37,6 @@ class User extends Authenticatable
         ];
     }
 
-    // ==================== เพิ่มตรงนี้ ====================
-
     public function role()
     {
         return $this->belongsTo(Role::class, 'role_id');
@@ -65,7 +64,6 @@ class User extends Authenticatable
         if (is_array($roleKey)) {
             return in_array($currentRoleKey, $roleKey, true);
         }
-
         return $currentRoleKey === $roleKey;
     }
 

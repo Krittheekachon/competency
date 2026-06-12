@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia; 
 use Inertia\Response;
 
@@ -65,8 +66,16 @@ class DashboardController extends Controller
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
-            'supervisor' => Inertia::render('Super/Dashboard', ['users' => $users]),
-            'dept_head' => Inertia::render('Head/Dashboard', ['users' => $users]),
+            'supervisor' => Inertia::render('Super/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'supervisor',
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+            ]),
+            'dept_head' => Inertia::render('Head/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'dept_head',
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
+            ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
@@ -130,6 +139,7 @@ class DashboardController extends Controller
     {
         $department = $this->currentDepartmentForUser($user);
         $roleKey = $this->roleKeyForUser($user);
+        $competencyGaps = $this->competencyGapsForUser($user);
         $structureIssues = $roleKey === 'admin'
             ? []
             : [
@@ -161,6 +171,13 @@ class DashboardController extends Controller
             'sup' => $this->displayNameForUser($user->evaluatorLevel1),
             'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
+            'competencyGaps' => $competencyGaps,
+            'gaps' => collect($competencyGaps)
+                ->filter(fn (array $gap): bool => (float) ($gap['gap'] ?? 0) < 0)
+                ->pluck('n')
+                ->values()
+                ->all(),
+            'evalStatus' => $competencyGaps === [] ? 'draft' : 'self_submitted',
             'act' => (bool) $user->is_active,
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
@@ -257,8 +274,12 @@ class DashboardController extends Controller
                     ->where('name', $user->position)
                     ->exists()
                 : false;
+            $roleKey = $this->roleKeyForUser($user);
+            $usesJobFamilyAsPosition = $roleKey === 'dean'
+                && $jobFamilyName !== ''
+                && $user->position === $jobFamilyName;
 
-            if (!$positionExists) {
+            if (!$positionExists && !$usesJobFamilyAsPosition) {
                 $issues[] = 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน';
             }
         } else {
@@ -309,7 +330,7 @@ class DashboardController extends Controller
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_3) {
             return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
@@ -593,6 +614,7 @@ class DashboardController extends Controller
     private function assignedCompetenciesForUser(User $user): array
     {
         $levelIds = collect();
+        $positionIds = $this->positionIdsForUser($user);
 
         if ($user->level_id) {
             $levelIds->push($user->level_id);
@@ -621,7 +643,7 @@ class DashboardController extends Controller
 
         $levelIds = $levelIds->filter()->unique()->values();
 
-        if ($levelIds->isEmpty()) {
+        if ($levelIds->isEmpty() && $positionIds->isEmpty()) {
             return [];
         }
 
@@ -647,23 +669,45 @@ class DashboardController extends Controller
 
         $expectedLevelResolver = app(ExpectedLevelResolver::class);
 
-        return DB::table('hr_expectations')
-            ->join('competencies', 'hr_expectations.competency_id', '=', 'competencies.id')
-            ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-            ->whereIn('hr_expectations.level_id', $levelIds)
-            ->when($jobFamilyIds->isNotEmpty(), fn ($query) => $query->whereIn('hr_expectations.job_family_id', $jobFamilyIds))
-            ->select(
-                'competencies.id',
-                'competencies.competency_type_id',
-                'competencies.code',
-                'competencies.name',
-                'competencies.detail',
-                'competency_types.code as type_code',
-                DB::raw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
-            )
-            ->orderBy('competencies.code')
-            ->get()
+        $expectationRows = $levelIds->isEmpty()
+            ? collect()
+            : DB::table('hr_expectations')
+                ->join('competencies', 'hr_expectations.competency_id', '=', 'competencies.id')
+                ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+                ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
+                ->whereIn('hr_expectations.level_id', $levelIds)
+                ->when($jobFamilyIds->isNotEmpty(), fn ($query) => $query->whereIn('hr_expectations.job_family_id', $jobFamilyIds))
+                ->select(
+                    'competencies.id',
+                    'competencies.competency_type_id',
+                    'competencies.code',
+                    'competencies.name',
+                    'competencies.detail',
+                    'competency_types.code as type_code',
+                    DB::raw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
+                )
+                ->get();
+
+        $positionRows = $positionIds->isEmpty()
+            ? collect()
+            : DB::table('position_competencies')
+                ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
+                ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+                ->whereIn('position_competencies.position_id', $positionIds)
+                ->select(
+                    'competencies.id',
+                    'competencies.competency_type_id',
+                    'competencies.code',
+                    'competencies.name',
+                    'competencies.detail',
+                    'competency_types.code as type_code',
+                    DB::raw('NULL as expected_level')
+                )
+                ->get();
+
+        return $expectationRows
+            ->merge($positionRows)
+            ->sortBy('code')
             ->unique('id')
             ->map(function (object $item) use ($user, $expectedLevelResolver): array {
                 $payload = $this->compactCompetencyPayload($item);
@@ -674,6 +718,37 @@ class DashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function positionIdsForUser(User $user): \Illuminate\Support\Collection
+    {
+        $positionIds = collect();
+
+        if ($user->position_id) {
+            $positionIds->push($user->position_id);
+        }
+
+        if (! $user->position) {
+            return $positionIds->filter()->unique()->values();
+        }
+
+        $worklineId = $this->worklineIdFromUser($user);
+
+        $matchedIds = DB::table('positions')
+            ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->where('positions.name', $user->position)
+            ->when($worklineId, fn ($query) => $query->where('job_families.workline_id', $worklineId))
+            ->when($user->department, function ($query) use ($user) {
+                $departmentRoot = trim(explode(' > ', $user->department)[0] ?? $user->department);
+
+                $query->where(function ($nested) use ($user, $departmentRoot) {
+                    $nested->where('job_families.name', $user->department)
+                        ->orWhere('job_families.name', $departmentRoot);
+                });
+            })
+            ->pluck('positions.id');
+
+        return $positionIds->merge($matchedIds)->filter()->unique()->values();
     }
 
     private function worklineIdFromUser(User $user): ?int
@@ -767,11 +842,18 @@ class DashboardController extends Controller
                 'competency_gaps.gap',
                 'competency_gaps.requires_idp',
                 'competency_gaps.status',
+                'assessments.note',
                 'assessments.updated_at'
             )
             ->orderBy('competencies.code')
             ->get()
             ->map(function (object $gap) use ($user, $expectedLevelResolver): array {
+                $checkedIndicatorKeys = DB::table('assessment_evidences')
+                    ->where('assessment_id', $gap->assessment_id)
+                    ->where('competency_id', $gap->id)
+                    ->pluck('indicator_key')
+                    ->values()
+                    ->all();
                 $expected = $gap->expected_level === null
                     ? $expectedLevelResolver->forUserCompetency($user, (int) $gap->id)
                     : (float) $gap->expected_level;
@@ -790,6 +872,10 @@ class DashboardController extends Controller
                     'expected' => $expected,
                     'actual' => $actual,
                     'gap' => $gapValue,
+                    'note' => $gap->note ?? '',
+                    'levels' => $this->competencyLevelsPayload((int) $gap->id),
+                    'checkedIndicatorKeys' => $checkedIndicatorKeys,
+                    'checkedIndicatorCount' => count($checkedIndicatorKeys),
                     'requiresIdp' => $gapValue !== null && $gapValue < 0,
                     'missingIndicators' => $gapValue !== null && $gapValue < 0 && $expected !== null
                         ? $this->missingIndicatorsForAssessment((int) $gap->assessment_id, (int) $gap->id, (float) $expected, $actual)
@@ -892,6 +978,7 @@ class DashboardController extends Controller
 
     private function rolesPayload()
     {
+
         return DB::table('roles')
             ->orderBy('id')
             ->get(['id', 'key', 'name_th', 'name_en'])

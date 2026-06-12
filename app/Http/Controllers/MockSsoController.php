@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class MockSsoController extends Controller
 {
@@ -41,5 +42,14 @@ class MockSsoController extends Controller
         Auth::login($user);
 
         return redirect()->route('dashboard');
+    }
+
+    private function roleKeyForUser(User $user): string
+    {
+        if (Schema::hasColumn('users', 'role_key') && $user->role_key) {
+            return $user->role_key;
+        }
+
+        return $user->role?->role_key ?? $user->role?->key ?? 'employee';
     }
 }

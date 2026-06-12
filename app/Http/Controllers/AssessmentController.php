@@ -6,6 +6,7 @@ use App\Models\Assessment;
 use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class AssessmentController extends Controller
 {
@@ -21,6 +22,8 @@ class AssessmentController extends Controller
             'note' => ['nullable', 'string', 'max:2000'],
             'score' => ['required', 'numeric'],
         ]);
+
+        $this->assertCanSelfAssess($request->user());
 
         $userId = auth()->id();
 
@@ -112,5 +115,50 @@ class AssessmentController extends Controller
             'note' => $assessment->note ?? '',
             'score' => $assessment->score ?? 0,
         ]);
+    }
+
+    private function assertCanSelfAssess($user): void
+    {
+        $roleKey = $this->normalizeRoleKey(
+            $user->relationLoaded('role')
+                ? ($user->role?->key ?: '')
+                : (DB::table('roles')->where('id', $user->role_id)->value('key') ?: '')
+        );
+
+        if (in_array($roleKey, ['admin', 'dean'], true)) {
+            return;
+        }
+
+        if ($roleKey === 'dept_head' && ! $user->supervisor_id_2) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้บังคับบัญชาก่อน',
+            ]);
+        }
+
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_3) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินลำดับที่ 3 ก่อน',
+            ]);
+        }
+
+        $hasAssignedHeadOrSupervisor = collect([
+            $user->supervisor_id_1,
+            $user->supervisor_id_2,
+        ])->contains(fn ($id) => filled($id));
+
+        if (! $hasAssignedHeadOrSupervisor) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดหัวหน้างานหรือผู้บังคับบัญชาก่อน',
+            ]);
+        }
+    }
+
+    private function normalizeRoleKey(string $roleKey): string
+    {
+        return match ($roleKey) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => $roleKey,
+        };
     }
 }

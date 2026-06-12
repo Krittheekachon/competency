@@ -12,8 +12,8 @@ class RoleSeeder extends Seeder
     {
         $roles = [
             ['key' => 'admin',      'name_th' => 'ผู้ดูแลระบบ',      'name_en' => 'Admin'],
-            ['key' => 'supervisor', 'name_th' => 'หัวหน้างาน',        'name_en' => 'Supervisor'],
-            ['key' => 'dept_head',  'name_th' => 'ผู้บังคับบัญชา',    'name_en' => 'Department Head'],
+            ['key' => 'supervisor', 'name_th' => 'ผู้บังคับบัญชา',        'name_en' => 'Supervisor'],
+            ['key' => 'dept_head',  'name_th' => 'หัวหน้างาน',    'name_en' => 'Department Head'],
             ['key' => 'employee',   'name_th' => 'บุคลากร',           'name_en' => 'Employee'],
             ['key' => 'hr',         'name_th' => 'งานทรัพยากรบุคคล', 'name_en' => 'HR'],
             ['key' => 'dean',       'name_th' => 'ผู้บริหารคณะ',      'name_en' => 'Dean'],

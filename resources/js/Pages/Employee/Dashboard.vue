@@ -75,6 +75,23 @@ const currentProfileUser = computed(() =>
 );
 const assignedCompetencies = computed(() => page.props.currentUserCompetencies || []);
 const competencyGaps = computed(() => page.props.currentUserCompetencyGaps || []);
+const selfAssessmentBlockReasons = computed(() => {
+    const user = currentProfileUser.value || {};
+    const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
+    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
+        .some((id) => Number(id) > 0);
+
+    if (!hasAssignedHeadOrSupervisor) {
+        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+    }
+
+    if (user.structureStatus === 'invalid' && reasons.length === 0) {
+        reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
+    }
+
+    return Array.from(new Set(reasons.filter(Boolean)));
+});
+const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -149,6 +166,8 @@ const logout = () => router.post(route('logout'));
                     :user="currentProfileUser"
                     :set-users="setRef(users)"
                     :competencies="assignedCompetencies"
+                    :blocked="isSelfAssessmentBlocked"
+                    :block-reasons="selfAssessmentBlockReasons"
                 />
 
                 <EmployeeGap
