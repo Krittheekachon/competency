@@ -701,11 +701,27 @@ const avatarInitial = (user: User) => user.n?.[0] || '?';
 
 const normalizeRole = (role?: string) => {
   if (role === 'dean') return 'manager';
-  if (role === 'dept_head') return 'manager_dept';
+  if (role === 'dept_head') return 'dept_head';
   return role || 'employee';
 };
 
 const roleBadge = (role?: string): RoleBadge => {
+  const normalizedRole = normalizeRole(role);
+  if (['manager_dept', 'dept_head'].includes(normalizedRole || '')) {
+    return {
+      label: 'หัวหน้างาน',
+      className: 'bg',
+      style: { background: '#fff7ed', color: '#c2410c' },
+    };
+  }
+  if (normalizedRole === 'supervisor') {
+    return {
+      label: 'ผู้บังคับบัญชา',
+      className: 'bg',
+      style: { background: '#f0f9ff', color: '#0284c7' },
+    };
+  }
+
   switch (normalizeRole(role)) {
     case 'admin':
       return { label: 'ผู้ดูแลระบบ', className: 'bp' };
@@ -718,6 +734,7 @@ const roleBadge = (role?: string): RoleBadge => {
         style: { background: '#e0f2fe', color: '#0369a1' },
       };
     case 'manager_dept':
+    case 'dept_head':
       return {
         label: 'ผู้บังคับบัญชา',
         className: 'bg',

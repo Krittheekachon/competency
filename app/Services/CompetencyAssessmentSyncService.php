@@ -107,21 +107,29 @@ class CompetencyAssessmentSyncService
     private function competencyIdsForUser(User $user): Collection
     {
         $levelIds = $this->levelIdsForUser($user);
+        $positionIds = $this->positionIdsForUser($user);
 
-        if ($levelIds->isEmpty()) {
+        if ($levelIds->isEmpty() && $positionIds->isEmpty()) {
             return collect();
         }
 
         $jobFamilyIds = $this->jobFamilyIdsForUser($user);
 
-        if ($jobFamilyIds->isEmpty()) {
-            return collect();
-        }
+        $expectationIds = ($levelIds->isEmpty() || $jobFamilyIds->isEmpty())
+            ? collect()
+            : DB::table('hr_expectations')
+                ->whereIn('level_id', $levelIds)
+                ->whereIn('job_family_id', $jobFamilyIds)
+                ->pluck('competency_id');
 
-        return DB::table('hr_expectations')
-            ->whereIn('level_id', $levelIds)
-            ->whereIn('job_family_id', $jobFamilyIds)
-            ->pluck('competency_id')
+        $positionCompetencyIds = $positionIds->isEmpty()
+            ? collect()
+            : DB::table('position_competencies')
+                ->whereIn('position_id', $positionIds)
+                ->pluck('competency_id');
+
+        return $expectationIds
+            ->merge($positionCompetencyIds)
             ->unique()
             ->values();
     }
@@ -180,5 +188,38 @@ class CompetencyAssessmentSyncService
         }
 
         return $jobFamilyIds->filter()->unique()->values();
+    }
+
+    private function positionIdsForUser(User $user): Collection
+    {
+        $positionIds = collect();
+
+        if ($user->position_id) {
+            $positionIds->push($user->position_id);
+        }
+
+        if (! $user->position) {
+            return $positionIds->filter()->unique()->values();
+        }
+
+        $worklineId = $user->workline
+            ? DB::table('worklines')->where('name', $user->workline)->value('id')
+            : null;
+
+        $matchedIds = DB::table('positions')
+            ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->where('positions.name', $user->position)
+            ->when($worklineId, fn ($query) => $query->where('job_families.workline_id', $worklineId))
+            ->when($user->department, function ($query) use ($user) {
+                $departmentRoot = trim(explode(' > ', $user->department)[0] ?? $user->department);
+
+                $query->where(function ($nested) use ($user, $departmentRoot) {
+                    $nested->where('job_families.name', $user->department)
+                        ->orWhere('job_families.name', $departmentRoot);
+                });
+            })
+            ->pluck('positions.id');
+
+        return $positionIds->merge($matchedIds)->filter()->unique()->values();
     }
 }

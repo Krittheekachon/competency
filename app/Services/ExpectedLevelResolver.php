@@ -13,21 +13,44 @@ class ExpectedLevelResolver
         $levelIds = $this->levelIdsForUser($user);
         $jobFamilyIds = $this->jobFamilyIdsForUser($user);
 
-        if ($levelIds->isEmpty() || $jobFamilyIds->isEmpty()) {
+        if ($levelIds->isEmpty()) {
             return null;
         }
 
-        $expectedLevels = DB::table('hr_expectations')
-            ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-            ->where('hr_expectations.competency_id', $competencyId)
-            ->whereIn('hr_expectations.level_id', $levelIds)
-            ->whereIn('hr_expectations.job_family_id', $jobFamilyIds)
-            ->selectRaw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
+        $expectedLevels = $jobFamilyIds->isEmpty()
+            ? collect()
+            : DB::table('hr_expectations')
+                ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
+                ->where('hr_expectations.competency_id', $competencyId)
+                ->whereIn('hr_expectations.level_id', $levelIds)
+                ->whereIn('hr_expectations.job_family_id', $jobFamilyIds)
+                ->selectRaw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
+                ->pluck('expected_level')
+                ->filter(fn ($level) => $level !== null)
+                ->map(fn ($level): int => (int) $level);
+
+        if ($expectedLevels->isNotEmpty()) {
+            return $expectedLevels->max();
+        }
+
+        $positionIds = $this->positionIdsForUser($user);
+        $hasPositionCompetency = $positionIds->isNotEmpty()
+            && DB::table('position_competencies')
+                ->whereIn('position_id', $positionIds)
+                ->where('competency_id', $competencyId)
+                ->exists();
+
+        if (! $hasPositionCompetency) {
+            return null;
+        }
+
+        $levelExpectedLevels = DB::table('levels')
+            ->whereIn('id', $levelIds)
             ->pluck('expected_level')
             ->filter(fn ($level) => $level !== null)
             ->map(fn ($level): int => (int) $level);
 
-        return $expectedLevels->isEmpty() ? null : $expectedLevels->max();
+        return $levelExpectedLevels->isEmpty() ? null : $levelExpectedLevels->max();
     }
 
     private function levelIdsForUser(User $user): Collection
@@ -94,6 +117,37 @@ class ExpectedLevelResolver
         }
 
         return $jobFamilyIds->filter()->unique()->values();
+    }
+
+    private function positionIdsForUser(User $user): Collection
+    {
+        $positionIds = collect();
+
+        if ($user->position_id) {
+            $positionIds->push($user->position_id);
+        }
+
+        if (! $user->position) {
+            return $positionIds->filter()->unique()->values();
+        }
+
+        $worklineId = $this->worklineIdFromUser($user);
+
+        $matchedIds = DB::table('positions')
+            ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->where('positions.name', $user->position)
+            ->when($worklineId, fn ($query) => $query->where('job_families.workline_id', $worklineId))
+            ->when($user->department, function ($query) use ($user) {
+                $departmentRoot = trim(explode(' > ', $user->department)[0] ?? $user->department);
+
+                $query->where(function ($nested) use ($user, $departmentRoot) {
+                    $nested->where('job_families.name', $user->department)
+                        ->orWhere('job_families.name', $departmentRoot);
+                });
+            })
+            ->pluck('positions.id');
+
+        return $positionIds->merge($matchedIds)->filter()->unique()->values();
     }
 
     private function worklineIdFromUser(User $user): ?int

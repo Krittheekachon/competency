@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -90,7 +91,7 @@ class UserController extends Controller
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => ['required', 'string', 'max:120'],
             'd' => ['required', 'string', 'max:255'],
-            'p' => ['required', 'string', 'max:120'],
+            'p' => [Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
             'l' => ['required', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
             'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id'],
@@ -118,8 +119,11 @@ class UserController extends Controller
         }
 
         $name = trim($data['fn'].' '.$data['ln']);
+        $supervisorId1 = $data['supervisor_id_1'] ?? null;
+        $supervisorId2 = $data['supervisor_id_2'] ?? null;
+        $supervisorId3 = $data['supervisor_id_3'] ?? null;
 
-        return [
+        $attributes = [
             'sso' => $data['sso'],
             'name' => $name,
             'title' => $data['t'] ?? null,
@@ -141,6 +145,21 @@ class UserController extends Controller
             'supervisor_id_3' => $data['supervisor_id_3'] ?? null,
             'is_active' => $data['act'] ?? true,
         ];
+
+        if (Schema::hasColumn('users', 'role_key')) {
+            $attributes['role_key'] = $role->{$this->roleKeyColumn()};
+        }
+
+        return $attributes;
+    }
+
+    private function userNameFromId(?int $id): ?string
+    {
+        if (! $id) {
+            return null;
+        }
+
+        return User::query()->whereKey($id)->value('name');
     }
 
     private function validatedStructureData(array $data): array
@@ -167,12 +186,18 @@ class UserController extends Controller
             ]);
         }
 
+        if ($this->normalizeRoleKey($data['r']) === 'dean' && trim((string) ($data['p'] ?? '')) === '') {
+            $data['p'] = $jobFamilyName;
+        }
+
         $positionId = DB::table('positions')
             ->where('job_family_id', $jobFamily->id)
-            ->where('name', $data['p'])
+            ->where('name', $data['p'] ?? '')
             ->value('id');
+        $usesJobFamilyAsPosition = $this->normalizeRoleKey($data['r']) === 'dean'
+            && trim((string) ($data['p'] ?? '')) === $jobFamilyName;
 
-        if (!$positionId) {
+        if (!$positionId && !$usesJobFamilyAsPosition) {
             throw ValidationException::withMessages([
                 'p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในกลุ่มงานนี้',
             ]);
@@ -202,8 +227,8 @@ class UserController extends Controller
     private function validateEvaluatorRoles(array $data): void
     {
         $expectedRoles = [
-            'supervisor_id_1' => 'supervisor',
-            'supervisor_id_2' => 'dept_head',
+            'supervisor_id_1' => 'dept_head',
+            'supervisor_id_2' => 'supervisor',
             'supervisor_id_3' => 'dean',
         ];
 
@@ -237,5 +262,15 @@ class UserController extends Controller
             'manager_dept' => 'dept_head',
             default => $roleKey,
         };
+    }
+
+    private function roleKeyColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_key') ? 'role_key' : 'key';
+    }
+
+    private function roleIdColumn(): string
+    {
+        return Schema::hasColumn('roles', 'role_id') ? 'role_id' : 'id';
     }
 }

@@ -13,16 +13,21 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
     target.value = typeof next === 'function' ? next(target.value) : next;
 };
-const normalizeRoleKey = (role) => role === 'dept_head' ? 'manager_dept' : role;
+const normalizeRoleKey = (role) => ({
+    manager_dept: 'dept_head',
+    manager: 'dean',
+}[role] || role || 'dept_head');
+const defaultPageForRole = (role) => normalizeRoleKey(role) === 'supervisor' ? 'dh-assess' : 'sup-gap';
 
 const page = usePage();
 const users = ref(clone(page.props.users || []));
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
     : null);
+const initialRoleKey = normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || 'dept_head');
 const rememberedHeadState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || 'dh-idp',
+    activePage: requestedPage.value || defaultPageForRole(initialRoleKey),
 }, 'HeadDashboardStable');
 
 const showSidebar = computed({
@@ -32,7 +37,7 @@ const showSidebar = computed({
     },
 });
 const activePage = computed({
-    get: () => rememberedHeadState.value.activePage || 'dh-idp',
+    get: () => rememberedHeadState.value.activePage || defaultPageForRole(initialRoleKey),
     set: (value) => {
         rememberedHeadState.value.activePage = value;
     },
@@ -59,9 +64,41 @@ const learningMethods = ref([
     },
 ]);
 
-const authRoleKey = computed(() => normalizeRoleKey(page.props.auth?.user?.role_key || 'manager_dept'));
-const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.manager_dept || ROLES_CONFIG.supervisor);
-const navSections = computed(() => NAV_CONFIG.supervisor || []);
+const authRoleKey = computed(() => normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
+const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.dept_head || ROLES_CONFIG.supervisor);
+const navSections = computed(() => {
+    const sections = [
+    {
+        sec: 'ของฉัน (บุคลากร)',
+        items: [
+            { id: 'emp-assess', ic: '', lb: 'ประเมินตนเอง' },
+            { id: 'emp-gap', ic: '', lb: 'ผล Competency Gap' },
+            { id: 'emp-idp', ic: '', lb: 'IDP ของฉัน' },
+            { id: 'emp-progress', ic: '', lb: 'อัปเดตความก้าวหน้า' },
+            { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
+        ],
+    },
+    {
+        sec: 'จัดการทีม',
+        items: [
+            { id: 'sup-gap', ic: '', lb: 'ผลการประเมินของทีม' },
+            { id: 'dh-idp', ic: '', lb: 'IDP & ติดตามทีม' },
+        ],
+    },
+    ];
+
+    if (authRoleKey.value !== 'supervisor') return sections;
+
+    return sections.map((section, index) => index === 1
+        ? {
+            ...section,
+            items: [
+                { id: 'dh-assess', ic: '', lb: 'อนุมัติผลการประเมิน' },
+                ...section.items,
+            ],
+        }
+        : section);
+});
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
@@ -71,15 +108,17 @@ const implementedPages = new Set([
     'emp-idp',
     'emp-progress',
     'emp-idp-detail',
-    'dh-assess',
     'sup-gap',
     'dh-idp',
+    'dh-assess',
 ]);
 
 const currentUser = computed(() =>
-    users.value.find((user) => user.sso === authUserId.value)
+    page.props.currentUser
+    || users.value.find((user) => String(user.db_id || '') === authUserId.value)
+    || users.value.find((user) => user.sso === authUserId.value)
     || users.value.find((user) => user.n === authUserName.value)
-    || users.value.find((user) => ['supervisor', 'manager_dept', 'dept_head'].includes(user.r))
+    || users.value.find((user) => normalizeRoleKey(user.r) === authRoleKey.value)
     || {
         sso: authUserId.value || 'current-head',
         t: '',
@@ -90,6 +129,23 @@ const currentUser = computed(() =>
         act: true,
     },
 );
+const selfAssessmentBlockReasons = computed(() => {
+    const user = currentUser.value || {};
+    const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
+    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
+        .some((id) => Number(id) > 0);
+
+    if (!hasAssignedHeadOrSupervisor) {
+        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+    }
+
+    if (user.structureStatus === 'invalid' && reasons.length === 0) {
+        reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
+    }
+
+    return Array.from(new Set(reasons.filter(Boolean)));
+});
+const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
 
 const MOCK_TEAM = [
     {
@@ -203,14 +259,52 @@ const MOCK_TEAM = [
     },
 ];
 
+const personNames = (user) => [
+    user?.n,
+    `${user?.t || ''}${user?.n || ''}`,
+].map((name) => String(name || '').trim()).filter(Boolean);
+const isSamePersonName = (storedName, user) => personNames(user).includes(String(storedName || '').trim());
+const isAssignedReviewer = (user, reviewer) => {
+    const reviewerId = Number(reviewer?.db_id);
+    const reviewerRole = normalizeRoleKey(reviewer?.r || authRoleKey.value);
+
+    if (reviewerRole === 'dept_head') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_1) === reviewerId)
+            || isSamePersonName(user.sup, reviewer)
+        );
+    }
+
+    if (reviewerRole === 'supervisor') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_2) === reviewerId)
+            || isSamePersonName(user.evaluator2, reviewer)
+        );
+    }
+
+    if (reviewerRole === 'dean') {
+        return (
+            (reviewerId > 0 && Number(user.supervisor_id_3) === reviewerId)
+            || isSamePersonName(user.evaluator3, reviewer)
+        );
+    }
+
+    return (
+        (reviewerId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === reviewerId))
+        || isSamePersonName(user.sup, reviewer)
+        || isSamePersonName(user.evaluator2, reviewer)
+        || isSamePersonName(user.evaluator3, reviewer)
+    );
+};
+const isReviewerRole = (role) => ['supervisor', 'manager_dept', 'dept_head', 'manager', 'dean'].includes(role);
+
 const teamMembers = computed(() => {
-    const real = users.value.filter((user) =>
+    return users.value.filter((user) =>
         user.sso !== currentUser.value.sso
-        && (user.sup === currentUser.value.n || user.evaluator2 === currentUser.value.n)
-        && !['manager_dept', 'dept_head', 'manager'].includes(user.r)
+        && isAssignedReviewer(user, currentUser.value)
+        && !isReviewerRole(user.r)
         && user.act !== false,
     );
-    return real.length > 0 ? real : MOCK_TEAM;
 });
 // const teamMembers = computed(() => {
 //     return users.value.filter((user) =>
@@ -243,6 +337,31 @@ const assessCounts = computed(() => ({
     forwarded: teamMembers.value.filter((user) => ['unit_evaluated', 'dept_evaluated'].includes(user.evalStatus)).length,
     done: teamMembers.value.filter((user) => user.evalStatus === 'dean_approved').length,
 }));
+const supervisorApprovalStatus = (person) => {
+    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    if (person.evalStatus === 'self_submitted') return { label: 'รอตรวจ', cls: 'by' };
+    if (person.evalStatus === 'unit_evaluated') return { label: 'อนุมัติแล้ว', cls: 'bt' };
+    if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
+    if (person.evalStatus === 'dept_evaluated') return { label: 'ส่งต่อหัวหน้าฝ่ายแล้ว', cls: 'bb' };
+    if (person.evalStatus === 'dean_approved') return { label: 'ปิดรอบแล้ว', cls: 'bg' };
+
+    return { label: person.evalStatus, cls: 'bgr' };
+};
+const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
+    const results = gapResultRows(person);
+    const hasSubmittedAssessment = results.length > 0 || (person.evalStatus && person.evalStatus !== 'draft');
+
+    return {
+        ...person,
+        results,
+        hasSubmittedAssessment,
+        statusMeta: supervisorApprovalStatus(person),
+        submittedAt: results[0]?.updatedAt || person.updatedAt || '-',
+    };
+}));
+const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'self_submitted'));
+const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => ['unit_evaluated', 'dept_evaluated'].includes(person.evalStatus)));
+const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'dean_approved'));
 
 const gapRows = computed(() => teamMembers.value.map((user) => ({
     ...user,
@@ -297,6 +416,9 @@ const assessmentSavedAt = ref('');
 const draftTimer = ref(null);
 const selectedGapEmployee = ref(null);
 const selectedIdpEmployee = ref(null);
+const selectedSupervisorApprovalSso = ref(null);
+const openedSupervisorCompetencyId = ref(null);
+const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
 const idpReviewDecisions = ref({});
 const idpReviewFeedbacks = ref({});
@@ -336,6 +458,14 @@ const assessmentComps = [
 
 const selectedAssessment = computed(() => selectedEmployee.value || teamMembers.value.find((user) => user.evalStatus === 'self_submitted') || teamMembers.value[0] || null);
 const assessmentName = computed(() => selectedAssessment.value ? `${selectedAssessment.value.t || ''}${selectedAssessment.value.n}` : '');
+const selectedSupervisorApproval = computed(() =>
+    supervisorApprovalRows.value.find((person) => person.sso === selectedSupervisorApprovalSso.value) || null,
+);
+const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
+const canDecideSupervisorApproval = computed(() =>
+    Boolean(selectedSupervisorApproval.value?.hasSubmittedAssessment)
+    && selectedSupervisorApproval.value?.evalStatus === 'self_submitted',
+);
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
 
@@ -349,24 +479,29 @@ const gapScoreFor = (person, comp, key, fallback) => {
 
 const gapResultRows = (person) => {
     if (!person) return [];
-    const rawRows = person.competencyResults || person.assessmentResults || person.evaluationResults;
+    const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
         return rawRows.map((row) => {
             const expected = Number(row.expected ?? row.expectedScore ?? row.target ?? 3);
-            const selfScore = Number(row.selfScore ?? row.self ?? 0);
-            const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? selfScore);
+            const selfScore = Number(row.selfScore ?? row.self ?? row.actual ?? row.actualLevel ?? 0);
+            const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? row.actual ?? row.actualLevel ?? selfScore);
             const gap = Number(row.gap ?? headScore - expected);
             return {
                 id: row.id || row.competency_id || row.name || row.title,
-                title: row.title || row.name || row.competency_name || '-',
-                group: row.group || row.type || '-',
+                title: row.title || row.name || row.n || row.competency_name || '-',
+                group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
                 expected,
                 selfScore,
                 headScore,
                 gap,
-                feedback: row.feedback || '',
-                failed: row.failed ?? gap < 0,
+                feedback: row.feedback || row.note || '',
+                note: row.note || row.feedback || '',
+                levels: row.levels || [],
+                checkedIndicatorKeys: row.checkedIndicatorKeys || [],
+                checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                updatedAt: row.updatedAt || row.updated_at || '',
+                failed: row.failed ?? row.requiresIdp ?? gap < 0,
             };
         });
     }
@@ -395,6 +530,70 @@ const gapResultRows = (person) => {
 const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
+const teamHeatmapCompetencies = computed(() => {
+    const byCode = new Map();
+
+    teamMembers.value
+        .flatMap((person) => gapResultRows(person))
+        .forEach((row) => {
+            const code = row.code || row.title;
+            if (!code || byCode.has(code)) return;
+            byCode.set(code, { code, title: row.title });
+        });
+
+    return Array.from(byCode.values()).sort((left, right) => left.code.localeCompare(right.code, 'th'));
+});
+const formatTeamGap = (value) => {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) return '-';
+    if (numberValue === 0) return '0';
+
+    const formatted = Math.abs(numberValue)
+        .toFixed(2)
+        .replace(/\.00$/, '')
+        .replace(/0$/, '')
+        .replace(/\.$/, '');
+
+    return `${numberValue > 0 ? '+' : '-'}${formatted}`;
+};
+const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
+    const resultRows = gapResultRows(person);
+    const scores = teamHeatmapCompetencies.value.map((comp) => {
+        const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
+        return matching ? Number(matching.gap ?? 0) : 0;
+    });
+    const missingCount = scores.filter((score) => score < 0).length;
+    const assessed = resultRows.length > 0;
+
+    return {
+        ...person,
+        scores,
+        assessed,
+        missingCount,
+        summary: missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง',
+    };
+}));
+const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
+const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
+const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, index) => {
+    const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
+    const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    return { ...comp, average };
+}));
+const teamStrongest = computed(() => [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0]);
+const teamWeakest = computed(() => [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0]);
+const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
+    const gapCount = gapResultRows(person).filter((row) => row.failed).length || normalizeGaps(person).length;
+    const phaseMeta = idpStatusFor(person.phase);
+    return {
+        ...person,
+        missingCount: gapCount,
+        statusLabel: person.phase === 'notsent' ? 'ร่าง' : phaseMeta.label,
+        statusClass: person.phase === 'done' ? 'bg' : person.phase === 'rejected' ? 'br' : person.phase === 'inprogress' ? 'bb' : 'bgr',
+        updatedAt: person.updatedAt || person.sentDate || `2026-06-${String(10 + index).padStart(2, '0')}`,
+    };
+}));
+const idpRequiredCount = computed(() => idpOverviewRows.value.filter((row) => row.missingCount > 0).length);
 
 const openGapDetail = (person) => {
     if (person.pending) return;
@@ -504,10 +703,49 @@ const selectAssessmentEmployee = (person) => {
     assessmentSavedAt.value = '';
 };
 
+const openSupervisorApprovalModal = (person) => {
+    if (!person.hasSubmittedAssessment) return;
+    selectedSupervisorApprovalSso.value = person.sso;
+    openedSupervisorCompetencyId.value = null;
+};
+
+const closeSupervisorApprovalModal = () => {
+    selectedSupervisorApprovalSso.value = null;
+    openedSupervisorCompetencyId.value = null;
+};
+
+const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
+const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
+const toggleSupervisorCompetency = (row) => {
+    const key = supervisorCompetencyKey(row);
+    openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
+};
+const checkedIndicatorKey = (row, level, index) => `${row.id}:${level.id || level.lvl}:${index}`;
+const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
+const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
+const totalIndicatorCount = (row) => (row.levels || []).reduce((total, level) => total + (level.indicators?.length || 0), 0);
+const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
+    .map((indicator, index) => ({ indicator, index }))
+    .filter(({ index }) => isIndicatorChecked(row, level, index));
+
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
     persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
+};
+const approveSupervisorAssessment = () => {
+    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
+    users.value = users.value.map((user) =>
+        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user,
+    );
+};
+const rejectSupervisorAssessment = () => {
+    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
+    if (!confirm('ยืนยันการส่งผลการประเมินกลับไปแก้ไข?')) return;
+
+    users.value = users.value.map((user) =>
+        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'revision_required' } : user,
+    );
 };
 
 watchEffect(() => {
@@ -517,7 +755,7 @@ watchEffect(() => {
     }
 
     if (!implementedPages.has(activePage.value)) {
-        activePage.value = 'dh-idp';
+        activePage.value = defaultPageForRole(authRoleKey.value);
     }
 
     if (page.props.users?.length) {
@@ -588,6 +826,8 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentUser"
                     :set-users="setRef(users)"
+                    :blocked="isSelfAssessmentBlocked"
+                    :block-reasons="selfAssessmentBlockReasons"
                 />
 
                 <EmployeeGap
@@ -606,59 +846,59 @@ const logout = () => router.post(route('logout'));
 
                 <template v-else-if="activePage === 'dh-idp'">
                     <template v-if="!selectedIdpPerson">
-                        <div class="mb20">
-                            <div class="sec-t">IDP & ติดตามทีม</div>
-                            <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
-                        </div>
-
-                        <div class="g4 idp-summary mb20">
-                            <button
-                                v-for="tab in idpTabs"
-                                :key="tab.id"
-                                class="sc stat-button"
-                                :class="{ selected: activeIdpTab === tab.id }"
-                                type="button"
-                                @click="activeIdpTab = tab.id"
-                            >
-                                <div class="sl">{{ tab.label }}</div>
-                                <div class="sv" :class="tab.cls">{{ tab.count }}</div>
-                                <div class="ss muted">คน</div>
-                            </button>
-                        </div>
-
-                        <div class="tab-bar">
-                            <div
-                                v-for="tab in idpTabs"
-                                :key="tab.id"
-                                class="tab"
-                                :class="{ on: activeIdpTab === tab.id }"
-                                @click="activeIdpTab = tab.id"
-                            >
-                                {{ tab.label }} <span class="b" :class="tab.cls || 'bgr'">{{ tab.count }}</span>
+                        <div class="team-page-head mb20">
+                            <div>
+                                <div class="sec-t">ติดตาม IDP ทีม</div>
+                                <div class="sec-s">ตารางรวม Direct Reports ที่มี Competency Gap พร้อมสถานะปัจจุบันและ mirror view แบบอ่านอย่างเดียว</div>
                             </div>
+                            <span class="b bb">{{ idpRequiredCount }} คนต้องทำ IDP</span>
                         </div>
 
-                        <div v-for="row in visibleIdpRows" :key="row.sso" class="card team-row">
-                            <div class="av row-avatar">{{ row.n[0] }}</div>
-                            <div class="row-main">
-                                <div class="fw8 fs14">{{ `${row.t || ''}${row.n}` }}</div>
-                                <div class="muted fs12">{{ row.p }} · {{ row.d || row.p }}</div>
+                        <div class="card team-table-card">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">Team Overview Table</div>
+                                    <div class="cs">คลิกดูรายละเอียดเพื่อดูแผน IDP แบบ read-only และฝาก coaching comment</div>
+                                </div>
                             </div>
-                            <span class="b" :class="idpStatusFor(row.phase).cls">
-                                {{ idpStatusFor(row.phase).label }}
-                            </span>
-                            <button
-                                class="btn btn-sm idp-row-action"
-                                :class="{ primary: row.phase === 'pending' }"
-                                type="button"
-                                @click="openIdpDetail(row)"
-                            >
-                                {{ row.phase === 'pending' ? 'ตรวจสอบ' : 'ดูข้อมูล' }}
-                            </button>
-                        </div>
-
-                        <div v-if="visibleIdpRows.length === 0" class="card empty-card">
-                            {{ teamMembers.length === 0 ? 'ยังไม่มีข้อมูลบุคลากรในหน่วยงาน' : 'ไม่มีรายการในสถานะนี้' }}
+                            <div class="team-table-wrap">
+                                <table class="team-table">
+                                    <thead>
+                                        <tr>
+                                            <th>บุคลากร</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>สมรรถนะที่ต้องทำ IDP</th>
+                                            <th>Current Status</th>
+                                            <th>อัปเดตล่าสุด</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="row in idpOverviewRows" :key="row.sso">
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${row.t || ''}${row.n}` }}</strong>
+                                                    <small>{{ row.d || row.p }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ row.p }}</td>
+                                            <td>
+                                                <span class="b br">{{ row.missingCount || 0 }} สมรรถนะ</span>
+                                            </td>
+                                            <td>
+                                                <span class="b" :class="row.statusClass">{{ row.statusLabel }}</span>
+                                            </td>
+                                            <td>{{ row.updatedAt }}</td>
+                                            <td class="tr">
+                                                <button class="btn btn-s btn-sm" type="button" @click="openIdpDetail(row)">ดูรายละเอียด</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="idpOverviewRows.length === 0" class="empty-card">
+                                ยังไม่มีข้อมูลบุคลากรในหน่วยงาน
+                            </div>
                         </div>
                     </template>
 
@@ -683,7 +923,7 @@ const logout = () => router.post(route('logout'));
                             <div v-if="selectedIdpPerson.sentAt" class="muted fs12">{{ selectedIdpPerson.sentAt }}</div>
                         </div>
 
-                        <div v-if="selectedIdpPerson.phase === 'pending'" class="idp-review-space">
+                        <div v-if="allowIdpReview && selectedIdpPerson.phase === 'pending'" class="idp-review-space">
                             <div v-for="row in selectedIdpGapRows" :key="row.id" class="card idp-review-card">
                                 <div class="idp-review-head">
                                     <div class="flex ic g8">
@@ -791,59 +1031,84 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'sup-gap'">
-                    <div class="mb20">
-                        <div class="sec-t">Competency Gap ทีม</div>
-                        <div class="sec-s">วิเคราะห์ผลการประเมินและจุดอ่อนของทีม</div>
+                    <div class="team-page-head mb20">
+                        <div>
+                            <div class="sec-t">Competency Gap ทีม</div>
+                            <div class="sec-s">Dashboard, Heatmap และการจัดกลุ่มพนักงานตามศักยภาพของ Direct Reports</div>
+                        </div>
+                        <div class="flex g8" style="flex-wrap: wrap">
+                            <button class="btn btn-s btn-sm" type="button">Export PDF</button>
+                            <button class="btn btn-s btn-sm" type="button">Export Excel</button>
+                        </div>
                     </div>
 
-                    <div v-if="assessedGapRows.length === 0" class="card empty-card">
+                    <div v-if="teamAssessedRows.length === 0" class="card empty-card">
                         ยังไม่ได้รับผลการประเมินจากผู้ใต้บังคับบัญชา
                     </div>
 
                     <template v-else>
                         <template v-if="!selectedGapPerson">
-                            <div class="g3 mb20">
-                                <div class="sc navy-top"><div class="sl">บุคลากรทั้งหมด</div><div class="sv">{{ gapRows.length }}</div><div class="ss muted">คน</div></div>
-                                <div class="sc blue-top"><div class="sl">ประเมินแล้ว</div><div class="sv bc">{{ assessedGapRows.length }}</div><div class="ss muted">คน</div></div>
-                                <div class="sc red-top"><div class="sl">พบ Gap</div><div class="sv rc">{{ foundGapRows.length }}</div><div class="ss muted">คน</div></div>
+                            <div class="g3 team-metrics mb20">
+                                <div class="sc">
+                                    <div class="sl">ประเมินเสร็จแล้ว</div>
+                                    <div class="sv bc">{{ teamAssessedRows.length }}/{{ teamHeatmapRows.length }}</div>
+                                    <div class="ss muted">เทียบกับลูกน้องทั้งหมด</div>
+                                </div>
+                                <div class="sc">
+                                    <div class="sl">จุดแข็งของทีม</div>
+                                    <div class="sv bc">{{ teamStrongest?.code || '-' }}</div>
+                                    <div class="ss muted">{{ teamTalentRows.length }} คนผ่านเกณฑ์</div>
+                                </div>
+                                <div class="sc">
+                                    <div class="sl">จุดอ่อนของทีม</div>
+                                    <div class="sv rc">{{ teamWeakest?.code || '-' }}</div>
+                                    <div class="ss muted">{{ idpRequiredCount }} คน Gap ติดลบ</div>
+                                </div>
                             </div>
 
-                            <div class="g2 team-grid">
-                                <div class="card">
-                                    <div class="ch"><div class="ct">สมรรถนะที่ทีมต้องพัฒนา</div><div class="cs">เรียงตามจำนวนคนที่ไม่ผ่านเกณฑ์</div></div>
-                                    <div v-for="comp in gapCompetencies" :key="comp.name" class="gap-item">
-                                        <span class="tag-cc">{{ comp.type }}</span>
-                                        <div class="gap-main">
-                                            <div class="gap-title">
-                                                <span class="fw8 fs13">{{ comp.name }}</span>
-                                                <span class="rc fw8 fs12">{{ comp.count }} คน</span>
-                                            </div>
-                                            <div class="pw mt8"><div class="pb red-bar" /></div>
-                                        </div>
+                            <div class="card team-table-card">
+                                <div class="team-card-head">
+                                    <div>
+                                        <div class="ct">Team Gap Heatmap</div>
+                                        <div class="cs">Gap = Actual Score - Expected Score, แดงคือต่ำกว่าความคาดหวัง เขียวคือผ่านเกณฑ์</div>
                                     </div>
                                 </div>
-
-                                <div class="card">
-                                    <div class="ch"><div class="ct">รายชื่อและสถานะ Gap รายบุคคล</div></div>
-                                    <button
-                                        v-for="person in gapRows"
-                                        :key="person.sso"
-                                        class="gap-person gap-person-button"
-                                        :disabled="person.pending"
-                                        type="button"
-                                        @click="openGapDetail(person)"
-                                    >
-                                        <div class="av row-avatar" :class="{ mutedAvatar: person.pending }">{{ person.n[0] }}</div>
-                                        <div class="row-main">
-                                            <div class="fw8 fs13" :class="{ muted: person.pending }">{{ `${person.t || ''}${person.n}` }}</div>
-                                            <div v-if="person.pending" class="muted fs11">รอการประเมิน</div>
-                                            <div v-else-if="person.gaps.length" class="flex g5 mt6" style="flex-wrap: wrap">
-                                                <span v-for="gap in person.gaps" :key="gap" class="b br">△ {{ gap }}</span>
-                                            </div>
-                                            <div v-else class="gcc fs11 mt4">ผ่านทุกข้อ</div>
-                                        </div>
-                                        <span v-if="!person.pending" class="bc fw8 fs13">ดู →</span>
-                                    </button>
+                                <div class="team-table-wrap">
+                                    <table class="team-table heatmap-table">
+                                        <thead>
+                                            <tr>
+                                                <th>บุคลากร</th>
+                                                <th v-for="comp in teamHeatmapCompetencies" :key="comp.code">{{ comp.code }}</th>
+                                                <th>สรุป</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr
+                                                v-for="row in teamHeatmapRows"
+                                                :key="row.sso"
+                                                :class="{ disabled: !row.assessed }"
+                                                @click="row.assessed && openGapDetail(row)"
+                                            >
+                                                <td>
+                                                    <div class="person-cell">
+                                                        <strong>{{ `${row.t || ''}${row.n}` }}</strong>
+                                                        <small>{{ row.p }}</small>
+                                                    </div>
+                                                </td>
+                                                <td v-for="(score, scoreIndex) in row.scores" :key="`${row.sso}-${scoreIndex}`">
+                                                    <span
+                                                        class="gap-chip"
+                                                        :class="{ ok: Number(score) >= 0, bad: Number(score) < 0 }"
+                                                    >
+                                                        {{ formatTeamGap(score) }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="b" :class="row.missingCount ? 'br' : 'bb'">{{ row.summary }}</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         </template>
@@ -877,14 +1142,18 @@ const logout = () => router.post(route('logout'));
                                         <div>Gap</div>
                                         <div>สถานะ</div>
                                     </div>
-                                    <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row">
+                                    <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row gap-result-body">
                                         <div class="fw8">{{ row.title }}</div>
                                         <div><span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span></div>
                                         <div><span class="score-pill navy">{{ row.expected }}</span></div>
                                         <div><span class="score-pill blue">{{ row.selfScore }}</span></div>
-                                        <div><span class="score-pill red-soft">{{ row.headScore }}</span></div>
-                                        <div class="rc fw8">{{ row.gap }}</div>
-                                        <div><span class="b br">{{ row.failed ? 'ไม่ผ่าน' : 'ผ่าน' }}</span></div>
+                                        <div><span class="score-pill evaluator">{{ row.headScore }}</span></div>
+                                        <div>
+                                            <span class="gap-chip" :class="{ ok: Number(row.gap) >= 0, bad: Number(row.gap) < 0 }">
+                                                {{ formatTeamGap(row.gap) }}
+                                            </span>
+                                        </div>
+                                        <div><span class="b" :class="row.failed ? 'br' : 'bb'">{{ row.failed ? 'ไม่ผ่าน' : 'ผ่าน' }}</span></div>
                                     </div>
                                     <div v-if="selectedGapRows.length === 0" class="empty-card">
                                         ผ่านทุกสมรรถนะ
@@ -908,6 +1177,177 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'dh-assess'">
+                    <template v-if="authRoleKey === 'supervisor'">
+                        <div class="team-page-head mb20">
+                            <div>
+                                <div class="sec-t">ตรวจประเมินลูกน้อง</div>
+                                <div class="sec-s">แสดงเฉพาะผู้ใต้บังคับบัญชาสายตรงที่ส่งแบบประเมินแล้ว ตรวจแบบ read-only ก่อนส่งต่อหัวหน้าฝ่าย</div>
+                            </div>
+                            <div class="flex g8" style="flex-wrap: wrap">
+                                <button class="btn btn-s btn-sm" type="button">Export PDF</button>
+                                <button class="btn btn-s btn-sm" type="button">Export Excel</button>
+                            </div>
+                        </div>
+
+                        <div class="g3 supervisor-approval-summary mb16">
+                            <div class="sc">
+                                <div class="sl">รอตรวจ</div>
+                                <div class="sv yc">{{ supervisorPendingRows.length }}</div>
+                                <div class="ss muted">Pending Supervisor</div>
+                            </div>
+                            <div class="sc">
+                                <div class="sl">ส่งต่อหัวหน้าฝ่ายแล้ว</div>
+                                <div class="sv bc">{{ supervisorForwardedRows.length }}</div>
+                                <div class="ss muted">Pending Department Head</div>
+                            </div>
+                            <div class="sc">
+                                <div class="sl">อนุมัติแล้ว</div>
+                                <div class="sv gcc">{{ supervisorApprovedRows.length }}</div>
+                                <div class="ss muted">ปิดรอบประเมินแล้ว</div>
+                            </div>
+                        </div>
+
+                        <div class="card supervisor-approval-card mb16">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">รายการรอดำเนินการ</div>
+                                    <div class="cs">เฉพาะ Direct Reports ที่อยู่สถานะ Pending Supervisor</div>
+                                </div>
+                                <span class="b by">{{ supervisorPendingRows.length }} รายการ</span>
+                            </div>
+                            <div class="team-table-wrap approval-table-wrap">
+                                <table class="team-table approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ชื่อ-นามสกุล</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>วันที่ส่งประเมิน</th>
+                                            <th>สถานะ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="person in supervisorApprovalRows"
+                                            :key="person.sso"
+                                            :class="{ selected: selectedSupervisorApproval?.sso === person.sso, disabled: !person.hasSubmittedAssessment }"
+                                            @click="openSupervisorApprovalModal(person)"
+                                        >
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <small>{{ person.d || '-' }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ person.p || '-' }}</td>
+                                            <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
+                                            <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
+                                        </tr>
+                                        <tr v-if="supervisorApprovalRows.length === 0">
+                                            <td colspan="4" class="muted ac py20">ไม่มีบุคลากรในความดูแล</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedSupervisorApproval?.hasSubmittedAssessment" class="approval-modal-backdrop" @click.self="closeSupervisorApprovalModal">
+                            <div class="approval-modal">
+                                <div class="approval-modal-head">
+                                    <div>
+                                        <div class="sec-t">ตรวจสอบผลประเมิน · {{ supervisorApprovalName }}</div>
+                                        <div class="sec-s">{{ selectedSupervisorApproval.p }} · Expected Level แสดงตามแต่ละสมรรถนะ · Checklist ถูกล็อก read-only</div>
+                                    </div>
+                                    <button class="btn btn-s btn-sm" type="button" @click="closeSupervisorApprovalModal">ปิด</button>
+                                </div>
+
+                                <div class="approval-modal-body">
+                                    <div class="approval-score-grid">
+                                        <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card">
+                                            <div class="muted fs12 fw8">{{ row.code || '-' }} · Expected {{ row.expected ?? '-' }}</div>
+                                            <div class="approval-score-gap" :class="{ bad: Number(row.gap) < 0, ok: Number(row.gap) >= 0 }">
+                                                {{ formatTeamGap(row.gap) }}
+                                            </div>
+                                            <div class="muted fs12">Actual {{ row.headScore }}</div>
+                                        </div>
+                                    </div>
+
+                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card">
+                                        <button
+                                            class="approval-competency-head"
+                                            :class="{ open: isSupervisorCompetencyOpen(row) }"
+                                            type="button"
+                                            :aria-expanded="isSupervisorCompetencyOpen(row)"
+                                            @click="toggleSupervisorCompetency(row)"
+                                        >
+                                            <div class="flex ic g10">
+                                                <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
+                                                <span class="fw8">{{ row.code }} · {{ row.title }}</span>
+                                                <span class="approval-accordion-icon">{{ isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด' }}</span>
+                                            </div>
+                                            <div class="flex ic g8">
+                                                <span class="b bgr">Expected Level {{ row.expected ?? '-' }}</span>
+                                                <span class="b by">{{ row.checkedIndicatorCount || 0 }}/{{ totalIndicatorCount(row) }}</span>
+                                            </div>
+                                        </button>
+
+                                        <div v-if="isSupervisorCompetencyOpen(row)" class="approval-accordion-body">
+                                            <div v-for="level in row.levels || []" :key="level.id || level.lvl" class="approval-level-card">
+                                                <div class="approval-level-head">
+                                                    <div>
+                                                        <div class="fw8">ระดับที่ {{ level.lvl }}</div>
+                                                        <div class="muted fs12">เลือกแล้ว {{ checkedIndicatorsForLevel(row, level).length }}/{{ level.indicators?.length || 0 }} พฤติกรรม</div>
+                                                    </div>
+                                                    <span
+                                                        class="b"
+                                                        :class="checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'bt' : 'bb'"
+                                                    >
+                                                        <!-- {{ checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'ครบระดับ' : 'กำลังประเมิน' }} -->
+                                                    </span>
+                                                </div>
+
+                                                <div class="approval-checklist">
+                                                    <label
+                                                        v-for="{ indicator, index } in checkedIndicatorsForLevel(row, level)"
+                                                        :key="`${row.id}-${level.id || level.lvl}-${index}`"
+                                                        class="approval-check-row"
+                                                    >
+                                                        <input checked disabled type="checkbox" />
+                                                        <span>
+                                                            <strong>ข้อ {{ level.lvl }}.{{ index + 1 }}</strong>
+                                                            {{ indicator }}
+                                                        </span>
+                                                    </label>
+                                                    <div v-if="checkedIndicatorsForLevel(row, level).length === 0" class="muted fs12">
+                                                        ไม่มีข้อที่เลือกในระดับนี้
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="approval-comment-box">
+                                                <div class="muted fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
+                                                <div class="fw8">{{ row.note || 'ไม่มี Note' }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="selectedSupervisorApproval.results.length === 0" class="empty-card compact">
+                                        ไม่มีผลคะแนนในรายการนี้
+                                    </div>
+                                </div>
+
+                                <div class="approval-modal-actions">
+                                    <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorApproval" @click="rejectSupervisorAssessment">
+                                        ไม่อนุมัติ
+                                    </button>
+                                    <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorApproval" @click="approveSupervisorAssessment">
+                                        อนุมัติ
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template v-else>
                     <div class="g5 assess-summary mb20">
                         <div class="sc navy-top">
                             <div class="sl">ทั้งหมด</div>
@@ -1074,6 +1514,7 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
                     </div>
+                    </template>
                 </template>
 
                 <div v-else class="card empty-card">
@@ -1106,6 +1547,371 @@ const logout = () => router.post(route('logout'));
 .idp-summary {
     grid-template-columns: repeat(5, minmax(0, 1fr));
 }
+
+.team-page-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.team-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.team-table-card {
+    overflow: hidden;
+}
+
+.team-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 20px 22px;
+    border-bottom: 1px solid var(--border);
+}
+
+.team-table-wrap {
+    overflow-x: auto;
+    padding: 20px 22px;
+}
+
+.team-table {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: collapse;
+}
+
+.team-table th,
+.team-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.team-table th {
+    background: #f8fafc;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.team-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.heatmap-table tbody tr {
+    cursor: pointer;
+}
+
+.heatmap-table tbody tr:hover {
+    background: var(--blue-lt);
+}
+
+.heatmap-table tbody tr.disabled {
+    cursor: default;
+    opacity: 0.56;
+}
+
+.approval-table tbody tr {
+    cursor: pointer;
+}
+
+.approval-table tbody tr:hover {
+    background: var(--blue-lt);
+}
+
+.approval-table tbody tr.selected {
+    background: #eff6ff;
+}
+
+.approval-table tbody tr.disabled {
+    cursor: default;
+    opacity: 0.62;
+}
+
+.approval-result-table {
+    padding: 18px 22px;
+}
+
+.approval-result-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.4fr) 90px 90px 90px 90px minmax(220px, 1.2fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 58px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.approval-result-head {
+    min-height: 44px;
+    background: #f8fafc;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.approval-note {
+    color: var(--text2);
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.approval-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 22px 20px;
+    border-top: 1px solid var(--border);
+}
+
+.approval-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.34);
+    overflow-y: auto;
+}
+
+.approval-modal {
+    width: min(1080px, 100%);
+    max-height: calc(100vh - 36px);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+    display: flex;
+    flex-direction: column;
+}
+
+.approval-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.approval-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.approval-score-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.approval-score-card {
+    min-height: 100px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.approval-score-gap {
+    margin: 4px 0;
+    color: var(--green);
+    font-size: 25px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.approval-score-gap.bad {
+    color: var(--red);
+}
+
+.approval-score-gap.ok {
+    color: var(--green);
+}
+
+.approval-competency-card {
+    overflow: hidden;
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.approval-competency-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    flex-wrap: wrap;
+}
+
+.approval-competency-head:hover,
+.approval-competency-head.open {
+    background: #eff6ff;
+}
+
+.approval-accordion-icon {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.approval-accordion-body {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+}
+
+.approval-level-card {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.approval-level-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #ecfeff;
+}
+
+.approval-checklist {
+    display: grid;
+    gap: 7px;
+    padding: 14px 16px;
+}
+
+.approval-check-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.approval-check-row input {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+}
+
+.approval-check-row.unchecked {
+    color: var(--text3);
+    font-weight: 600;
+}
+
+.approval-comment-box {
+    margin: 0 16px 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.approval-accordion-body .approval-comment-box {
+    margin: 0;
+}
+
+.approval-check-row strong {
+    display: block;
+    margin-bottom: 3px;
+}
+
+.approval-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--border);
+    background: #fff;
+    flex-shrink: 0;
+}
+
+.person-cell {
+    display: grid;
+    gap: 4px;
+}
+
+.person-cell strong {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.person-cell small {
+    color: var(--text3);
+    font-size: 12px;
+}
+
+.gap-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 22px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0 7px;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.gap-chip::before {
+    margin-right: 3px;
+    font-size: 9px;
+    line-height: 1;
+}
+
+.gap-chip.bad {
+    border-color: #b45309;
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+/* .gap-chip.bad::before {
+    content: '!';
+} */
+
+.gap-chip.ok {
+    border-color: var(--blue);
+    background: var(--blue-lt);
+    color: var(--blue);
+}
+
+/* .gap-chip.ok::before {
+    content: '=';
+} */
 
 .idp-row-action {
     border: 1.5px solid var(--border);
@@ -1541,13 +2347,16 @@ const logout = () => router.post(route('logout'));
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 28px 26px;
+    padding: 34px 32px;
+    min-height: 146px;
+    flex-wrap: wrap;
 }
 
 .gap-detail-avatar {
-    width: 60px;
-    height: 60px;
+    width: 74px;
+    height: 74px;
     background: var(--navy);
+    font-size: 18px;
     flex-shrink: 0;
 }
 
@@ -1569,25 +2378,29 @@ const logout = () => router.post(route('logout'));
 }
 
 .gap-result-row > div {
-    padding: 13px 14px;
+    padding: 18px 16px;
 }
 
 .gap-result-head {
-    background: var(--bg);
+    background: #f8fafc;
     color: var(--text3);
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 900;
+}
+
+.gap-result-body:hover {
+    background: var(--blue-lt);
 }
 
 .score-pill {
-    width: 42px;
-    height: 42px;
+    width: 52px;
+    height: 52px;
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    font-weight: 800;
+    font-size: 16px;
+    font-weight: 900;
 }
 
 .score-pill.navy {
@@ -1600,9 +2413,10 @@ const logout = () => router.post(route('logout'));
     color: var(--blue);
 }
 
-.score-pill.red-soft {
-    background: var(--red-bg);
-    color: var(--red);
+.score-pill.evaluator {
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #c2410c;
 }
 
 .tag-fc {

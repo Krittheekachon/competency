@@ -17,12 +17,12 @@ const props = defineProps({
 const isEditing = ref(false);
 const showSidebar = ref(true);
 const photoInput = ref(null);
-const normalizeRoleKey = (role) => role === 'dept_head' ? 'manager_dept' : role;
+const normalizeRoleKey = (role) => role === 'manager_dept' ? 'dept_head' : role;
 
 const roleKey = computed(() => normalizeRoleKey(props.profileUser?.r || 'employee'));
 const roleData = computed(() => ROLES_CONFIG[roleKey.value] || ROLES_CONFIG.employee);
 const navSections = computed(() => {
-    if (roleKey.value === 'manager_dept') return NAV_CONFIG.supervisor || [];
+    if (roleKey.value === 'dept_head') return NAV_CONFIG.dept_head || NAV_CONFIG.manager_dept || [];
 
     return NAV_CONFIG[roleKey.value] || NAV_CONFIG.employee || [];
 });

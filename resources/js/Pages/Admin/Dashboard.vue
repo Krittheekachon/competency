@@ -61,6 +61,8 @@ const editingUserKey = ref(null);
 const isSavingUser = ref(false);
 const orgEditMode = ref(false);
 const modalReturnPage = ref('admin-users');
+const supervisorSearch = ref('');
+const evaluator2Search = ref('');
 const userForm = ref({
     db_id: null,
     sso: '',
@@ -106,14 +108,26 @@ const supportRanks = ref(clone(levelsByWorkline.value['สายสนับส�
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
-const roleOptions = computed(() => page.props.roles || [
+const roleLabelsByKey = {
+    admin: 'ผู้ดูแลระบบ',
+    supervisor: 'ผู้บังคับบัญชา',
+    dept_head: 'หัวหน้างาน',
+    employee: 'บุคลากร',
+    hr: 'งานทรัพยากรบุคคล',
+    dean: 'ผู้บริหารคณะ',
+};
+const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
-    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
-    { id: 2, key: 'dept_head', label: 'ผู้บังคับบัญชา' },
+    { id: 1, key: 'supervisor', label: 'ผู้บังคับบัญชา' },
+    { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
-]);
+]).map((role) => ({
+    ...role,
+    key: normalizeUserRoleKey(role.key),
+    label: roleLabelsByKey[normalizeUserRoleKey(role.key)] || role.label,
+})));
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -215,6 +229,51 @@ watchEffect(() => {
 });
 
 watchEffect(() => {
+    if (Array.isArray(page.props.worklines)) {
+        worklines.value = clone(page.props.worklines);
+    }
+
+    if (page.props.jobFamiliesByWorkline && typeof page.props.jobFamiliesByWorkline === 'object') {
+        jobFamiliesByWorkline.value = clone(page.props.jobFamiliesByWorkline);
+    }
+
+    if (Array.isArray(page.props.academicJobFamilies)) {
+        academicPositions.value = clone(page.props.academicJobFamilies);
+    }
+
+    if (Array.isArray(page.props.adminJobFamilies)) {
+        adminDepts.value = clone(page.props.adminJobFamilies);
+        adminPositions.value = clone(page.props.adminJobFamilies);
+    }
+
+    if (page.props.supportPositionGroups && typeof page.props.supportPositionGroups === 'object') {
+        supportPositionGroups.value = clone(page.props.supportPositionGroups);
+    }
+
+    if (page.props.supportOrg && typeof page.props.supportOrg === 'object') {
+        supportOrg.value = clone(page.props.supportOrg);
+    } else {
+        supportOrg.value = supportOrgFromGroups(supportPositionGroups.value);
+    }
+
+    if (page.props.levelsByWorkline && typeof page.props.levelsByWorkline === 'object') {
+        levelsByWorkline.value = clone(page.props.levelsByWorkline);
+    }
+
+    if (page.props.levelExpectationsByWorkline && typeof page.props.levelExpectationsByWorkline === 'object') {
+        levelExpectationsByWorkline.value = clone(page.props.levelExpectationsByWorkline);
+    }
+
+    if (page.props.levelsByJobFamily && typeof page.props.levelsByJobFamily === 'object') {
+        levelsByJobFamily.value = clone(page.props.levelsByJobFamily);
+    }
+
+    if (page.props.levelExpectationsByJobFamily && typeof page.props.levelExpectationsByJobFamily === 'object') {
+        levelExpectationsByJobFamily.value = clone(page.props.levelExpectationsByJobFamily);
+    }
+});
+
+watchEffect(() => {
     if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
         requestedPage.value = null;
@@ -261,30 +320,96 @@ const personOption = (user) => ({
     label: `${user.t || ''}${user.n} · ${primaryJobFamily(user.d)} · ${roleLabel(user.r)}`,
 });
 
+const evaluatorOptions = computed(() =>
+    users.value
+        .filter((user) => user.db_id)
+        .map((user) => ({
+            key: user.db_id,
+            value: Number(user.db_id),
+            name: user.n,
+            displayName: `${user.t || ''}${user.n}`,
+            label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+            searchText: [
+                user.db_id,
+                user.sso,
+                user.t,
+                user.n,
+                user.p,
+                user.w,
+                user.d,
+                user.r,
+            ].filter(Boolean).join(' ').toLowerCase(),
+        })),
+);
+const selectedEvaluatorId = (value) => {
+    const id = Number(value);
+
+    return Number.isFinite(id) && id > 0 ? id : '';
+};
+const supervisorIdFromUser = (user, idKey, nameKey) => {
+    const explicitId = selectedEvaluatorId(user?.[idKey]);
+    if (explicitId) return explicitId;
+
+    const storedName = (user?.[nameKey] || '').trim();
+    if (!storedName) return '';
+
+    return evaluatorOptions.value.find((person) =>
+        person.name === storedName
+        || person.label === storedName
+        || person.label.startsWith(storedName),
+    )?.value || '';
+};
+const evaluatorFromId = (id) =>
+    evaluatorOptions.value.find((person) => person.value === selectedEvaluatorId(id)) || null;
+const reviewerOption = (user) =>
+    evaluatorOptions.value.find((person) => person.value === Number(user.db_id))
+    || {
+        key: user.db_id,
+        value: Number(user.db_id),
+        name: user.n,
+        displayName: `${user.t || ''}${user.n}`,
+        label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
+    };
+const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
+    const needle = query.trim().toLowerCase();
+    const selectedId = selectedEvaluatorId(selectedValue);
+    const blockedId = selectedEvaluatorId(blockedValue);
+
+    return evaluatorOptions.value.filter((person) =>
+        (person.value === selectedId || person.value !== blockedId)
+        && (
+            person.value === selectedId
+            || !needle
+            || person.searchText.includes(needle)
+            || person.label.toLowerCase().includes(needle)
+        ),
+    );
+};
+const deptHeadOptions = computed(() =>
+    users.value
+        .filter((user) => user.sso !== editingUserKey.value)
+        .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
+        .map(reviewerOption),
+);
+
 const supervisorOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
         .filter((user) => normalizeUserRoleKey(user.r) === 'supervisor')
-        .map(personOption),
-);
-
-const managerDeptOptions = computed(() =>
-    users.value
-        .filter((user) => user.sso !== editingUserKey.value)
-        .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
-        .map(personOption),
+        .map(reviewerOption),
 );
 
 const deanOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
         .filter((user) => normalizeUserRoleKey(user.r) === 'dean')
-        .map(personOption),
+        .map(reviewerOption),
 );
 
 const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
-const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator2 = computed(() => !['admin', 'supervisor', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
 
 const requestPageChange = (page) => {
     activePage.value = page;
@@ -344,7 +469,7 @@ const handleDeptChange = () => {
 
 const handleJobChange = () => {
     userForm.value.unit = '';
-    userForm.value.p = '';
+    userForm.value.p = isDeanRole.value ? userForm.value.job : '';
     userForm.value.l = '';
     syncOrgPath();
 };
@@ -357,9 +482,20 @@ const handleUnitChange = () => {
 
 const handlePositionChange = () => {
     userForm.value.l = '';
+    const directLevels = levelsByWorkline.value[userForm.value.w] || [];
+    if (!directLevels.length && userForm.value.p) {
+        userForm.value.l = userForm.value.p;
+    }
 };
 
 const handleRoleChange = () => {
+    if (isDeanRole.value && userForm.value.job) {
+        userForm.value.p = userForm.value.job;
+    }
+
+    if (!canPickEvaluator1.value) userForm.value.sup = '';
+    if (!canPickEvaluator2.value) userForm.value.evaluator2 = '';
+    if (!canPickEvaluator3.value) userForm.value.evaluator3 = '';
     if (!canPickEvaluator1.value) userForm.value.supervisor_id_1 = '';
     if (!canPickEvaluator2.value) userForm.value.supervisor_id_2 = '';
     if (!canPickEvaluator3.value) userForm.value.supervisor_id_3 = '';
@@ -370,6 +506,8 @@ const resetUserForm = (data = null) => {
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
 
     editingUserKey.value = data?.sso || null;
+    supervisorSearch.value = '';
+    evaluator2Search.value = '';
     userForm.value = {
         db_id: data?.db_id || null,
         sso: data?.sso || '',
@@ -399,6 +537,24 @@ const resetUserForm = (data = null) => {
     handleRoleChange();
 };
 
+const handleSupervisorChange = () => {
+    userForm.value.supervisor_id_1 = selectedEvaluatorId(userForm.value.supervisor_id_1);
+    if (userForm.value.supervisor_id_1 && userForm.value.supervisor_id_1 === selectedEvaluatorId(userForm.value.supervisor_id_2)) {
+        userForm.value.supervisor_id_2 = '';
+    }
+};
+
+const handleEvaluator2Change = () => {
+    userForm.value.supervisor_id_2 = selectedEvaluatorId(userForm.value.supervisor_id_2);
+    if (userForm.value.supervisor_id_2 && userForm.value.supervisor_id_2 === selectedEvaluatorId(userForm.value.supervisor_id_1)) {
+        userForm.value.supervisor_id_1 = '';
+    }
+};
+
+const handleEvaluator3Change = () => {
+    userForm.value.supervisor_id_3 = selectedEvaluatorId(userForm.value.supervisor_id_3);
+};
+
 const openModal = (type, data = null) => {
     if (!['modal-user', 'modal-org'].includes(type)) return;
 
@@ -424,6 +580,9 @@ const saveUser = () => {
     }
     const form = userForm.value;
     syncOrgPath();
+    if (isDeanRole.value && form.job) {
+        form.p = form.job;
+    }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
     if (!form.sso.trim() || !thaiName) {
@@ -431,12 +590,12 @@ const saveUser = () => {
         return;
     }
 
-    if (!form.w || !form.job || !form.p || !form.l) {
+    if (!form.w || !form.job || (!isDeanRole.value && !form.p) || !form.l) {
         alert('กรุณาเลือกสายงาน กลุ่มงาน ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
         return;
     }
 
-    if (!positionOptions.value.includes(form.p)) {
+    if (!isDeanRole.value && !positionOptions.value.includes(form.p)) {
         alert('กรุณาให้ Admin เพิ่มตำแหน่งงานในกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
@@ -451,6 +610,10 @@ const saveUser = () => {
         alert(`ID ${form.sso} มีอยู่ในระบบแล้ว`);
         return;
     }
+
+    const supervisor1 = evaluatorFromId(form.supervisor_id_1);
+    const supervisor2 = evaluatorFromId(form.supervisor_id_2);
+    const supervisor3 = evaluatorFromId(form.supervisor_id_3);
 
     const nextUser = {
         ...form,
@@ -469,7 +632,7 @@ const saveUser = () => {
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
-        p: form.p.trim(),
+        p: (isDeanRole.value ? form.job : form.p).trim(),
         l: form.l.trim(),
         supervisor_id_1: form.supervisor_id_1 || null,
         supervisor_id_2: form.supervisor_id_2 || null,
@@ -802,7 +965,7 @@ const logout = () => router.post(route('logout'));
                 </div>
 
                 <div v-if="!orgEditMode && userForm.job" class="modal-grid">
-                    <div class="fg">
+                    <div v-if="!isDeanRole" class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
                         <select
                             v-model="userForm.p"
@@ -826,7 +989,14 @@ const logout = () => router.post(route('logout'));
                             กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดผู้ใช้
                         </div>
                     </div>
-                    <div v-if="userForm.p" class="fg">
+                    <div v-else class="fg">
+                        <label class="lbl">ตำแหน่ง</label>
+                        <input :value="userForm.job" class="inp modal-input" disabled />
+                        <div class="modal-help">
+                            บทบาทคณบดีใช้กลุ่มงานเป็นตำแหน่งโดยอัตโนมัติ
+                        </div>
+                    </div>
+                    <div v-if="userForm.p || isDeanRole" class="fg">
                         <label class="lbl req">ระดับตำแหน่ง</label>
                         <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption">
                             <option v-if="levelOptions.length" value="">— เลือกระดับตำแหน่ง —</option>
@@ -876,19 +1046,21 @@ const logout = () => router.post(route('logout'));
                             v-model="userForm.supervisor_id_1"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator1"
+                            @change="handleSupervisorChange"
                         >
                             <option value="">
                                 {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in supervisorOptions"
+                                v-for="person in deptHeadOptions"
                                 :key="`sup-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
+                            <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!supervisorOptions.length" class="modal-help">
+                        <div v-if="!deptHeadOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role หัวหน้างาน
                         </div>
                     </div>
@@ -905,19 +1077,21 @@ const logout = () => router.post(route('logout'));
                             v-model="userForm.supervisor_id_2"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator2"
+                            @change="handleEvaluator2Change"
                         >
                             <option value="">
                                 {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in managerDeptOptions"
+                                v-for="person in supervisorOptions"
                                 :key="`evaluator2-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
+                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!managerDeptOptions.length" class="modal-help">
+                        <div v-if="!supervisorOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role ผู้บังคับบัญชา
                         </div>
                     </div>
@@ -934,6 +1108,7 @@ const logout = () => router.post(route('logout'));
                             v-model="userForm.supervisor_id_3"
                             class="sel modal-input"
                             :disabled="!canPickEvaluator3"
+                            @change="handleEvaluator3Change"
                         >
                             <option value="">
                                 {{ canPickEvaluator3 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
@@ -977,10 +1152,10 @@ const logout = () => router.post(route('logout'));
 }
 
 .admin-user-modal-box {
-    width: min(720px, calc(100vw - 28px));
+    width: min(800px, calc(100vw - 32px));
     max-height: min(88vh, 760px);
     margin: 14px 0;
-    border-radius: 8px;
+    border-radius: 14px;
 }
 
 .admin-user-modal-head {
@@ -1039,7 +1214,8 @@ const logout = () => router.post(route('logout'));
 .modal-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 14px;
+    column-gap: 20px;
+    row-gap: 20px;
 }
 
 .modal-grid.single-col {
@@ -1047,12 +1223,12 @@ const logout = () => router.post(route('logout'));
 }
 
 .modal-input {
-    min-height: 40px;
-    border-radius: 6px;
-    border-color: #dbe3ef;
+    min-height: 44px;
+    border-radius: 8px;
+    border-color: var(--border);
     font-size: 14px;
-    padding-top: 7px;
-    padding-bottom: 7px;
+    padding-top: 8px;
+    padding-bottom: 8px;
 }
 
 .modal-input:disabled {
@@ -1073,29 +1249,45 @@ const logout = () => router.post(route('logout'));
 }
 
 .evaluator-section {
-    margin: 2px 0 16px;
-    padding: 14px;
-    border: 1px solid #dbe5f1;
-    border-radius: 8px;
+    margin: 4px 0 16px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
     background: #fbfdff;
 }
 
 .evaluator-role-field {
-    margin-bottom: 14px;
-    max-width: 360px;
+    margin-bottom: 18px;
+    max-width: 400px;
+}
+
+.evaluator-role-field .lbl {
+    margin-bottom: 7px;
+    color: var(--text3);
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.evaluator-role-field .modal-input {
+    min-height: 47px;
+    padding-left: 14px;
+    padding-right: 14px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
 }
 
 .evaluator-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: 13px;
 }
 
 .evaluator-card {
     min-width: 0;
-    padding: 12px;
-    border: 1px solid #dbe5f1;
-    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
     background: #fff;
 }
 
@@ -1107,23 +1299,25 @@ const logout = () => router.post(route('logout'));
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
-    min-height: 44px;
-    margin-bottom: 8px;
+    gap: 11px;
+    min-height: 56px;
+    margin-bottom: 13px;
 }
 
 .evaluator-step {
     display: block;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
     color: #64748b;
-    font-size: 11px;
-    font-weight: 900;
+    font-size: 14px;
+    font-weight: 500;
 }
 
 .evaluator-card .lbl {
     margin-bottom: 0;
     color: var(--text);
-    line-height: 1.3;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
 }
 
 .evaluator-state {
@@ -1131,10 +1325,23 @@ const logout = () => router.post(route('logout'));
     border-radius: 999px;
     background: #eff6ff;
     color: #2563eb;
-    font-size: 10px;
-    font-weight: 900;
+    font-size: 11px;
+    font-weight: 600;
     line-height: 1;
-    padding: 5px 8px;
+    padding: 5px 9px;
+}
+
+.evaluator-card > .modal-input {
+    width: 100%;
+    min-height: 47px;
+    padding-left: 13px;
+    padding-right: 34px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .evaluator-card.disabled .evaluator-state {
