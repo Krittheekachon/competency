@@ -139,6 +139,7 @@ class DashboardController extends Controller
     {
         $department = $this->currentDepartmentForUser($user);
         $roleKey = $this->roleKeyForUser($user);
+        $assignedCompetencies = $this->assignedCompetenciesForUser($user);
         $competencyGaps = $this->competencyGapsForUser($user);
         $structureIssues = $roleKey === 'admin'
             ? []
@@ -171,6 +172,7 @@ class DashboardController extends Controller
             'sup' => $this->displayNameForUser($user->evaluatorLevel1),
             'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
+            'assignedCompetencies' => $assignedCompetencies,
             'competencyGaps' => $competencyGaps,
             'gaps' => collect($competencyGaps)
                 ->filter(fn (array $gap): bool => (float) ($gap['gap'] ?? 0) < 0)

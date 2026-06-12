@@ -8,6 +8,7 @@ import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 const selectedEmployee = ref(null);
+const props = defineProps({ roleKey: { type: String, default: null } });
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -24,7 +25,7 @@ const users = ref(clone(page.props.users || []));
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
     : null);
-const initialRoleKey = normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || 'dept_head');
+const initialRoleKey = normalizeRoleKey(props.roleKey || page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || 'dept_head');
 const rememberedHeadState = useRemember({
     showSidebar: true,
     activePage: requestedPage.value || defaultPageForRole(initialRoleKey),
@@ -64,7 +65,7 @@ const learningMethods = ref([
     },
 ]);
 
-const authRoleKey = computed(() => normalizeRoleKey(page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
+const authRoleKey = computed(() => normalizeRoleKey(props.roleKey || page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
 const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.dept_head || ROLES_CONFIG.supervisor);
 const navSections = computed(() => {
     const sections = [
@@ -349,14 +350,16 @@ const supervisorApprovalStatus = (person) => {
 };
 const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
     const results = gapResultRows(person);
-    const hasSubmittedAssessment = results.length > 0 || (person.evalStatus && person.evalStatus !== 'draft');
+    const hasSubmittedAssessment = results.some((row) => row.hasAssessment) || (person.evalStatus && person.evalStatus !== 'draft');
+    const hasReviewableCompetencies = results.length > 0;
 
     return {
         ...person,
         results,
         hasSubmittedAssessment,
+        hasReviewableCompetencies,
         statusMeta: supervisorApprovalStatus(person),
-        submittedAt: results[0]?.updatedAt || person.updatedAt || '-',
+        submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
 const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'self_submitted'));
@@ -479,9 +482,27 @@ const gapScoreFor = (person, comp, key, fallback) => {
 
 const gapResultRows = (person) => {
     if (!person) return [];
+    const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => ({
+        id: row.id || row.competency_id || row.name || row.title,
+        title: row.title || row.name || row.n || row.competency_name || '-',
+        group: row.group || row.type || row.t || '-',
+        code: row.code || row.cd || '',
+        expected: Number(row.expected ?? row.expectedScore ?? row.expectedLevel ?? row.target ?? 3),
+        selfScore: null,
+        headScore: null,
+        gap: null,
+        feedback: '',
+        note: '',
+        levels: row.levels || [],
+        checkedIndicatorKeys: [],
+        checkedIndicatorCount: 0,
+        updatedAt: '',
+        failed: false,
+        hasAssessment: false,
+    })) : [];
     const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
-        return rawRows.map((row) => {
+        const assessedRows = rawRows.map((row) => {
             const expected = Number(row.expected ?? row.expectedScore ?? row.target ?? 3);
             const selfScore = Number(row.selfScore ?? row.self ?? row.actual ?? row.actualLevel ?? 0);
             const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? row.actual ?? row.actualLevel ?? selfScore);
@@ -502,9 +523,17 @@ const gapResultRows = (person) => {
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
                 updatedAt: row.updatedAt || row.updated_at || '',
                 failed: row.failed ?? row.requiresIdp ?? gap < 0,
+                hasAssessment: true,
             };
         });
+
+        const assessedKeys = new Set(assessedRows.map((row) => row.id || row.code || row.title));
+        const missingAssignedRows = assignedRows.filter((row) => !assessedKeys.has(row.id || row.code || row.title));
+
+        return [...assessedRows, ...missingAssignedRows];
     }
+
+    if (assignedRows.length) return assignedRows;
 
     const explicitGaps = normalizeGaps(person);
     return assessmentComps.map((comp, index) => {
@@ -704,7 +733,7 @@ const selectAssessmentEmployee = (person) => {
 };
 
 const openSupervisorApprovalModal = (person) => {
-    if (!person.hasSubmittedAssessment) return;
+    if (!person.hasReviewableCompetencies) return;
     selectedSupervisorApprovalSso.value = person.sso;
     openedSupervisorCompetencyId.value = null;
 };
@@ -717,16 +746,25 @@ const closeSupervisorApprovalModal = () => {
 const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
 const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
 const toggleSupervisorCompetency = (row) => {
+    if (!row.hasAssessment) return;
     const key = supervisorCompetencyKey(row);
     openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
 };
 const checkedIndicatorKey = (row, level, index) => `${row.id}:${level.id || level.lvl}:${index}`;
 const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
 const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
-const totalIndicatorCount = (row) => (row.levels || []).reduce((total, level) => total + (level.indicators?.length || 0), 0);
+const totalIndicatorCount = (row) => (row.levels || [])
+    .filter((level) => level.lvl <= row.expected)
+    .reduce((total, level) => total + (level.indicators?.length || 0), 0);
 const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
     .map((indicator, index) => ({ indicator, index }))
     .filter(({ index }) => isIndicatorChecked(row, level, index));
+const checkedLevelsForRow = (row) => (row.levels || [])
+    .map((level) => ({
+        ...level,
+        checkedIndicators: checkedIndicatorsForLevel(row, level),
+    }))
+    .filter((level) => level.checkedIndicators.length > 0);
 
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
@@ -1229,7 +1267,7 @@ const logout = () => router.post(route('logout'));
                                         <tr
                                             v-for="person in supervisorApprovalRows"
                                             :key="person.sso"
-                                            :class="{ selected: selectedSupervisorApproval?.sso === person.sso, disabled: !person.hasSubmittedAssessment }"
+                                            :class="{ selected: selectedSupervisorApproval?.sso === person.sso, disabled: !person.hasReviewableCompetencies }"
                                             @click="openSupervisorApprovalModal(person)"
                                         >
                                             <td>
@@ -1250,7 +1288,7 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
 
-                        <div v-if="selectedSupervisorApproval?.hasSubmittedAssessment" class="approval-modal-backdrop" @click.self="closeSupervisorApprovalModal">
+                        <div v-if="selectedSupervisorApproval?.hasReviewableCompetencies" class="approval-modal-backdrop" @click.self="closeSupervisorApprovalModal">
                             <div class="approval-modal">
                                 <div class="approval-modal-head">
                                     <div>
@@ -1262,27 +1300,29 @@ const logout = () => router.post(route('logout'));
 
                                 <div class="approval-modal-body">
                                     <div class="approval-score-grid">
-                                        <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card">
+                                        <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card" :class="{ disabled: !row.hasAssessment }">
                                             <div class="muted fs12 fw8">{{ row.code || '-' }} · Expected {{ row.expected ?? '-' }}</div>
-                                            <div class="approval-score-gap" :class="{ bad: Number(row.gap) < 0, ok: Number(row.gap) >= 0 }">
+                                            <div v-if="row.hasAssessment" class="approval-score-gap" :class="{ bad: Number(row.gap) < 0, ok: Number(row.gap) >= 0 }">
                                                 {{ formatTeamGap(row.gap) }}
                                             </div>
-                                            <div class="muted fs12">Actual {{ row.headScore }}</div>
+                                            <div v-else class="approval-score-pending">ยังไม่ประเมิน</div>
+                                            <div class="muted fs12">Actual {{ row.hasAssessment ? row.headScore : '-' }}</div>
                                         </div>
                                     </div>
 
-                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card">
+                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
                                         <button
                                             class="approval-competency-head"
-                                            :class="{ open: isSupervisorCompetencyOpen(row) }"
+                                            :class="{ open: isSupervisorCompetencyOpen(row), disabled: !row.hasAssessment }"
                                             type="button"
+                                            :disabled="!row.hasAssessment"
                                             :aria-expanded="isSupervisorCompetencyOpen(row)"
                                             @click="toggleSupervisorCompetency(row)"
                                         >
                                             <div class="flex ic g10">
                                                 <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                                <span class="fw8">{{ row.code }} · {{ row.title }}</span>
-                                                <span class="approval-accordion-icon">{{ isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด' }}</span>
+                                                <span>{{ row.code }} · {{ row.title }}</span>
+                                                <span class="approval-accordion-icon">{{ row.hasAssessment ? (isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด') : 'ยังไม่ประเมิน' }}</span>
                                             </div>
                                             <div class="flex ic g8">
                                                 <span class="b bgr">Expected Level {{ row.expected ?? '-' }}</span>
@@ -1291,23 +1331,23 @@ const logout = () => router.post(route('logout'));
                                         </button>
 
                                         <div v-if="isSupervisorCompetencyOpen(row)" class="approval-accordion-body">
-                                            <div v-for="level in row.levels || []" :key="level.id || level.lvl" class="approval-level-card">
+                                            <div v-for="level in checkedLevelsForRow(row)" :key="level.id || level.lvl" class="approval-level-card">
                                                 <div class="approval-level-head">
                                                     <div>
                                                         <div class="fw8">ระดับที่ {{ level.lvl }}</div>
-                                                        <div class="muted fs12">เลือกแล้ว {{ checkedIndicatorsForLevel(row, level).length }}/{{ level.indicators?.length || 0 }} พฤติกรรม</div>
+                                                        <div class="muted fs12">เลือกแล้ว {{ level.checkedIndicators.length }}/{{ level.indicators?.length || 0 }} พฤติกรรม</div>
                                                     </div>
                                                     <span
                                                         class="b"
-                                                        :class="checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'bt' : 'bb'"
+                                                        :class="level.checkedIndicators.length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'bt' : 'bb'"
                                                     >
-                                                        <!-- {{ checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'ครบระดับ' : 'กำลังประเมิน' }} -->
+                                                        <!-- {{ level.checkedIndicators.length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'ครบระดับ' : 'กำลังประเมิน' }} -->
                                                     </span>
                                                 </div>
 
                                                 <div class="approval-checklist">
                                                     <label
-                                                        v-for="{ indicator, index } in checkedIndicatorsForLevel(row, level)"
+                                                        v-for="{ indicator, index } in level.checkedIndicators"
                                                         :key="`${row.id}-${level.id || level.lvl}-${index}`"
                                                         class="approval-check-row"
                                                     >
@@ -1317,15 +1357,11 @@ const logout = () => router.post(route('logout'));
                                                             {{ indicator }}
                                                         </span>
                                                     </label>
-                                                    <div v-if="checkedIndicatorsForLevel(row, level).length === 0" class="muted fs12">
-                                                        ไม่มีข้อที่เลือกในระดับนี้
-                                                    </div>
                                                 </div>
                                             </div>
-
                                             <div class="approval-comment-box">
-                                                <div class="muted fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
-                                                <div class="fw8">{{ row.note || 'ไม่มี Note' }}</div>
+                                                <div class="fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
+                                                <div>{{ row.note || 'ไม่มี Note' }}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1676,7 +1712,7 @@ const logout = () => router.post(route('logout'));
     inset: 0;
     z-index: 80;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
     padding: 18px;
     background: rgba(15, 23, 42, 0.34);
@@ -1725,12 +1761,25 @@ const logout = () => router.post(route('logout'));
     background: #fff;
 }
 
+.approval-score-card.disabled {
+    background: #f8fafc;
+    color: var(--text3);
+    opacity: 0.72;
+}
+
 .approval-score-gap {
     margin: 4px 0;
     color: var(--green);
     font-size: 25px;
     font-weight: 900;
     line-height: 1.15;
+}
+
+.approval-score-pending {
+    margin: 8px 0 6px;
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 800;
 }
 
 .approval-score-gap.bad {
@@ -1747,6 +1796,11 @@ const logout = () => router.post(route('logout'));
     border: 1px solid var(--border);
     border-radius: 6px;
     background: #fff;
+}
+
+.approval-competency-card.disabled {
+    border-color: #e2e8f0;
+    background: #f8fafc;
 }
 
 .approval-competency-head {
@@ -1769,6 +1823,20 @@ const logout = () => router.post(route('logout'));
 .approval-competency-head:hover,
 .approval-competency-head.open {
     background: #eff6ff;
+}
+
+.approval-competency-head.disabled,
+.approval-competency-head:disabled,
+.approval-competency-head.disabled:hover {
+    background: #f8fafc;
+    color: var(--text3);
+    cursor: not-allowed;
+}
+
+.approval-competency-head.disabled .approval-accordion-icon,
+.approval-competency-head:disabled .approval-accordion-icon {
+    background: #e2e8f0;
+    color: var(--text3);
 }
 
 .approval-accordion-icon {
@@ -1815,7 +1883,7 @@ const logout = () => router.post(route('logout'));
     gap: 8px;
     color: var(--text);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.45;
 }
 
@@ -1845,6 +1913,7 @@ const logout = () => router.post(route('logout'));
 
 .approval-check-row strong {
     display: block;
+    font-weight: 500;
     margin-bottom: 3px;
 }
 
