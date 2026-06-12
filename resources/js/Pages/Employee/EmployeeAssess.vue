@@ -6,15 +6,21 @@ const props = defineProps<{
   user: any;
   setUsers: any;
   competencies?: any[];
+  blocked?: boolean;
+  blockReasons?: string[];
 }>();
 
 const assignedCompetencies = computed(() => props.competencies || []);
+const blockReasons = computed(() => props.blockReasons || []);
+const isAssessmentBlocked = computed(() => Boolean(props.blocked) || blockReasons.value.length > 0);
 const selectedCompetency = ref<any | null>(null);
 const checkedIndicators = ref<Record<string, boolean>>({});
 const competencyNotes = ref<Record<string, string>>({});
 const isSaving = ref(false);
 
 const openCompetencyDetail = async (item: any) => {
+  if (isAssessmentBlocked.value) return;
+
   selectedCompetency.value = item;
 
   try {
@@ -35,7 +41,7 @@ const closeCompetencyDetail = () => {
 };
 
 const saveAndClose = async () => {
-  if (!selectedCompetency.value || isSaving.value) return;
+  if (!selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
   isSaving.value = true;
 
   router.post(route('assessments.save'), {
@@ -100,10 +106,20 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
         <h1>ประเมินตนเอง</h1>
         <!-- <p>รอเชื่อมข้อมูลสมรรถนะและแบบประเมินจริง</p> -->
       </div>
-      <span class="b bgr">{{ assignedCompetencies.length ? 'พร้อมประเมิน' : 'ยังไม่มีข้อมูล' }}</span>
+      <span class="b" :class="isAssessmentBlocked ? 'br' : 'bgr'">
+        {{ isAssessmentBlocked ? 'ยังไม่พร้อมประเมิน' : (assignedCompetencies.length ? 'พร้อมประเมิน' : 'ยังไม่มีข้อมูล') }}
+      </span>
     </div>
 
-    <div v-if="assignedCompetencies.length" class="summary-grid">
+    <div v-if="isAssessmentBlocked" class="blocked-card">
+      <div class="blocked-title">ยังไม่สามารถประเมินตนเองได้</div>
+      <div class="blocked-copy">กรุณาให้ Admin ตรวจสอบข้อมูลโครงสร้างและกำหนดหัวหน้างาน/ผู้บังคับบัญชาก่อนเริ่มประเมิน</div>
+      <ul v-if="blockReasons.length" class="blocked-list">
+        <li v-for="reason in blockReasons" :key="reason">{{ reason }}</li>
+      </ul>
+    </div>
+
+    <div v-if="assignedCompetencies.length && !isAssessmentBlocked" class="summary-grid">
       <div class="summary-card">
         <div class="summary-label">สมรรถนะที่ต้องประเมิน</div>
         <div class="summary-value">{{ assignedCompetencies.length }}</div>
@@ -116,7 +132,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
       </div>
     </div>
 
-    <div v-if="assignedCompetencies.length" class="content-card">
+    <div v-if="assignedCompetencies.length && !isAssessmentBlocked" class="content-card">
       <div class="card-head">
         <div>
           <h2>หัวข้อสมรรถนะที่ต้องประเมิน</h2>
@@ -140,7 +156,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
       </div>
     </div>
 
-    <div v-else class="empty-card">
+    <div v-else-if="!isAssessmentBlocked" class="empty-card">
       <div class="empty-title">ยังไม่มีหัวข้อสมรรถนะที่ต้องประเมิน</div>
       <div class="empty-copy">เมื่อเชื่อมข้อมูลจริงแล้ว รายการสมรรถนะและแบบประเมินจะแสดงที่นี่</div>
     </div>
@@ -242,6 +258,17 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
 .page-head p { margin: 8px 0 0; color: var(--text3); font-size: 13px; }
+.blocked-card {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  padding: 18px 20px;
+  color: #991b1b;
+}
+.blocked-title { font-size: 16px; font-weight: 900; }
+.blocked-copy { margin-top: 6px; color: #b91c1c; font-size: 13px; }
+.blocked-list { margin: 12px 0 0; padding-left: 20px; color: #7f1d1d; font-size: 13px; }
+.blocked-list li + li { margin-top: 4px; }
 .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .summary-card {
   border: 1px solid var(--border);

@@ -221,8 +221,8 @@ class UserController extends Controller
     private function validateEvaluatorRoles(array $data): void
     {
         $expectedRoles = [
-            'supervisor_id_1' => 'supervisor',
-            'supervisor_id_2' => 'dept_head',
+            'supervisor_id_1' => 'dept_head',
+            'supervisor_id_2' => 'supervisor',
             'supervisor_id_3' => 'dean',
         ];
 

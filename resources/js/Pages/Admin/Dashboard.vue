@@ -108,14 +108,26 @@ const supportRanks = ref(clone(levelsByWorkline.value['สายสนับส�
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
-const roleOptions = computed(() => page.props.roles || [
+const roleLabelsByKey = {
+    admin: 'ผู้ดูแลระบบ',
+    supervisor: 'ผู้บังคับบัญชา',
+    dept_head: 'หัวหน้างาน',
+    employee: 'บุคลากร',
+    hr: 'งานทรัพยากรบุคคล',
+    dean: 'ผู้บริหารคณะ',
+};
+const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
     { id: 1, key: 'supervisor', label: 'ผู้บังคับบัญชา' },
     { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
-]);
+]).map((role) => ({
+    ...role,
+    key: normalizeUserRoleKey(role.key),
+    label: roleLabelsByKey[normalizeUserRoleKey(role.key)] || role.label,
+})));
 const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
@@ -372,14 +384,14 @@ const filteredEvaluatorOptions = (query, selectedValue, blockedValue) => {
         ),
     );
 };
-const supervisorOptions = computed(() =>
+const deptHeadOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
         .filter((user) => normalizeUserRoleKey(user.r) === 'dept_head')
         .map(reviewerOption),
 );
 
-const managerDeptOptions = computed(() =>
+const supervisorOptions = computed(() =>
     users.value
         .filter((user) => user.sso !== editingUserKey.value)
         .filter((user) => normalizeUserRoleKey(user.r) === 'supervisor')
@@ -1039,15 +1051,15 @@ const logout = () => router.post(route('logout'));
                                 {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in supervisorOptions"
+                                v-for="person in deptHeadOptions"
                                 :key="`sup-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
-                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
+                            <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!supervisorOptions.length" class="modal-help">
+                        <div v-if="!deptHeadOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role หัวหน้างาน
                         </div>
                     </div>
@@ -1070,15 +1082,15 @@ const logout = () => router.post(route('logout'));
                                 {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in managerDeptOptions"
+                                v-for="person in supervisorOptions"
                                 :key="`evaluator2-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
-                            <option v-if="managerDeptOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
+                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!managerDeptOptions.length" class="modal-help">
+                        <div v-if="!supervisorOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role ผู้บังคับบัญชา
                         </div>
                     </div>

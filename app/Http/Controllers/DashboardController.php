@@ -66,7 +66,7 @@ class DashboardController extends Controller
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
-            'supervisor' => Inertia::render('Head/Dashboard', [
+            'supervisor' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
@@ -139,6 +139,7 @@ class DashboardController extends Controller
     {
         $department = $this->currentDepartmentForUser($user);
         $roleKey = $this->roleKeyForUser($user);
+        $competencyGaps = $this->competencyGapsForUser($user);
         $structureIssues = $roleKey === 'admin'
             ? []
             : [
@@ -170,6 +171,13 @@ class DashboardController extends Controller
             'sup' => $this->displayNameForUser($user->evaluatorLevel1),
             'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
+            'competencyGaps' => $competencyGaps,
+            'gaps' => collect($competencyGaps)
+                ->filter(fn (array $gap): bool => (float) ($gap['gap'] ?? 0) < 0)
+                ->pluck('n')
+                ->values()
+                ->all(),
+            'evalStatus' => $competencyGaps === [] ? 'draft' : 'self_submitted',
             'act' => (bool) $user->is_active,
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
@@ -313,11 +321,11 @@ class DashboardController extends Controller
             return [];
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
+        if ($roleKey === 'dept_head' && ! $user->supervisor_id_2) {
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_3) {
             return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
@@ -814,11 +822,18 @@ class DashboardController extends Controller
                 'competency_gaps.gap',
                 'competency_gaps.requires_idp',
                 'competency_gaps.status',
+                'assessments.note',
                 'assessments.updated_at'
             )
             ->orderBy('competencies.code')
             ->get()
             ->map(function (object $gap) use ($user, $expectedLevelResolver): array {
+                $checkedIndicatorKeys = DB::table('assessment_evidences')
+                    ->where('assessment_id', $gap->assessment_id)
+                    ->where('competency_id', $gap->id)
+                    ->pluck('indicator_key')
+                    ->values()
+                    ->all();
                 $expected = $gap->expected_level === null
                     ? $expectedLevelResolver->forUserCompetency($user, (int) $gap->id)
                     : (float) $gap->expected_level;
@@ -837,6 +852,10 @@ class DashboardController extends Controller
                     'expected' => $expected,
                     'actual' => $actual,
                     'gap' => $gapValue,
+                    'note' => $gap->note ?? '',
+                    'levels' => $this->competencyLevelsPayload((int) $gap->id),
+                    'checkedIndicatorKeys' => $checkedIndicatorKeys,
+                    'checkedIndicatorCount' => count($checkedIndicatorKeys),
                     'requiresIdp' => $gapValue !== null && $gapValue < 0,
                     'missingIndicators' => $gapValue !== null && $gapValue < 0 && $expected !== null
                         ? $this->missingIndicatorsForAssessment((int) $gap->assessment_id, (int) $gap->id, (float) $expected, $actual)
@@ -930,7 +949,6 @@ class DashboardController extends Controller
 
     private function roleKeyForUser(User $user): string
     {
-        $roleKeyColumn = $this->roleKeyColumn();
         $roleKey = $user->relationLoaded('role')
             ? $user->role?->key
             : DB::table('roles')->where('id', $user->role_id)->value('key');
@@ -940,8 +958,6 @@ class DashboardController extends Controller
 
     private function rolesPayload()
     {
-        $roleIdColumn = $this->roleIdColumn();
-        $roleKeyColumn = $this->roleKeyColumn();
 
         return DB::table('roles')
             ->orderBy('id')

@@ -129,6 +129,23 @@ const currentUser = computed(() =>
         act: true,
     },
 );
+const selfAssessmentBlockReasons = computed(() => {
+    const user = currentUser.value || {};
+    const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
+    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
+        .some((id) => Number(id) > 0);
+
+    if (!hasAssignedHeadOrSupervisor) {
+        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+    }
+
+    if (user.structureStatus === 'invalid' && reasons.length === 0) {
+        reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
+    }
+
+    return Array.from(new Set(reasons.filter(Boolean)));
+});
+const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
 
 const MOCK_TEAM = [
     {
@@ -320,6 +337,31 @@ const assessCounts = computed(() => ({
     forwarded: teamMembers.value.filter((user) => ['unit_evaluated', 'dept_evaluated'].includes(user.evalStatus)).length,
     done: teamMembers.value.filter((user) => user.evalStatus === 'dean_approved').length,
 }));
+const supervisorApprovalStatus = (person) => {
+    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    if (person.evalStatus === 'self_submitted') return { label: 'รอตรวจ', cls: 'by' };
+    if (person.evalStatus === 'unit_evaluated') return { label: 'อนุมัติแล้ว', cls: 'bt' };
+    if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
+    if (person.evalStatus === 'dept_evaluated') return { label: 'ส่งต่อหัวหน้าฝ่ายแล้ว', cls: 'bb' };
+    if (person.evalStatus === 'dean_approved') return { label: 'ปิดรอบแล้ว', cls: 'bg' };
+
+    return { label: person.evalStatus, cls: 'bgr' };
+};
+const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
+    const results = gapResultRows(person);
+    const hasSubmittedAssessment = results.length > 0 || (person.evalStatus && person.evalStatus !== 'draft');
+
+    return {
+        ...person,
+        results,
+        hasSubmittedAssessment,
+        statusMeta: supervisorApprovalStatus(person),
+        submittedAt: results[0]?.updatedAt || person.updatedAt || '-',
+    };
+}));
+const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'self_submitted'));
+const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => ['unit_evaluated', 'dept_evaluated'].includes(person.evalStatus)));
+const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'dean_approved'));
 
 const gapRows = computed(() => teamMembers.value.map((user) => ({
     ...user,
@@ -374,6 +416,8 @@ const assessmentSavedAt = ref('');
 const draftTimer = ref(null);
 const selectedGapEmployee = ref(null);
 const selectedIdpEmployee = ref(null);
+const selectedSupervisorApprovalSso = ref(null);
+const openedSupervisorCompetencyId = ref(null);
 const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
 const idpReviewDecisions = ref({});
@@ -414,6 +458,14 @@ const assessmentComps = [
 
 const selectedAssessment = computed(() => selectedEmployee.value || teamMembers.value.find((user) => user.evalStatus === 'self_submitted') || teamMembers.value[0] || null);
 const assessmentName = computed(() => selectedAssessment.value ? `${selectedAssessment.value.t || ''}${selectedAssessment.value.n}` : '');
+const selectedSupervisorApproval = computed(() =>
+    supervisorApprovalRows.value.find((person) => person.sso === selectedSupervisorApprovalSso.value) || null,
+);
+const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
+const canDecideSupervisorApproval = computed(() =>
+    Boolean(selectedSupervisorApproval.value?.hasSubmittedAssessment)
+    && selectedSupervisorApproval.value?.evalStatus === 'self_submitted',
+);
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
 
@@ -427,24 +479,29 @@ const gapScoreFor = (person, comp, key, fallback) => {
 
 const gapResultRows = (person) => {
     if (!person) return [];
-    const rawRows = person.competencyResults || person.assessmentResults || person.evaluationResults;
+    const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
         return rawRows.map((row) => {
             const expected = Number(row.expected ?? row.expectedScore ?? row.target ?? 3);
-            const selfScore = Number(row.selfScore ?? row.self ?? 0);
-            const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? selfScore);
+            const selfScore = Number(row.selfScore ?? row.self ?? row.actual ?? row.actualLevel ?? 0);
+            const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? row.actual ?? row.actualLevel ?? selfScore);
             const gap = Number(row.gap ?? headScore - expected);
             return {
                 id: row.id || row.competency_id || row.name || row.title,
-                title: row.title || row.name || row.competency_name || '-',
-                group: row.group || row.type || '-',
+                title: row.title || row.name || row.n || row.competency_name || '-',
+                group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
                 expected,
                 selfScore,
                 headScore,
                 gap,
-                feedback: row.feedback || '',
-                failed: row.failed ?? gap < 0,
+                feedback: row.feedback || row.note || '',
+                note: row.note || row.feedback || '',
+                levels: row.levels || [],
+                checkedIndicatorKeys: row.checkedIndicatorKeys || [],
+                checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                updatedAt: row.updatedAt || row.updated_at || '',
+                failed: row.failed ?? row.requiresIdp ?? gap < 0,
             };
         });
     }
@@ -473,46 +530,52 @@ const gapResultRows = (person) => {
 const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
-const teamHeatmapCompetencies = [
-    { code: 'CC-001', title: 'Service Mind' },
-    { code: 'CC-002', title: 'Integrity' },
-    { code: 'CC-003', title: 'Teamwork' },
-    { code: 'FC2-061', title: 'Digital Literacy' },
-    { code: 'FC2-062', title: 'Data & Reporting' },
-];
-const fallbackGapPattern = [
-    [-0.5, -1, -1.25, -2.25, -1],
-    [0, 0, 0, 0, 0],
-    [0, -1, -1.25, -2.25, -0.75],
-    [-0.5, -1, -1.25, -2.25, -1],
-    [0, -1, 0, -2.25, -1],
-    [-0.5, 0, -1.25, -2.25, -0.75],
-];
+const teamHeatmapCompetencies = computed(() => {
+    const byCode = new Map();
+
+    teamMembers.value
+        .flatMap((person) => gapResultRows(person))
+        .forEach((row) => {
+            const code = row.code || row.title;
+            if (!code || byCode.has(code)) return;
+            byCode.set(code, { code, title: row.title });
+        });
+
+    return Array.from(byCode.values()).sort((left, right) => left.code.localeCompare(right.code, 'th'));
+});
 const formatTeamGap = (value) => {
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue)) return '-';
-    return numberValue.toFixed(2).replace(/\.00$/, '').replace(/0$/, '').replace(/\.$/, '');
+    if (numberValue === 0) return '0';
+
+    const formatted = Math.abs(numberValue)
+        .toFixed(2)
+        .replace(/\.00$/, '')
+        .replace(/0$/, '')
+        .replace(/\.$/, '');
+
+    return `${numberValue > 0 ? '+' : '-'}${formatted}`;
 };
-const teamHeatmapRows = computed(() => teamMembers.value.map((person, index) => {
+const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const resultRows = gapResultRows(person);
-    const fallback = fallbackGapPattern[index % fallbackGapPattern.length];
-    const scores = teamHeatmapCompetencies.map((comp, compIndex) => {
+    const scores = teamHeatmapCompetencies.value.map((comp) => {
         const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
-        return Number(matching?.gap ?? fallback[compIndex] ?? 0);
+        return matching ? Number(matching.gap ?? 0) : 0;
     });
     const missingCount = scores.filter((score) => score < 0).length;
+    const assessed = resultRows.length > 0;
 
     return {
         ...person,
         scores,
-        assessed: person.evalStatus !== 'draft' && Boolean(person.evalStatus),
+        assessed,
         missingCount,
         summary: missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง',
     };
 }));
 const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
 const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
-const teamMetricStats = computed(() => teamHeatmapCompetencies.map((comp, index) => {
+const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, index) => {
     const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
     const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
     return { ...comp, average };
@@ -640,10 +703,49 @@ const selectAssessmentEmployee = (person) => {
     assessmentSavedAt.value = '';
 };
 
+const openSupervisorApprovalModal = (person) => {
+    if (!person.hasSubmittedAssessment) return;
+    selectedSupervisorApprovalSso.value = person.sso;
+    openedSupervisorCompetencyId.value = null;
+};
+
+const closeSupervisorApprovalModal = () => {
+    selectedSupervisorApprovalSso.value = null;
+    openedSupervisorCompetencyId.value = null;
+};
+
+const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
+const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
+const toggleSupervisorCompetency = (row) => {
+    const key = supervisorCompetencyKey(row);
+    openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
+};
+const checkedIndicatorKey = (row, level, index) => `${row.id}:${level.id || level.lvl}:${index}`;
+const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
+const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
+const totalIndicatorCount = (row) => (row.levels || []).reduce((total, level) => total + (level.indicators?.length || 0), 0);
+const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
+    .map((indicator, index) => ({ indicator, index }))
+    .filter(({ index }) => isIndicatorChecked(row, level, index));
+
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
     persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
+};
+const approveSupervisorAssessment = () => {
+    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
+    users.value = users.value.map((user) =>
+        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user,
+    );
+};
+const rejectSupervisorAssessment = () => {
+    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
+    if (!confirm('ยืนยันการส่งผลการประเมินกลับไปแก้ไข?')) return;
+
+    users.value = users.value.map((user) =>
+        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'revision_required' } : user,
+    );
 };
 
 watchEffect(() => {
@@ -724,6 +826,8 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentUser"
                     :set-users="setRef(users)"
+                    :blocked="isSelfAssessmentBlocked"
+                    :block-reasons="selfAssessmentBlockReasons"
                 />
 
                 <EmployeeGap
@@ -1073,6 +1177,177 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'dh-assess'">
+                    <template v-if="authRoleKey === 'supervisor'">
+                        <div class="team-page-head mb20">
+                            <div>
+                                <div class="sec-t">ตรวจประเมินลูกน้อง</div>
+                                <div class="sec-s">แสดงเฉพาะผู้ใต้บังคับบัญชาสายตรงที่ส่งแบบประเมินแล้ว ตรวจแบบ read-only ก่อนส่งต่อหัวหน้าฝ่าย</div>
+                            </div>
+                            <div class="flex g8" style="flex-wrap: wrap">
+                                <button class="btn btn-s btn-sm" type="button">Export PDF</button>
+                                <button class="btn btn-s btn-sm" type="button">Export Excel</button>
+                            </div>
+                        </div>
+
+                        <div class="g3 supervisor-approval-summary mb16">
+                            <div class="sc">
+                                <div class="sl">รอตรวจ</div>
+                                <div class="sv yc">{{ supervisorPendingRows.length }}</div>
+                                <div class="ss muted">Pending Supervisor</div>
+                            </div>
+                            <div class="sc">
+                                <div class="sl">ส่งต่อหัวหน้าฝ่ายแล้ว</div>
+                                <div class="sv bc">{{ supervisorForwardedRows.length }}</div>
+                                <div class="ss muted">Pending Department Head</div>
+                            </div>
+                            <div class="sc">
+                                <div class="sl">อนุมัติแล้ว</div>
+                                <div class="sv gcc">{{ supervisorApprovedRows.length }}</div>
+                                <div class="ss muted">ปิดรอบประเมินแล้ว</div>
+                            </div>
+                        </div>
+
+                        <div class="card supervisor-approval-card mb16">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">รายการรอดำเนินการ</div>
+                                    <div class="cs">เฉพาะ Direct Reports ที่อยู่สถานะ Pending Supervisor</div>
+                                </div>
+                                <span class="b by">{{ supervisorPendingRows.length }} รายการ</span>
+                            </div>
+                            <div class="team-table-wrap approval-table-wrap">
+                                <table class="team-table approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ชื่อ-นามสกุล</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>วันที่ส่งประเมิน</th>
+                                            <th>สถานะ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="person in supervisorApprovalRows"
+                                            :key="person.sso"
+                                            :class="{ selected: selectedSupervisorApproval?.sso === person.sso, disabled: !person.hasSubmittedAssessment }"
+                                            @click="openSupervisorApprovalModal(person)"
+                                        >
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <small>{{ person.d || '-' }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ person.p || '-' }}</td>
+                                            <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
+                                            <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
+                                        </tr>
+                                        <tr v-if="supervisorApprovalRows.length === 0">
+                                            <td colspan="4" class="muted ac py20">ไม่มีบุคลากรในความดูแล</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedSupervisorApproval?.hasSubmittedAssessment" class="approval-modal-backdrop" @click.self="closeSupervisorApprovalModal">
+                            <div class="approval-modal">
+                                <div class="approval-modal-head">
+                                    <div>
+                                        <div class="sec-t">ตรวจสอบผลประเมิน · {{ supervisorApprovalName }}</div>
+                                        <div class="sec-s">{{ selectedSupervisorApproval.p }} · Expected Level แสดงตามแต่ละสมรรถนะ · Checklist ถูกล็อก read-only</div>
+                                    </div>
+                                    <button class="btn btn-s btn-sm" type="button" @click="closeSupervisorApprovalModal">ปิด</button>
+                                </div>
+
+                                <div class="approval-modal-body">
+                                    <div class="approval-score-grid">
+                                        <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card">
+                                            <div class="muted fs12 fw8">{{ row.code || '-' }} · Expected {{ row.expected ?? '-' }}</div>
+                                            <div class="approval-score-gap" :class="{ bad: Number(row.gap) < 0, ok: Number(row.gap) >= 0 }">
+                                                {{ formatTeamGap(row.gap) }}
+                                            </div>
+                                            <div class="muted fs12">Actual {{ row.headScore }}</div>
+                                        </div>
+                                    </div>
+
+                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card">
+                                        <button
+                                            class="approval-competency-head"
+                                            :class="{ open: isSupervisorCompetencyOpen(row) }"
+                                            type="button"
+                                            :aria-expanded="isSupervisorCompetencyOpen(row)"
+                                            @click="toggleSupervisorCompetency(row)"
+                                        >
+                                            <div class="flex ic g10">
+                                                <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
+                                                <span class="fw8">{{ row.code }} · {{ row.title }}</span>
+                                                <span class="approval-accordion-icon">{{ isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด' }}</span>
+                                            </div>
+                                            <div class="flex ic g8">
+                                                <span class="b bgr">Expected Level {{ row.expected ?? '-' }}</span>
+                                                <span class="b by">{{ row.checkedIndicatorCount || 0 }}/{{ totalIndicatorCount(row) }}</span>
+                                            </div>
+                                        </button>
+
+                                        <div v-if="isSupervisorCompetencyOpen(row)" class="approval-accordion-body">
+                                            <div v-for="level in row.levels || []" :key="level.id || level.lvl" class="approval-level-card">
+                                                <div class="approval-level-head">
+                                                    <div>
+                                                        <div class="fw8">ระดับที่ {{ level.lvl }}</div>
+                                                        <div class="muted fs12">เลือกแล้ว {{ checkedIndicatorsForLevel(row, level).length }}/{{ level.indicators?.length || 0 }} พฤติกรรม</div>
+                                                    </div>
+                                                    <span
+                                                        class="b"
+                                                        :class="checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'bt' : 'bb'"
+                                                    >
+                                                        <!-- {{ checkedIndicatorsForLevel(row, level).length === (level.indicators?.length || 0) && (level.indicators?.length || 0) > 0 ? 'ครบระดับ' : 'กำลังประเมิน' }} -->
+                                                    </span>
+                                                </div>
+
+                                                <div class="approval-checklist">
+                                                    <label
+                                                        v-for="{ indicator, index } in checkedIndicatorsForLevel(row, level)"
+                                                        :key="`${row.id}-${level.id || level.lvl}-${index}`"
+                                                        class="approval-check-row"
+                                                    >
+                                                        <input checked disabled type="checkbox" />
+                                                        <span>
+                                                            <strong>ข้อ {{ level.lvl }}.{{ index + 1 }}</strong>
+                                                            {{ indicator }}
+                                                        </span>
+                                                    </label>
+                                                    <div v-if="checkedIndicatorsForLevel(row, level).length === 0" class="muted fs12">
+                                                        ไม่มีข้อที่เลือกในระดับนี้
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="approval-comment-box">
+                                                <div class="muted fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
+                                                <div class="fw8">{{ row.note || 'ไม่มี Note' }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="selectedSupervisorApproval.results.length === 0" class="empty-card compact">
+                                        ไม่มีผลคะแนนในรายการนี้
+                                    </div>
+                                </div>
+
+                                <div class="approval-modal-actions">
+                                    <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorApproval" @click="rejectSupervisorAssessment">
+                                        ไม่อนุมัติ
+                                    </button>
+                                    <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorApproval" @click="approveSupervisorAssessment">
+                                        อนุมัติ
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template v-else>
                     <div class="g5 assess-summary mb20">
                         <div class="sc navy-top">
                             <div class="sl">ทั้งหมด</div>
@@ -1239,6 +1514,7 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
                     </div>
+                    </template>
                 </template>
 
                 <div v-else class="card empty-card">
@@ -1341,6 +1617,247 @@ const logout = () => router.post(route('logout'));
     opacity: 0.56;
 }
 
+.approval-table tbody tr {
+    cursor: pointer;
+}
+
+.approval-table tbody tr:hover {
+    background: var(--blue-lt);
+}
+
+.approval-table tbody tr.selected {
+    background: #eff6ff;
+}
+
+.approval-table tbody tr.disabled {
+    cursor: default;
+    opacity: 0.62;
+}
+
+.approval-result-table {
+    padding: 18px 22px;
+}
+
+.approval-result-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.4fr) 90px 90px 90px 90px minmax(220px, 1.2fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 58px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.approval-result-head {
+    min-height: 44px;
+    background: #f8fafc;
+    color: var(--text3);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.approval-note {
+    color: var(--text2);
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.approval-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 22px 20px;
+    border-top: 1px solid var(--border);
+}
+
+.approval-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.34);
+    overflow-y: auto;
+}
+
+.approval-modal {
+    width: min(1080px, 100%);
+    max-height: calc(100vh - 36px);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+    display: flex;
+    flex-direction: column;
+}
+
+.approval-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.approval-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.approval-score-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.approval-score-card {
+    min-height: 100px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.approval-score-gap {
+    margin: 4px 0;
+    color: var(--green);
+    font-size: 25px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.approval-score-gap.bad {
+    color: var(--red);
+}
+
+.approval-score-gap.ok {
+    color: var(--green);
+}
+
+.approval-competency-card {
+    overflow: hidden;
+    margin-top: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.approval-competency-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    flex-wrap: wrap;
+}
+
+.approval-competency-head:hover,
+.approval-competency-head.open {
+    background: #eff6ff;
+}
+
+.approval-accordion-icon {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.approval-accordion-body {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+}
+
+.approval-level-card {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.approval-level-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #ecfeff;
+}
+
+.approval-checklist {
+    display: grid;
+    gap: 7px;
+    padding: 14px 16px;
+}
+
+.approval-check-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.approval-check-row input {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+}
+
+.approval-check-row.unchecked {
+    color: var(--text3);
+    font-weight: 600;
+}
+
+.approval-comment-box {
+    margin: 0 16px 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #f8fafc;
+}
+
+.approval-accordion-body .approval-comment-box {
+    margin: 0;
+}
+
+.approval-check-row strong {
+    display: block;
+    margin-bottom: 3px;
+}
+
+.approval-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--border);
+    background: #fff;
+    flex-shrink: 0;
+}
+
 .person-cell {
     display: grid;
     gap: 4px;
@@ -1392,9 +1909,9 @@ const logout = () => router.post(route('logout'));
     color: var(--blue);
 }
 
-.gap-chip.ok::before {
+/* .gap-chip.ok::before {
     content: '=';
-}
+} */
 
 .idp-row-action {
     border: 1.5px solid var(--border);
