@@ -1991,8 +1991,9 @@ const formatWeight = (weight) => {
 }
 
 .detail-copy {
-    color: var(--text3);
+    color: var(--text2);
     font-size: 13px;
+    font-weight: 650;
     line-height: 1.65;
 }
 
@@ -2041,18 +2042,21 @@ const formatWeight = (weight) => {
 
 .detail-levels {
     display: grid;
+    gap: 10px;
+    padding: 12px;
+    background: #f8fafc;
 }
 
 .detail-level {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 10px;
     background: #fff;
     overflow: hidden;
-    transition: box-shadow 0.15s;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .detail-level:hover {
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    border-color: #cfe0f7;
 }
 
 .detail-level-head {
@@ -2091,16 +2095,16 @@ const formatWeight = (weight) => {
     color: #64748b;
     font-size: 11px;
     font-weight: 700;
-    border-bottom: 1px solid var(--border);
-    background: #fff;
 }
 
 .detail-level:last-child {
-    border-bottom: 0;
+    border-bottom: 1px solid var(--border);
 }
 
 .detail-level.open {
-    background: #fbfdff;
+    border-color: #bfd7ff;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
 }
 
 .detail-level-head {
@@ -2111,7 +2115,7 @@ const formatWeight = (weight) => {
     align-items: center;
     padding: 12px 16px;
     border: 0;
-    background: transparent;
+    background: #fff;
     cursor: pointer;
     font-family: inherit;
     text-align: left;
@@ -2164,7 +2168,7 @@ const formatWeight = (weight) => {
 .detail-indicators {
     display: grid;
     border-top: 1px solid var(--border);
-    background: #fff;
+    background: #fbfdff;
 }
 
 .detail-indicator-head,
@@ -2177,9 +2181,9 @@ const formatWeight = (weight) => {
 
 .detail-indicator-head {
     padding: 9px 16px;
-    background: #f8fafc;
+    background: #f1f5f9;
     border-bottom: 1px solid #eef3f9;
-    color: var(--text3);
+    color: #64748b;
     font-size: 11px;
     font-weight: 900;
 }
@@ -2240,7 +2244,7 @@ const formatWeight = (weight) => {
     height: 28px;
     border: 1px solid var(--border);
     border-radius: 8px;
-    color: var(--text3);
+    color: #64748b;
     font-size: 12px;
     font-weight: 900;
 }

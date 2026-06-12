@@ -329,129 +329,101 @@
   </div>
 
   <div v-else class="chain-page anim-fade-in">
-    <section class="chain-section">
-      <div class="chain-section-head">
+    <section class="chain-map-section">
+      <div class="chain-map-head">
         <div>
-          <div class="chain-title">ลำดับการบังคับบัญชาเริ่มต้น</div>
-          <div class="chain-sub">กำหนดลำดับผู้บังคับบัญชามาตรฐานของคณะ สำหรับใช้ในการประเมินสมรรถนะ แผนพัฒนารายบุคคล (IDP) และกระบวนการอนุมัติที่เกี่ยวข้อง</div>
-        </div>
-        <div class="chain-actions">
-          <button class="btn btn-s btn-sm" type="button" @click="openDefaultChainModal">แก้ไขค่าเริ่มต้น</button>
-          <button class="btn btn-p btn-sm" type="button" @click="applyDefaultToAll">ใช้กับทุกสายงาน</button>
+          <div class="chain-eyebrow">Evaluation Line Overview</div>
+          <div class="chain-title">ภาพรวมสายการประเมินทั้งองค์กร</div>
+          <div class="chain-sub">มองเป็นเส้นจากผู้ประเมินลำดับสูงสุดไปถึงผู้รับการประเมินแต่ละคน เพื่อเห็นช่องว่างและจุดที่ต้องจัดการได้ทันที</div>
         </div>
       </div>
 
-      <div class="chain-visual default-chain hierarchy-visual">
-        <template v-for="(role, index) in authorityDefaultChain" :key="role">
-          <div class="hierarchy-node-wrap">
-            <div class="chain-node hierarchy-node" :class="{ top: index === 0, base: index === authorityDefaultChain.length - 1 }">
-              <span class="chain-node-kicker">{{ hierarchyRoleLabel(index, authorityDefaultChain.length) }}</span>
-              <span>{{ role }}</span>
-            </div>
-            <div v-if="index < authorityDefaultChain.length - 1" class="hierarchy-connector"></div>
-          </div>
-        </template>
-      </div>
-    </section>
-
-    <section class="chain-section">
-      <div class="chain-section-head">
-        <div>
-          <div class="chain-title">กำหนดลำดับเฉพาะหน่วยงาน</div>
-          <div class="chain-sub">หากไม่ได้กำหนดเอง ระบบจะใช้ลำดับการบังคับบัญชาเริ่มต้นของคณะ</div>
+      <div class="hierarchy-filterbar chain-filterbar">
+        <div class="filter-field chain-search-field">
+          <label>ค้นหาชื่อ</label>
+          <input
+            v-model="chainSearch"
+            class="inp"
+            placeholder="พิมพ์ชื่อหรือ ID..."
+          />
+        </div>
+        <div class="filter-field">
+          <label>สายงาน</label>
+          <select v-model="hierarchyWorklineFilter" class="sel">
+            <option :value="ALL_WORKLINES">ทุกสายงาน</option>
+            <option v-for="workline in props.worklines" :key="workline" :value="workline">
+              {{ workline }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>กลุ่มงาน</label>
+          <select v-model="hierarchyGroupFilter" class="sel">
+            <option v-for="group in hierarchyGroupOptions" :key="group" :value="group">
+              {{ group }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>ตำแหน่ง</label>
+          <select v-model="hierarchyPositionFilter" class="sel">
+            <option v-for="position in hierarchyPositionOptions" :key="position" :value="position">
+              {{ position }}
+            </option>
+          </select>
         </div>
       </div>
 
-      <div class="chain-table-wrap">
-        <table class="tbl chain-table">
-          <thead>
-            <tr>
-              <th>ฝ่าย/งาน</th>
-              <th>ลำดับการบังคับบัญชา</th>
-              <th>สถานะ</th>
-              <th style="width: 180px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="unit in chainUnits" :key="unit.name">
-              <td class="fw7 text-navy">{{ unit.name }}</td>
-              <td>
-                <div class="mini-chain">
-                  <template v-for="(role, index) in toAuthorityOrder(unit.chain)" :key="`${unit.name}-${role}`">
-                    <span class="mini-node" :class="{ top: index === 0, base: index === unit.chain.length - 1 }">{{ role }}</span>
-                    <span v-if="index < unit.chain.length - 1" class="mini-arrow">&gt;</span>
-                  </template>
+      <div class="chain-legend">
+        <span><i class="legend-dot subject"></i>ผู้รับการประเมิน</span>
+        <span><i class="legend-dot evaluator"></i>ผู้ประเมินที่กำหนดแล้ว</span>
+        <span><i class="legend-dot missing"></i>ยังไม่กำหนดผู้ประเมิน</span>
+      </div>
+
+      <div class="evaluation-board">
+        <div class="evaluation-board-head">
+          <span>ผู้รับการประเมิน</span>
+          <span>ผู้ประเมินลำดับ 1</span>
+          <span>ผู้ประเมินลำดับ 2</span>
+          <span>ผู้ประเมินลำดับ 3</span>
+        </div>
+
+        <div v-if="evaluationLines.length" class="evaluation-lines">
+          <article
+            v-for="line in evaluationLines"
+            :key="line.user.sso || line.user.db_id || line.user.n"
+            class="evaluation-line"
+            :class="{ incomplete: line.missing.length }"
+          >
+            <div class="evaluation-flow-line"></div>
+            <div
+              v-for="step in line.steps"
+              :key="step.key"
+              class="evaluation-node"
+              :class="{ missing: !step.user, subject: step.key === 'subject' }"
+            >
+              <div v-if="step.user" class="node-person">
+                <div class="av node-avatar">{{ avatarInitial(step.user) }}</div>
+                <div class="node-copy">
+                  <div class="node-role">{{ step.label }}</div>
+                  <div class="node-name">{{ step.user.t }}{{ step.user.n }}</div>
+                  <div class="node-meta">{{ step.user.p || '—' }}</div>
                 </div>
-              </td>
-              <td>
-                <span class="chain-badge" :class="unit.isOverride ? 'custom' : 'default'">
-                  {{ unit.isOverride ? 'กำหนดเอง' : 'ใช้ค่าเริ่มต้น' }}
-                </span>
-              </td>
-              <td>
-                <div class="chain-row-actions">
-                  <button class="btn btn-s btn-xs" type="button" @click="openUnitChainModal(unit.name)">แก้ไข</button>
-                  <button
-                    v-if="unit.isOverride"
-                    class="btn btn-r btn-xs"
-                    type="button"
-                    @click="resetUnitChain(unit.name)"
-                  >
-                    รีเซ็ตกลับค่าเริ่มต้น
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="chainUnits.length === 0" class="chain-empty">ยังไม่มีฝ่าย/งานในระบบ</div>
-      </div>
-    </section>
-
-    <div v-if="chainModal.open" class="mo">
-      <div class="mo-box chain-modal">
-        <div class="mo-h">
-          <div>
-            <div class="fw8">{{ chainModal.scope === 'default' ? 'แก้ไขค่าเริ่มต้น' : `กำหนดเฉพาะ ${chainModal.unitName}` }}</div>
-            <div class="muted fs12">
-              ระบบจะใช้ลำดับนี้เพื่อค้นหาผู้บังคับบัญชาที่เกี่ยวข้องกับการประเมินและการอนุมัติ
-            </div>
-            <div class="muted fs12">
-              {{ chainModal.scope === 'default'
-                ? 'เลือกบทบาทที่ต้องการให้ปรากฏในลำดับการบังคับบัญชาเริ่มต้น'
-                : 'เลือกบทบาทที่ต้องการให้ใช้กับหน่วยงานนี้เท่านั้น' }}
-            </div>
-          </div>
-          <button class="btn btn-s btn-sm" type="button" @click="closeChainModal">× ปิด</button>
-        </div>
-        <div class="mo-b">
-          <div class="chain-editor">
-            <div v-for="role in ROLE_NODE_OPTIONS" :key="role" class="chain-edit-row">
-              <div class="chain-edit-node">
-                <div class="fw8">{{ role }}</div>
-                <div class="muted fs12">{{ roleHelpText(role) }}</div>
               </div>
-              <label class="chain-toggle">
-                <input
-                  type="checkbox"
-                  :checked="chainModal.draft.includes(role)"
-                  :disabled="role === 'บุคลากร'"
-                  @change="toggleDraftRole(role)"
-                />
-                <span>{{ chainModal.draft.includes(role) ? 'รวมในลำดับการบังคับบัญชา' : 'ไม่รวมในลำดับการบังคับบัญชา' }}</span>
-              </label>
+              <div v-else class="node-missing">
+                <div class="node-role">{{ step.label }}</div>
+                <div class="node-name">ไม่ผ่านการประเมินลำดับนี้</div>
+              </div>
             </div>
-          </div>
+          </article>
+        </div>
 
-          <div class="modal-actions">
-            <button class="btn btn-s modal-action-btn" type="button" @click="closeChainModal">ยกเลิก</button>
-            <button class="btn btn-p modal-action-btn modal-save-btn" type="button" @click="saveChainModal">
-              {{ chainModal.scope === 'default' ? 'บันทึกค่าเริ่มต้น' : 'บันทึกการตั้งค่า' }}
-            </button>
-          </div>
+        <div v-else class="chain-empty">
+          ไม่พบข้อมูลตาม filter นี้
         </div>
       </div>
-    </div>
+    </section>
+
   </div>
 </template>
 
@@ -501,26 +473,12 @@ const showFilter = ref(false);
 const filterType = ref(props.worklines[0] || 'สายวิชาการ');
 const search = ref('');
 const deptSearch = ref('');
+const chainSearch = ref('');
 const selectedDept = ref('');
 const hierarchyWorklineFilter = ref(ALL_WORKLINES);
 const hierarchyGroupFilter = ref(ALL_GROUPS);
 const hierarchyPositionFilter = ref(ALL_POSITIONS);
 const drillPath = ref<User[]>([]);
-const ROLE_NODE_OPTIONS = ['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี'];
-const defaultChain = ref<string[]>(['บุคลากร', 'หัวหน้างาน', 'หัวหน้าฝ่าย', 'คณบดี']);
-const chainOverrides = ref<Record<string, string[]>>({});
-const chainModal = ref<{
-  open: boolean;
-  scope: 'default' | 'unit';
-  unitName: string;
-  draft: string[];
-}>({
-  open: false,
-  scope: 'default',
-  unitName: '',
-  draft: [],
-});
-
 const filterOptions = computed(() => [ALL_WORKLINES, ...props.worklines]);
 const isSearchActive = computed(() => search.value.trim().length > 0);
 
@@ -563,20 +521,6 @@ const filteredDepts = computed(() => {
       return hasUserOfWorkline;
     });
 });
-
-const chainUnitNames = computed(() => {
-  return filteredDepts.value;
-});
-
-const chainUnits = computed(() => chainUnitNames.value.map((name) => {
-  const override = chainOverrides.value[name];
-
-  return {
-    name,
-    chain: override || defaultChain.value,
-    isOverride: Boolean(override),
-  };
-}));
 
 const hierarchyGroupOptions = computed(() => {
   const groups = props.users
@@ -629,6 +573,54 @@ const currentHierarchyUsers = computed(() => {
 
   return scopeUsers.filter(matchesHierarchyFilters);
 });
+
+const findUserById = (id?: number | null) => {
+  if (!id) return null;
+
+  return props.users.find((user) => Number(user.db_id) === Number(id)) || null;
+};
+
+const chainScopedUsers = computed(() => {
+  const keyword = chainSearch.value.trim().toLowerCase();
+
+  return props.users
+    .filter(matchesHierarchyFilters)
+    .filter((user) => {
+      if (!keyword) return true;
+
+      return [
+        user.n,
+        `${user.t || ''}${user.n || ''}`,
+        user.sso,
+        user.p,
+        roleBadge(user.r).label,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword));
+    });
+});
+
+const evaluationLines = computed(() => chainScopedUsers.value.map((user) => {
+  const level3 = findUserById(user.supervisor_id_3);
+  const level2 = findUserById(user.supervisor_id_2);
+  const level1 = findUserById(user.supervisor_id_1);
+  const missing = [
+    level3 ? '' : 'ลำดับ 3',
+    level2 ? '' : 'ลำดับ 2',
+    level1 ? '' : 'ลำดับ 1',
+  ].filter(Boolean);
+
+  return {
+    user,
+    missing,
+    steps: [
+      { key: 'subject', label: roleBadge(user.r).label, user },
+      { key: 'level1', label: 'หัวหน้างาน', user: level1 },
+      { key: 'level2', label: 'ผู้บังคับบัญชา', user: level2 },
+      { key: 'level3', label: 'คณบดี', user: level3 },
+    ],
+  };
+}));
 
 watch(hierarchyWorklineFilter, () => {
   hierarchyGroupFilter.value = ALL_GROUPS;
@@ -776,104 +768,6 @@ const pushDrillPath = (user: User) => {
   }
 };
 
-const openDefaultChainModal = () => {
-  chainModal.value = {
-    open: true,
-    scope: 'default',
-    unitName: '',
-    draft: ensureRequiredChainRoles(defaultChain.value),
-  };
-};
-
-const openUnitChainModal = (unitName: string) => {
-  chainModal.value = {
-    open: true,
-    scope: 'unit',
-    unitName,
-    draft: ensureRequiredChainRoles(chainOverrides.value[unitName] || defaultChain.value),
-  };
-};
-
-const closeChainModal = () => {
-  chainModal.value.open = false;
-};
-
-const orderChainRoles = (roles: string[]) => ROLE_NODE_OPTIONS.filter((role) => roles.includes(role));
-const ensureRequiredChainRoles = (roles: string[]) => orderChainRoles(Array.from(new Set(['บุคลากร', ...roles])));
-const toAuthorityOrder = (roles: string[]) => [...orderChainRoles(roles)].reverse();
-const hasRepeatedRoles = (roles: string[]) => new Set(roles).size !== roles.length;
-const authorityDefaultChain = computed(() => toAuthorityOrder(defaultChain.value));
-
-const hierarchyRoleLabel = (index: number, total: number) => {
-  if (index === 0) return 'ผู้บริหารระดับคณะ';
-  if (index === total - 1) return 'ฐานของหน่วยงาน';
-  return 'ผู้บังคับบัญชา';
-};
-
-const toggleDraftRole = (role: string) => {
-  if (role === 'บุคลากร') return;
-
-  const enabled = chainModal.value.draft.includes(role);
-  chainModal.value.draft = enabled
-    ? ensureRequiredChainRoles(chainModal.value.draft.filter((item) => item !== role))
-    : ensureRequiredChainRoles([...chainModal.value.draft, role]);
-};
-
-const roleHelpText = (role: string) => {
-  if (role === 'บุคลากร') return 'จำเป็นต้องมีในทุกลำดับ';
-  if (role === 'หัวหน้างาน') return 'ใช้เป็นผู้ประเมินหรือผู้ดูแลขั้นแรกของบุคลากร';
-  if (role === 'หัวหน้าฝ่าย') return 'ใช้เป็นผู้ประเมินหรือผู้อนุมัติระดับถัดไป';
-  return 'ใช้สำหรับภาพรวมคณะและการประเมินหัวหน้าฝ่าย';
-};
-
-const saveChainModal = () => {
-  const nextChain = ensureRequiredChainRoles(chainModal.value.draft);
-  if (nextChain.length === 0) {
-    alert('ต้องมีอย่างน้อย 1 บทบาทในลำดับการบังคับบัญชา');
-    return;
-  }
-
-  if (!nextChain.includes('บุคลากร')) {
-    alert('ต้องมีบทบาทบุคลากรอยู่ในลำดับเสมอ');
-    return;
-  }
-
-  if (hasRepeatedRoles(nextChain)) {
-    alert('ลำดับการบังคับบัญชาต้องไม่ซ้ำบทบาทเดิม');
-    return;
-  }
-
-  if (chainModal.value.scope === 'default') {
-    defaultChain.value = nextChain;
-  } else {
-    chainOverrides.value = {
-      ...chainOverrides.value,
-      [chainModal.value.unitName]: nextChain,
-    };
-  }
-
-  closeChainModal();
-};
-
-const applyDefaultToAll = () => {
-  const affectedOverrides = Object.keys(chainOverrides.value).length;
-  const totalUnits = chainUnitNames.value.length;
-  if (!confirm(`ยืนยันการใช้ค่าเริ่มต้นกับทุกหน่วยงาน\n\nการดำเนินการนี้จะนำลำดับการบังคับบัญชาเริ่มต้นไปแทนที่ค่าที่กำหนดเองของทุกหน่วยงาน และไม่สามารถย้อนกลับได้\n\nหน่วยงานทั้งหมด: ${totalUnits} หน่วยงาน\nหน่วยงานที่มีค่ากำหนดเองและจะถูกแทนที่: ${affectedOverrides} หน่วยงาน`)) {
-    return;
-  }
-
-  chainOverrides.value = {};
-};
-
-const resetUnitChain = (unitName: string) => {
-  if (!confirm(`ยืนยันการรีเซ็ตกลับค่าเริ่มต้น\n\nต้องการให้ ${unitName} กลับไปใช้ลำดับการบังคับบัญชาเริ่มต้นของคณะใช่ไหม? การตั้งค่าเฉพาะของหน่วยงานนี้จะถูกยกเลิก`)) {
-    return;
-  }
-
-  const next = { ...chainOverrides.value };
-  delete next[unitName];
-  chainOverrides.value = next;
-};
 </script>
 
 <style scoped>
@@ -1397,19 +1291,226 @@ const resetUnitChain = (unitName: string) => {
   gap: 18px;
 }
 
-.chain-section {
+.chain-map-section {
+  display: grid;
+  gap: 16px;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
 }
 
-.chain-section-head {
+.chain-map-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 18px;
+}
+
+.chain-eyebrow {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.chain-filterbar {
+  grid-template-columns: minmax(260px, 1.2fr) repeat(3, minmax(0, 1fr));
+  box-shadow: none;
+}
+
+.chain-search-field .inp {
+  min-height: 40px;
+  border-radius: 7px;
+  font-size: 14px;
+}
+
+.chain-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chain-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.legend-dot.subject {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.legend-dot.evaluator {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.legend-dot.missing {
+  border-color: #fdba74;
+  background: #fff7ed;
+  border-style: dashed;
+}
+
+.evaluation-board {
+  overflow: hidden;
+  border: 1px solid #dbe5f1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.evaluation-board-head {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 18px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #dbe5f1;
+  background: #fff;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.evaluation-lines {
+  display: grid;
+  gap: 12px;
+  max-height: 680px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.evaluation-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.evaluation-line.incomplete {
+  border-color: #e2e8f0;
+  background: #fff;
+}
+
+.evaluation-flow-line {
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  top: 50%;
+  height: 2px;
+  background: #cbd5e1;
+  transform: translateY(-50%);
+}
+
+.evaluation-line.incomplete .evaluation-flow-line {
+  background: #fdba74;
+}
+
+.evaluation-node {
+  position: relative;
+  z-index: 1;
+  min-height: 94px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  background: #eff6ff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.evaluation-node.subject {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.evaluation-node.missing {
+  border-style: dashed;
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.node-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  padding: 10px;
+}
+
+.node-avatar {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.node-copy {
+  min-width: 0;
+}
+
+.node-role {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.node-name {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-meta {
+  overflow: hidden;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-missing {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
 }
 
 .chain-title {
@@ -1425,214 +1526,11 @@ const resetUnitChain = (unitName: string) => {
   line-height: 1.55;
 }
 
-.chain-actions,
-.chain-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.chain-visual {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 16px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-
-.chain-visual.hierarchy-visual {
-  display: grid;
-  justify-items: center;
-  gap: 0;
-}
-
-.default-chain {
-  min-height: 260px;
-}
-
-.chain-node,
-.chain-edit-node,
-.mini-node {
-  border: 1px solid #bfdbfe;
-  border-radius: 7px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.chain-node {
-  display: grid;
-  gap: 3px;
-  min-width: 120px;
-  padding: 12px 14px;
-  text-align: center;
-}
-
-.hierarchy-node-wrap {
-  display: grid;
-  justify-items: center;
-}
-
-.hierarchy-node {
-  min-width: min(100%, 260px);
-  padding: 13px 18px;
-}
-
-.hierarchy-connector {
-  width: 2px;
-  height: 22px;
-  background: #cbd5e1;
-}
-
-.chain-node.base,
-.mini-node.base {
-  border-color: var(--green-md);
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.chain-node.top,
-.mini-node.top {
-  border-color: var(--blue-md);
-  background: var(--blue-lt);
-  color: var(--blue);
-}
-
-.chain-node-kicker {
-  color: var(--text3);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.chain-arrow {
-  color: var(--text3);
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.chain-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.chain-table th,
-.chain-table td {
-  padding: 14px 16px;
-  vertical-align: middle;
-}
-
-.mini-chain {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.mini-node {
-  padding: 5px 8px;
-  font-size: 11px;
-}
-
-.mini-arrow {
-  color: #94a3b8;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.chain-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.chain-badge.default {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.chain-badge.custom {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
 .chain-empty {
   padding: 28px;
   color: var(--text3);
   font-size: 13px;
   text-align: center;
-}
-
-.chain-modal {
-  width: min(560px, calc(100vw - 28px));
-  border-radius: 10px;
-}
-
-.chain-editor {
-  display: grid;
-  gap: 8px;
-}
-
-.chain-edit-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.chain-edit-node {
-  flex: 1;
-  padding: 10px 12px;
-}
-
-.chain-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-width: 212px;
-  min-height: 38px;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: #fff;
-  color: var(--text2);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.chain-toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--blue);
-}
-
-.chain-toggle:has(input:checked) {
-  border-color: var(--blue-md);
-  background: var(--blue-lt);
-  color: var(--blue);
-}
-
-.chain-toggle:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.72;
 }
 
 @media (max-width: 1100px) {
@@ -1648,6 +1546,19 @@ const resetUnitChain = (unitName: string) => {
 
   .hierarchy-actions {
     justify-content: flex-start;
+  }
+
+  .chain-map-head {
+    flex-direction: column;
+  }
+
+  .evaluation-board {
+    overflow-x: auto;
+  }
+
+  .evaluation-board-head,
+  .evaluation-line {
+    min-width: 980px;
   }
 }
 
@@ -1672,21 +1583,13 @@ const resetUnitChain = (unitName: string) => {
     overflow-wrap: anywhere;
   }
 
-  .chain-section-head {
-    flex-direction: column;
+  .chain-map-section {
+    padding: 14px;
   }
 
-  .chain-actions {
-    width: 100%;
-  }
-
-  .chain-actions .btn {
-    flex: 1 1 auto;
-  }
-
-  .chain-edit-row {
-    align-items: stretch;
-    flex-direction: column;
+  .evaluation-lines {
+    max-height: 620px;
+    padding: 10px;
   }
 }
 </style>
