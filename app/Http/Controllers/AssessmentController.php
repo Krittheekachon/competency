@@ -33,6 +33,15 @@ class AssessmentController extends Controller
                 ->filter()
                 ->filter(fn ($checked, string $key): bool => str_starts_with($key, $competencyId.':'))
                 ->all();
+            $existingAssessment = Assessment::where('user_id', $userId)
+                ->where('competency_id', $competencyId)
+                ->first();
+
+            if ($existingAssessment && ! in_array($existingAssessment->status, ['draft', 'revision_required'], true)) {
+                throw ValidationException::withMessages([
+                    'assessment' => 'ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
+                ]);
+            }
 
             $assessment = Assessment::updateOrCreate(
                 [
@@ -42,8 +51,9 @@ class AssessmentController extends Controller
                 [
                     'score' => $request->score,
                     'note' => $request->note ?? '',
-                    'status' => 'draft',
+                    'status' => 'self_submitted',
                     'last_draft_saved_at' => now(),
+                    'self_submitted_at' => now(),
                 ]
             );
 
@@ -79,7 +89,7 @@ class AssessmentController extends Controller
                     'actual_level' => $actualLevel,
                     'gap' => $gap,
                     'requires_idp' => $gap !== null && $gap < 0,
-                    'status' => 'draft',
+                    'status' => 'self_submitted',
                     'updated_at' => now(),
                 ]
             );
@@ -102,7 +112,7 @@ class AssessmentController extends Controller
             ->first();
 
         if (! $assessment) {
-            return response()->json(['checked' => [], 'note' => '', 'score' => 0]);
+            return response()->json(['checked' => [], 'note' => '', 'score' => 0, 'status' => 'draft', 'locked' => false]);
         }
 
         $indicators = DB::table('assessment_evidences')
@@ -114,7 +124,70 @@ class AssessmentController extends Controller
             'checked' => $indicators,
             'note' => $assessment->note ?? '',
             'score' => $assessment->score ?? 0,
+            'status' => $assessment->status ?? 'draft',
+            'locked' => ! in_array($assessment->status ?? 'draft', ['draft', 'revision_required'], true),
         ]);
+    }
+
+    public function approve(Request $request)
+    {
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
+
+        DB::transaction(function () use ($data, $decision): void {
+            $assessmentIds = Assessment::where('user_id', $data['user_id'])->pluck('id');
+
+            Assessment::whereIn('id', $assessmentIds)
+                ->where('status', $decision['expected_status'])
+                ->update([
+                    'status' => $decision['approved_status'],
+                    $decision['submitted_at_column'] => now(),
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('competency_gaps')
+                ->whereIn('assessment_id', $assessmentIds)
+                ->where('status', $decision['expected_status'])
+                ->update([
+                    'status' => $decision['approved_status'],
+                    'updated_at' => now(),
+                ]);
+        });
+
+        return back();
+    }
+
+    public function reject(Request $request)
+    {
+        $data = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
+
+        DB::transaction(function () use ($data, $decision): void {
+            $assessmentIds = Assessment::where('user_id', $data['user_id'])->pluck('id');
+
+            Assessment::whereIn('id', $assessmentIds)
+                ->where('status', $decision['expected_status'])
+                ->update([
+                    'status' => 'revision_required',
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('competency_gaps')
+                ->whereIn('assessment_id', $assessmentIds)
+                ->where('status', $decision['expected_status'])
+                ->update([
+                    'status' => 'revision_required',
+                    'updated_at' => now(),
+                ]);
+        });
+
+        return back();
     }
 
     private function assertCanSelfAssess($user): void
@@ -160,5 +233,41 @@ class AssessmentController extends Controller
             'manager_dept' => 'dept_head',
             default => $roleKey,
         };
+    }
+
+    private function decisionContextForUser($reviewer, int $userId): array
+    {
+        $target = DB::table('users')->where('id', $userId)->first();
+        $roleKey = $this->normalizeRoleKey(
+            $reviewer->relationLoaded('role')
+                ? ($reviewer->role?->key ?: '')
+                : (DB::table('roles')->where('id', $reviewer->role_id)->value('key') ?: '')
+        );
+
+        if (! $target) {
+            throw ValidationException::withMessages([
+                'assessment' => 'คุณไม่มีสิทธิ์อนุมัติผลการประเมินของบุคลากรคนนี้',
+            ]);
+        }
+
+        if ($roleKey === 'dept_head' && (int) $target->supervisor_id_1 === (int) $reviewer->id) {
+            return [
+                'expected_status' => 'self_submitted',
+                'approved_status' => 'unit_evaluated',
+                'submitted_at_column' => 'supervisor_1_submitted_at',
+            ];
+        }
+
+        if ($roleKey === 'supervisor' && (int) $target->supervisor_id_2 === (int) $reviewer->id) {
+            return [
+                'expected_status' => 'unit_evaluated',
+                'approved_status' => 'dept_evaluated',
+                'submitted_at_column' => 'supervisor_2_submitted_at',
+            ];
+        }
+
+        throw ValidationException::withMessages([
+            'assessment' => 'คุณไม่มีสิทธิ์อนุมัติผลการประเมินของบุคลากรคนนี้',
+        ]);
     }
 }

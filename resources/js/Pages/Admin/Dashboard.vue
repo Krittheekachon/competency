@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 import {
     NAV_CONFIG,
     PAGE_TITLES,
@@ -696,13 +697,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">
-                    Competency &<br />
-                    IDP Management
-                </div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">

@@ -141,6 +141,7 @@ class DashboardController extends Controller
         $roleKey = $this->roleKeyForUser($user);
         $assignedCompetencies = $this->assignedCompetenciesForUser($user);
         $competencyGaps = $this->competencyGapsForUser($user);
+        $evalStatus = $this->evaluationStatusFromGaps($competencyGaps);
         $structureIssues = $roleKey === 'admin'
             ? []
             : [
@@ -179,11 +180,45 @@ class DashboardController extends Controller
                 ->pluck('n')
                 ->values()
                 ->all(),
-            'evalStatus' => $competencyGaps === [] ? 'draft' : 'self_submitted',
+            'evalStatus' => $evalStatus,
             'act' => (bool) $user->is_active,
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
         ];
+    }
+
+    private function evaluationStatusFromGaps(array $competencyGaps): string
+    {
+        if ($competencyGaps === []) {
+            return 'draft';
+        }
+
+        $statuses = collect($competencyGaps)
+            ->pluck('status')
+            ->filter()
+            ->values();
+
+        if ($statuses->contains('revision_required')) {
+            return 'revision_required';
+        }
+
+        if ($statuses->contains('self_submitted')) {
+            return 'self_submitted';
+        }
+
+        if ($statuses->contains('unit_evaluated')) {
+            return 'unit_evaluated';
+        }
+
+        if ($statuses->contains('dept_evaluated')) {
+            return 'dept_evaluated';
+        }
+
+        if ($statuses->contains('dean_approved')) {
+            return 'dean_approved';
+        }
+
+        return 'draft';
     }
 
     private function displayNameForUser(?User $user): string
@@ -695,6 +730,10 @@ class DashboardController extends Controller
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
                     ?? $expectedLevelResolver->forUserCompetency($user, (int) $item->id);
+                $payload['assessmentStatus'] = DB::table('assessments')
+                    ->where('user_id', $user->id)
+                    ->where('competency_id', $item->id)
+                    ->value('status') ?? 'draft';
 
                 return $payload;
             })

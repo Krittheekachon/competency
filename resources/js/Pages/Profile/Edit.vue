@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
 
 const props = defineProps({
@@ -114,13 +115,7 @@ const saveProfile = () => {
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <aside v-if="showSidebar" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">
-                    Competency &<br />
-                    IDP Management
-                </div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user on" type="button">
                 <div class="av" :style="{ background: roleData.col }">

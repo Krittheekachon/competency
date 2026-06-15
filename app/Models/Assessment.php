@@ -13,5 +13,9 @@ class Assessment extends Model
         'note',
         'status',
         'last_draft_saved_at',
+        'self_submitted_at',
+        'supervisor_1_submitted_at',
+        'supervisor_2_submitted_at',
+        'dean_approved_at',
     ];
 }

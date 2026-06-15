@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
 import EmployeeGap from '../Employee/EmployeeGap.vue';
@@ -88,7 +89,7 @@ const navSections = computed(() => {
     },
     ];
 
-    if (authRoleKey.value !== 'supervisor') return sections;
+    if (!['dept_head', 'supervisor'].includes(authRoleKey.value)) return sections;
 
     return sections.map((section, index) => index === 1
         ? {
@@ -340,10 +341,10 @@ const assessCounts = computed(() => ({
 }));
 const supervisorApprovalStatus = (person) => {
     if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
-    if (person.evalStatus === 'self_submitted') return { label: 'รอตรวจ', cls: 'by' };
-    if (person.evalStatus === 'unit_evaluated') return { label: 'อนุมัติแล้ว', cls: 'bt' };
+    if (person.evalStatus === 'self_submitted') return { label: authRoleKey.value === 'dept_head' ? 'รอหัวหน้างานตรวจ' : 'รอหัวหน้างานอนุมัติ', cls: 'by' };
+    if (person.evalStatus === 'unit_evaluated') return { label: authRoleKey.value === 'supervisor' ? 'รอผู้บังคับบัญชาตรวจ' : 'ส่งต่อผู้บังคับบัญชาแล้ว', cls: 'bt' };
     if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
-    if (person.evalStatus === 'dept_evaluated') return { label: 'ส่งต่อหัวหน้าฝ่ายแล้ว', cls: 'bb' };
+    if (person.evalStatus === 'dept_evaluated') return { label: 'ผู้บังคับบัญชาอนุมัติแล้ว', cls: 'bb' };
     if (person.evalStatus === 'dean_approved') return { label: 'ปิดรอบแล้ว', cls: 'bg' };
 
     return { label: person.evalStatus, cls: 'bgr' };
@@ -362,9 +363,15 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
-const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'self_submitted'));
-const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => ['unit_evaluated', 'dept_evaluated'].includes(person.evalStatus)));
-const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === 'dean_approved'));
+const approvalExpectedStatus = computed(() => authRoleKey.value === 'dept_head' ? 'self_submitted' : 'unit_evaluated');
+const approvalNextStatus = computed(() => authRoleKey.value === 'dept_head' ? 'unit_evaluated' : 'dept_evaluated');
+const approvalRoleLabel = computed(() => authRoleKey.value === 'dept_head' ? 'หัวหน้างาน' : 'ผู้บังคับบัญชา');
+const approvalForwardLabel = computed(() => authRoleKey.value === 'dept_head' ? 'ส่งต่อผู้บังคับบัญชาแล้ว' : 'อนุมัติแล้ว');
+const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === approvalExpectedStatus.value));
+const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === approvalNextStatus.value));
+const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) =>
+    (authRoleKey.value === 'dept_head' ? ['dept_evaluated', 'dean_approved'] : ['dean_approved']).includes(person.evalStatus),
+));
 
 const gapRows = computed(() => teamMembers.value.map((user) => ({
     ...user,
@@ -421,6 +428,8 @@ const selectedGapEmployee = ref(null);
 const selectedIdpEmployee = ref(null);
 const selectedSupervisorApprovalSso = ref(null);
 const openedSupervisorCompetencyId = ref(null);
+const approvalDecision = ref(null);
+const isSubmittingApprovalDecision = ref(false);
 const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
 const idpReviewDecisions = ref({});
@@ -467,8 +476,14 @@ const selectedSupervisorApproval = computed(() =>
 const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
 const canDecideSupervisorApproval = computed(() =>
     Boolean(selectedSupervisorApproval.value?.hasSubmittedAssessment)
-    && selectedSupervisorApproval.value?.evalStatus === 'self_submitted',
+    && selectedSupervisorApproval.value?.evalStatus === approvalExpectedStatus.value,
 );
+const approvalDecisionTitle = computed(() => approvalDecision.value === 'approve'
+    ? `ยืนยันผลการประเมินของ ${supervisorApprovalName.value}`
+    : 'ยืนยันการส่งกลับผลการประเมิน');
+const approvalDecisionMessage = computed(() => approvalDecision.value === 'approve'
+    ? `ต้องการยืนยันผลการประเมินของ ${supervisorApprovalName.value} และส่งต่อไปยังขั้นตอนถัดไปหรือไม่`
+    : `ต้องการส่งผลการประเมินของ ${supervisorApprovalName.value} กลับไปให้บุคลากรแก้ไขหรือไม่`);
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
 
@@ -741,6 +756,7 @@ const openSupervisorApprovalModal = (person) => {
 const closeSupervisorApprovalModal = () => {
     selectedSupervisorApprovalSso.value = null;
     openedSupervisorCompetencyId.value = null;
+    approvalDecision.value = null;
 };
 
 const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
@@ -771,19 +787,36 @@ const submitAssessmentToManager = () => {
     persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
 };
-const approveSupervisorAssessment = () => {
+const requestApprovalDecision = (decision) => {
     if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
-    users.value = users.value.map((user) =>
-        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user,
-    );
+    approvalDecision.value = decision;
 };
-const rejectSupervisorAssessment = () => {
-    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
-    if (!confirm('ยืนยันการส่งผลการประเมินกลับไปแก้ไข?')) return;
+const closeApprovalDecision = () => {
+    if (isSubmittingApprovalDecision.value) return;
+    approvalDecision.value = null;
+};
+const submitApprovalDecision = () => {
+    if (!selectedSupervisorApproval.value || !approvalDecision.value || !canDecideSupervisorApproval.value) return;
 
-    users.value = users.value.map((user) =>
-        user.sso === selectedSupervisorApproval.value.sso ? { ...user, evalStatus: 'revision_required' } : user,
-    );
+    const decision = approvalDecision.value;
+    isSubmittingApprovalDecision.value = true;
+    router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
+        user_id: selectedSupervisorApproval.value.db_id,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            users.value = users.value.map((user) =>
+                user.sso === selectedSupervisorApproval.value.sso
+                    ? { ...user, evalStatus: decision === 'approve' ? approvalNextStatus.value : 'revision_required' }
+                    : user,
+            );
+            approvalDecision.value = null;
+            closeSupervisorApprovalModal();
+        },
+        onFinish: () => {
+            isSubmittingApprovalDecision.value = false;
+        },
+    });
 };
 
 watchEffect(() => {
@@ -814,13 +847,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">
-                    Competency &<br />
-                    IDP Management
-                </div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user on" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">
@@ -1215,11 +1242,11 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <template v-else-if="activePage === 'dh-assess'">
-                    <template v-if="authRoleKey === 'supervisor'">
+                    <template v-if="['dept_head', 'supervisor'].includes(authRoleKey)">
                         <div class="team-page-head mb20">
                             <div>
                                 <div class="sec-t">ตรวจประเมินลูกน้อง</div>
-                                <div class="sec-s">แสดงเฉพาะผู้ใต้บังคับบัญชาสายตรงที่ส่งแบบประเมินแล้ว ตรวจแบบ read-only ก่อนส่งต่อหัวหน้าฝ่าย</div>
+                                <div class="sec-s">{{ approvalRoleLabel }}ตรวจผลแบบ read-only ก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</div>
                             </div>
                             <div class="flex g8" style="flex-wrap: wrap">
                                 <button class="btn btn-s btn-sm" type="button">Export PDF</button>
@@ -1231,12 +1258,12 @@ const logout = () => router.post(route('logout'));
                             <div class="sc">
                                 <div class="sl">รอตรวจ</div>
                                 <div class="sv yc">{{ supervisorPendingRows.length }}</div>
-                                <div class="ss muted">Pending Supervisor</div>
+                                <div class="ss muted">Pending {{ approvalRoleLabel }}</div>
                             </div>
                             <div class="sc">
-                                <div class="sl">ส่งต่อหัวหน้าฝ่ายแล้ว</div>
+                                <div class="sl">{{ approvalForwardLabel }}</div>
                                 <div class="sv bc">{{ supervisorForwardedRows.length }}</div>
-                                <div class="ss muted">Pending Department Head</div>
+                                <div class="ss muted">ดำเนินการในขั้นนี้แล้ว</div>
                             </div>
                             <div class="sc">
                                 <div class="sl">อนุมัติแล้ว</div>
@@ -1249,7 +1276,7 @@ const logout = () => router.post(route('logout'));
                             <div class="team-card-head">
                                 <div>
                                     <div class="ct">รายการรอดำเนินการ</div>
-                                    <div class="cs">เฉพาะ Direct Reports ที่อยู่สถานะ Pending Supervisor</div>
+                                    <div class="cs">เฉพาะบุคลากรที่เชื่อมกับ {{ approvalRoleLabel }} และอยู่ในสถานะรอตรวจ</div>
                                 </div>
                                 <span class="b by">{{ supervisorPendingRows.length }} รายการ</span>
                             </div>
@@ -1372,11 +1399,32 @@ const logout = () => router.post(route('logout'));
                                 </div>
 
                                 <div class="approval-modal-actions">
-                                    <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorApproval" @click="rejectSupervisorAssessment">
+                                    <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorApproval" @click="requestApprovalDecision('reject')">
                                         ไม่อนุมัติ
                                     </button>
-                                    <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorApproval" @click="approveSupervisorAssessment">
+                                    <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorApproval" @click="requestApprovalDecision('approve')">
                                         อนุมัติ
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="approvalDecision" class="approval-decision-backdrop" @click.self="closeApprovalDecision">
+                            <div class="approval-decision-modal">
+                                <div class="approval-decision-title">{{ approvalDecisionTitle }}</div>
+                                <div class="approval-decision-message">{{ approvalDecisionMessage }}</div>
+                                <div class="approval-decision-actions">
+                                    <button class="btn btn-s" type="button" :disabled="isSubmittingApprovalDecision" @click="closeApprovalDecision">
+                                        ยกเลิก
+                                    </button>
+                                    <button
+                                        class="btn"
+                                        :class="approvalDecision === 'approve' ? 'approval-confirm-button' : 'approval-reject-button'"
+                                        type="button"
+                                        :disabled="isSubmittingApprovalDecision"
+                                        @click="submitApprovalDecision"
+                                    >
+                                        {{ isSubmittingApprovalDecision ? 'กำลังดำเนินการ...' : 'ยืนยัน' }}
                                     </button>
                                 </div>
                             </div>
@@ -1925,6 +1973,80 @@ const logout = () => router.post(route('logout'));
     border-top: 1px solid var(--border);
     background: #fff;
     flex-shrink: 0;
+}
+
+.approval-decision-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.46);
+}
+
+.approval-decision-modal {
+    width: min(460px, 100%);
+    padding: 22px 24px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.approval-decision-title {
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 900;
+}
+
+.approval-decision-message {
+    margin-top: 10px;
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.approval-decision-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.approval-decision-actions .btn {
+    min-width: 96px;
+    opacity: 1;
+    visibility: visible;
+}
+
+.approval-confirm-button {
+    border: 1px solid #0faaa7;
+    background: #0faaa7;
+    color: #fff;
+}
+
+.approval-confirm-button:hover:not(:disabled) {
+    border-color: #0f766e;
+    background: #0f766e;
+    color: #fff;
+}
+
+.approval-reject-button {
+    border: 1px solid #dc2626;
+    background: #dc2626;
+    color: #fff;
+}
+
+.approval-reject-button:hover:not(:disabled) {
+    border-color: #991b1b;
+    background: #991b1b;
+    color: #fff;
+}
+
+.approval-decision-actions .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .person-cell {
