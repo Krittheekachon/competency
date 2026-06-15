@@ -601,24 +601,32 @@ const formatTeamGap = (value) => {
     return `${numberValue > 0 ? '+' : '-'}${formatted}`;
 };
 const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
-    const resultRows = gapResultRows(person);
+    const allResultRows = gapResultRows(person);
+    const resultRows = allResultRows.filter((row) => row.hasAssessment !== false);
     const scores = teamHeatmapCompetencies.value.map((comp) => {
         const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
         return matching ? Number(matching.gap ?? 0) : 0;
     });
     const missingCount = scores.filter((score) => score < 0).length;
     const assessed = resultRows.length > 0;
+    const fullyAssessed = assessed && resultRows.length === allResultRows.length;
 
     return {
         ...person,
         scores,
         assessed,
+        fullyAssessed,
         missingCount,
-        summary: missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง',
+        summary: missingCount
+            ? `ต้องพัฒนา ${missingCount} สมรรถนะ`
+            : (fullyAssessed ? 'บุคลากรศักยภาพสูง' : 'ประเมินยังไม่ครบ'),
     };
 }));
 const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
-const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
+const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.fullyAssessed && row.missingCount === 0));
+const teamUrgentDevelopmentRows = computed(() => teamAssessedRows.value
+    .filter((row) => row.missingCount > 0)
+    .sort((left, right) => right.missingCount - left.missingCount));
 const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, index) => {
     const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
     const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
@@ -1176,6 +1184,64 @@ const logout = () => router.post(route('logout'));
                                     </table>
                                 </div>
                             </div>
+
+                            <div class="gap-report-grid mt20">
+                                <section class="card gap-report-card">
+                                    <div class="gap-report-head">
+                                        <div>
+                                            <div class="ct">กลุ่มที่ต้องเร่งพัฒนา</div>
+                                            <div class="cs">High Gap List สำหรับโค้ชใกล้ชิด</div>
+                                        </div>
+                                        <span class="b br">{{ teamUrgentDevelopmentRows.length }} คน</span>
+                                    </div>
+                                    <div class="gap-report-list">
+                                        <button
+                                            v-for="person in teamUrgentDevelopmentRows"
+                                            :key="`urgent-${person.sso}`"
+                                            class="gap-report-person"
+                                            type="button"
+                                            @click="openGapDetail(person)"
+                                        >
+                                            <span>
+                                                <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                <small>{{ person.missingCount }} สมรรถนะต้องทำ IDP</small>
+                                            </span>
+                                            <span class="b br">ติดตามใกล้ชิด</span>
+                                        </button>
+                                        <div v-if="teamUrgentDevelopmentRows.length === 0" class="gap-report-empty">
+                                            ไม่มีบุคลากรที่มี Gap ติดลบ
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="card gap-report-card">
+                                    <div class="gap-report-head">
+                                        <div>
+                                            <div class="ct">กลุ่มคนเก่งและศักยภาพสูง</div>
+                                            <div class="cs">Overachieve / Gap ไม่ติดลบ</div>
+                                        </div>
+                                        <span class="b bg">{{ teamTalentRows.length }} คน</span>
+                                    </div>
+                                    <div class="gap-report-list">
+                                        <button
+                                            v-for="person in teamTalentRows"
+                                            :key="`talent-${person.sso}`"
+                                            class="gap-report-person"
+                                            type="button"
+                                            @click="openGapDetail(person)"
+                                        >
+                                            <span>
+                                                <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                <small>ผ่านเกณฑ์ทุกสมรรถนะที่ประเมิน</small>
+                                            </span>
+                                            <span class="b bg">Talent Pool</span>
+                                        </button>
+                                        <div v-if="teamTalentRows.length === 0" class="gap-report-empty">
+                                            ยังไม่มีข้อมูล Talent Pool ในรอบนี้
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
                         </template>
 
                         <template v-else>
@@ -1645,6 +1711,76 @@ const logout = () => router.post(route('logout'));
 
 .team-table-card {
     overflow: hidden;
+}
+
+.gap-report-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.gap-report-card {
+    overflow: hidden;
+    min-height: 260px;
+}
+
+.gap-report-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.gap-report-list {
+    display: grid;
+}
+
+.gap-report-person {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 20px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.gap-report-person:last-child {
+    border-bottom: 0;
+}
+
+.gap-report-person:hover {
+    background: #f8fafc;
+}
+
+.gap-report-person > span:first-child {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gap-report-person strong {
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.gap-report-person small {
+    color: var(--text3);
+    font-size: 12px;
+}
+
+.gap-report-empty {
+    padding: 24px 20px;
+    color: var(--text3);
+    font-size: 13px;
 }
 
 .team-card-head {
@@ -2694,6 +2830,13 @@ const logout = () => router.post(route('logout'));
     cursor: not-allowed;
     opacity: 1 !important;
 }
+
+@media (max-width: 900px) {
+    .gap-report-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .navy-top { border-top: 3px solid var(--navy); }
 .blue-top { border-top: 3px solid var(--blue); }
 .red-top { border-top: 3px solid var(--red); }
