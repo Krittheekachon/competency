@@ -1,6 +1,7 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 import ManagerGap from './ManagerGap.vue';
 import ManagerIDP from './ManagerIDP.vue';
 import ManagerAssessmentApproval from './ManagerAssessmentApproval.vue';
@@ -90,10 +91,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell manager-shell">
         <aside v-if="isSidebarOpen" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">Competency &<br />IDP Management</div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user on" type="button">
                 <div class="av manager-avatar">{{ userInitial }}</div>

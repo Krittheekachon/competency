@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 import {
     INITIAL_USERS,
     NAV_CONFIG,
@@ -51,7 +52,7 @@ const learningMethods = ref([
         key: 'formal',
         label: 'Formal Learning',
         desc: 'การเรียนรู้อย่างเป็นทางการผ่านหลักสูตรหรือการอบรม',
-        color: '#2563eb',
+        color: '#c7432b',
     },
 ]);
 
@@ -106,13 +107,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">
-                    Competency &<br />
-                    IDP Management
-                </div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user on" type="button" @click="goProfile">
                 <div class="av" :style="{ background: currentRoleData.col }">

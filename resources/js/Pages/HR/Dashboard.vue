@@ -1,6 +1,7 @@
 <script setup>
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import SidebarBrand from '../../Components/SidebarBrand.vue';
 
 const props = defineProps({
     hrSummary: {
@@ -427,10 +428,7 @@ const formatWeight = (weight) => {
 <template>
     <div class="shell">
         <aside v-if="isSidebarOpen" class="sidebar">
-            <div class="sb-logo">
-                <div class="sb-mark">คณะวิศวกรรมศาสตร์</div>
-                <div class="sb-name">Competency &<br />IDP Management</div>
-            </div>
+            <SidebarBrand />
 
             <button class="sb-user" type="button">
                 <div class="av" style="background: var(--blue)">{{ userInitial }}</div>

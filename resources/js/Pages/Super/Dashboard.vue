@@ -3,5 +3,5 @@ import HeadDashboard from '../Head/Dashboard.vue';
 </script>
 
 <template>
-    <HeadDashboard />
+    <HeadDashboard role-key="supervisor"/>
 </template>
