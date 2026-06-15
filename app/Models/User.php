@@ -17,7 +17,7 @@ use App\Models\Role;
     'first_name_en', 'last_name_en',
     'email', 'phone',
     'workline', 'department', 'position',
-    'level', 'password', 'role_id',
+    'level', 'password', 'role_id', 'role_key',
     'is_active', 'profile_photo',
     'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3',
     'profile_affiliation', 'profile_saved',

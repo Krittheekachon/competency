@@ -202,13 +202,13 @@ class AssessmentController extends Controller
             return;
         }
 
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_2) {
+        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
             throw ValidationException::withMessages([
                 'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้บังคับบัญชาก่อน',
             ]);
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_3) {
+        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
             throw ValidationException::withMessages([
                 'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินลำดับที่ 3 ก่อน',
             ]);

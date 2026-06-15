@@ -111,16 +111,16 @@ const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const roleLabelsByKey = {
     admin: 'ผู้ดูแลระบบ',
-    supervisor: 'ผู้บังคับบัญชา',
-    dept_head: 'หัวหน้างาน',
+    supervisor: 'หัวหน้างาน',
+    dept_head: 'ผู้บังคับบัญชา',
     employee: 'บุคลากร',
     hr: 'งานทรัพยากรบุคคล',
     dean: 'ผู้บริหารคณะ',
 };
 const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
-    { id: 1, key: 'supervisor', label: 'ผู้บังคับบัญชา' },
-    { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
+    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
+    { id: 2, key: 'dept_head', label: 'ผู้บังคับบัญชา' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -408,7 +408,7 @@ const deanOptions = computed(() =>
 );
 
 const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
-const canPickEvaluator2 = computed(() => !['admin', 'supervisor', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
 
@@ -1047,15 +1047,15 @@ const logout = () => router.post(route('logout'));
                                 {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in deptHeadOptions"
+                                v-for="person in supervisorOptions"
                                 :key="`sup-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
-                            <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
+                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!deptHeadOptions.length" class="modal-help">
+                        <div v-if="!supervisorOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role หัวหน้างาน
                         </div>
                     </div>
@@ -1078,15 +1078,15 @@ const logout = () => router.post(route('logout'));
                                 {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
                             </option>
                             <option
-                                v-for="person in supervisorOptions"
+                                v-for="person in deptHeadOptions"
                                 :key="`evaluator2-${person.key}`"
                                 :value="person.value"
                             >
                                 {{ person.label }}
                             </option>
-                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
+                            <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
-                        <div v-if="!supervisorOptions.length" class="modal-help">
+                        <div v-if="!deptHeadOptions.length" class="modal-help">
                             ยังไม่มีผู้ใช้ role ผู้บังคับบัญชา
                         </div>
                     </div>

@@ -311,8 +311,6 @@ const roleBadge = (role?: string): RoleBadge => {
       };
     case 'dept_head':
     case 'manager_dept':
-      return { label: 'หัวหน้างาน', className: 'bg', style: { background: '#fff7ed', color: '#c2410c' } };
-    case 'supervisor':
       return { label: 'ผู้บังคับบัญชา', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
     default:
       return { label: 'บุคลากร', className: 'bgr' };
