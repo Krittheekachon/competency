@@ -123,7 +123,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
       <div class="summary-card">
         <div class="summary-label">สมรรถนะที่ต้องประเมิน</div>
         <div class="summary-value">{{ assignedCompetencies.length }}</div>
-        <div class="summary-copy">รายการที่ HR ผูกกับกลุ่มงาน/ระดับของคุณ</div>
+        <div class="summary-copy">รายการ</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">ประเมินตนเองแล้ว</div>
@@ -136,20 +136,14 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
       <div class="card-head">
         <div>
           <h2>หัวข้อสมรรถนะที่ต้องประเมิน</h2>
-          <p>รายการนี้มาจากการผูก Competency กับกลุ่มงานโดย HR</p>
+          <p>รายการเหล่านี้มาจากการกำหนดของ HR</p>
+
         </div>
       </div>
       <div class="competency-list">
         <button v-for="item in assignedCompetencies" :key="item.id" class="competency-row" type="button" @click="openCompetencyDetail(item)">
-          <div>
-            <div class="competency-title">
-              <span class="type-tag">{{ item.t || '-' }}</span>
-              <span>{{ item.cd }} · {{ item.n }}</span>
-            </div>
-            <div class="competency-detail">{{ item.det || 'ไม่มีคำอธิบาย' }}</div>
-          </div>
+          <div class="competency-title">{{ item.n }}</div>
           <div class="row-actions">
-            <span class="level-pill">Expected {{ item.expectedLevel || '-' }}</span>
             <span class="detail-link">รายละเอียด</span>
           </div>
         </button>
@@ -176,6 +170,21 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
         </div>
 
         <div class="modal-body">
+          <section class="competency-detail-card">
+            <div class="detail-card-top">
+              <div class="detail-card-meta">
+                <span class="type-tag">{{ selectedCompetency.t || '-' }}</span>
+                <span>{{ selectedCompetency.cd || '-' }}</span>
+              </div>
+              <span class="level-pill">ความคาดหวังคะแนนของคุณ : {{ selectedCompetency.expectedLevel || '-' }}</span>
+            </div>
+            <h3>{{ selectedCompetency.n }}</h3>
+            <div class="competency-description-box">
+              <div class="description-label">คำอธิบายสมรรถนะ</div>
+              <p>{{ selectedCompetency.det || 'ไม่มีคำอธิบาย' }}</p>
+            </div>
+          </section>
+
           <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
             <div class="empty-title">ยังไม่มีรายละเอียดระดับ</div>
             <div class="empty-copy">เมื่อ Admin เพิ่มระดับและพฤติกรรม รายละเอียดจะแสดงที่นี่</div>
@@ -317,18 +326,24 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   font-size: 11px;
   font-weight: 900;
 }
-.competency-detail { margin-top: 6px; color: var(--text3); font-size: 12px; }
-.level-pill {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: var(--green-bg, #ecfdf5);
-  color: var(--green, #047857);
-  padding: 5px 10px;
+.row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--blue);
+  padding: 0 14px;
   font-size: 12px;
   font-weight: 900;
 }
-.row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.detail-link { color: var(--blue); font-size: 12px; font-weight: 900; }
+.competency-row:hover .detail-link {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
 .empty-card {
   display: grid;
   place-items: center;
@@ -383,6 +398,65 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   padding: 18px 28px;
   overflow-y: auto;
   background: #f6f8fb;
+}
+.competency-detail-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px 18px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .04);
+}
+.detail-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.detail-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 900;
+}
+.competency-detail-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+.competency-description-box {
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+.description-label {
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+.competency-description-box p {
+  margin: 0;
+  color: var(--text2, #475569);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.level-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--green-bg, #ecfdf5);
+  color: var(--green, #047857);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 .emp-level-section {
   display: block;

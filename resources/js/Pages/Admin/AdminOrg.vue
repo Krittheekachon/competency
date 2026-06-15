@@ -701,16 +701,16 @@ const roleBadge = (role?: string): RoleBadge => {
   const normalizedRole = normalizeRole(role);
   if (['manager_dept', 'dept_head'].includes(normalizedRole || '')) {
     return {
-      label: 'หัวหน้างาน',
+      label: 'ผู้บังคับบัญชา',
       className: 'bg',
-      style: { background: '#fff7ed', color: '#c2410c' },
+      style: { background: '#f0f9ff', color: '#0284c7' },
     };
   }
   if (normalizedRole === 'supervisor') {
     return {
-      label: 'ผู้บังคับบัญชา',
+      label: 'หัวหน้างาน',
       className: 'bg',
-      style: { background: '#f0f9ff', color: '#0284c7' },
+      style: { background: '#fff7ed', color: '#c2410c' },
     };
   }
 

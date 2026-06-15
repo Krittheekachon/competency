@@ -345,6 +345,16 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
+    public function test_unauthenticated_inertia_user_update_redirects_to_login_location(): void
+    {
+        $user = User::factory()->create(['role_id' => $this->roleId('employee')]);
+
+        $this->withHeader('X-Inertia', 'true')
+            ->put(route('admin.users.update', $user), [])
+            ->assertStatus(409)
+            ->assertHeader('X-Inertia-Location', route('login'));
+    }
+
     public function test_admin_can_delete_user(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);

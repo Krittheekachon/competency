@@ -330,7 +330,7 @@ class DashboardController extends Controller
             return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_3) {
+        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
             return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
@@ -826,6 +826,7 @@ class DashboardController extends Controller
                 $join->on('competency_gaps.assessment_id', '=', 'assessments.id')
                     ->on('competency_gaps.competency_id', '=', 'assessments.competency_id');
             })
+            ->leftJoin('scores as evaluator_scores', 'competency_gaps.supervisor_2_score_id', '=', 'evaluator_scores.id')
             ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('assessments.user_id', $user->id)
             ->whereNotNull('assessments.last_draft_saved_at')
@@ -843,6 +844,7 @@ class DashboardController extends Controller
                 'competency_gaps.requires_idp',
                 'competency_gaps.status',
                 'assessments.note',
+                'evaluator_scores.comment as evaluator_comment',
                 'assessments.updated_at'
             )
             ->orderBy('competencies.code')
@@ -872,7 +874,7 @@ class DashboardController extends Controller
                     'expected' => $expected,
                     'actual' => $actual,
                     'gap' => $gapValue,
-                    'note' => $gap->note ?? '',
+                    'note' => $gap->evaluator_comment ?: ($gap->note ?? ''),
                     'levels' => $this->competencyLevelsPayload((int) $gap->id),
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
                     'checkedIndicatorCount' => count($checkedIndicatorKeys),

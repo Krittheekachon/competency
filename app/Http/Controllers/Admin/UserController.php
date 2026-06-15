@@ -110,7 +110,8 @@ class UserController extends Controller
     private function userAttributes(array $data): array
     {
         $roleKey = $this->normalizeRoleKey($data['r']);
-        $role = DB::table('roles')->where('key', $roleKey)->first(['id', 'key']);
+        $roleKeyColumn = $this->roleKeyColumn();
+        $role = DB::table('roles')->where('key', $roleKey)->first(['id', 'key', $roleKeyColumn]);
 
         if (! $role) {
             throw ValidationException::withMessages([
@@ -147,7 +148,7 @@ class UserController extends Controller
         ];
 
         if (Schema::hasColumn('users', 'role_key')) {
-            $attributes['role_key'] = $role->{$this->roleKeyColumn()};
+            $attributes['role_key'] = $roleKey;
         }
 
         return $attributes;
@@ -227,8 +228,8 @@ class UserController extends Controller
     private function validateEvaluatorRoles(array $data): void
     {
         $expectedRoles = [
-            'supervisor_id_1' => 'dept_head',
-            'supervisor_id_2' => 'supervisor',
+            'supervisor_id_1' => 'supervisor',
+            'supervisor_id_2' => 'dept_head',
             'supervisor_id_3' => 'dean',
         ];
 

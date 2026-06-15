@@ -21,5 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
+            if ($request->header('X-Inertia')) {
+                return \Inertia\Inertia::location(route('login'));
+            }
+
+            return null;
+        });
     })->create();
