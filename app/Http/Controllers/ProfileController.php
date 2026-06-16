@@ -83,20 +83,12 @@ class ProfileController extends Controller
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'r' => $this->roleKeyForUser($user),
-            'sup' => $this->displayNameForUser($user->evaluatorLevel1),
-            'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
+            'supervisor_id_1' => $user->supervisor_id_1,
+            'supervisor_id_2' => $user->supervisor_id_2,
+            'supervisor_id_3' => $user->supervisor_id_3,
             'photo' => $user->profile_photo ?: '',
             'act' => (bool) $user->is_active,
         ];
-    }
-
-    private function displayNameForUser(?\App\Models\User $user): string
-    {
-        if (! $user) {
-            return '';
-        }
-
-        return trim(($user->title ?: '').$user->name);
     }
 
     private function roleKeyFromId(?int $roleId): string

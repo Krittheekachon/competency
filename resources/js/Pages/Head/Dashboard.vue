@@ -261,42 +261,25 @@ const MOCK_TEAM = [
     },
 ];
 
-const personNames = (user) => [
-    user?.n,
-    `${user?.t || ''}${user?.n || ''}`,
-].map((name) => String(name || '').trim()).filter(Boolean);
-const isSamePersonName = (storedName, user) => personNames(user).includes(String(storedName || '').trim());
 const isAssignedReviewer = (user, reviewer) => {
     const reviewerId = Number(reviewer?.db_id);
     const reviewerRole = normalizeRoleKey(reviewer?.r || authRoleKey.value);
+    if (reviewerId <= 0) return false;
 
     if (reviewerRole === 'supervisor') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_1) === reviewerId)
-            || isSamePersonName(user.sup, reviewer)
-        );
+        return Number(user.supervisor_id_1) === reviewerId;
     }
 
     if (reviewerRole === 'dept_head') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_2) === reviewerId)
-            || isSamePersonName(user.evaluator2, reviewer)
-        );
+        return Number(user.supervisor_id_2) === reviewerId;
     }
 
     if (reviewerRole === 'dean') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_3) === reviewerId)
-            || isSamePersonName(user.evaluator3, reviewer)
-        );
+        return Number(user.supervisor_id_3) === reviewerId;
     }
 
-    return (
-        (reviewerId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === reviewerId))
-        || isSamePersonName(user.sup, reviewer)
-        || isSamePersonName(user.evaluator2, reviewer)
-        || isSamePersonName(user.evaluator3, reviewer)
-    );
+    return [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
+        .some((id) => Number(id) === reviewerId);
 };
 const teamMembers = computed(() => {
     return users.value.filter((user) =>

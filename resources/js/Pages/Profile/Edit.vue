@@ -50,8 +50,6 @@ const form = useForm({
     department: props.profileUser?.d || '',
     position: props.profileUser?.p || '',
     level: props.profileUser?.l || '',
-    supervisor: props.profileUser?.sup || '',
-    evaluator2: props.profileUser?.evaluator2 || '',
     profile_photo: props.profileUser?.photo || '',
 });
 

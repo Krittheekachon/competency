@@ -12,11 +12,12 @@ class HierarchyController extends Controller
     // ดึงสายการบังคับบัญชาทั้งหมด
     public function index()
     {
-        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2'])
-            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'supervisor_id_1', 'supervisor_id_2', 'department', 'position')
+        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3'])
+            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3', 'department', 'position')
             ->where('is_active', true)
             ->get()
             ->map(fn (User $user) => [
+                'id' => $user->id,
                 'sso' => $user->sso,
                 'name' => $user->name,
                 'first_name_th' => $user->first_name_th,
@@ -24,8 +25,10 @@ class HierarchyController extends Controller
                 'role_key' => $user->role?->key,
                 'supervisor_id_1' => $user->supervisor_id_1,
                 'supervisor_id_2' => $user->supervisor_id_2,
-                'supervisor' => $this->displayNameForUser($user->evaluatorLevel1),
-                'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
+                'supervisor_id_3' => $user->supervisor_id_3,
+                'evaluator1_name' => $this->displayNameForUser($user->evaluatorLevel1),
+                'evaluator2_name' => $this->displayNameForUser($user->evaluatorLevel2),
+                'evaluator3_name' => $this->displayNameForUser($user->evaluatorLevel3),
                 'department' => $user->department,
                 'position' => $user->position,
             ]);
@@ -59,6 +62,7 @@ class HierarchyController extends Controller
         $request->validate([
             'supervisor_id_1' => 'nullable|integer|exists:users,id',
             'supervisor_id_2' => 'nullable|integer|exists:users,id',
+            'supervisor_id_3' => 'nullable|integer|exists:users,id',
         ]);
 
         $user = User::where('sso', $sso)->firstOrFail();
@@ -66,6 +70,7 @@ class HierarchyController extends Controller
         $user->update([
             'supervisor_id_1' => $request->supervisor_id_1,
             'supervisor_id_2' => $request->supervisor_id_2,
+            'supervisor_id_3' => $request->supervisor_id_3,
         ]);
 
         return response()->json([

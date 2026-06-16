@@ -18,6 +18,22 @@ const evaluatorLevel = (user: any) => {
   return 0;
 };
 
+const userById = (id: any) =>
+  (props.users || []).find((user) => Number(user?.db_id) === Number(id));
+
+const displayName = (user: any) =>
+  user ? `${user?.t || ''}${user?.n || ''}`.trim() : '';
+
+const evaluatorName = (user: any, level: 1 | 2 | 3) => {
+  const id = level === 1
+    ? user?.supervisor_id_1
+    : level === 2
+      ? user?.supervisor_id_2
+      : user?.supervisor_id_3;
+
+  return displayName(userById(id));
+};
+
 const plansFor = (user: any) => {
   const plans = user?.idpDetails || user?.idpPlans || user?.developmentPlans;
   if (Array.isArray(plans) && plans.length) return plans;
@@ -82,8 +98,8 @@ const approve = (user: any) => {
                 <div class="fw7 fs13">{{ `${user.t || ''}${user.n || '-'}` }}</div>
                 <div class="muted fs11">{{ user.p || 'ยังไม่ระบุตำแหน่ง' }} · {{ user.d || 'ยังไม่ระบุหน่วยงาน' }}</div>
               </td>
-              <td><div class="fw6 fs12">{{ user.sup || '—' }}</div></td>
-              <td><div class="fw6 fs12">{{ user.evaluator2 || '—' }}</div></td>
+              <td><div class="fw6 fs12">{{ evaluatorName(user, 1) || '—' }}</div></td>
+              <td><div class="fw6 fs12">{{ evaluatorName(user, 2) || '—' }}</div></td>
               <td><span class="b bt">ผู้ประเมินลำดับที่ {{ evaluatorLevel(user) }}</span></td>
               <td>
                 <div class="flex ic g4 idp-topic-list">

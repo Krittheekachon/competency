@@ -494,9 +494,6 @@ const handleRoleChange = () => {
         userForm.value.p = userForm.value.job;
     }
 
-    if (!canPickEvaluator1.value) userForm.value.sup = '';
-    if (!canPickEvaluator2.value) userForm.value.evaluator2 = '';
-    if (!canPickEvaluator3.value) userForm.value.evaluator3 = '';
     if (!canPickEvaluator1.value) userForm.value.supervisor_id_1 = '';
     if (!canPickEvaluator2.value) userForm.value.supervisor_id_2 = '';
     if (!canPickEvaluator3.value) userForm.value.supervisor_id_3 = '';
@@ -611,10 +608,6 @@ const saveUser = () => {
         alert(`ID ${form.sso} มีอยู่ในระบบแล้ว`);
         return;
     }
-
-    const supervisor1 = evaluatorFromId(form.supervisor_id_1);
-    const supervisor2 = evaluatorFromId(form.supervisor_id_2);
-    const supervisor3 = evaluatorFromId(form.supervisor_id_3);
 
     const nextUser = {
         ...form,

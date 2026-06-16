@@ -92,9 +92,25 @@ const jobFamilyName = (user: any) => {
 const worklineName = (user: any) =>
   String(user?.w || '').trim() || 'ยังไม่ระบุสายงาน';
 
+const userById = (id: any) =>
+  activeUsers.value.find((user) => Number(user?.db_id) === Number(id));
+
+const displayName = (user: any) =>
+  user ? `${user?.t || ''}${user?.n || ''}`.trim() : '';
+
+const evaluatorName = (user: any, level: 1 | 2 | 3) => {
+  const id = level === 1
+    ? user?.supervisor_id_1
+    : level === 2
+      ? user?.supervisor_id_2
+      : user?.supervisor_id_3;
+
+  return displayName(userById(id));
+};
+
 const supervisorName = (users: any[]) => {
   const name = users
-    .map((user) => user?.evaluator2 || user?.evaluator3 || user?.sup)
+    .map((user) => evaluatorName(user, 2) || evaluatorName(user, 3) || evaluatorName(user, 1))
     .find(Boolean);
 
   return name || 'ยังไม่ระบุผู้บังคับบัญชา';
@@ -175,7 +191,7 @@ const detailGroups = computed(() => {
 
       return {
         name,
-        supervisor: users.map((user) => user?.sup).find(Boolean)
+        supervisor: users.map((user) => evaluatorName(user, 1)).find(Boolean)
           || 'ยังไม่ระบุหัวหน้างาน',
         users: [...users].sort((left, right) =>
           String(left?.n || '').localeCompare(String(right?.n || ''), 'th')),
