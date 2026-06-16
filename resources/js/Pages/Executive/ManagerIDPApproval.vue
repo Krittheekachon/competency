@@ -1,246 +1,193 @@
-<script lang="tsx">
-// @ts-nocheck
-import { defineComponent, ref } from "vue";
-import type { PropType } from "vue";
+<script setup lang="ts">
+import { computed, ref } from 'vue';
 
-const useState = (initial: any) => {
-  const state = ref(typeof initial === "function" ? initial() : initial);
-  const setState = (next: any) => {
-    state.value = typeof next === "function" ? next(state.value) : next;
-  };
-  return [state, setState] as const;
+const props = defineProps<{
+  users?: any[];
+  currentUserId?: number;
+}>();
+
+const selectedUser = ref<any | null>(null);
+const approvedIds = ref<number[]>([]);
+
+const evaluatorLevel = (user: any) => {
+  const currentUserId = Number(props.currentUserId || 0);
+  if (!currentUserId) return 0;
+  if (Number(user?.supervisor_id_1) === currentUserId) return 1;
+  if (Number(user?.supervisor_id_2) === currentUserId) return 2;
+  if (Number(user?.supervisor_id_3) === currentUserId) return 3;
+  return 0;
 };
 
-const getApprovalRows = (users: any[]) => {
-  const activeEmployee = users
-    .filter((user) => user.act !== false && user.r !== "manager")
-    .slice(0, 12);
+const plansFor = (user: any) => {
+  const plans = user?.idpDetails || user?.idpPlans || user?.developmentPlans;
+  if (Array.isArray(plans) && plans.length) return plans;
 
-  const fallback = [
-    {
-      n: "สมชาย มีสุข",
-      t: "นาย",
-      p: "นักวิชาการศึกษา",
-      d: "สนับสนุนการศึกษาและวิชาการ",
-      sup: "กัญญารัตน์ ศรีวิชา",
-      evaluator2: "ธนพล ไชยรักษ์",
-    },
-    {
-      n: "มาลี ดีเสมอ",
-      t: "นางสาว",
-      p: "นักทรัพยากรบุคคล",
-      d: "ทรัพยากรบุคคล",
-      sup: "พรพิมล บุคคลดี",
-      evaluator2: "ธนพล ไชยรักษ์",
-    },
-    {
-      n: "วิชัย ระบบดี",
-      t: "นาย",
-      p: "นักวิชาการคอมพิวเตอร์",
-      d: "เทคโนโลยีสารสนเทศ",
-      sup: "ปกรณ์ ศิริวัฒน์",
-      evaluator2: "ธนพล ไชยรักษ์",
-    },
-  ];
+  const gaps = Array.isArray(user?.competencyGaps)
+    ? user.competencyGaps.filter((gap: any) => Number(gap?.gap) < 0)
+    : [];
 
-  const source = activeEmployee.length ? activeEmployee : fallback;
-
-  return source.map((user, index) => ({
-    id: user.sso || `mock-${index}`,
-    employee: `${user.t || ""}${user.n}`,
-    position: user.p || "บุคลากร",
-    dept: user.d || "ไม่ระบุหน่วยงาน",
-    evaluator1: user.sup || "",
-    evaluator2: user.evaluator2 || "กิตติพงศ์ แสงทอง",
-    idpDetails: [
-      {
-        topic: "AI Literacy",
-        method: "Workshop + OJT",
-        due: "ก.ค. 2568",
-        outcome: "ใช้ AI ช่วยงานประจำได้",
-      },
-      {
-        topic: "การวิเคราะห์ข้อมูล",
-        method: "Online course",
-        due: "ส.ค. 2568",
-        outcome: "ทำ dashboard สรุปงานได้",
-      },
-    ],
+  return gaps.map((gap: any) => ({
+    topic: gap.n || gap.name || 'ไม่ระบุสมรรถนะ',
+    method: 'รอจัดทำแผนพัฒนา',
+    due: '-',
+    outcome: gap.note || 'พัฒนาสมรรถนะให้ครบตามระดับที่คาดหวัง',
   }));
 };
 
-export default defineComponent({
-  name: "ManagerIDPApproval",
-  props: {
-    users: { type: Array as PropType<any[]>, default: () => [] },
-  },
-  setup(__props) {
-    const { users } = __props as any;
+const rows = computed(() =>
+  (props.users || [])
+    .filter((user) => user?.act !== false && evaluatorLevel(user) > 0)
+    .sort((left, right) =>
+      String(left?.n || '').localeCompare(String(right?.n || ''), 'th'))
+);
 
-    const [approvedIds, setApprovedIds] = useState<string[]>([]);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
-
-    const approvalRows = getApprovalRows(users);
-
-    const approve = (id: string) =>
-      setApprovedIds((prev: string[]) =>
-        prev.includes(id) ? prev : [...prev, id]
-      );
-
-    return () => {
-      // FIX: ดึง .value ใน render function
-      const selected = approvalRows.find((row) => row.id === selectedId.value);
-
-      return (
-        <>
-          <div class="mb20">
-            <div class="sec-t">อนุมัติแผน IDP รายบุคคล</div>
-            <div class="sec-s">
-              ตรวจสอบแผน IDP จากหัวหน้างานและผู้บังคับบัญชา ก่อนยืนยันแผนพัฒนารายบุคคล
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="ch">
-              <div class="ct">รายการแผน IDP ที่รอยืนยัน</div>
-            </div>
-            <div class="cb" style={{ padding: 0 }}>
-              <table class="tbl">
-                <thead>
-                  <tr>
-                    <th>ผู้ถูกประเมิน</th>
-                    <th>หัวหน้างาน</th>
-                    <th>ผู้บังคับบัญชา</th>
-                    <th>หัวข้อ IDP</th>
-                    <th style={{ width: "118px" }}>สถานะ</th>
-                    <th style={{ width: "190px" }}>จัดการ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {approvalRows.map((row) => {
-                    // FIX: ใช้ approvedIds.value ให้สม่ำเสมอ
-                    const approved = approvedIds.value.includes(row.id);
-                    return (
-                      <tr key={row.id}>
-                        <td>
-                          <div class="fw7 fs13">{row.employee}</div>
-                          <div class="muted fs11">
-                            {row.position} · {row.dept}
-                          </div>
-                        </td>
-                        <td>
-                          <div class="fw6 fs12">{row.evaluator1 || "—"}</div>
-                        </td>
-                        <td>
-                          <div class="fw6 fs12">{row.evaluator2}</div>
-                        </td>
-                        <td>
-                          <div class="flex ic g4" style={{ flexWrap: "wrap" }}>
-                            {row.idpDetails.map((item) => (
-                              <span key={item.topic} class="b bt">
-                                {item.topic}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td>
-                          <span class={`b ${approved ? "bg" : "by"}`}>
-                            {approved ? "ยืนยันแล้ว" : "รอยืนยัน"}
-                          </span>
-                        </td>
-                        <td>
-                          <div class="flex ic g6">
-                            <button
-                              class="btn btn-s btn-xs"
-                              onClick={() => setSelectedId(row.id)}
-                            >
-                              ดูรายละเอียด
-                            </button>
-                            <button
-                              class={`btn ${approved ? "btn-g" : "btn-t"} btn-xs`}
-                              disabled={approved}
-                              onClick={() => approve(row.id)}
-                            >
-                              {approved ? "ยืนยันแล้ว" : "ยืนยัน"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Modal */}
-          {selected && (
-            <div
-              class="mo"
-              style={{ zIndex: 300 }}
-              onMousedown={() => setSelectedId(null)}
-            >
-              <div
-                class="mo-box"
-                style={{ width: "720px" }}
-                onMousedown={(e: MouseEvent) => e.stopPropagation()}
-              >
-                <div class="mo-h">
-                  <div>
-                    <div class="fw8 fs14">{selected.employee}</div>
-                    <div class="muted fs11">
-                      {selected.evaluator1 || "ไม่มีหัวหน้างาน"} · {selected.evaluator2}
-                    </div>
-                  </div>
-                  <button
-                    class="btn btn-s btn-sm"
-                    onClick={() => setSelectedId(null)}
-                  >
-                    ปิด
-                  </button>
-                </div>
-                <div class="mo-b">
-                  {selected.idpDetails.map((item) => (
-                    <div
-                      key={item.topic}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "150px 150px 100px 1fr",
-                        gap: "10px",
-                        padding: "10px 0",
-                        borderBottom: "1px solid var(--border)",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span class="b bt" style={{ justifyContent: "center" }}>
-                        {item.topic}
-                      </span>
-                      <span class="fw6 fs12">{item.method}</span>
-                      <span class="b bgr" style={{ justifyContent: "center" }}>
-                        {item.due}
-                      </span>
-                      <span class="muted fs12">{item.outcome}</span>
-                    </div>
-                  ))}
-                  <button
-                    class={`btn ${
-                      approvedIds.value.includes(selected.id) ? "btn-g" : "btn-t"
-                    } btn-sm mt12`}
-                    disabled={approvedIds.value.includes(selected.id)}
-                    onClick={() => approve(selected.id)}
-                    style={{ width: "100%", justifyContent: "center" }}
-                  >
-                    {approvedIds.value.includes(selected.id)
-                      ? "ยืนยันแผน IDP แล้ว"
-                      : "ยืนยันแผน IDP"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      );
-    };
-  },
-});
+const isApproved = (user: any) => approvedIds.value.includes(Number(user.db_id));
+const approve = (user: any) => {
+  const id = Number(user?.db_id);
+  if (!id || isApproved(user)) return;
+  approvedIds.value = [...approvedIds.value, id];
+  selectedUser.value = null;
+};
 </script>
+
+<template>
+  <section>
+    <div class="mb20">
+      <div class="sec-t">อนุมัติแผน IDP รายบุคคล</div>
+      <div class="sec-s">
+        แสดงเฉพาะบุคลากรที่เลือกคุณเป็นผู้ประเมินในหน้าเพิ่มผู้ใช้
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch">
+        <div class="ct">รายการแผน IDP</div>
+      </div>
+      <div class="cb approval-table-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>บุคลากร</th>
+              <th>หัวหน้างาน</th>
+              <th>ผู้บังคับบัญชา</th>
+              <th>ลำดับของคุณ</th>
+              <th>หัวข้อ IDP</th>
+              <th>สถานะ</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="user in rows" :key="user.db_id || user.sso">
+              <td>
+                <div class="fw7 fs13">{{ `${user.t || ''}${user.n || '-'}` }}</div>
+                <div class="muted fs11">{{ user.p || 'ยังไม่ระบุตำแหน่ง' }} · {{ user.d || 'ยังไม่ระบุหน่วยงาน' }}</div>
+              </td>
+              <td><div class="fw6 fs12">{{ user.sup || '—' }}</div></td>
+              <td><div class="fw6 fs12">{{ user.evaluator2 || '—' }}</div></td>
+              <td><span class="b bt">ผู้ประเมินลำดับที่ {{ evaluatorLevel(user) }}</span></td>
+              <td>
+                <div class="flex ic g4 idp-topic-list">
+                  <span v-for="plan in plansFor(user)" :key="plan.topic" class="b bt">{{ plan.topic }}</span>
+                  <span v-if="plansFor(user).length === 0" class="muted fs11">ยังไม่มีแผน IDP</span>
+                </div>
+              </td>
+              <td><span class="b" :class="isApproved(user) ? 'bg' : 'by'">{{ isApproved(user) ? 'ยืนยันแล้ว' : 'รอยืนยัน' }}</span></td>
+              <td>
+                <div class="flex ic g6">
+                  <button class="btn btn-s btn-xs" type="button" @click="selectedUser = user">ดูรายละเอียด</button>
+                  <button
+                    class="btn btn-t btn-xs"
+                    type="button"
+                    :disabled="isApproved(user) || plansFor(user).length === 0"
+                    @click="approve(user)"
+                  >
+                    ยืนยัน
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="rows.length === 0">
+              <td colspan="7" class="approval-empty">
+                ยังไม่มีบุคลากรที่เลือกคุณเป็นผู้ประเมิน
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div v-if="selectedUser" class="mo" style="z-index: 300" @mousedown.self="selectedUser = null">
+      <div class="mo-box approval-modal">
+        <div class="mo-h">
+          <div>
+            <div class="fw8 fs14">{{ `${selectedUser.t || ''}${selectedUser.n || '-'}` }}</div>
+            <div class="muted fs11">ผู้ประเมินลำดับที่ {{ evaluatorLevel(selectedUser) }}</div>
+          </div>
+          <button class="btn btn-s btn-sm" type="button" @click="selectedUser = null">ปิด</button>
+        </div>
+        <div class="mo-b">
+          <div v-for="plan in plansFor(selectedUser)" :key="plan.topic" class="idp-detail-row">
+            <span class="b bt">{{ plan.topic }}</span>
+            <span class="fw6 fs12">{{ plan.method || 'ยังไม่ระบุวิธีพัฒนา' }}</span>
+            <span class="b bgr">{{ plan.due || '-' }}</span>
+            <span class="muted fs12">{{ plan.outcome || 'ยังไม่ระบุผลลัพธ์ที่คาดหวัง' }}</span>
+          </div>
+          <div v-if="plansFor(selectedUser).length === 0" class="approval-empty">
+            บุคลากรรายนี้ยังไม่มีแผน IDP
+          </div>
+          <button
+            v-if="plansFor(selectedUser).length"
+            class="btn btn-t btn-sm approval-confirm"
+            type="button"
+            :disabled="isApproved(selectedUser)"
+            @click="approve(selectedUser)"
+          >
+            {{ isApproved(selectedUser) ? 'ยืนยันแผน IDP แล้ว' : 'ยืนยันแผน IDP' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.approval-table-wrap {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.approval-empty {
+  padding: 28px 16px;
+  color: var(--text3);
+  text-align: center;
+}
+
+.approval-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.idp-topic-list {
+  flex-wrap: wrap;
+}
+
+.idp-detail-row {
+  display: grid;
+  grid-template-columns: 150px 150px 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.approval-confirm {
+  width: 100%;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+@media (max-width: 680px) {
+  .idp-detail-row {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

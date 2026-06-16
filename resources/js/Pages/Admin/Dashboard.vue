@@ -740,7 +740,6 @@ const logout = () => router.post(route('logout'));
                     ☰
                 </button>
                 <div class="tb-title">{{ pageTitle }}</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

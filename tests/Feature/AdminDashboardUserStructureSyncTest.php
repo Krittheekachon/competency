@@ -148,13 +148,17 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             );
     }
 
-    public function test_dashboard_marks_supervisor_without_second_evaluator(): void
+    public function test_dashboard_accepts_supervisor_with_only_third_evaluator(): void
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
             'role_id' => $this->roleId('admin'),
         ]);
         $this->createValidStructure();
+        $dean = User::factory()->create([
+            'name' => 'MM Dean Evaluator',
+            'role_id' => $this->roleId('dean'),
+        ]);
 
         User::factory()->create([
             'name' => 'ZZ Supervisor Missing Evaluator',
@@ -165,7 +169,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'level' => 'ปฏิบัติการ',
             'supervisor_id_1' => null,
             'supervisor_id_2' => null,
-            'supervisor_id_3' => null,
+            'supervisor_id_3' => $dean->id,
         ]);
 
         $this->actingAs($admin)
@@ -173,18 +177,22 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.1.structureStatus', 'invalid')
-                ->where('users.1.structureIssues.0', 'หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2')
+                ->where('users.2.structureStatus', 'ok')
+                ->where('users.2.structureIssues', [])
             );
     }
 
-    public function test_dashboard_marks_manager_dept_without_third_evaluator(): void
+    public function test_dashboard_accepts_manager_dept_with_only_third_evaluator(): void
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
             'role_id' => $this->roleId('admin'),
         ]);
         $this->createValidStructure();
+        $dean = User::factory()->create([
+            'name' => 'MM Dean Evaluator',
+            'role_id' => $this->roleId('dean'),
+        ]);
 
         User::factory()->create([
             'name' => 'ZZ Manager Dept Missing Evaluator',
@@ -195,7 +203,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'level' => 'ปฏิบัติการ',
             'supervisor_id_1' => null,
             'supervisor_id_2' => null,
-            'supervisor_id_3' => null,
+            'supervisor_id_3' => $dean->id,
         ]);
 
         $this->actingAs($admin)
@@ -203,8 +211,8 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.1.structureStatus', 'invalid')
-                ->where('users.1.structureIssues.0', 'ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3')
+                ->where('users.2.structureStatus', 'ok')
+                ->where('users.2.structureIssues', [])
             );
     }
 

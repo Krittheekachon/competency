@@ -148,7 +148,6 @@ const saveProfile = () => {
             <div class="topbar">
                 <button class="menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
                 <div class="tb-title">โปรไฟล์</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>
