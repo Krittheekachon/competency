@@ -84,6 +84,7 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
+                'users' => $users,
                 'hrSummary' => [
                     'totalUsers' => User::count(),
                     'hrUsers' => User::where('role_id', $this->roleIdByKey('hr'))->count(),

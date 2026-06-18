@@ -2,8 +2,14 @@
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import ManagerGap from '../Executive/ManagerGap.vue';
+import ManagerIDP from '../Executive/ManagerIDP.vue';
 
 const props = defineProps({
+    users: {
+        type: Array,
+        default: () => [],
+    },
     hrSummary: {
         type: Object,
         required: true,
@@ -100,6 +106,13 @@ const deliveryTypeOptions = [
 
 const sections = [
     {
+        title: 'ภาพรวมคณะ',
+        items: [
+            { id: 'manager-competency-overview', label: 'Competency Gap คณะ' },
+            { id: 'manager-idp-overview', label: 'ติดตาม IDP ภาพรวม' },
+        ],
+    },
+    {
         title: 'HR',
         items: [
             { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
@@ -108,6 +121,8 @@ const sections = [
 ];
 
 const pageTitles = {
+    'manager-competency-overview': 'Competency Gap คณะ',
+    'manager-idp-overview': 'ติดตาม IDP ภาพรวม',
     'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
 };
 
@@ -471,7 +486,17 @@ const formatWeight = (weight) => {
             </header>
 
             <main class="content">
-                <template v-if="activePage === 'hr-position-competencies'">
+                <ManagerGap
+                    v-if="activePage === 'manager-competency-overview'"
+                    :users="props.users"
+                    :disable-mock-data="false"
+                />
+                <ManagerIDP
+                    v-else-if="activePage === 'manager-idp-overview'"
+                    :users="props.users"
+                    :disable-mock-data="false"
+                />
+                <template v-else-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">
                         <div>
                             <div class="position-kicker">COMPETENCY SETUP</div>
