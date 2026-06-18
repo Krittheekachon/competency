@@ -122,6 +122,10 @@ const deliveryTypeOptions = [
 
 const sections = [
     {
+        title: 'ภาพรวมคณะ',
+        items: [
+            { id: 'manager-competency-overview', label: 'Competency Gap คณะ' },
+            { id: 'manager-idp-overview', label: 'ติดตาม IDP ภาพรวม' },
         title: 'ของฉัน (บุคลากร)',
         items: [
             { id: 'emp-assess', label: 'ประเมินตนเอง' },

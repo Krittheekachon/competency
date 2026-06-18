@@ -85,9 +85,6 @@ class DashboardController extends Controller
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
                 'users' => $users,
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
-                'currentUserCompetencyGaps' => $this->competencyGapsForUser(auth()->user()),
                 'hrSummary' => [
                     'totalUsers' => User::count(),
                     'hrUsers' => User::where('role_id', $this->roleIdByKey('hr'))->count(),
