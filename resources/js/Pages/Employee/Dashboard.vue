@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import {
     INITIAL_USERS,
     NAV_CONFIG,
@@ -13,6 +14,13 @@ import EmployeeGap from './EmployeeGap.vue';
 import EmployeeIDP from './EmployeeIDP.vue';
 import EmployeeIDPDetail from './EmployeeIDPDetail.vue';
 import EmployeeProgress from './EmployeeProgress.vue';
+
+const props = defineProps({
+    pageTitle: {
+        type: String,
+        default: 'ประเมินตนเอง',
+    },
+});
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -57,7 +65,7 @@ const learningMethods = ref([
 ]);
 
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
-const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
 const serverCurrentUser = computed(() => page.props.currentUser || null);
 const currentProfileUser = computed(() =>
     serverCurrentUser.value
@@ -103,7 +111,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Employee - CIDP" />
+    <Head :title="currentPageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
@@ -148,7 +156,7 @@ const logout = () => router.post(route('logout'));
                 >
                     ☰
                 </button>
-                <div class="tb-title">{{ pageTitle }}</div>
+                <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

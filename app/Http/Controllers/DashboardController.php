@@ -57,6 +57,7 @@ class DashboardController extends Controller
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
+                'pageTitle' => 'จัดการผู้ใช้งาน',
                 'users' => $users,
                 'roles' => $this->rolesPayload(),
                 'competencyTypes' => $competencyTypes,
@@ -67,16 +68,19 @@ class DashboardController extends Controller
                 'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
+                'pageTitle' => 'ประเมินทีมงาน',
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
             ]),
             'dept_head' => Inertia::render('Head/Dashboard', [
+                'pageTitle' => 'ประเมินทีมงาน',
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
+                'pageTitle' => 'ประเมินตนเอง',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser(auth()->user()),
@@ -84,6 +88,7 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
+                'pageTitle' => 'กำหนดสมรรถนะ',
                 'users' => $users,
                 'hrSummary' => [
                     'totalUsers' => User::count(),
@@ -112,6 +117,7 @@ class DashboardController extends Controller
                     ]),
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
+                'pageTitle' => 'ภาพรวมองค์กร',
                 'users' => $users,
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'managerSummary' => $managerSummary,
@@ -124,7 +130,9 @@ class DashboardController extends Controller
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
             ]),
-            default => Inertia::render('Dashboard'),
+            default => Inertia::render('Dashboard', [
+                'pageTitle' => 'หน้าหลัก',
+            ]),
         };
     }
 

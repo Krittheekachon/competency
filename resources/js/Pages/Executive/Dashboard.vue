@@ -2,6 +2,7 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import ManagerGap from './ManagerGap.vue';
 import ManagerIDP from './ManagerIDP.vue';
 import ManagerAssessmentApproval from './ManagerAssessmentApproval.vue';
@@ -31,6 +32,10 @@ const props = defineProps({
             pendingIdpApprovals: 0,
         }),
     },
+    pageTitle: {
+        type: String,
+        default: 'ภาพรวมองค์กร',
+    },
 });
 
 const page = usePage();
@@ -55,13 +60,13 @@ const sections = [
 ];
 
 const pageTitles = {
-    'manager-competency-overview': 'Competency Gap คณะ',
-    'manager-idp-overview': 'ติดตาม IDP ภาพรวม',
+    'manager-competency-overview': 'ภาพรวมองค์กร',
+    'manager-idp-overview': 'แผนพัฒนารายบุคคล',
     'manager-assessment-approval': 'อนุมัติผลการประเมิน',
     'manager-idp-approval': 'อนุมัติแผน IDP',
 };
 
-const currentPageTitle = computed(() => pageTitles[activePage.value]);
+const currentPageTitle = computed(() => pageTitles[activePage.value] || props.pageTitle);
 const userName = computed(() => props.currentUser?.n || page.props.auth?.user?.name || 'Manager User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
 const approvalUsers = computed(() => {
@@ -83,7 +88,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Manager - CIDP" />
+    <Head :title="currentPageTitle" />
 
     <div class="shell manager-shell">
         <aside v-if="isSidebarOpen" class="sidebar">
@@ -125,7 +130,7 @@ const logout = () => router.post(route('logout'));
                 >
                     ☰
                 </button>
-                <div class="tb-title">{{ currentPageTitle }}</div>
+                <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
 

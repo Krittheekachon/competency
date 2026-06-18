@@ -29,7 +29,7 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="เข้าสู่ระบบ - CIDP" />
+    <Head :title="$page.props.pageTitle || 'เข้าสู่ระบบ'" />
 
     <main class="login-page">
         <section class="login-card" aria-labelledby="login-title">

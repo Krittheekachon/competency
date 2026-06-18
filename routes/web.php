@@ -18,6 +18,7 @@ use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetency
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
+        'pageTitle' => 'เข้าสู่ระบบ',
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,

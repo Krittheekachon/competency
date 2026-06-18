@@ -1,13 +1,15 @@
 <script setup>
-import { router, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
 import EmployeeGap from '../Employee/EmployeeGap.vue';
 import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 import ManagerGap from '../Executive/ManagerGap.vue';
+import ManagerIDP from '../Executive/ManagerIDP.vue';
 
 const props = defineProps({
     users: {
@@ -70,6 +72,10 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    pageTitle: {
+        type: String,
+        default: 'กำหนดสมรรถนะ',
+    },
 });
 
 const page = usePage();
@@ -126,6 +132,9 @@ const sections = [
         items: [
             { id: 'manager-competency-overview', label: 'Competency Gap คณะ' },
             { id: 'manager-idp-overview', label: 'ติดตาม IDP ภาพรวม' },
+        ],
+    },
+    {
         title: 'ของฉัน (บุคลากร)',
         items: [
             { id: 'emp-assess', label: 'ประเมินตนเอง' },
@@ -150,17 +159,19 @@ const sections = [
 ];
 
 const pageTitles = {
+    'manager-competency-overview': 'ภาพรวมองค์กร',
+    'manager-idp-overview': 'แผนพัฒนารายบุคคล',
     'emp-assess': 'ประเมินตนเอง',
-    'emp-gap': 'ผล Competency Gap',
-    'emp-idp': 'IDP ของฉัน',
+    'emp-gap': 'สรุปผลสมรรถนะ',
+    'emp-idp': 'แผนพัฒนารายบุคคล',
     'emp-progress': 'อัปเดตความก้าวหน้า',
     'emp-idp-detail': 'รายละเอียด IDP',
-    'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
+    'hr-position-competencies': 'กำหนดสมรรถนะ',
     'hr-competency-overview': 'Competency Gap คณะ',
 };
 
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
-const currentPageTitle = computed(() => pageTitles[activePage.value] || 'HR');
+const currentPageTitle = computed(() => pageTitles[activePage.value] || props.pageTitle);
 const currentProfileUser = computed(() => props.currentUser || {});
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value;
@@ -495,6 +506,8 @@ const formatWeight = (weight) => {
 </script>
 
 <template>
+    <Head :title="currentPageTitle" />
+
     <div class="shell">
         <aside v-if="isSidebarOpen" class="sidebar">
             <SidebarBrand />
@@ -534,7 +547,7 @@ const formatWeight = (weight) => {
                 >
                     ☰
                 </button>
-                <div class="tb-title">{{ currentPageTitle }}</div>
+                <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
 

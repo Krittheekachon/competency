@@ -2,6 +2,7 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
 import EmployeeGap from '../Employee/EmployeeGap.vue';
@@ -9,7 +10,10 @@ import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 const selectedEmployee = ref(null);
-const props = defineProps({ roleKey: { type: String, default: null } });
+const props = defineProps({
+    roleKey: { type: String, default: null },
+    pageTitle: { type: String, default: 'ประเมินทีมงาน' },
+});
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -101,7 +105,7 @@ const navSections = computed(() => {
         }
         : section);
 });
-const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const pageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
 const implementedPages = new Set([
@@ -872,7 +876,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Head - CIDP" />
+    <Head :title="pageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
@@ -908,7 +912,7 @@ const logout = () => router.post(route('logout'));
         <div class="main">
             <div class="topbar">
                 <button class="btn btn-s btn-sm menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
-                <div class="tb-title">{{ pageTitle }}</div>
+                <PageTitleBlock :page-title="pageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>
@@ -1272,6 +1276,8 @@ const logout = () => router.post(route('logout'));
                                             ยังไม่มีข้อมูล Talent Pool ในรอบนี้
                                         </div>
                                     </div>
+                                </section>
+                            </div>
                             <div class="team-segment-grid">
                                 <section class="card team-segment-card risk">
                                     <div class="team-segment-head">

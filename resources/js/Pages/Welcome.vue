@@ -7,7 +7,7 @@ const loginWithKKU = () => {
 </script>
 
 <template>
-    <Head title="เข้าสู่ระบบ - CIDP" />
+    <Head :title="$page.props.pageTitle || 'เข้าสู่ระบบ'" />
 
     <main class="welcome-page">
         <img class="watermark watermark-right" src="/images/gear_encompetency.png" alt="" aria-hidden="true" />
