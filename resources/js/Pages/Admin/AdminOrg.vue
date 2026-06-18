@@ -154,23 +154,23 @@
                     </div>
                   </td>
                   <td style="min-width: 140px">
-                    <div v-if="user.sup" class="flex ic g6">
+                    <div v-if="evaluatorName(user, 1)" class="flex ic g6">
                       <span class="fs11 evaluator-icon"></span>
-                      <span class="fs12 evaluator-name">{{ user.sup }}</span>
+                      <span class="fs12 evaluator-name">{{ evaluatorName(user, 1) }}</span>
                     </div>
                     <span v-else class="fs11 muted">—</span>
                   </td>
                   <td style="min-width: 140px">
-                    <div v-if="user.evaluator2" class="flex ic g6">
+                    <div v-if="evaluatorName(user, 2)" class="flex ic g6">
                       <span class="fs11 evaluator-icon"></span>
-                      <span class="fs12 evaluator-name">{{ user.evaluator2 }}</span>
+                      <span class="fs12 evaluator-name">{{ evaluatorName(user, 2) }}</span>
                     </div>
                     <span v-else class="fs11 muted">—</span>
                   </td>
                   <td style="min-width: 140px">
-                    <div v-if="user.evaluator3" class="flex ic g6">
+                    <div v-if="evaluatorName(user, 3)" class="flex ic g6">
                       <span class="fs11 evaluator-icon"></span>
-                      <span class="fs12 evaluator-name">{{ user.evaluator3 }}</span>
+                      <span class="fs12 evaluator-name">{{ evaluatorName(user, 3) }}</span>
                     </div>
                     <span v-else class="fs11 muted">—</span>
                   </td>
@@ -440,9 +440,6 @@ type User = {
   p?: string;
   l?: string;
   r?: string;
-  sup?: string;
-  evaluator2?: string;
-  evaluator3?: string;
   supervisor_id_1?: number | null;
   supervisor_id_2?: number | null;
   supervisor_id_3?: number | null;
@@ -744,36 +741,41 @@ const roleBadge = (role?: string): RoleBadge => {
 };
 
 const displayNameForUser = (user: User) => `${user.t || ''}${user.n || ''}`.trim();
+const evaluatorName = (user: User, level: 1 | 2 | 3) => {
+  const id = level === 1
+    ? user.supervisor_id_1
+    : level === 2
+      ? user.supervisor_id_2
+      : user.supervisor_id_3;
+  const evaluator = findUserById(id);
+
+  return evaluator ? displayNameForUser(evaluator) : '';
+};
 const isAssignedEvaluator = (subordinate: User, evaluator: User) => {
-  if (evaluator.db_id) {
-    return [subordinate.supervisor_id_1, subordinate.supervisor_id_2, subordinate.supervisor_id_3]
-      .some((id) => Number(id) === Number(evaluator.db_id));
-  }
+  if (!evaluator.db_id) return false;
 
-  const evaluatorNames = [evaluator.n, displayNameForUser(evaluator)].filter(Boolean);
-
-  return [subordinate.sup, subordinate.evaluator2, subordinate.evaluator3]
-    .some((name) => evaluatorNames.includes(name || ''));
+  return [subordinate.supervisor_id_1, subordinate.supervisor_id_2, subordinate.supervisor_id_3]
+    .some((id) => Number(id) === Number(evaluator.db_id));
 };
 const subordinatesFor = (user: User) => props.users
   .filter((subordinate) => subordinate !== user && isAssignedEvaluator(subordinate, user))
   .map((subordinate) => ({
     user: subordinate,
     levels: [
-      Number(subordinate.supervisor_id_1) === Number(user.db_id) || subordinate.sup === user.n || subordinate.sup === displayNameForUser(user)
+      Number(subordinate.supervisor_id_1) === Number(user.db_id)
         ? 'ลำดับที่ 1'
         : '',
-      Number(subordinate.supervisor_id_2) === Number(user.db_id) || subordinate.evaluator2 === user.n || subordinate.evaluator2 === displayNameForUser(user)
+      Number(subordinate.supervisor_id_2) === Number(user.db_id)
         ? 'ลำดับที่ 2'
         : '',
-      Number(subordinate.supervisor_id_3) === Number(user.db_id) || subordinate.evaluator3 === user.n || subordinate.evaluator3 === displayNameForUser(user)
+      Number(subordinate.supervisor_id_3) === Number(user.db_id)
         ? 'ลำดับที่ 3'
         : '',
     ].filter(Boolean),
   }));
 const hasSubordinates = (user: User) => subordinatesFor(user).length > 0;
 const subordinateCount = (user: User) => subordinatesFor(user).length;
-const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้างาน): ${user.sup || '—'} · คนที่ 2 (ผู้บังคับบัญชา): ${user.evaluator2 || '—'} · คนที่ 3 (คณบดี): ${user.evaluator3 || '—'}`;
+const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้างาน): ${evaluatorName(user, 1) || '—'} · คนที่ 2 (ผู้บังคับบัญชา): ${evaluatorName(user, 2) || '—'} · คนที่ 3 (คณบดี): ${evaluatorName(user, 3) || '—'}`;
 
 const popDrillPath = (index: number) => {
   drillPath.value = index === -1 ? [] : drillPath.value.slice(0, index + 1);

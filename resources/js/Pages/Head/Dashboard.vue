@@ -134,11 +134,11 @@ const currentUser = computed(() =>
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentUser.value || {};
     const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
-    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
+    const hasAssignedEvaluator = [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
         .some((id) => Number(id) > 0);
 
-    if (!hasAssignedHeadOrSupervisor) {
-        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+    if (!hasAssignedEvaluator) {
+        reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
     }
 
     if (user.structureStatus === 'invalid' && reasons.length === 0) {
@@ -261,50 +261,30 @@ const MOCK_TEAM = [
     },
 ];
 
-const personNames = (user) => [
-    user?.n,
-    `${user?.t || ''}${user?.n || ''}`,
-].map((name) => String(name || '').trim()).filter(Boolean);
-const isSamePersonName = (storedName, user) => personNames(user).includes(String(storedName || '').trim());
 const isAssignedReviewer = (user, reviewer) => {
     const reviewerId = Number(reviewer?.db_id);
     const reviewerRole = normalizeRoleKey(reviewer?.r || authRoleKey.value);
-
-    if (reviewerRole === 'dept_head') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_1) === reviewerId)
-            || isSamePersonName(user.sup, reviewer)
-        );
-    }
+    if (reviewerId <= 0) return false;
 
     if (reviewerRole === 'supervisor') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_2) === reviewerId)
-            || isSamePersonName(user.evaluator2, reviewer)
-        );
+        return Number(user.supervisor_id_1) === reviewerId;
+    }
+
+    if (reviewerRole === 'dept_head') {
+        return Number(user.supervisor_id_2) === reviewerId;
     }
 
     if (reviewerRole === 'dean') {
-        return (
-            (reviewerId > 0 && Number(user.supervisor_id_3) === reviewerId)
-            || isSamePersonName(user.evaluator3, reviewer)
-        );
+        return Number(user.supervisor_id_3) === reviewerId;
     }
 
-    return (
-        (reviewerId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === reviewerId))
-        || isSamePersonName(user.sup, reviewer)
-        || isSamePersonName(user.evaluator2, reviewer)
-        || isSamePersonName(user.evaluator3, reviewer)
-    );
+    return [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
+        .some((id) => Number(id) === reviewerId);
 };
-const isReviewerRole = (role) => ['supervisor', 'manager_dept', 'dept_head', 'manager', 'dean'].includes(role);
-
 const teamMembers = computed(() => {
     return users.value.filter((user) =>
         user.sso !== currentUser.value.sso
         && isAssignedReviewer(user, currentUser.value)
-        && !isReviewerRole(user.r)
         && user.act !== false,
     );
 });
@@ -341,8 +321,8 @@ const assessCounts = computed(() => ({
 }));
 const supervisorApprovalStatus = (person) => {
     if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
-    if (person.evalStatus === 'self_submitted') return { label: authRoleKey.value === 'dept_head' ? 'รอหัวหน้างานตรวจ' : 'รอหัวหน้างานอนุมัติ', cls: 'by' };
-    if (person.evalStatus === 'unit_evaluated') return { label: authRoleKey.value === 'supervisor' ? 'รอผู้บังคับบัญชาตรวจ' : 'ส่งต่อผู้บังคับบัญชาแล้ว', cls: 'bt' };
+    if (person.evalStatus === 'self_submitted') return { label: authRoleKey.value === 'supervisor' ? 'รอหัวหน้างานตรวจ' : 'รอหัวหน้างานอนุมัติ', cls: 'by' };
+    if (person.evalStatus === 'unit_evaluated') return { label: authRoleKey.value === 'dept_head' ? 'รอผู้บังคับบัญชาตรวจ' : 'ส่งต่อผู้บังคับบัญชาแล้ว', cls: 'bt' };
     if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
     if (person.evalStatus === 'dept_evaluated') return { label: 'ผู้บังคับบัญชาอนุมัติแล้ว', cls: 'bb' };
     if (person.evalStatus === 'dean_approved') return { label: 'ปิดรอบแล้ว', cls: 'bg' };
@@ -363,14 +343,17 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
-const approvalExpectedStatus = computed(() => authRoleKey.value === 'dept_head' ? 'self_submitted' : 'unit_evaluated');
-const approvalNextStatus = computed(() => authRoleKey.value === 'dept_head' ? 'unit_evaluated' : 'dept_evaluated');
-const approvalRoleLabel = computed(() => authRoleKey.value === 'dept_head' ? 'หัวหน้างาน' : 'ผู้บังคับบัญชา');
-const approvalForwardLabel = computed(() => authRoleKey.value === 'dept_head' ? 'ส่งต่อผู้บังคับบัญชาแล้ว' : 'อนุมัติแล้ว');
-const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === approvalExpectedStatus.value));
+const approvalExpectedStatusFor = (person) => {
+    if (authRoleKey.value === 'supervisor') return 'self_submitted';
+    return person?.supervisor_id_1 ? 'unit_evaluated' : 'self_submitted';
+};
+const approvalNextStatus = computed(() => authRoleKey.value === 'supervisor' ? 'unit_evaluated' : 'dept_evaluated');
+const approvalRoleLabel = computed(() => authRoleKey.value === 'supervisor' ? 'หัวหน้างาน' : 'ผู้บังคับบัญชา');
+const approvalForwardLabel = computed(() => authRoleKey.value === 'supervisor' ? 'ส่งต่อผู้บังคับบัญชาแล้ว' : 'อนุมัติแล้ว');
+const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === approvalExpectedStatusFor(person)));
 const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === approvalNextStatus.value));
 const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) =>
-    (authRoleKey.value === 'dept_head' ? ['dept_evaluated', 'dean_approved'] : ['dean_approved']).includes(person.evalStatus),
+    (authRoleKey.value === 'supervisor' ? ['dept_evaluated', 'dean_approved'] : ['dean_approved']).includes(person.evalStatus),
 ));
 
 const gapRows = computed(() => teamMembers.value.map((user) => ({
@@ -476,7 +459,7 @@ const selectedSupervisorApproval = computed(() =>
 const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
 const canDecideSupervisorApproval = computed(() =>
     Boolean(selectedSupervisorApproval.value?.hasSubmittedAssessment)
-    && selectedSupervisorApproval.value?.evalStatus === approvalExpectedStatus.value,
+    && selectedSupervisorApproval.value?.evalStatus === approvalExpectedStatusFor(selectedSupervisorApproval.value),
 );
 const approvalDecisionTitle = computed(() => approvalDecision.value === 'approve'
     ? `ยืนยันผลการประเมินของ ${supervisorApprovalName.value}`
@@ -494,48 +477,82 @@ const gapScoreFor = (person, comp, key, fallback) => {
     const values = person?.competencyScores || person?.scores || person?.assessmentScores || {};
     return Number(values?.[comp.id]?.[key] ?? values?.[`${comp.id}_${key}`] ?? comp[key] ?? fallback);
 };
+const expectedIndicatorCountFor = (_levels, expectedLevel) => {
+    const expectationLevel = Number(expectedLevel);
+    return Number.isFinite(expectationLevel) ? expectationLevel * 4 : 0;
+};
+
+const getGapData = (competency) => {
+    const expectationLevel = Number(
+        competency?.expected
+        ?? competency?.expectedScore
+        ?? competency?.expectedLevel
+        ?? competency?.target
+        ?? 0,
+    );
+    const expectedCount = Number.isFinite(expectationLevel) ? expectationLevel * 4 : 0;
+    const assessedCount = Number(competency?.checkedIndicatorCount ?? competency?.headScore ?? 0);
+
+    return {
+        code: competency?.code || competency?.cd || '-',
+        expectationLevel,
+        expectedCount,
+        assessedCount,
+        gap: assessedCount - expectedCount,
+    };
+};
 
 const gapResultRows = (person) => {
     if (!person) return [];
-    const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => ({
-        id: row.id || row.competency_id || row.name || row.title,
-        title: row.title || row.name || row.n || row.competency_name || '-',
-        group: row.group || row.type || row.t || '-',
-        code: row.code || row.cd || '',
-        expected: Number(row.expected ?? row.expectedScore ?? row.expectedLevel ?? row.target ?? 3),
-        selfScore: null,
-        headScore: null,
-        gap: null,
-        feedback: '',
-        note: '',
-        levels: row.levels || [],
-        checkedIndicatorKeys: [],
-        checkedIndicatorCount: 0,
-        updatedAt: '',
-        failed: false,
-        hasAssessment: false,
-    })) : [];
+    const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => {
+        const expected = Number(row.expected ?? row.expectedScore ?? row.expectedLevel ?? row.target ?? 3);
+        const levels = row.levels || [];
+
+        return {
+            id: row.id || row.competency_id || row.name || row.title,
+            title: row.title || row.name || row.n || row.competency_name || '-',
+            group: row.group || row.type || row.t || '-',
+            code: row.code || row.cd || '',
+            expected,
+            expectedIndicatorCount: expectedIndicatorCountFor(levels, expected),
+            selfScore: null,
+            headScore: null,
+            gap: null,
+            feedback: '',
+            note: '',
+            levels,
+            checkedIndicatorKeys: [],
+            checkedIndicatorCount: 0,
+            updatedAt: '',
+            failed: false,
+            hasAssessment: false,
+        };
+    }) : [];
     const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
         const assessedRows = rawRows.map((row) => {
             const expected = Number(row.expected ?? row.expectedScore ?? row.target ?? 3);
-            const selfScore = Number(row.selfScore ?? row.self ?? row.actual ?? row.actualLevel ?? 0);
-            const headScore = Number(row.headScore ?? row.supervisorScore ?? row.evaluatorScore ?? row.score ?? row.actual ?? row.actualLevel ?? selfScore);
-            const gap = Number(row.gap ?? headScore - expected);
+            const levels = row.levels || [];
+            const expectedIndicatorCount = expectedIndicatorCountFor(levels, expected);
+            const checkedIndicatorCount = Number(row.checkedIndicatorCount || 0);
+            const selfScore = checkedIndicatorCount;
+            const headScore = checkedIndicatorCount;
+            const gap = checkedIndicatorCount - expectedIndicatorCount;
             return {
                 id: row.id || row.competency_id || row.name || row.title,
                 title: row.title || row.name || row.n || row.competency_name || '-',
                 group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
                 expected,
+                expectedIndicatorCount,
                 selfScore,
                 headScore,
                 gap,
                 feedback: row.feedback || row.note || '',
                 note: row.note || row.feedback || '',
-                levels: row.levels || [],
+                levels,
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
-                checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                checkedIndicatorCount,
                 updatedAt: row.updatedAt || row.updated_at || '',
                 failed: row.failed ?? row.requiresIdp ?? gap < 0,
                 hasAssessment: true,
@@ -605,11 +622,11 @@ const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const resultRows = allResultRows.filter((row) => row.hasAssessment !== false);
     const scores = teamHeatmapCompetencies.value.map((comp) => {
         const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
-        return matching ? Number(matching.gap ?? 0) : 0;
+        return matching?.hasAssessment ? Number(matching.gap ?? 0) : null;
     });
-    const missingCount = scores.filter((score) => score < 0).length;
-    const assessed = resultRows.length > 0;
-    const fullyAssessed = assessed && resultRows.length === allResultRows.length;
+    const assessed = resultRows.some((row) => row.hasAssessment);
+    const missingCount = scores.filter((score) => score !== null && score < 0).length;
+    const totalNegativeGap = scores.reduce((total, score) => total + (score !== null && score < 0 ? Math.abs(score) : 0), 0);
 
     return {
         ...person,
@@ -628,9 +645,13 @@ const teamUrgentDevelopmentRows = computed(() => teamAssessedRows.value
     .filter((row) => row.missingCount > 0)
     .sort((left, right) => right.missingCount - left.missingCount));
 const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, index) => {
-    const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
+    const values = teamAssessedRows.value
+        .map((row) => row.scores[index])
+        .filter((value) => value !== null)
+        .map(Number);
     const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-    return { ...comp, average };
+    const passedCount = values.filter((value) => value >= 0).length;
+    return { ...comp, average, passedCount };
 }));
 const teamStrongest = computed(() => [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0]);
 const teamWeakest = computed(() => [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0]);
@@ -888,7 +909,6 @@ const logout = () => router.post(route('logout'));
             <div class="topbar">
                 <button class="btn btn-s btn-sm menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
                 <div class="tb-title">{{ pageTitle }}</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>
@@ -899,6 +919,7 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentUser"
                     :set-users="setRef(users)"
+                    :competencies="currentUser.assignedCompetencies || []"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -906,6 +927,7 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :eval-status="currentUser.evalStatus"
                 />
 
                 <EmployeeIDP
@@ -1002,7 +1024,7 @@ const logout = () => router.post(route('logout'));
                                     <div class="flex ic g8">
                                         <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
                                         <span class="fw8 fs16">{{ row.title }}</span>
-                                        <span class="muted fs12">คาดหวัง {{ row.expected }} · ได้ {{ row.headScore }} · <span class="rc fw8">Gap {{ row.gap }}</span></span>
+                                        <span class="muted fs12">คาดหวัง {{ row.expectedIndicatorCount }} ข้อ · ทำได้ {{ row.headScore }} ข้อ · <span class="rc fw8">Gap {{ row.gap }}</span></span>
                                     </div>
                                 </div>
                                 <div class="idp-review-body">
@@ -1088,7 +1110,7 @@ const logout = () => router.post(route('logout'));
                                     <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
                                     <div class="row-main">
                                         <div class="fw8 fs14">{{ row.title }}</div>
-                                        <div class="muted fs12">ระดับคาดหวัง {{ row.expected }} · ระดับที่ได้ {{ row.headScore }}</div>
+                                        <div class="muted fs12">จำนวนข้อคาดหวัง {{ row.expectedIndicatorCount }} · ทำได้ {{ row.headScore }} ข้อ</div>
                                         <div v-if="selectedIdpPerson.phase === 'rejected'" class="rc fs12 mt4">
                                             เหตุผล: {{ idpFeedbackFor(row) || 'ยังไม่มีข้อเสนอแนะ' }}
                                         </div>
@@ -1124,18 +1146,18 @@ const logout = () => router.post(route('logout'));
                             <div class="g3 team-metrics mb20">
                                 <div class="sc">
                                     <div class="sl">ประเมินเสร็จแล้ว</div>
-                                    <div class="sv bc">{{ teamAssessedRows.length }}/{{ teamHeatmapRows.length }}</div>
+                                    <div class="sv metric-neutral">{{ teamAssessedRows.length }}/{{ teamHeatmapRows.length }}</div>
                                     <div class="ss muted">เทียบกับลูกน้องทั้งหมด</div>
                                 </div>
                                 <div class="sc">
                                     <div class="sl">จุดแข็งของทีม</div>
-                                    <div class="sv bc">{{ teamStrongest?.code || '-' }}</div>
-                                    <div class="ss muted">{{ teamTalentRows.length }} คนผ่านเกณฑ์</div>
+                                    <div class="sv metric-positive">▲ {{ teamStrongest?.code || '-' }}</div>
+                                    <div class="ss muted">ผ่านเกณฑ์ · {{ teamStrongest?.passedCount || 0 }} คน</div>
                                 </div>
                                 <div class="sc">
                                     <div class="sl">จุดอ่อนของทีม</div>
-                                    <div class="sv rc">{{ teamWeakest?.code || '-' }}</div>
-                                    <div class="ss muted">{{ idpRequiredCount }} คน Gap ติดลบ</div>
+                                    <div class="sv metric-negative">▼ {{ teamWeakest?.code || '-' }}</div>
+                                    <div class="ss muted"> ต่ำกว่าเกณฑ์ · {{ teamHighRiskRows.length }} คน</div>
                                 </div>
                             </div>
 
@@ -1143,7 +1165,7 @@ const logout = () => router.post(route('logout'));
                                 <div class="team-card-head">
                                     <div>
                                         <div class="ct">Team Gap Heatmap</div>
-                                        <div class="cs">Gap = Actual Score - Expected Score, แดงคือต่ำกว่าความคาดหวัง เขียวคือผ่านเกณฑ์</div>
+                                        <div class="cs">Gap = จำนวนข้อที่ประเมินได้ - จำนวนข้อที่คาดหวัง · ▼ สีส้มต่ำกว่าเกณฑ์ · ▲ สีน้ำเงินสูงกว่าเกณฑ์ · ● สีเทาเท่ากับเกณฑ์</div>
                                     </div>
                                 </div>
                                 <div class="team-table-wrap">
@@ -1171,13 +1193,23 @@ const logout = () => router.post(route('logout'));
                                                 <td v-for="(score, scoreIndex) in row.scores" :key="`${row.sso}-${scoreIndex}`">
                                                     <span
                                                         class="gap-chip"
-                                                        :class="{ ok: Number(score) >= 0, bad: Number(score) < 0 }"
+                                                        :class="{
+                                                            pending: score === null,
+                                                            zero: score !== null && Number(score) === 0,
+                                                            ok: score !== null && Number(score) > 0,
+                                                            bad: score !== null && Number(score) < 0,
+                                                        }"
                                                     >
-                                                        {{ formatTeamGap(score) }}
+                                                        {{ score === null ? 'รอผล' : formatTeamGap(score) }}
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <span class="b" :class="row.missingCount ? 'br' : 'bb'">{{ row.summary }}</span>
+                                                    <span
+                                                        class="team-summary-tag"
+                                                        :class="!row.assessed ? 'pending' : row.missingCount ? 'risk' : 'talent'"
+                                                    >
+                                                        {{ !row.assessed ? `● ${row.summary}` : row.missingCount ? `▼ ${row.summary}` : `▲ ${row.summary}` }}
+                                                    </span>
                                                 </td>
                                             </tr>
                                         </tbody>
@@ -1240,6 +1272,53 @@ const logout = () => router.post(route('logout'));
                                             ยังไม่มีข้อมูล Talent Pool ในรอบนี้
                                         </div>
                                     </div>
+                            <div class="team-segment-grid">
+                                <section class="card team-segment-card risk">
+                                    <div class="team-segment-head">
+                                        <div>
+                                            <div class="ct">บุคลากรที่มีความเสี่ยงสูง</div>
+                                            <div class="cs">เรียงตามผลรวมจำนวนข้อที่ต่ำกว่าเกณฑ์</div>
+                                        </div>
+                                        <span class="team-segment-count risk">▼ {{ teamHighRiskRows.length }} คน</span>
+                                    </div>
+                                    <div v-if="teamHighRiskRows.length" class="team-segment-list">
+                                        <div
+                                            v-for="person in teamHighRiskRows"
+                                            :key="`risk-${person.sso}`"
+                                            class="team-segment-person"
+                                        >
+                                            <span>
+                                                <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                <small>{{ person.missingCount }} สมรรถนะต้องพัฒนา</small>
+                                            </span>
+                                            <span class="risk-score">▼ {{ person.totalNegativeGap }} ข้อ</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="team-segment-empty">ไม่มีบุคลากรที่ต่ำกว่าเกณฑ์</div>
+                                </section>
+
+                                <section class="card team-segment-card talent">
+                                    <div class="team-segment-head">
+                                        <div>
+                                            <div class="ct">บุคลากรศักยภาพสูง</div>
+                                            <div class="cs">ผ่านเกณฑ์ทุกสมรรถนะที่ประเมินแล้ว</div>
+                                        </div>
+                                        <span class="team-segment-count talent">▲ {{ teamTalentRows.length }} คน</span>
+                                    </div>
+                                    <div v-if="teamTalentRows.length" class="team-segment-list">
+                                        <div
+                                            v-for="person in teamTalentRows"
+                                            :key="`talent-${person.sso}`"
+                                            class="team-segment-person"
+                                        >
+                                            <span>
+                                                <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                <small>ผ่านเกณฑ์ทุกสมรรถนะ</small>
+                                            </span>
+                                            <span class="talent-score">▲ ผ่านเกณฑ์</span>
+                                        </div>
+                                    </div>
+                                    <div v-else class="team-segment-empty">ยังไม่มีบุคลากรศักยภาพสูงในรอบนี้</div>
                                 </section>
                             </div>
                         </template>
@@ -1267,20 +1346,20 @@ const logout = () => router.post(route('logout'));
                                     <div class="gap-result-row gap-result-head">
                                         <div>สมรรถนะ</div>
                                         <div>ประเภท</div>
-                                        <div>คาดหวัง</div>
-                                        <div>ประเมินตนเอง</div>
-                                        <div>หัวหน้างานประเมิน</div>
+                                        <div>ข้อคาดหวัง</div>
+                                        <div>ข้อที่ประเมินได้</div>
+                                        <div>ข้อที่ตรวจสอบ</div>
                                         <div>Gap</div>
                                         <div>สถานะ</div>
                                     </div>
                                     <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row gap-result-body">
                                         <div class="fw8">{{ row.title }}</div>
                                         <div><span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span></div>
-                                        <div><span class="score-pill navy">{{ row.expected }}</span></div>
+                                        <div><span class="score-pill navy">{{ row.expectedIndicatorCount }}</span></div>
                                         <div><span class="score-pill blue">{{ row.selfScore }}</span></div>
                                         <div><span class="score-pill evaluator">{{ row.headScore }}</span></div>
                                         <div>
-                                            <span class="gap-chip" :class="{ ok: Number(row.gap) >= 0, bad: Number(row.gap) < 0 }">
+                                            <span class="gap-chip" :class="{ zero: Number(row.gap) === 0, ok: Number(row.gap) > 0, bad: Number(row.gap) < 0 }">
                                                 {{ formatTeamGap(row.gap) }}
                                             </span>
                                         </div>
@@ -1386,7 +1465,7 @@ const logout = () => router.post(route('logout'));
                                 <div class="approval-modal-head">
                                     <div>
                                         <div class="sec-t">ตรวจสอบผลประเมิน · {{ supervisorApprovalName }}</div>
-                                        <div class="sec-s">{{ selectedSupervisorApproval.p }} · Expected Level แสดงตามแต่ละสมรรถนะ · Checklist ถูกล็อก read-only</div>
+                                        <div class="sec-s">{{ selectedSupervisorApproval.p }} · แสดงระดับและจำนวนพฤติกรรมบ่งชี้ที่คาดหวังของแต่ละสมรรถนะ</div>
                                     </div>
                                     <button class="btn btn-s btn-sm" type="button" @click="closeSupervisorApprovalModal">ปิด</button>
                                 </div>
@@ -1394,13 +1473,35 @@ const logout = () => router.post(route('logout'));
                                 <div class="approval-modal-body">
                                     <div class="approval-score-grid">
                                         <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card" :class="{ disabled: !row.hasAssessment }">
-                                            <div class="muted fs12 fw8">{{ row.code || '-' }} · Expected {{ row.expected ?? '-' }}</div>
-                                            <div v-if="row.hasAssessment" class="approval-score-gap" :class="{ bad: Number(row.gap) < 0, ok: Number(row.gap) >= 0 }">
-                                                {{ formatTeamGap(row.gap) }}
+                                            <div class="approval-score-title">
+                                                <strong>{{ getGapData(row).code }}</strong>
+                                                <span class="approval-score-level">
+                                                    ระดับคาดหวัง {{ getGapData(row).expectationLevel }} (คิดเป็นพฤติกรรมบ่งชี้ {{ getGapData(row).expectedCount }} ข้อ)
+                                                </span>
                                             </div>
+
+                                            <template v-if="row.hasAssessment">
+                                                <div class="approval-score-gap-label">Gap</div>
+                                                <div
+                                                    class="approval-score-gap"
+                                                    :class="{ bad: getGapData(row).gap < 0, ok: getGapData(row).gap >= 0 }"
+                                                >
+                                                    {{ formatTeamGap(getGapData(row).gap) }}
+                                                </div>
+                                                <div class="approval-score-status" :class="{ bad: getGapData(row).gap < 0, ok: getGapData(row).gap >= 0 }">
+                                                    {{ getGapData(row).gap < 0 ? 'ต่ำกว่าเกณฑ์ที่คาดหวัง' : 'ผ่านเกณฑ์ที่คาดหวัง' }}
+                                                </div>
+                                            </template>
                                             <div v-else class="approval-score-pending">ยังไม่ประเมิน</div>
-                                            <div class="muted fs12">Actual {{ row.hasAssessment ? row.headScore : '-' }}</div>
+
+                                            <div class="muted fs12 approval-score-compare">
+                                                ประเมินได้ {{ row.hasAssessment ? getGapData(row).assessedCount : '-' }} ข้อ
+                                                / คาดหวัง {{ getGapData(row).expectedCount }} ข้อ
+                                            </div>
                                         </div>
+                                    </div>
+                                    <div class="approval-gap-note">
+                                        หมายเหตุ: Gap คำนวณจากจำนวนพฤติกรรมบ่งชี้ที่ประเมินได้ ลบด้วยจำนวนพฤติกรรมบ่งชี้ที่คาดหวัง
                                     </div>
 
                                     <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
@@ -1418,8 +1519,8 @@ const logout = () => router.post(route('logout'));
                                                 <span class="approval-accordion-icon">{{ row.hasAssessment ? (isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด') : 'ยังไม่ประเมิน' }}</span>
                                             </div>
                                             <div class="flex ic g8">
-                                                <span class="b bgr">Expected Level {{ row.expected ?? '-' }}</span>
-                                                <span class="b by">{{ row.checkedIndicatorCount || 0 }}/{{ totalIndicatorCount(row) }}</span>
+                                                <span class="b bgr">ระดับคาดหวัง {{ row.expected ?? '-' }}</span>
+                                                <span class="b by">ประเมินได้ {{ row.checkedIndicatorCount || 0 }}/{{ row.expectedIndicatorCount ?? totalIndicatorCount(row) }} ข้อ</span>
                                             </div>
                                         </button>
 
@@ -1709,6 +1810,141 @@ const logout = () => router.post(route('logout'));
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.metric-neutral {
+    color: #334155;
+}
+
+.metric-positive {
+    color: #075985;
+}
+
+.metric-negative {
+    color: #9a3412;
+}
+
+.team-segment-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.team-segment-card {
+    overflow: hidden;
+}
+
+.team-segment-card.risk {
+    border-top: 4px solid #c2410c;
+}
+
+.team-segment-card.talent {
+    border-top: 4px solid #0369a1;
+}
+
+.team-segment-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.team-segment-count,
+.team-summary-tag {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.team-segment-count.risk,
+.team-summary-tag.risk {
+    border-color: #c2410c;
+    background: #fff7ed;
+    color: #9a3412;
+}
+
+.team-segment-count.talent,
+.team-summary-tag.talent {
+    border-color: #0369a1;
+    background: #f0f9ff;
+    color: #075985;
+}
+
+.team-summary-tag.pending {
+    border-color: #94a3b8;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.team-segment-list {
+    display: grid;
+    padding: 8px 20px 16px;
+}
+
+.team-segment-person {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    text-align: left;
+}
+
+.team-segment-person:last-child {
+    border-bottom: 0;
+}
+
+.team-segment-person span:first-child {
+    display: grid;
+    gap: 3px;
+}
+
+.team-segment-person small {
+    color: var(--text3);
+    font-size: 11px;
+}
+
+.risk-score {
+    color: #9a3412;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.talent-score {
+    color: #075985;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.team-segment-empty {
+    min-height: 110px;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    color: var(--text3);
+    font-size: 12px;
+}
+
+@media (max-width: 800px) {
+    .team-segment-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .team-table-card {
     overflow: hidden;
 }
@@ -1932,17 +2168,37 @@ const logout = () => router.post(route('logout'));
 
 .approval-score-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
     margin-bottom: 16px;
 }
 
 .approval-score-card {
-    min-height: 100px;
+    min-height: 122px;
     padding: 16px 18px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: #fff;
+}
+
+.approval-score-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 34px;
+}
+
+.approval-score-title strong {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.approval-score-level {
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.4;
 }
 
 .approval-score-card.disabled {
@@ -1964,6 +2220,48 @@ const logout = () => router.post(route('logout'));
     color: var(--text3);
     font-size: 13px;
     font-weight: 800;
+}
+
+.approval-score-gap-label {
+    margin-top: 8px;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.approval-score-status {
+    margin: 2px 0 4px;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.approval-score-status.bad { color: var(--red); }
+.approval-score-status.ok { color: var(--green); }
+
+.approval-score-compare {
+    margin-top: 2px;
+}
+
+.approval-gap-note {
+    margin: -4px 0 16px;
+    padding: 10px 12px;
+    border-left: 3px solid #2563eb;
+    background: #eff6ff;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+    .approval-score-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .approval-score-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .approval-score-gap.bad {
@@ -2224,21 +2522,39 @@ const logout = () => router.post(route('logout'));
     border-color: #b45309;
     background: #fff7ed;
     color: #9a3412;
+    border-style: dashed;
 }
 
-/* .gap-chip.bad::before {
-    content: '!';
-} */
+.gap-chip.bad::before {
+    content: '▼';
+}
 
 .gap-chip.ok {
-    border-color: var(--blue);
-    background: var(--blue-lt);
-    color: var(--blue);
+    border-color: #0369a1;
+    background: #f0f9ff;
+    color: #075985;
 }
 
-/* .gap-chip.ok::before {
-    content: '=';
-} */
+.gap-chip.ok::before {
+    content: '▲';
+}
+
+.gap-chip.zero {
+    border-color: #64748b;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.gap-chip.zero::before {
+    content: '●';
+}
+
+.gap-chip.pending {
+    min-width: 52px;
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #64748b;
+}
 
 .idp-row-action {
     border: 1.5px solid var(--border);

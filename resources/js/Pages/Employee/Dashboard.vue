@@ -79,11 +79,11 @@ const competencyGaps = computed(() => page.props.currentUserCompetencyGaps || []
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value || {};
     const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
-    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
+    const hasAssignedEvaluator = [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
         .some((id) => Number(id) > 0);
 
-    if (!hasAssignedHeadOrSupervisor) {
-        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+    if (!hasAssignedEvaluator) {
+        reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
     }
 
     if (user.structureStatus === 'invalid' && reasons.length === 0) {
@@ -149,7 +149,6 @@ const logout = () => router.post(route('logout'));
                     ☰
                 </button>
                 <div class="tb-title">{{ pageTitle }}</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

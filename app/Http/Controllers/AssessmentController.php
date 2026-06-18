@@ -198,30 +198,19 @@ class AssessmentController extends Controller
                 : (DB::table('roles')->where('id', $user->role_id)->value('key') ?: '')
         );
 
-        if (in_array($roleKey, ['admin', 'dean'], true)) {
+        if ($roleKey === 'admin') {
             return;
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
-            throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้บังคับบัญชาก่อน',
-            ]);
-        }
-
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
-            throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินลำดับที่ 3 ก่อน',
-            ]);
-        }
-
-        $hasAssignedHeadOrSupervisor = collect([
+        $hasAssignedEvaluator = collect([
             $user->supervisor_id_1,
             $user->supervisor_id_2,
+            $user->supervisor_id_3,
         ])->contains(fn ($id) => filled($id));
 
-        if (! $hasAssignedHeadOrSupervisor) {
+        if (! $hasAssignedEvaluator) {
             throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดหัวหน้างานหรือผู้บังคับบัญชาก่อน',
+                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินอย่างน้อย 1 ลำดับก่อน',
             ]);
         }
     }
@@ -250,7 +239,7 @@ class AssessmentController extends Controller
             ]);
         }
 
-        if ($roleKey === 'dept_head' && (int) $target->supervisor_id_1 === (int) $reviewer->id) {
+        if ($roleKey === 'dean' && (int) $target->supervisor_id_1 === (int) $reviewer->id) {
             return [
                 'expected_status' => 'self_submitted',
                 'approved_status' => 'unit_evaluated',
@@ -258,11 +247,37 @@ class AssessmentController extends Controller
             ];
         }
 
-        if ($roleKey === 'supervisor' && (int) $target->supervisor_id_2 === (int) $reviewer->id) {
+        if ($roleKey === 'dean' && (int) $target->supervisor_id_2 === (int) $reviewer->id) {
             return [
-                'expected_status' => 'unit_evaluated',
+                'expected_status' => $target->supervisor_id_1 ? 'unit_evaluated' : 'self_submitted',
                 'approved_status' => 'dept_evaluated',
                 'submitted_at_column' => 'supervisor_2_submitted_at',
+            ];
+        }
+
+        if ($roleKey === 'supervisor' && (int) $target->supervisor_id_1 === (int) $reviewer->id) {
+            return [
+                'expected_status' => 'self_submitted',
+                'approved_status' => 'unit_evaluated',
+                'submitted_at_column' => 'supervisor_1_submitted_at',
+            ];
+        }
+
+        if ($roleKey === 'dept_head' && (int) $target->supervisor_id_2 === (int) $reviewer->id) {
+            return [
+                'expected_status' => $target->supervisor_id_1 ? 'unit_evaluated' : 'self_submitted',
+                'approved_status' => 'dept_evaluated',
+                'submitted_at_column' => 'supervisor_2_submitted_at',
+            ];
+        }
+
+        if ($roleKey === 'dean' && (int) $target->supervisor_id_3 === (int) $reviewer->id) {
+            return [
+                'expected_status' => $target->supervisor_id_2
+                    ? 'dept_evaluated'
+                    : ($target->supervisor_id_1 ? 'unit_evaluated' : 'self_submitted'),
+                'approved_status' => 'dean_approved',
+                'submitted_at_column' => 'dean_approved_at',
             ];
         }
 

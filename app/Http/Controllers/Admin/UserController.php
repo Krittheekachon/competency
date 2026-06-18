@@ -120,10 +120,6 @@ class UserController extends Controller
         }
 
         $name = trim($data['fn'].' '.$data['ln']);
-        $supervisorId1 = $data['supervisor_id_1'] ?? null;
-        $supervisorId2 = $data['supervisor_id_2'] ?? null;
-        $supervisorId3 = $data['supervisor_id_3'] ?? null;
-
         $attributes = [
             'sso' => $data['sso'],
             'name' => $name,
@@ -152,15 +148,6 @@ class UserController extends Controller
         }
 
         return $attributes;
-    }
-
-    private function userNameFromId(?int $id): ?string
-    {
-        if (! $id) {
-            return null;
-        }
-
-        return User::query()->whereKey($id)->value('name');
     }
 
     private function validatedStructureData(array $data): array

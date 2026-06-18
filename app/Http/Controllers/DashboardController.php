@@ -113,6 +113,7 @@ class DashboardController extends Controller
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
                 'users' => $users,
+                'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'managerSummary' => $managerSummary,
                 'activeCycleName' => $activeCycleName,
                 'departmentRows' => [],
@@ -353,23 +354,13 @@ class DashboardController extends Controller
 
     private function reportingLineIssuesForUser(User $user): array
     {
-        $roleKey = $this->roleKeyForUser($user);
-
-        if (in_array($roleKey, ['admin', 'dean'], true)) {
+        if ($this->roleKeyForUser($user) === 'admin') {
             return [];
         }
 
         $evaluatorRoleIssues = $this->evaluatorRoleIssuesForUser($user);
         if ($evaluatorRoleIssues !== []) {
             return $evaluatorRoleIssues;
-        }
-
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
-            return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
-        }
-
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
-            return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
         }
 
         $hasAnyEvaluator = collect([
@@ -697,9 +688,22 @@ class DashboardController extends Controller
         if ($user->workline) {
             $worklineId = $this->worklineIdFromUser($user);
             if ($worklineId) {
-                $jobFamilyIds = $jobFamilyIds->merge(
-                    DB::table('job_families')->where('workline_id', $worklineId)->pluck('id')
-                );
+                $jobFamilyNames = collect([$user->department, $user->position, $user->level])
+                    ->filter()
+                    ->flatMap(fn (string $value) => collect(explode(' > ', $value))
+                        ->map(fn (string $part) => trim($part)))
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($jobFamilyNames->isNotEmpty()) {
+                    $jobFamilyIds = $jobFamilyIds->merge(
+                        DB::table('job_families')
+                            ->where('workline_id', $worklineId)
+                            ->whereIn('name', $jobFamilyNames)
+                            ->pluck('id')
+                    );
+                }
             }
         }
 
@@ -901,10 +905,20 @@ class DashboardController extends Controller
                 $expected = $gap->expected_level === null
                     ? $expectedLevelResolver->forUserCompetency($user, (int) $gap->id)
                     : (float) $gap->expected_level;
-                $actual = $gap->actual_level === null ? (float) $gap->score : (float) $gap->actual_level;
-                $gapValue = $gap->gap === null && $expected !== null
-                    ? round($actual - (float) $expected, 2)
-                    : ($gap->gap === null ? null : (float) $gap->gap);
+                $actualLevel = $gap->actual_level === null ? (float) $gap->score : (float) $gap->actual_level;
+                $levels = $this->competencyLevelsPayload((int) $gap->id);
+                $expectedIndicatorCount = $expected === null
+                    ? null
+                    : collect($levels)
+                        ->filter(fn (array $level): bool => (int) $level['lvl'] <= (float) $expected)
+                        ->sum(fn (array $level): int => count($level['indicators'] ?? []));
+                $actualIndicatorCount = count($checkedIndicatorKeys);
+                $gapValue = $expectedIndicatorCount === null
+                    ? null
+                    : $actualIndicatorCount - $expectedIndicatorCount;
+                $missingIndicatorCount = $gapValue !== null && $gapValue < 0
+                    ? abs($gapValue)
+                    : 0;
 
                 return [
                     'id' => (int) $gap->id,
@@ -914,19 +928,24 @@ class DashboardController extends Controller
                     'tg' => 'tag-'.strtolower((string) ($gap->type_code ?: 'cc')),
                     'det' => $gap->detail ?? '',
                     'expected' => $expected,
-                    'actual' => $actual,
+                    'expectedIndicatorCount' => $expectedIndicatorCount,
+                    'actualLevel' => $actualLevel,
+                    'actual' => $actualIndicatorCount,
                     'gap' => $gapValue,
                     'note' => $gap->evaluator_comment ?: ($gap->note ?? ''),
-                    'levels' => $this->competencyLevelsPayload((int) $gap->id),
+                    'levels' => $levels,
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
-                    'checkedIndicatorCount' => count($checkedIndicatorKeys),
+                    'checkedIndicatorCount' => $actualIndicatorCount,
                     'requiresIdp' => $gapValue !== null && $gapValue < 0,
                     'missingIndicators' => $gapValue !== null && $gapValue < 0 && $expected !== null
-                        ? $this->missingIndicatorsForAssessment((int) $gap->assessment_id, (int) $gap->id, (float) $expected, $actual)
+                        ? $this->missingIndicatorsForAssessment(
+                            (int) $gap->assessment_id,
+                            (int) $gap->id,
+                            (float) $expected,
+                            $missingIndicatorCount
+                        )
                         : [],
-                    'missingIndicatorCount' => $gapValue !== null && $gapValue < 0
-                        ? (int) ceil(abs($gapValue) / 0.25)
-                        : 0,
+                    'missingIndicatorCount' => $missingIndicatorCount,
                     'status' => $gap->status ?? 'draft',
                     'updatedAt' => $gap->updated_at,
                 ];
@@ -935,15 +954,19 @@ class DashboardController extends Controller
             ->all();
     }
 
-    private function missingIndicatorsForAssessment(int $assessmentId, int $competencyId, float $expectedLevel, float $actualLevel): array
+    private function missingIndicatorsForAssessment(
+        int $assessmentId,
+        int $competencyId,
+        float $expectedLevel,
+        int $requiredIndicatorCount
+    ): array
     {
         $checkedKeys = DB::table('assessment_evidences')
             ->where('assessment_id', $assessmentId)
             ->where('competency_id', $competencyId)
             ->pluck('indicator_key')
             ->flip();
-        $maxExpectedLevel = max(1, (int) ceil($expectedLevel));
-        $requiredIndicatorCount = max(0, (int) ceil(($expectedLevel - $actualLevel) / 0.25));
+        $maxExpectedLevel = max(1, (int) floor($expectedLevel));
 
         if ($requiredIndicatorCount === 0) {
             return [];

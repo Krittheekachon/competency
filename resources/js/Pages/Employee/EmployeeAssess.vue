@@ -390,6 +390,36 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   font-weight: 900;
 }
 .row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.assessment-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid #dbe5f1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+.assessment-status.approved {
+  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #15803d;
+}
+.assessment-status.pending {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+.assessment-status.revision {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
 .detail-link {
   display: inline-flex;
   align-items: center;

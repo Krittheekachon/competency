@@ -4,6 +4,7 @@ import { computed } from 'vue';
 const props = defineProps<{
   setPage: (p: string) => void;
   gaps?: any[];
+  evalStatus?: string;
 }>();
 
 const rows = computed(() => (props.gaps || []).filter((row) => row.gap !== null && row.gap !== undefined));
@@ -11,6 +12,14 @@ const passedRows = computed(() => rows.value.filter((row) => Number(row.gap) >= 
 const failedRows = computed(() => rows.value
   .filter((row) => Number(row.gap) < 0)
   .sort((a, b) => Number(a.gap) - Number(b.gap)));
+const isGapConfirmed = computed(() =>
+  ['unit_evaluated', 'dept_evaluated', 'dean_approved'].includes(props.evalStatus || '')
+);
+const gapStatusLabel = computed(() =>
+  isGapConfirmed.value
+    ? 'Gap (ยืนยันแล้ว)'
+    : 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้างาน'
+);
 
 const formatLevel = (value: unknown) => {
   if (value === null || value === undefined || value === '') return '-';
@@ -37,6 +46,9 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
       <div>
         <h1>ผลการประเมิน</h1>
         <p>คำนวณจากคะแนนการประเมินตนเองลบด้วยค่าความคาดหวัง</p>
+        <span class="gap-status-badge" :class="{ confirmed: isGapConfirmed }">
+          {{ gapStatusLabel }}
+        </span>
       </div>
       <button class="btn btn-s btn-sm" type="button" @click="setPage('emp-assess')">กลับไปประเมิน</button>
     </div>
@@ -73,7 +85,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
             <span class="type-tag">{{ row.t || '-' }}</span>
             <div>
               <strong>{{ row.cd }} · {{ row.n }}</strong>
-              <small>คะแนนคาดหวัง {{ formatLevel(row.expected) }} · คะแนนที่ได้ {{ formatLevel(row.actual) }}</small>
+              <small>ระดับคาดหวัง {{ formatLevel(row.expected) }} · คาดหวัง {{ row.expectedIndicatorCount }} ข้อ · ทำได้ {{ formatLevel(row.actual) }} ข้อ</small>
             </div>
           </div>
           <span class="gap-badge passed">Gap {{ formatGap(row.gap) }}</span>
@@ -97,7 +109,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
               <span class="type-tag">{{ row.t || '-' }}</span>
               <div>
                 <strong>{{ row.cd }} · {{ row.n }}</strong>
-                <small>Expected {{ formatLevel(row.expected) }} · Actual {{ formatLevel(row.actual) }}</small>
+                <small>Expected Level {{ formatLevel(row.expected) }} · Expected {{ row.expectedIndicatorCount }} indicators · Actual {{ formatLevel(row.actual) }}</small>
               </div>
             </div>
             <span class="gap-badge failed">Gap {{ formatGap(row.gap) }}</span>
@@ -138,8 +150,8 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
           <thead>
             <tr>
               <th>สมรรถนะ</th>
-              <th>ค่าความคาดหวัง</th>
-              <th>คะแนนการประเมินตนเอง</th>
+              <th>จำนวนข้อที่คาดหวัง</th>
+              <th>จำนวนข้อที่ประเมินได้</th>
               <th>ผลการประเมิน</th>
               <th>สถานะ</th>
             </tr>
@@ -155,7 +167,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
                   </div>
                 </div>
               </td>
-              <td>{{ formatLevel(row.expected) }}</td>
+              <td>{{ row.expectedIndicatorCount }}</td>
               <td>{{ formatLevel(row.actual) }}</td>
               <td>
                 <span class="gap-pill" :class="{ negative: Number(row.gap) < 0, positive: Number(row.gap) >= 0 }">
@@ -186,6 +198,21 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
 .page-head p { margin: 6px 0 0; color: var(--text3); font-size: 13px; }
+.gap-status-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 800;
+}
+.gap-status-badge.confirmed {
+  background: #ecfdf5;
+  color: #059669;
+}
 .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .summary-card,
 .result-section,

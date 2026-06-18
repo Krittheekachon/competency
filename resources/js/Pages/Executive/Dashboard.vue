@@ -6,16 +6,15 @@ import ManagerGap from './ManagerGap.vue';
 import ManagerIDP from './ManagerIDP.vue';
 import ManagerAssessmentApproval from './ManagerAssessmentApproval.vue';
 import ManagerIDPApproval from './ManagerIDPApproval.vue';
-import EmployeeAssess from '../Employee/EmployeeAssess.vue';
-import EmployeeGap from '../Employee/EmployeeGap.vue';
-import EmployeeIDP from '../Employee/EmployeeIDP.vue';
-import EmployeeProgress from '../Employee/EmployeeProgress.vue';
-import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 
 const props = defineProps({
     users: {
         type: Array,
         default: () => [],
+    },
+    currentUser: {
+        type: Object,
+        default: () => ({}),
     },
     activeCycleName: {
         type: String,
@@ -40,16 +39,6 @@ const activePage = ref('manager-competency-overview');
 
 const sections = [
     {
-        title: 'ของฉัน (บุคลากร)',
-        items: [
-            { id: 'employee-assess', icon: '', label: 'ประเมินตนเอง' },
-            { id: 'employee-gap', icon: '', label: 'ผล Competency Gap' },
-            { id: 'employee-idp', icon: '', label: 'IDP ของฉัน' },
-            { id: 'employee-progress', icon: '', label: 'อัปเดตความก้าวหน้า' },
-            { id: 'employee-idp-detail', icon: '', label: 'รายละเอียด IDP' },
-        ],
-    },
-    {
         title: 'ภาพรวมคณะ',
         items: [
             { id: 'manager-competency-overview', icon: '', label: 'Competency Gap คณะ' },
@@ -66,11 +55,6 @@ const sections = [
 ];
 
 const pageTitles = {
-    'employee-assess': 'ประเมินตนเอง',
-    'employee-gap': 'ผล Competency Gap',
-    'employee-idp': 'IDP ของฉัน',
-    'employee-progress': 'อัปเดตความก้าวหน้า',
-    'employee-idp-detail': 'รายละเอียด IDP',
     'manager-competency-overview': 'Competency Gap คณะ',
     'manager-idp-overview': 'ติดตาม IDP ภาพรวม',
     'manager-assessment-approval': 'อนุมัติผลการประเมิน',
@@ -78,10 +62,22 @@ const pageTitles = {
 };
 
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
-const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
+const userName = computed(() => props.currentUser?.n || page.props.auth?.user?.name || 'Manager User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
-const userId = computed(() => page.props.auth?.user?.id || 'manager');
-const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
+const approvalUsers = computed(() => {
+    const currentUserId = Number(page.props.auth?.user?.id || props.currentUser?.db_id || 0);
+    if (!currentUserId) return [];
+
+    return props.users.filter((user) =>
+        user?.act !== false
+        && Number(user?.db_id || 0) !== currentUserId
+        && [
+            user?.supervisor_id_1,
+            user?.supervisor_id_2,
+            user?.supervisor_id_3,
+        ].some((evaluatorId) => Number(evaluatorId) === currentUserId)
+    );
+});
 
 const logout = () => router.post(route('logout'));
 </script>
@@ -130,7 +126,6 @@ const logout = () => router.post(route('logout'));
                     ☰
                 </button>
                 <div class="tb-title">{{ currentPageTitle }}</div>
-                <span class="tb-badge">{{ cycleBadge }}</span>
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
 
@@ -138,7 +133,7 @@ const logout = () => router.post(route('logout'));
                 <ManagerGap
                     v-if="activePage === 'manager-competency-overview'"
                     :users="props.users"
-                    :disable-mock-data="false"
+                    :can-send-reminders="false"
                 />
                 <ManagerIDP
                     v-else-if="activePage === 'manager-idp-overview'"
@@ -147,24 +142,14 @@ const logout = () => router.post(route('logout'));
                 />
                 <ManagerAssessmentApproval
                     v-else-if="activePage === 'manager-assessment-approval'"
-                    :users="props.users"
+                    :users="approvalUsers"
+                    :current-user-id="Number(page.props.auth?.user?.id || props.currentUser?.db_id || 0)"
                 />
                 <ManagerIDPApproval
                     v-else-if="activePage === 'manager-idp-approval'"
-                    :users="props.users"
+                    :users="approvalUsers"
+                    :current-user-id="Number(page.props.auth?.user?.id || props.currentUser?.db_id || 0)"
                 />
-                <EmployeeAssess
-                    v-else-if="activePage === 'employee-assess'"
-                    :user="{ sso: userId }"
-                    :set-users="() => {}"
-                />
-                <EmployeeGap
-                    v-else-if="activePage === 'employee-gap'"
-                    :set-page="(pageId) => (activePage = pageId)"
-                />
-                <EmployeeIDP v-else-if="activePage === 'employee-idp'" />
-                <EmployeeProgress v-else-if="activePage === 'employee-progress'" />
-                <EmployeeIDPDetail v-else-if="activePage === 'employee-idp-detail'" />
             </main>
         </section>
     </div>

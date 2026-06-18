@@ -50,8 +50,6 @@ const form = useForm({
     department: props.profileUser?.d || '',
     position: props.profileUser?.p || '',
     level: props.profileUser?.l || '',
-    supervisor: props.profileUser?.sup || '',
-    evaluator2: props.profileUser?.evaluator2 || '',
     profile_photo: props.profileUser?.photo || '',
 });
 
@@ -148,7 +146,6 @@ const saveProfile = () => {
             <div class="topbar">
                 <button class="menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
                 <div class="tb-title">โปรไฟล์</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

@@ -111,9 +111,6 @@ class ExpectedLevelResolver
                 );
             }
 
-            $jobFamilyIds = $jobFamilyIds->merge(
-                DB::table('job_families')->where('workline_id', $worklineId)->pluck('id')
-            );
         }
 
         return $jobFamilyIds->filter()->unique()->values();
