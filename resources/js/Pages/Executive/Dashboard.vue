@@ -172,7 +172,9 @@ const logout = () => router.post(route('logout'));
 }
 
 .nav-item {
-    width: 100%;
+    width: calc(100% - 20px);
+    max-width: calc(100% - 20px);
+    box-sizing: border-box;
     border-top: 0;
     border-right: 0;
     border-bottom: 0;

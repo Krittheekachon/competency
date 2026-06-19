@@ -128,13 +128,6 @@ const deliveryTypeOptions = [
 
 const sections = [
     {
-        title: 'ภาพรวมคณะ',
-        items: [
-            { id: 'manager-competency-overview', label: 'Competency Gap คณะ' },
-            { id: 'manager-idp-overview', label: 'ติดตาม IDP ภาพรวม' },
-        ],
-    },
-    {
         title: 'ของฉัน (บุคลากร)',
         items: [
             { id: 'emp-assess', label: 'ประเมินตนเอง' },
@@ -159,8 +152,6 @@ const sections = [
 ];
 
 const pageTitles = {
-    'manager-competency-overview': 'ภาพรวมองค์กร',
-    'manager-idp-overview': 'แผนพัฒนารายบุคคล',
     'emp-assess': 'ประเมินตนเอง',
     'emp-gap': 'สรุปผลสมรรถนะ',
     'emp-idp': 'แผนพัฒนารายบุคคล',
@@ -1091,7 +1082,9 @@ const formatWeight = (weight) => {
 }
 
 .nav-item {
-    width: 100%;
+    width: calc(100% - 20px);
+    max-width: calc(100% - 20px);
+    box-sizing: border-box;
     border-top: 0;
     border-right: 0;
     border-bottom: 0;

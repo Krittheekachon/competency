@@ -763,10 +763,23 @@ class DashboardController extends Controller
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
                     ?? $expectedLevelResolver->forUserCompetency($user, (int) $item->id);
-                $payload['assessmentStatus'] = DB::table('assessments')
+                $assessment = DB::table('assessments')
                     ->where('user_id', $user->id)
                     ->where('competency_id', $item->id)
-                    ->value('status') ?? 'draft';
+                    ->select('id', 'status', 'last_draft_saved_at')
+                    ->first();
+                $gapStatus = $assessment
+                    ? DB::table('competency_gaps')
+                        ->where('assessment_id', $assessment->id)
+                        ->where('competency_id', $item->id)
+                        ->value('status')
+                    : null;
+
+                $payload['assessmentStatus'] = $gapStatus ?? $assessment?->status ?? 'draft';
+                $lastDraftSavedAt = $assessment?->last_draft_saved_at;
+                $payload['lastDraftSavedAt'] = $lastDraftSavedAt
+                    ? \Carbon\Carbon::parse($lastDraftSavedAt)->toISOString()
+                    : null;
 
                 return $payload;
             })

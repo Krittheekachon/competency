@@ -333,17 +333,35 @@ const supervisorApprovalStatus = (person) => {
 
     return { label: person.evalStatus, cls: 'bgr' };
 };
+const supervisorApprovalProgress = (person) => {
+    const submittedRows = (person.results || []).filter((row) => row.hasAssessment);
+    if (submittedRows.length === 0) {
+        return { label: 'ยังไม่ได้รับผลการประเมิน', cls: 'bgr' };
+    }
+
+    const expectedStatus = approvalExpectedStatusFor(person);
+    const reviewedRows = submittedRows.filter((row) => row.status && row.status !== expectedStatus);
+
+    return {
+        label: `ประเมิน ${reviewedRows.length}/${submittedRows.length}`,
+        cls: reviewedRows.length === submittedRows.length ? 'bt' : 'by',
+    };
+};
 const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
     const results = gapResultRows(person);
     const hasSubmittedAssessment = results.some((row) => row.hasAssessment) || (person.evalStatus && person.evalStatus !== 'draft');
     const hasReviewableCompetencies = results.length > 0;
+    const row = {
+        ...person,
+        results,
+    };
 
     return {
-        ...person,
+        ...row,
         results,
         hasSubmittedAssessment,
         hasReviewableCompetencies,
-        statusMeta: supervisorApprovalStatus(person),
+        statusMeta: supervisorApprovalProgress(row),
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
@@ -416,6 +434,7 @@ const selectedIdpEmployee = ref(null);
 const selectedSupervisorApprovalSso = ref(null);
 const openedSupervisorCompetencyId = ref(null);
 const approvalDecision = ref(null);
+const approvalDecisionCompetency = ref(null);
 const isSubmittingApprovalDecision = ref(false);
 const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
@@ -463,14 +482,17 @@ const selectedSupervisorApproval = computed(() =>
 const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
 const canDecideSupervisorApproval = computed(() =>
     Boolean(selectedSupervisorApproval.value?.hasSubmittedAssessment)
-    && selectedSupervisorApproval.value?.evalStatus === approvalExpectedStatusFor(selectedSupervisorApproval.value),
+    && selectedSupervisorApproval.value?.results?.some((row) => canDecideCompetencyApproval(row)),
 );
+const approvalCompetencyName = computed(() => approvalDecisionCompetency.value
+    ? `${approvalDecisionCompetency.value.code || approvalDecisionCompetency.value.cd || ''} - ${approvalDecisionCompetency.value.title || approvalDecisionCompetency.value.n || ''}`
+    : '');
 const approvalDecisionTitle = computed(() => approvalDecision.value === 'approve'
-    ? `ยืนยันผลการประเมินของ ${supervisorApprovalName.value}`
-    : 'ยืนยันการส่งกลับผลการประเมิน');
+    ? `ยืนยันอนุมัติสมรรถนะ ${approvalCompetencyName.value}`
+    : `ยืนยันส่งกลับแก้ไขสมรรถนะ ${approvalCompetencyName.value}`);
 const approvalDecisionMessage = computed(() => approvalDecision.value === 'approve'
-    ? `ต้องการยืนยันผลการประเมินของ ${supervisorApprovalName.value} และส่งต่อไปยังขั้นตอนถัดไปหรือไม่`
-    : `ต้องการส่งผลการประเมินของ ${supervisorApprovalName.value} กลับไปให้บุคลากรแก้ไขหรือไม่`);
+    ? `ต้องการอนุมัติผลการประเมินรายสมรรถนะของ ${supervisorApprovalName.value} เฉพาะ ${approvalCompetencyName.value} หรือไม่`
+    : `ต้องการส่งกลับให้แก้ไขผลการประเมินรายสมรรถนะของ ${supervisorApprovalName.value} เฉพาะ ${approvalCompetencyName.value} หรือไม่`);
 const assessmentDraftKey = computed(() => selectedAssessment.value ? `${currentUser.value.sso || currentUser.value.n}:${selectedAssessment.value.sso || selectedAssessment.value.n}` : '');
 const activeDraft = computed(() => assessmentDrafts.value[assessmentDraftKey.value] || { scores: {}, feedback: {}, submitted: false });
 
@@ -529,6 +551,7 @@ const gapResultRows = (person) => {
             checkedIndicatorCount: 0,
             updatedAt: '',
             failed: false,
+            status: 'draft',
             hasAssessment: false,
         };
     }) : [];
@@ -542,6 +565,7 @@ const gapResultRows = (person) => {
             const selfScore = checkedIndicatorCount;
             const headScore = checkedIndicatorCount;
             const gap = checkedIndicatorCount - expectedIndicatorCount;
+            const status = row.status || person.evalStatus || 'draft';
             return {
                 id: row.id || row.competency_id || row.name || row.title,
                 title: row.title || row.name || row.n || row.competency_name || '-',
@@ -559,7 +583,8 @@ const gapResultRows = (person) => {
                 checkedIndicatorCount,
                 updatedAt: row.updatedAt || row.updated_at || '',
                 failed: row.failed ?? row.requiresIdp ?? gap < 0,
-                hasAssessment: true,
+                status,
+                hasAssessment: status !== 'draft',
             };
         });
 
@@ -790,6 +815,7 @@ const closeSupervisorApprovalModal = () => {
     selectedSupervisorApprovalSso.value = null;
     openedSupervisorCompetencyId.value = null;
     approvalDecision.value = null;
+    approvalDecisionCompetency.value = null;
 };
 
 const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
@@ -805,46 +831,70 @@ const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(c
 const totalIndicatorCount = (row) => (row.levels || [])
     .filter((level) => level.lvl <= row.expected)
     .reduce((total, level) => total + (level.indicators?.length || 0), 0);
-const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
-    .map((indicator, index) => ({ indicator, index }))
-    .filter(({ index }) => isIndicatorChecked(row, level, index));
+const indicatorsForLevel = (row, level) => (level.indicators || [])
+    .map((indicator, index) => ({
+        indicator,
+        index,
+        checked: isIndicatorChecked(row, level, index),
+    }));
 const checkedLevelsForRow = (row) => (row.levels || [])
-    .map((level) => ({
-        ...level,
-        checkedIndicators: checkedIndicatorsForLevel(row, level),
-    }))
-    .filter((level) => level.checkedIndicators.length > 0);
+    .map((level) => {
+        const indicators = indicatorsForLevel(row, level);
+        return {
+            ...level,
+            visibleIndicators: indicators,
+            checkedIndicators: indicators.filter((item) => item.checked),
+        };
+    })
+    .filter((level) => level.visibleIndicators.length > 0);
 
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
     persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
 };
-const requestApprovalDecision = (decision) => {
-    if (!selectedSupervisorApproval.value || !canDecideSupervisorApproval.value) return;
+const canDecideCompetencyApproval = (row) =>
+    Boolean(selectedSupervisorApproval.value?.db_id && row?.hasAssessment)
+    && row?.status === approvalExpectedStatusFor(selectedSupervisorApproval.value);
+const requestApprovalDecision = (decision, row) => {
+    if (!selectedSupervisorApproval.value || !canDecideCompetencyApproval(row)) return;
+    approvalDecisionCompetency.value = row;
     approvalDecision.value = decision;
 };
 const closeApprovalDecision = () => {
     if (isSubmittingApprovalDecision.value) return;
     approvalDecision.value = null;
+    approvalDecisionCompetency.value = null;
 };
 const submitApprovalDecision = () => {
-    if (!selectedSupervisorApproval.value || !approvalDecision.value || !canDecideSupervisorApproval.value) return;
+    if (!selectedSupervisorApproval.value || !approvalDecision.value || !approvalDecisionCompetency.value || !canDecideCompetencyApproval(approvalDecisionCompetency.value)) return;
 
     const decision = approvalDecision.value;
+    const competencyId = approvalDecisionCompetency.value.id;
     isSubmittingApprovalDecision.value = true;
     router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
         user_id: selectedSupervisorApproval.value.db_id,
+        competency_id: competencyId,
     }, {
         preserveScroll: true,
+        preserveState: true,
+        only: [],
         onSuccess: () => {
             users.value = users.value.map((user) =>
                 user.sso === selectedSupervisorApproval.value.sso
-                    ? { ...user, evalStatus: decision === 'approve' ? approvalNextStatus.value : 'revision_required' }
+                    ? {
+                        ...user,
+                        competencyGaps: (user.competencyGaps || []).map((row) => {
+                            const rowId = row.id || row.competency_id || row.name || row.title;
+                            return String(rowId) === String(competencyId)
+                                ? { ...row, status: decision === 'approve' ? approvalNextStatus.value : 'revision_required' }
+                                : row;
+                        }),
+                    }
                     : user,
             );
             approvalDecision.value = null;
-            closeSupervisorApprovalModal();
+            approvalDecisionCompetency.value = null;
         },
         onFinish: () => {
             isSubmittingApprovalDecision.value = false;
@@ -862,7 +912,7 @@ watchEffect(() => {
         activePage.value = defaultPageForRole(authRoleKey.value);
     }
 
-    if (page.props.users?.length) {
+    if (!isSubmittingApprovalDecision.value && page.props.users?.length) {
         users.value = clone(page.props.users);
     }
 });
@@ -1481,28 +1531,46 @@ const logout = () => router.post(route('logout'));
                                         <div v-for="row in selectedSupervisorApproval.results" :key="`summary-${row.id}`" class="approval-score-card" :class="{ disabled: !row.hasAssessment }">
                                             <div class="approval-score-title">
                                                 <strong>{{ getGapData(row).code }}</strong>
-                                                <span class="approval-score-level">
-                                                    ระดับคาดหวัง {{ getGapData(row).expectationLevel }} (คิดเป็นพฤติกรรมบ่งชี้ {{ getGapData(row).expectedCount }} ข้อ)
-                                                </span>
+                                                <div class="approval-score-meta">
+                                                    <span>ระดับ {{ getGapData(row).expectationLevel }}</span>
+                                                    <span>{{ getGapData(row).expectedCount }} พฤติกรรมบ่งชี้</span>
+                                                </div>
                                             </div>
 
                                             <template v-if="row.hasAssessment">
-                                                <div class="approval-score-gap-label">Gap</div>
-                                                <div
-                                                    class="approval-score-gap"
-                                                    :class="{ bad: getGapData(row).gap < 0, ok: getGapData(row).gap >= 0 }"
-                                                >
-                                                    {{ formatTeamGap(getGapData(row).gap) }}
+                                                <div class="approval-gap-row">
+                                                    <span>Gap</span>
+                                                    <strong
+                                                        :class="{
+                                                            negative: getGapData(row).gap < 0,
+                                                            positive: getGapData(row).gap > 0,
+                                                            neutral: getGapData(row).gap === 0,
+                                                        }"
+                                                    >
+                                                        {{ formatTeamGap(getGapData(row).gap) }}
+                                                    </strong>
                                                 </div>
-                                                <div class="approval-score-status" :class="{ bad: getGapData(row).gap < 0, ok: getGapData(row).gap >= 0 }">
-                                                    {{ getGapData(row).gap < 0 ? 'ต่ำกว่าเกณฑ์ที่คาดหวัง' : 'ผ่านเกณฑ์ที่คาดหวัง' }}
+                                                <div
+                                                    class="approval-score-status"
+                                                    :class="{
+                                                        negative: getGapData(row).gap < 0,
+                                                        positive: getGapData(row).gap > 0,
+                                                        neutral: getGapData(row).gap === 0,
+                                                    }"
+                                                >
+                                                    {{ getGapData(row).gap < 0 ? 'ต่ำกว่าเกณฑ์' : 'ผ่านเกณฑ์' }}
                                                 </div>
                                             </template>
-                                            <div v-else class="approval-score-pending">ยังไม่ประเมิน</div>
+                                            <template v-else>
+                                                <div class="approval-gap-row muted">
+                                                    <span>Gap</span>
+                                                    <strong>-</strong>
+                                                </div>
+                                                <div class="approval-score-status neutral">ยังไม่ประเมิน</div>
+                                            </template>
 
                                             <div class="muted fs12 approval-score-compare">
-                                                ประเมินได้ {{ row.hasAssessment ? getGapData(row).assessedCount : '-' }} ข้อ
-                                                / คาดหวัง {{ getGapData(row).expectedCount }} ข้อ
+                                                {{ row.hasAssessment ? getGapData(row).assessedCount : '-' }}/{{ getGapData(row).expectedCount }} ข้อ
                                             </div>
                                         </div>
                                     </div>
@@ -1511,11 +1579,12 @@ const logout = () => router.post(route('logout'));
                                     </div>
 
                                     <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
-                                        <button
+                                        <div
                                             class="approval-competency-head"
                                             :class="{ open: isSupervisorCompetencyOpen(row), disabled: !row.hasAssessment }"
-                                            type="button"
-                                            :disabled="!row.hasAssessment"
+                                            role="button"
+                                            tabindex="0"
+                                            :aria-disabled="!row.hasAssessment"
                                             :aria-expanded="isSupervisorCompetencyOpen(row)"
                                             @click="toggleSupervisorCompetency(row)"
                                         >
@@ -1527,8 +1596,29 @@ const logout = () => router.post(route('logout'));
                                             <div class="flex ic g8">
                                                 <span class="b bgr">ระดับคาดหวัง {{ row.expected ?? '-' }}</span>
                                                 <span class="b by">ประเมินได้ {{ row.checkedIndicatorCount || 0 }}/{{ row.expectedIndicatorCount ?? totalIndicatorCount(row) }} ข้อ</span>
+                                                <span v-if="!canDecideCompetencyApproval(row)" class="b bgr">
+                                                    {{ row.status === 'revision_required' ? 'ส่งกลับแก้ไขแล้ว' : row.status === approvalNextStatus ? 'อนุมัติแล้ว' : 'ยังไม่พร้อมอนุมัติ' }}
+                                                </span>
+                                                <span v-else class="approval-row-actions" @click.stop>
+                                                    <button
+                                                        class="approval-row-button reject"
+                                                        type="button"
+                                                        :disabled="isSubmittingApprovalDecision"
+                                                        @click="requestApprovalDecision('reject', row)"
+                                                    >
+                                                        ส่งกลับแก้ไข
+                                                    </button>
+                                                    <button
+                                                        class="approval-row-button approve"
+                                                        type="button"
+                                                        :disabled="isSubmittingApprovalDecision"
+                                                        @click="requestApprovalDecision('approve', row)"
+                                                    >
+                                                        อนุมัติ
+                                                    </button>
+                                                </span>
                                             </div>
-                                        </button>
+                                        </div>
 
                                         <div v-if="isSupervisorCompetencyOpen(row)" class="approval-accordion-body">
                                             <div v-for="level in checkedLevelsForRow(row)" :key="level.id || level.lvl" class="approval-level-card">
@@ -1547,11 +1637,12 @@ const logout = () => router.post(route('logout'));
 
                                                 <div class="approval-checklist">
                                                     <label
-                                                        v-for="{ indicator, index } in level.checkedIndicators"
+                                                        v-for="{ indicator, index, checked } in level.visibleIndicators"
                                                         :key="`${row.id}-${level.id || level.lvl}-${index}`"
                                                         class="approval-check-row"
+                                                        :class="{ unchecked: !checked }"
                                                     >
-                                                        <input checked disabled type="checkbox" />
+                                                        <input :checked="checked" disabled type="checkbox" />
                                                         <span>
                                                             <strong>ข้อ {{ level.lvl }}.{{ index + 1 }}</strong>
                                                             {{ indicator }}
@@ -1571,14 +1662,6 @@ const logout = () => router.post(route('logout'));
                                     </div>
                                 </div>
 
-                                <div class="approval-modal-actions">
-                                    <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorApproval" @click="requestApprovalDecision('reject')">
-                                        ไม่อนุมัติ
-                                    </button>
-                                    <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorApproval" @click="requestApprovalDecision('approve')">
-                                        อนุมัติ
-                                    </button>
-                                </div>
                             </div>
                         </div>
 
@@ -2175,13 +2258,16 @@ const logout = () => router.post(route('logout'));
 .approval-score-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
+    gap: 12px;
     margin-bottom: 16px;
 }
 
 .approval-score-card {
-    min-height: 122px;
-    padding: 16px 18px;
+    min-height: 132px;
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    padding: 14px 16px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: #fff;
@@ -2190,8 +2276,8 @@ const logout = () => router.post(route('logout'));
 .approval-score-title {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-height: 34px;
+    gap: 8px;
+    min-height: 0;
 }
 
 .approval-score-title strong {
@@ -2200,59 +2286,71 @@ const logout = () => router.post(route('logout'));
     font-weight: 900;
 }
 
-.approval-score-level {
-    color: var(--text3);
+.approval-score-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.approval-score-meta span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
     font-size: 11px;
-    font-weight: 700;
-    line-height: 1.4;
+    font-weight: 800;
+    line-height: 1.2;
 }
 
 .approval-score-card.disabled {
     background: #f8fafc;
     color: var(--text3);
-    opacity: 0.72;
+    opacity: 1;
 }
 
-.approval-score-gap {
-    margin: 4px 0;
-    color: var(--green);
-    font-size: 25px;
-    font-weight: 900;
-    line-height: 1.15;
-}
-
-.approval-score-pending {
-    margin: 8px 0 6px;
-    color: var(--text3);
-    font-size: 13px;
-    font-weight: 800;
-}
-
-.approval-score-gap-label {
-    margin-top: 8px;
+.approval-gap-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
     color: var(--text3);
     font-size: 11px;
     font-weight: 800;
+}
+
+.approval-gap-row strong {
+    color: #64748b;
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .approval-score-status {
-    margin: 2px 0 4px;
     font-size: 11px;
     font-weight: 800;
+    line-height: 1.25;
 }
 
-.approval-score-status.bad { color: var(--red); }
-.approval-score-status.ok { color: var(--green); }
+.approval-gap-row strong.negative,
+.approval-score-status.negative { color: var(--red); }
+
+.approval-gap-row strong.positive,
+.approval-score-status.positive { color: var(--green); }
+
+.approval-gap-row strong.neutral,
+.approval-score-status.neutral,
+.approval-gap-row.muted strong { color: #64748b; }
 
 .approval-score-compare {
     margin-top: 2px;
+    color: #94a3b8;
 }
 
 .approval-gap-note {
     margin: -4px 0 16px;
     padding: 10px 12px;
-    border-left: 3px solid #2563eb;
-    background: #eff6ff;
+    border-left: 3px solid #94a3b8;
+    background: #f8fafc;
     color: #475569;
     font-size: 12px;
     line-height: 1.6;
@@ -2268,14 +2366,6 @@ const logout = () => router.post(route('logout'));
     .approval-score-grid {
         grid-template-columns: minmax(0, 1fr);
     }
-}
-
-.approval-score-gap.bad {
-    color: var(--red);
-}
-
-.approval-score-gap.ok {
-    color: var(--green);
 }
 
 .approval-competency-card {
@@ -2334,6 +2424,39 @@ const logout = () => router.post(route('logout'));
     color: var(--blue);
     font-size: 11px;
     font-weight: 900;
+}
+
+.approval-row-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.approval-row-button {
+    min-height: 28px;
+    padding: 5px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.approval-row-button.reject {
+    border-color: #fecaca;
+    background: #fff;
+    color: #dc2626;
+}
+
+.approval-row-button.approve {
+    background: #c93a25;
+    color: #fff;
+}
+
+.approval-row-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 .approval-accordion-body {

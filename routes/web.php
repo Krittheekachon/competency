@@ -72,6 +72,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
     Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
+    Route::post('/assessments/draft', [AssessmentController::class, 'draft'])->name('assessments.draft');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
     Route::post('/assessments/approve', [AssessmentController::class, 'approve'])->name('assessments.approve');
