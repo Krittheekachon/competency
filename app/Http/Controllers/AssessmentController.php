@@ -87,11 +87,12 @@ class AssessmentController extends Controller
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'competency_id' => ['nullable', 'integer', 'exists:competencies,id'],
+            'reject_note' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
 
-        DB::transaction(function () use ($data, $decision): void {
+        DB::transaction(function () use ($request, $data, $decision): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->when($data['competency_id'] ?? null, fn ($query, $competencyId) => $query->where('competency_id', $competencyId))
                 ->pluck('id');
@@ -121,11 +122,12 @@ class AssessmentController extends Controller
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'competency_id' => ['nullable', 'integer', 'exists:competencies,id'],
+            'reject_note' => ['nullable', 'string', 'max:2000'],
         ]);
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
 
-        DB::transaction(function () use ($data, $decision): void {
+        DB::transaction(function () use ($request, $data, $decision): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->when($data['competency_id'] ?? null, fn ($query, $competencyId) => $query->where('competency_id', $competencyId))
                 ->pluck('id');
@@ -142,6 +144,9 @@ class AssessmentController extends Controller
                 ->where('status', $decision['expected_status'])
                 ->update([
                     'status' => 'revision_required',
+                    'rejected_by' => $request->user()->id,
+                    'reject_comment' => $data['reject_note'] ?? null,
+                    'decided_at' => now(),
                     'updated_at' => now(),
                 ]);
         });

@@ -10,6 +10,8 @@ const props = defineProps<{
 const selectedUser = ref<any | null>(null);
 const openedCompetencyKey = ref<string | null>(null);
 const processingUserId = ref<number | null>(null);
+const rejectDecision = ref<{ user: any; row: any } | null>(null);
+const rejectNote = ref('');
 
 const evaluatorLevel = (user: any) => {
   const currentUserId = Number(props.currentUserId || 0);
@@ -164,6 +166,8 @@ const closeModal = () => {
   if (processingUserId.value) return;
   selectedUser.value = null;
   openedCompetencyKey.value = null;
+  rejectDecision.value = null;
+  rejectNote.value = '';
 };
 
 const approve = (user: any, row: any) => {
@@ -192,11 +196,26 @@ const approve = (user: any, row: any) => {
 
 const reject = (user: any, row: any) => {
   if (!canApproveCompetency(user, row) || processingUserId.value) return;
+  rejectDecision.value = { user, row };
+  rejectNote.value = '';
+};
+
+const closeRejectDecision = () => {
+  if (processingUserId.value) return;
+  rejectDecision.value = null;
+  rejectNote.value = '';
+};
+
+const submitReject = () => {
+  const user = rejectDecision.value?.user;
+  const row = rejectDecision.value?.row;
+  if (!user || !row || !canApproveCompetency(user, row) || processingUserId.value) return;
 
   processingUserId.value = Number(user.db_id);
   router.post(route('assessments.reject'), {
     user_id: user.db_id,
     competency_id: row.id,
+    reject_note: rejectNote.value,
   }, {
     preserveScroll: true,
     preserveState: true,
@@ -207,6 +226,8 @@ const reject = (user: any, row: any) => {
         results: (selectedUser.value?.results || []).map((item: any) =>
           String(item.id) === String(row.id) ? { ...item, status: 'revision_required' } : item),
       };
+      rejectDecision.value = null;
+      rejectNote.value = '';
     },
     onFinish: () => {
       processingUserId.value = null;
@@ -434,6 +455,33 @@ const reject = (user: any, row: any) => {
         </div>
 
       </section>
+    </div>
+
+    <div v-if="rejectDecision" class="approval-decision-backdrop" @click.self="closeRejectDecision">
+      <div class="approval-decision-modal">
+        <div class="approval-decision-title">ยืนยันส่งกลับแก้ไข</div>
+        <div class="approval-decision-message">
+          ต้องการส่งกลับให้แก้ไขผลการประเมินรายสมรรถนะ
+          {{ rejectDecision.row.code }} - {{ rejectDecision.row.title }} หรือไม่
+        </div>
+        <label class="approval-reject-note">
+          <span>Note สำหรับแจ้งกลับ</span>
+          <textarea
+            v-model="rejectNote"
+            rows="4"
+            maxlength="2000"
+            placeholder="ระบุเหตุผลหรือข้อเสนอแนะสำหรับการแก้ไข"
+          ></textarea>
+        </label>
+        <div class="approval-decision-actions">
+          <button class="btn btn-s" type="button" :disabled="Boolean(processingUserId)" @click="closeRejectDecision">
+            ยกเลิก
+          </button>
+          <button class="approval-reject-button" type="button" :disabled="Boolean(processingUserId)" @click="submitReject">
+            {{ processingUserId ? 'กำลังดำเนินการ...' : 'ยืนยัน' }}
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -960,6 +1008,74 @@ const reject = (user: any, row: any) => {
   border-radius: 6px;
   background: #fff;
   font-size: 12px;
+}
+
+.approval-decision-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.approval-decision-modal {
+  width: min(460px, 100%);
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.approval-decision-title {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.approval-decision-message {
+  margin-top: 10px;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.approval-reject-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.approval-reject-note textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.approval-reject-note textarea:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.approval-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .approval-modal-actions {

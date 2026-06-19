@@ -435,6 +435,7 @@ const selectedSupervisorApprovalSso = ref(null);
 const openedSupervisorCompetencyId = ref(null);
 const approvalDecision = ref(null);
 const approvalDecisionCompetency = ref(null);
+const approvalRejectNote = ref('');
 const isSubmittingApprovalDecision = ref(false);
 const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
@@ -859,12 +860,14 @@ const canDecideCompetencyApproval = (row) =>
 const requestApprovalDecision = (decision, row) => {
     if (!selectedSupervisorApproval.value || !canDecideCompetencyApproval(row)) return;
     approvalDecisionCompetency.value = row;
+    approvalRejectNote.value = '';
     approvalDecision.value = decision;
 };
 const closeApprovalDecision = () => {
     if (isSubmittingApprovalDecision.value) return;
     approvalDecision.value = null;
     approvalDecisionCompetency.value = null;
+    approvalRejectNote.value = '';
 };
 const submitApprovalDecision = () => {
     if (!selectedSupervisorApproval.value || !approvalDecision.value || !approvalDecisionCompetency.value || !canDecideCompetencyApproval(approvalDecisionCompetency.value)) return;
@@ -875,6 +878,7 @@ const submitApprovalDecision = () => {
     router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
         user_id: selectedSupervisorApproval.value.db_id,
         competency_id: competencyId,
+        reject_note: decision === 'reject' ? approvalRejectNote.value : null,
     }, {
         preserveScroll: true,
         preserveState: true,
@@ -895,6 +899,7 @@ const submitApprovalDecision = () => {
             );
             approvalDecision.value = null;
             approvalDecisionCompetency.value = null;
+            approvalRejectNote.value = '';
         },
         onFinish: () => {
             isSubmittingApprovalDecision.value = false;
@@ -1669,6 +1674,15 @@ const logout = () => router.post(route('logout'));
                             <div class="approval-decision-modal">
                                 <div class="approval-decision-title">{{ approvalDecisionTitle }}</div>
                                 <div class="approval-decision-message">{{ approvalDecisionMessage }}</div>
+                                <label v-if="approvalDecision === 'reject'" class="approval-reject-note">
+                                    <span>Note สำหรับแจ้งกลับ</span>
+                                    <textarea
+                                        v-model="approvalRejectNote"
+                                        rows="4"
+                                        maxlength="2000"
+                                        placeholder="ระบุเหตุผลหรือข้อเสนอแนะสำหรับการแก้ไข"
+                                    ></textarea>
+                                </label>
                                 <div class="approval-decision-actions">
                                     <button class="btn btn-s" type="button" :disabled="isSubmittingApprovalDecision" @click="closeApprovalDecision">
                                         ยกเลิก
@@ -2568,6 +2582,35 @@ const logout = () => router.post(route('logout'));
     color: var(--text2);
     font-size: 13px;
     line-height: 1.65;
+}
+
+.approval-reject-note {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.approval-reject-note textarea {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.55;
+}
+
+.approval-reject-note textarea:focus {
+    outline: none;
+    border-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
 }
 
 .approval-decision-actions {
