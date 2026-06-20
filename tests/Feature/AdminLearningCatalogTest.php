@@ -14,7 +14,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_learning_catalog(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $methodId = $this->createLearningMethod('workshop', 'Workshop');
         $competencyId = $this->createCompetency('CC-001', 'Customer First');
 
@@ -98,7 +98,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_admin_dashboard_loads_learning_catalog_and_idp_tool_items(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $methodId = $this->createLearningMethod('online', 'Online Learning');
         $competencyId = $this->createCompetency('CC-002', 'Expertise');
         DB::table('idp_learning_methods')->insert([
@@ -152,9 +152,64 @@ class AdminLearningCatalogTest extends TestCase
             );
     }
 
+    public function test_admin_can_update_idp_delivery_type_codes(): void
+    {
+        $adminUser = $this->adminUser();
+
+        $this->actingAs($adminUser)
+            ->put(route('admin.idp-delivery-type-settings.update'), [
+                'delivery_types' => [
+                    'e_learning' => '09',
+                    'in_class' => '10',
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('learning_catalog_delivery_types', [
+            'key' => 'e_learning',
+            'code' => '09',
+            'name_th' => 'การฝึกอบรมออนไลน์',
+            'name_en' => 'e-Learning',
+        ]);
+        $this->assertDatabaseHas('learning_catalog_delivery_types', [
+            'key' => 'in_class',
+            'code' => '10',
+            'name_th' => 'การฝึกอบรมในห้องเรียน',
+            'name_en' => 'In Class Training',
+        ]);
+
+        $this->actingAs($adminUser)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Dashboard')
+                ->where('idpDeliveryTypeSettings.0.value', 'e_learning')
+                ->where('idpDeliveryTypeSettings.0.code', '09')
+                ->where('idpDeliveryTypeSettings.1.value', 'in_class')
+                ->where('idpDeliveryTypeSettings.1.code', '10')
+            );
+    }
+
+    public function test_admin_delivery_type_codes_must_be_numeric(): void
+    {
+        $adminUser = $this->adminUser();
+
+        $this->actingAs($adminUser)
+            ->from('/dashboard')
+            ->put(route('admin.idp-delivery-type-settings.update'), [
+                'delivery_types' => [
+                    'e_learning' => 'EL',
+                    'in_class' => '10',
+                ],
+            ])
+            ->assertRedirect('/dashboard')
+            ->assertSessionHasErrors(['delivery_types.e_learning']);
+    }
+
     public function test_admin_gets_validation_errors_when_learning_catalog_code_or_name_is_duplicated(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $this->createLearningMethod('formal', 'Formal Learning');
 
         DB::table('learning_catalogs')->insert([
@@ -192,7 +247,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_admin_cannot_store_learning_catalog_with_invalid_delivery_or_inactive_method(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         DB::table('learning_method_types')->insert([
             'key' => 'inactive-method',
             'label' => 'Inactive Method',
@@ -228,7 +283,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_admin_cannot_map_learning_catalog_to_more_than_one_competency(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $this->createLearningMethod('formal', 'Formal Learning');
         $firstCompetencyId = $this->createCompetency('CC-010', 'Customer First');
         $secondCompetencyId = $this->createCompetency('CC-011', 'Expertise');
@@ -261,7 +316,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_learning_catalog_expected_levels_are_nullable_and_normalized(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $this->createLearningMethod('formal', 'Formal Learning');
 
         $this->actingAs($adminUser)
@@ -309,7 +364,7 @@ class AdminLearningCatalogTest extends TestCase
 
     public function test_deleting_learning_catalog_removes_competency_mapping(): void
     {
-        $adminUser = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $adminUser = $this->adminUser();
         $competencyId = $this->createCompetency('CC-020', 'Result Driven');
         $catalogId = DB::table('learning_catalogs')->insertGetId([
             'code' => 'DEL-001',
@@ -352,6 +407,20 @@ class AdminLearningCatalogTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function adminUser(): User
+    {
+        $roleId = DB::table('roles')->where('key', 'admin')->value('id')
+            ?: DB::table('roles')->insertGetId([
+                'key' => 'admin',
+                'name_th' => 'ผู้ดูแลระบบ',
+                'name_en' => 'Admin',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        return User::factory()->create(['role_id' => $roleId, 'role_key' => 'admin']);
     }
 
     private function createCompetency(string $code, string $name): int

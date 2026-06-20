@@ -16,6 +16,7 @@ class IdpLearningMethodController extends Controller
 
         DB::table('idp_learning_methods')->insert([
             'focus_type' => $data['focus_type'],
+            'code' => $data['code'],
             'title' => $data['title'],
             'sort_order' => DB::table('idp_learning_methods')
                 ->where('focus_type', $data['focus_type'])
@@ -36,6 +37,7 @@ class IdpLearningMethodController extends Controller
             ->where('id', $method)
             ->update([
                 'focus_type' => $data['focus_type'],
+                'code' => $data['code'],
                 'title' => $data['title'],
                 'updated_at' => now(),
             ]);
@@ -54,6 +56,7 @@ class IdpLearningMethodController extends Controller
     {
         return $request->validate([
             'focus_type' => ['required', Rule::in(['experiential', 'social'])],
+            'code' => ['required', 'string', 'max:50'],
             'title' => ['required', 'string', 'max:255'],
         ]);
     }

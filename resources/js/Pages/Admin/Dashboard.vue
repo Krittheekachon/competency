@@ -109,6 +109,7 @@ const supportRanks = ref(clone(levelsByWorkline.value['สายสนับส�
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
+const idpDeliveryTypeSettings = computed(() => page.props.idpDeliveryTypeSettings || []);
 const roleLabelsByKey = {
     admin: 'ผู้ดูแลระบบ',
     supervisor: 'หัวหน้างาน',
@@ -844,6 +845,7 @@ const logout = () => router.post(route('logout'));
                     :idp-learning-methods="idpLearningMethods"
                     :learning-catalogs="hrCatalogItems"
                     :learning-methods="learningMethods"
+                    :delivery-type-settings="idpDeliveryTypeSettings"
                 />
 
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>

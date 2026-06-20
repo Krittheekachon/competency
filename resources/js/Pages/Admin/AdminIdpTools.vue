@@ -7,6 +7,7 @@ const props = defineProps({
   idpLearningMethods: { type: Array, default: () => [] },
   learningCatalogs: { type: Array, default: () => [] },
   learningMethods: { type: Array, default: () => [] },
+  deliveryTypeSettings: { type: Array, default: () => [] },
 });
 
 const focusTabs = [
@@ -14,7 +15,7 @@ const focusTabs = [
   { key: 'social', label: 'Social Learning Focus' },
   { key: 'formal', label: 'Formal Learning Focus' },
 ];
-const deliveryTypeOptions = [
+const deliveryTypeBaseOptions = [
   { value: 'e_learning', label: 'การฝึกอบรมออนไลน์ (e-Learning)' },
   { value: 'in_class', label: 'การฝึกอบรมในห้องเรียน (In Class Training)' },
 ];
@@ -29,9 +30,20 @@ const deliverySortOrder = { in_class: 1, e_learning: 2 };
 const codeCollator = new Intl.Collator(['th', 'en'], { numeric: true, sensitivity: 'base' });
 
 const activeFocus = ref('experiential');
+const initialDeliveryTypeCodes = () => {
+  const codes = Object.fromEntries(deliveryTypeBaseOptions.map((item) => [item.value, '']));
+  props.deliveryTypeSettings.forEach((setting) => {
+    const value = setting.value || setting.delivery_type;
+    if (value && codes[value] !== undefined) codes[value] = String(setting.code || '');
+  });
+  return codes;
+};
 const toolModalOpen = ref(false);
 const toolMode = ref('create');
-const toolForm = ref({ id: null, focusType: 'experiential', title: '' });
+const toolForm = ref({ id: null, focusType: 'experiential', code: '', title: '' });
+const deliveryTypeCodes = ref(initialDeliveryTypeCodes());
+const deliveryCodeErrors = ref({});
+const deliveryCodeSaving = ref(false);
 const catalogModalOpen = ref(false);
 const catalogMode = ref('create');
 const catalogSearch = ref('');
@@ -58,6 +70,14 @@ const catalogForm = ref({
 
 const activeTab = computed(() => focusTabs.find((tab) => tab.key === activeFocus.value) || focusTabs[0]);
 const simpleTools = computed(() => props.idpLearningMethods.filter((tool) => tool.focusType === activeFocus.value));
+const deliveryTypeSettingsByValue = computed(() => Object.fromEntries(
+  props.deliveryTypeSettings.map((setting) => [setting.value || setting.key || setting.delivery_type, setting]),
+));
+const deliveryTypeOptions = computed(() => deliveryTypeBaseOptions.map((item) => ({
+  value: item.value,
+  code: deliveryTypeCodes.value[item.value] || deliveryTypeSettingsByValue.value[item.value]?.code || item.defaultCode,
+  label: deliveryTypeSettingsByValue.value[item.value]?.label || item.label,
+})));
 const isCatalogELearning = computed(() => catalogForm.value.deliveryType === 'e_learning');
 const catalogPrimaryError = computed(() => Object.values(catalogErrors.value)[0] || '');
 const formalMethodKey = computed(() => {
@@ -111,16 +131,17 @@ const resetCatalogFilters = () => {
 
 const toolPayload = () => ({
   focus_type: toolForm.value.focusType,
+  code: toolForm.value.code,
   title: toolForm.value.title,
 });
 const openToolCreate = () => {
   toolMode.value = 'create';
-  toolForm.value = { id: null, focusType: activeFocus.value, title: '' };
+  toolForm.value = { id: null, focusType: activeFocus.value, code: '', title: '' };
   toolModalOpen.value = true;
 };
 const openToolEdit = (tool) => {
   toolMode.value = 'edit';
-  toolForm.value = { id: tool.id, focusType: tool.focusType, title: tool.title };
+  toolForm.value = { id: tool.id, focusType: tool.focusType, code: tool.code || '', title: tool.title };
   toolModalOpen.value = true;
 };
 const submitTool = () => {
@@ -257,7 +278,33 @@ const competencyLabel = (item) => {
   if (!competency) return '-';
   return competency.cd || competency.n || '-';
 };
-const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.value === value)?.label || '-';
+const updateDeliveryTypeCode = (value, code) => {
+  deliveryTypeCodes.value = {
+    ...deliveryTypeCodes.value,
+    [value]: String(code || '').replace(/\D/g, '').slice(0, 20),
+  };
+};
+const deliveryCodeError = (value) => deliveryCodeErrors.value[`delivery_types.${value}`] || '';
+const saveDeliveryTypeCodes = () => {
+  deliveryCodeErrors.value = {};
+  router.put(route('admin.idp-delivery-type-settings.update'), {
+    delivery_types: deliveryTypeCodes.value,
+  }, {
+    preserveScroll: true,
+    onStart: () => { deliveryCodeSaving.value = true; },
+    onFinish: () => { deliveryCodeSaving.value = false; },
+    onError: (errors) => { deliveryCodeErrors.value = errors; },
+  });
+};
+const deliveryTypeOption = (value) => deliveryTypeOptions.value.find((item) => item.value === value);
+const deliveryTypeCode = (value) => deliveryTypeOption(value)?.code || '-';
+const deliveryTypeLabel = (value) => deliveryTypeOption(value)?.label || '-';
+const deliveryTypeSelectLabel = (option) => (option.code ? `${option.code} ${option.label}` : option.label);
+const deliveryTypeDisplay = (value) => {
+  const option = deliveryTypeOption(value);
+  if (!option) return '-';
+  return deliveryTypeSelectLabel(option);
+};
 </script>
 
 <template>
@@ -295,7 +342,10 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
         <div v-if="!simpleTools.length" class="empty-box">ยังไม่มีหัวข้อในหมวดนี้</div>
         <div v-for="(tool, index) in simpleTools" v-else :key="tool.id" class="tool-row">
           <div class="tool-no">{{ index + 1 }}</div>
-          <div class="tool-title">{{ tool.title }}</div>
+          <div class="tool-title">
+            <span class="tool-code">{{ tool.code || '-' }}</span>
+            <strong>{{ tool.title }}</strong>
+          </div>
           <div class="tool-actions">
             <button class="btn btn-s btn-sm" type="button" @click="openToolEdit(tool)">แก้ไข</button>
             <button class="btn btn-s btn-sm danger" type="button" @click="deleteTool(tool)">ลบ</button>
@@ -305,6 +355,30 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
     </section>
 
     <div v-else class="formal-stack">
+      <section class="card delivery-code-card">
+        <div class="delivery-code-copy">
+          <div class="delivery-code-title">ตั้งค่ารหัสรูปแบบ</div>
+          <div class="delivery-code-sub">แก้ตรงนี้ครั้งเดียว ทุกกิจกรรมที่ใช้รูปแบบเดียวกันจะใช้รหัสนี้ร่วมกัน</div>
+        </div>
+        <div class="delivery-code-fields">
+          <label v-for="option in deliveryTypeOptions" :key="option.value" class="delivery-code-field">
+            <span>{{ option.label }}</span>
+            <input
+              class="inp delivery-code-input"
+              inputmode="numeric"
+              maxlength="20"
+              pattern="[0-9]*"
+              :value="option.code"
+              @input="updateDeliveryTypeCode(option.value, $event.target.value)"
+            />
+            <small v-if="deliveryCodeError(option.value)" class="field-error">{{ deliveryCodeError(option.value) }}</small>
+          </label>
+          <button class="btn btn-p btn-sm" type="button" :disabled="deliveryCodeSaving" @click="saveDeliveryTypeCodes">
+            {{ deliveryCodeSaving ? 'กำลังบันทึก' : 'บันทึกรหัสรูปแบบ' }}
+          </button>
+        </div>
+      </section>
+
       <section class="card focus-panel">
         <div class="panel-head">
           <div>
@@ -325,7 +399,7 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
             />
             <select v-model="catalogDeliveryFilter" class="sel catalog-filter-select">
               <option value="all">ทุกรูปแบบ</option>
-              <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ deliveryTypeSelectLabel(option) }}</option>
             </select>
             <select v-model="catalogStatusFilter" class="sel catalog-filter-select compact">
               <option value="all">ทุกสถานะ</option>
@@ -379,7 +453,11 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
                   <td>
                     <div class="fw8">{{ item.name }}</div>
                   </td>
-                  <td>{{ deliveryTypeLabel(item.deliveryType) }}</td>
+                  <td>
+                    <div class="catalog-format-cell">
+                      <span class="catalog-delivery-label">{{ deliveryTypeLabel(item.deliveryType) }}</span>
+                    </div>
+                  </td>
                   <td>
                     <span class="status-pill" :class="item.isActive ? 'active' : 'inactive'">
                       {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
@@ -406,6 +484,8 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
           <button class="modal-close" type="button" @click="toolModalOpen = false">×</button>
         </div>
         <div class="modal-body">
+          <label class="lbl">รหัส</label>
+          <input v-model="toolForm.code" class="inp" required placeholder="เช่น EXP-01" />
           <label class="lbl">หัวข้อ</label>
           <input v-model="toolForm.title" class="inp" required placeholder="เช่น การมอบหมายงานโครงการ / งานพิเศษ" />
           <div class="muted-note">ส่วนแนบไฟล์ template เตรียมไว้ในฐานข้อมูลแล้ว แต่ยังไม่เปิดให้กรอกในหน้านี้</div>
@@ -430,15 +510,20 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
           <section class="form-section catalog-section">
             <div class="section-title">1. เลือกรูปแบบกิจกรรม</div>
             <div class="form-grid">
-              <div class="fg span-2">
+              <div class="fg">
                 <label class="lbl">รูปแบบ</label>
                 <select
                   class="sel"
                   :value="catalogForm.deliveryType"
                   @change="setCatalogDeliveryType($event.target.value)"
                 >
-                  <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ deliveryTypeSelectLabel(option) }}</option>
                 </select>
+              </div>
+              <div class="fg">
+                <label class="lbl">รหัสรูปแบบ</label>
+                <div class="readonly-field">{{ deliveryTypeDisplay(catalogForm.deliveryType) }}</div>
+                <div class="field-hint">แก้รหัสรูปแบบได้จากแผงตั้งค่าด้านบนตาราง Learning Catalog</div>
               </div>
             </div>
           </section>
@@ -607,7 +692,14 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
 .tool-row { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 64px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
 .tool-row:last-child { border-bottom: 0; }
 .tool-no { width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--bg); color: var(--text3); font-size: 12px; font-weight: 900; }
-.tool-title { color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.45; }
+.tool-title { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.45; }
+.tool-code { border-radius: 999px; background: #eef4ff; color: #2563eb; font-size: 11px; font-weight: 900; padding: 5px 9px; white-space: nowrap; }
+.delivery-code-card { display: grid; grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1fr); gap: 14px; align-items: center; padding: 16px 18px; background: #fff; }
+.delivery-code-title { color: var(--text); font-size: 14px; font-weight: 900; }
+.delivery-code-sub { margin-top: 3px; color: var(--text3); font-size: 12px; font-weight: 700; line-height: 1.45; }
+.delivery-code-fields { display: flex; align-items: flex-end; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.delivery-code-field { min-width: 260px; display: grid; gap: 6px; color: var(--text2); font-size: 12px; font-weight: 900; }
+.delivery-code-input { width: 92px; min-height: 40px; text-align: center; font-size: 15px; font-weight: 900; letter-spacing: 0; }
 .catalog-card { background: #fff; }
 .catalog-card-head { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .catalog-filter-bar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.55fr) minmax(130px, 0.32fr) auto; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fbfdff; }
@@ -620,6 +712,9 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
 .tbl th { position: sticky; top: 0; z-index: 2; color: var(--text3); font-size: 12px; font-weight: 900; background: #fbfdff; }
 .col-order { width: 72px; }
 .competency-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; border-radius: 999px; border: 1px solid #dbe7f7; background: #f8fbff; color: var(--text2); font-size: 12px; font-weight: 900; padding: 4px 12px; white-space: nowrap; }
+.catalog-format-cell { display: grid; gap: 5px; align-items: start; }
+.catalog-code-badge { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; border-radius: 8px; background: #f8fafc; color: var(--text); font-size: 12px; font-weight: 900; letter-spacing: 0; padding: 3px 9px; }
+.catalog-delivery-label { color: var(--text2); font-size: 12px; font-weight: 800; line-height: 1.35; }
 .status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 900; white-space: nowrap; }
 .status-pill.active { border: 1px solid #bbf7d0; background: #dcfce7; color: #15803d; }
 .status-pill.inactive { border: 1px solid #fecaca; background: #fee2e2; color: #b91c1c; }
@@ -654,6 +749,7 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
 .inp.invalid { border-color: #fca5a5; background: #fff7f7; }
 .form-alert { margin-bottom: 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; font-weight: 900; padding: 10px 12px; }
 .field-error { margin-top: 6px; color: #b91c1c; font-size: 12px; font-weight: 800; }
+.field-hint { margin-top: 6px; color: var(--text3); font-size: 12px; font-weight: 800; }
 .span-2 { grid-column: span 2; }
 .catalog-search-input { min-height: 44px; margin-bottom: 12px; }
 .competency-list { max-height: 210px; overflow-y: auto; display: grid; gap: 8px; padding-right: 4px; }
@@ -683,6 +779,9 @@ const deliveryTypeLabel = (value) => deliveryTypeOptions.find((item) => item.val
 .fw8 { font-weight: 800; }
 @media (max-width: 900px) {
   .focus-tabs, .form-grid, .level-grid, .catalog-filter-bar { grid-template-columns: 1fr; }
+  .delivery-code-card { grid-template-columns: 1fr; }
+  .delivery-code-fields { justify-content: flex-start; }
+  .delivery-code-field { min-width: min(100%, 260px); }
   .span-2 { grid-column: auto; }
   .tool-row { grid-template-columns: 1fr; }
   .tool-actions, .panel-actions { justify-content: flex-start; }

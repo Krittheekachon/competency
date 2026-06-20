@@ -21,6 +21,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'experiential',
+                'code' => 'EXP-X',
                 'title' => 'การมอบหมายงานโครงการ',
             ])
             ->assertRedirect()
@@ -31,6 +32,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'experiential',
+            'code' => 'EXP-X',
             'title' => 'การมอบหมายงานโครงการ',
             'sort_order' => $nextSortOrder,
             'is_active' => true,
@@ -39,6 +41,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.idp-learning-methods.update', $methodId), [
                 'focus_type' => 'social',
+                'code' => 'SOC-X',
                 'title' => 'การสอนงาน',
             ])
             ->assertRedirect()
@@ -47,6 +50,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'social',
+            'code' => 'SOC-X',
             'title' => 'การสอนงาน',
         ]);
 
@@ -67,6 +71,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'formal',
+                'code' => 'FOR-X',
                 'title' => 'Formal Learning Focus',
             ])
             ->assertRedirect()
@@ -85,6 +90,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'social',
+                'code' => 'SOC-M',
                 'title' => '',
             ])
             ->assertRedirect()
@@ -106,6 +112,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'social',
+                'code' => 'SOC-MENTOR',
                 'title' => 'การเป็นพี่เลี้ยง',
             ])
             ->assertRedirect()
@@ -113,6 +120,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
         $this->assertDatabaseHas('idp_learning_methods', [
             'focus_type' => 'social',
+            'code' => 'SOC-MENTOR',
             'title' => 'การเป็นพี่เลี้ยง',
             'sort_order' => $nextSortOrder,
         ]);
