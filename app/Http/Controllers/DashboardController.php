@@ -13,6 +13,12 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    private ?array $competencyLevelsByCompetency = null;
+
+    private array $worklineIdCache = [];
+
+    private array $jobFamilyNameCache = [];
+
     /**
      * จัดการหน้า Dashboard ตาม Role ID
      */
@@ -41,9 +47,6 @@ class DashboardController extends Controller
                 'label' => $method->label,
                 'desc' => $method->description ?? '',
             ]);
-        $structureData = $this->adminStructurePayload();
-        $hrStructureData = $this->hrStructurePayload();
-
         $managerSummary = [
             'totalUsers' => User::count(),
             'evaluatedUsers' => 0,
@@ -61,27 +64,33 @@ class DashboardController extends Controller
                 'roles' => $this->rolesPayload(),
                 'competencyTypes' => $competencyTypes,
                 'competencies' => $competencies,
-                ...$structureData,
+                ...$this->adminStructurePayload(),
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
+                'idpDeliveryTypeSettings' => $this->idpDeliveryTypeSettings(),
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
             ]),
             'dept_head' => Inertia::render('Head/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser(auth()->user()),
+                'currentUserIdp' => $this->currentUserIdpPayload(auth()->user()),
                 'activeCycleName' => $activeCycleName,
                 'learningMethods' => $learningMethods,
+                'hrCatalogItems' => $this->learningCatalogItems(),
+                'idpLearningMethods' => $this->idpLearningMethods(),
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
@@ -90,7 +99,7 @@ class DashboardController extends Controller
                     'employeeUsers' => User::where('role_id', $this->roleIdByKey('employee'))->count(),
                     'source' => 'database',
                 ],
-                ...$hrStructureData,
+                ...$this->hrStructurePayload(),
                 'competencies' => $competencies,
                 'assignedCompetenciesByScope' => $this->assignedCompetenciesByScope(),
                 'learningMethods' => $learningMethods,
@@ -214,8 +223,8 @@ class DashboardController extends Controller
             return 'dept_evaluated';
         }
 
-        if ($statuses->contains('dean_approved')) {
-            return 'dean_approved';
+        if ($statuses->contains('approved') || $statuses->contains('dean_approved')) {
+            return 'approved';
         }
 
         return 'draft';
@@ -245,15 +254,23 @@ class DashboardController extends Controller
 
     private function currentJobFamilyNameForUser(User $user): ?string
     {
+        $cacheKey = $user->position_id
+            ? 'position:'.$user->position_id
+            : 'structure:'.implode('|', [$user->workline, $user->position]);
+
+        if (array_key_exists($cacheKey, $this->jobFamilyNameCache)) {
+            return $this->jobFamilyNameCache[$cacheKey];
+        }
+
         if ($user->position_id) {
-            return DB::table('positions')
+            return $this->jobFamilyNameCache[$cacheKey] = DB::table('positions')
                 ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
                 ->where('positions.id', $user->position_id)
                 ->value('job_families.name');
         }
 
         if (!$user->workline || !$user->position) {
-            return null;
+            return $this->jobFamilyNameCache[$cacheKey] = null;
         }
 
         $matches = DB::table('positions')
@@ -265,7 +282,9 @@ class DashboardController extends Controller
             ->unique()
             ->values();
 
-        return $matches->count() === 1 ? $matches->first() : null;
+        return $this->jobFamilyNameCache[$cacheKey] = $matches->count() === 1
+            ? $matches->first()
+            : null;
     }
 
     private function departmentSuffix(string $department): string
@@ -573,26 +592,7 @@ class DashboardController extends Controller
             ->orderBy('competencies.code')
             ->get()
             ->map(function (object $competency) {
-                $levels = DB::table('competency_levels')
-                    ->where('competency_id', $competency->id)
-                    ->orderBy('level')
-                    ->get()
-                    ->map(function (object $level) {
-                        $indicators = DB::table('comp_level_indicators')
-                            ->where('competency_level_id', $level->id)
-                            ->orderBy('id')
-                            ->get();
-
-                        return [
-                            'id' => $level->id,
-                            'lvl' => $level->level,
-                            'label' => "ระดับที่ {$level->level}",
-                            'description' => $level->description ?? '',
-                            'indicators' => $indicators->pluck('description')->values(),
-                            'weights' => $indicators->pluck('weight')->map(fn ($weight) => (float) $weight)->values(),
-                        ];
-                    })
-                    ->values();
+                $levels = $this->competencyLevelsPayload((int) $competency->id);
 
                 return [
                     'id' => $competency->id,
@@ -603,7 +603,7 @@ class DashboardController extends Controller
                     'typeName' => $competency->type_full_name,
                     'tg' => 'tag-'.strtolower((string) $competency->type_code),
                     'det' => $competency->detail ?? '',
-                    'lv' => $levels->count(),
+                    'lv' => count($levels),
                     'grp' => '',
                     'levels' => $levels,
                 ];
@@ -705,6 +705,9 @@ class DashboardController extends Controller
         $jobFamilyIds = $jobFamilyIds->filter()->unique()->values();
 
         $expectedLevelResolver = app(ExpectedLevelResolver::class);
+        $assessmentStatuses = DB::table('assessments')
+            ->where('user_id', $user->id)
+            ->pluck('status', 'competency_id');
 
         $expectationRows = $levelIds->isEmpty()
             ? collect()
@@ -746,14 +749,11 @@ class DashboardController extends Controller
             ->merge($positionRows)
             ->sortBy('code')
             ->unique('id')
-            ->map(function (object $item) use ($user, $expectedLevelResolver): array {
+            ->map(function (object $item) use ($user, $expectedLevelResolver, $assessmentStatuses): array {
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
                     ?? $expectedLevelResolver->forUserCompetency($user, (int) $item->id);
-                $payload['assessmentStatus'] = DB::table('assessments')
-                    ->where('user_id', $user->id)
-                    ->where('competency_id', $item->id)
-                    ->value('status') ?? 'draft';
+                $payload['assessmentStatus'] = $assessmentStatuses[$item->id] ?? 'draft';
 
                 return $payload;
             })
@@ -799,6 +799,11 @@ class DashboardController extends Controller
         }
 
         $workline = trim($user->workline);
+
+        if (array_key_exists($workline, $this->worklineIdCache)) {
+            return $this->worklineIdCache[$workline];
+        }
+
         $withoutPrefix = preg_replace('/^สาย/u', '', $workline) ?: $workline;
         $candidates = collect([
             $workline,
@@ -811,7 +816,7 @@ class DashboardController extends Controller
             ->whereIn('name', $candidates)
             ->value('id');
 
-        return $id ? (int) $id : null;
+        return $this->worklineIdCache[$workline] = $id ? (int) $id : null;
     }
 
     private function compactCompetencyPayload(object $competency): array
@@ -834,27 +839,41 @@ class DashboardController extends Controller
 
     private function competencyLevelsPayload(int $competencyId): array
     {
-        return DB::table('competency_levels')
-            ->where('competency_id', $competencyId)
-            ->orderBy('level')
-            ->get()
-            ->map(function (object $level) {
-                $indicators = DB::table('comp_level_indicators')
-                    ->where('competency_level_id', $level->id)
-                    ->orderBy('id')
-                    ->get();
+        if ($this->competencyLevelsByCompetency === null) {
+            $levels = DB::table('competency_levels')
+                ->orderBy('competency_id')
+                ->orderBy('level')
+                ->get();
+            $indicatorsByLevel = DB::table('comp_level_indicators')
+                ->whereIn('competency_level_id', $levels->pluck('id'))
+                ->orderBy('id')
+                ->get()
+                ->groupBy('competency_level_id');
 
-                return [
-                    'id' => $level->id,
-                    'lvl' => $level->level,
-                    'label' => "ระดับที่ {$level->level}",
-                    'description' => $level->description ?? '',
-                    'indicators' => $indicators->pluck('description')->values()->all(),
-                    'weights' => $indicators->pluck('weight')->map(fn ($weight) => $weight === null ? null : (float) $weight)->values()->all(),
-                ];
-            })
-            ->values()
-            ->all();
+            $this->competencyLevelsByCompetency = $levels
+                ->groupBy('competency_id')
+                ->map(fn ($competencyLevels) => $competencyLevels
+                    ->map(function (object $level) use ($indicatorsByLevel): array {
+                        $indicators = $indicatorsByLevel[$level->id] ?? collect();
+
+                        return [
+                            'id' => $level->id,
+                            'lvl' => $level->level,
+                            'label' => "ระดับที่ {$level->level}",
+                            'description' => $level->description ?? '',
+                            'indicators' => $indicators->pluck('description')->values()->all(),
+                            'weights' => $indicators->pluck('weight')
+                                ->map(fn ($weight) => $weight === null ? null : (float) $weight)
+                                ->values()
+                                ->all(),
+                        ];
+                    })
+                    ->values()
+                    ->all())
+                ->all();
+        }
+
+        return $this->competencyLevelsByCompetency[$competencyId] ?? [];
     }
 
     private function competencyGapsForUser(User $user): array
@@ -873,7 +892,8 @@ class DashboardController extends Controller
             ->whereNotNull('assessments.last_draft_saved_at')
             ->select(
                 'assessments.id as assessment_id',
-                'competencies.id',
+                'competency_gaps.id as competency_gap_id',
+                'competencies.id as competency_id',
                 'competencies.code',
                 'competencies.name',
                 'competencies.detail',
@@ -884,6 +904,7 @@ class DashboardController extends Controller
                 'competency_gaps.gap',
                 'competency_gaps.requires_idp',
                 'competency_gaps.status',
+                'competency_gaps.reject_comment',
                 'assessments.note',
                 'evaluator_scores.comment as evaluator_comment',
                 'assessments.updated_at'
@@ -891,14 +912,15 @@ class DashboardController extends Controller
             ->orderBy('competencies.code')
             ->get()
             ->map(function (object $gap) use ($user, $expectedLevelResolver): array {
-                $checkedIndicatorKeys = DB::table('assessment_evidences')
+                $checkedIndicatorKeys = DB::table('assessment_indicator_results')
                     ->where('assessment_id', $gap->assessment_id)
-                    ->where('competency_id', $gap->id)
+                    ->where('competency_id', $gap->competency_id)
+                    ->where('is_checked', true)
                     ->pluck('indicator_key')
                     ->values()
                     ->all();
                 $expected = $gap->expected_level === null
-                    ? $expectedLevelResolver->forUserCompetency($user, (int) $gap->id)
+                    ? $expectedLevelResolver->forUserCompetency($user, (int) $gap->competency_id)
                     : (float) $gap->expected_level;
                 $actual = $gap->actual_level === null ? (float) $gap->score : (float) $gap->actual_level;
                 $gapValue = $gap->gap === null && $expected !== null
@@ -906,7 +928,8 @@ class DashboardController extends Controller
                     : ($gap->gap === null ? null : (float) $gap->gap);
 
                 return [
-                    'id' => (int) $gap->id,
+                    'id' => (int) $gap->competency_gap_id,
+                    'competencyId' => (int) $gap->competency_id,
                     'cd' => $gap->code,
                     'n' => $gap->name,
                     't' => $gap->type_code ?: '-',
@@ -916,17 +939,18 @@ class DashboardController extends Controller
                     'actual' => $actual,
                     'gap' => $gapValue,
                     'note' => $gap->evaluator_comment ?: ($gap->note ?? ''),
-                    'levels' => $this->competencyLevelsPayload((int) $gap->id),
+                    'rejectComment' => $gap->reject_comment ?? '',
+                    'levels' => $this->competencyLevelsPayload((int) $gap->competency_id),
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
                     'checkedIndicatorCount' => count($checkedIndicatorKeys),
                     'requiresIdp' => $gapValue !== null && $gapValue < 0,
                     'missingIndicators' => $gapValue !== null && $gapValue < 0 && $expected !== null
-                        ? $this->missingIndicatorsForAssessment((int) $gap->assessment_id, (int) $gap->id, (float) $expected, $actual)
+                        ? $this->missingIndicatorsForAssessment((int) $gap->assessment_id, (int) $gap->competency_id, (float) $expected, $actual)
                         : [],
                     'missingIndicatorCount' => $gapValue !== null && $gapValue < 0
                         ? (int) ceil(abs($gapValue) / 0.25)
                         : 0,
-                    'status' => $gap->status ?? 'draft',
+                    'status' => $gap->status === 'dean_approved' ? 'approved' : ($gap->status ?? 'draft'),
                     'updatedAt' => $gap->updated_at,
                 ];
             })
@@ -936,9 +960,10 @@ class DashboardController extends Controller
 
     private function missingIndicatorsForAssessment(int $assessmentId, int $competencyId, float $expectedLevel, float $actualLevel): array
     {
-        $checkedKeys = DB::table('assessment_evidences')
+        $checkedKeys = DB::table('assessment_indicator_results')
             ->where('assessment_id', $assessmentId)
             ->where('competency_id', $competencyId)
+            ->where('is_checked', true)
             ->pluck('indicator_key')
             ->flip();
         $maxExpectedLevel = max(1, (int) ceil($expectedLevel));
@@ -990,6 +1015,177 @@ class DashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function currentUserIdpPayload(User $user): ?array
+    {
+        $year = (int) (DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->value('year') ?: ((int) now()->format('Y') + 543));
+
+        $idp = DB::table('idps')
+            ->where('user_id', $user->id)
+            ->where('year', $year)
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $idp) {
+            return null;
+        }
+
+        $items = DB::table('idp_items')
+            ->where('idp_items.idp_id', $idp->id)
+            ->select(
+                'idp_items.id',
+                'idp_items.competency_gap_id',
+                'idp_items.goal',
+                'idp_items.success_criteria',
+                'idp_items.status',
+                'idp_items.submitted_at',
+                'idp_items.approved_at',
+                'idp_items.reject_comment'
+            )
+            ->orderBy('idp_items.id')
+            ->get();
+        $activitiesByItem = DB::table('idp_activities')
+            ->leftJoin('learning_method_types', 'idp_activities.method_type_id', '=', 'learning_method_types.id')
+            ->whereIn('idp_activities.idp_item_id', $items->pluck('id'))
+            ->select(
+                'idp_activities.id',
+                'idp_activities.idp_item_id',
+                'idp_activities.learning_catalog_id',
+                'idp_activities.idp_learning_method_id',
+                'idp_activities.activity_name',
+                'idp_activities.weight_percent',
+                'idp_activities.start_date',
+                'idp_activities.end_date',
+                'idp_activities.description as activity_description',
+                'idp_activities.document_reference_number',
+                'learning_method_types.key as method_key'
+            )
+            ->orderBy('idp_activities.id')
+            ->get()
+            ->groupBy('idp_item_id');
+
+        $payloadItems = $items
+            ->groupBy('competency_gap_id')
+            ->map(function ($legacyItems) use ($activitiesByItem): array {
+                $first = $legacyItems->first();
+                $goal = $legacyItems->pluck('goal')->first(fn ($value) => filled($value)) ?? '';
+                $successCriteria = $legacyItems->pluck('success_criteria')->first(fn ($value) => filled($value)) ?? '';
+
+                return [
+                    'id' => (int) $first->id,
+                    'competencyGapId' => (int) $first->competency_gap_id,
+                    'goal' => $goal,
+                    'successCriteria' => $successCriteria,
+                    'status' => $first->status ?? 'draft',
+                    'submittedAt' => $first->submitted_at,
+                    'approvedAt' => $first->approved_at,
+                    'rejectComment' => $first->reject_comment ?? '',
+                    'activities' => $legacyItems
+                        ->flatMap(fn (object $item) => $activitiesByItem[$item->id] ?? collect())
+                        ->map(fn (object $activity): array => [
+                            'id' => (int) $activity->id,
+                            'methodKey' => $activity->method_key ?? '',
+                            'developmentToolId' => $activity->idp_learning_method_id
+                                ? (int) $activity->idp_learning_method_id
+                                : null,
+                            'learningCatalogId' => $activity->learning_catalog_id
+                                ? (int) $activity->learning_catalog_id
+                                : null,
+                            'activityName' => $activity->activity_name ?? '',
+                            'activityDescription' => $activity->activity_description ?? '',
+                            'documentReferenceNumber' => $activity->document_reference_number ?? '',
+                            'weightPercent' => $activity->weight_percent === null
+                                ? ''
+                                : (float) $activity->weight_percent,
+                            'startDate' => $activity->start_date ?? '',
+                            'endDate' => $activity->end_date ?? '',
+                        ])
+                        ->values()
+                        ->all(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'id' => (int) $idp->id,
+            'year' => (int) $idp->year,
+            'status' => $idp->status,
+            'submittedAt' => $idp->submitted_at,
+            'items' => $payloadItems,
+        ];
+    }
+
+    private function idpReviewItemsForReviewer(User $reviewer): array
+    {
+        $items = DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->join('users', 'idps.user_id', '=', 'users.id')
+            ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->where('users.supervisor_id_1', $reviewer->id)
+            ->where('idp_items.status', 'submitted')
+            ->select(
+                'idp_items.id',
+                'idp_items.goal',
+                'idp_items.success_criteria',
+                'idp_items.submitted_at',
+                'users.sso as user_sso',
+                'users.name as user_name',
+                'users.title as user_title',
+                'users.position as user_position',
+                'users.department as user_department',
+                'competencies.code as competency_code',
+                'competencies.name as competency_name'
+            )
+            ->orderBy('idp_items.submitted_at')
+            ->get();
+
+        $activities = DB::table('idp_activities')
+            ->leftJoin('learning_method_types', 'idp_activities.method_type_id', '=', 'learning_method_types.id')
+            ->whereIn('idp_activities.idp_item_id', $items->pluck('id'))
+            ->select(
+                'idp_activities.id',
+                'idp_activities.idp_item_id',
+                'idp_activities.activity_name',
+                'idp_activities.weight_percent',
+                'idp_activities.start_date',
+                'idp_activities.end_date',
+                'idp_activities.document_reference_number',
+                'learning_method_types.label as method_label'
+            )
+            ->orderBy('idp_activities.id')
+            ->get()
+            ->groupBy('idp_item_id');
+
+        return $items->map(fn (object $item): array => [
+            'id' => (int) $item->id,
+            'userSso' => $item->user_sso ?: '',
+            'userName' => trim(($item->user_title ?: '').$item->user_name),
+            'userPosition' => $item->user_position ?: '',
+            'userDepartment' => $item->user_department ?: '',
+            'competencyCode' => $item->competency_code,
+            'competencyName' => $item->competency_name,
+            'goal' => $item->goal ?: '',
+            'successCriteria' => $item->success_criteria ?: '',
+            'submittedAt' => $item->submitted_at,
+            'activities' => ($activities[$item->id] ?? collect())
+                ->map(fn (object $activity): array => [
+                    'id' => (int) $activity->id,
+                    'name' => $activity->activity_name ?: '',
+                    'methodLabel' => $activity->method_label ?: '',
+                    'weightPercent' => (float) ($activity->weight_percent ?? 0),
+                    'startDate' => $activity->start_date ?: '',
+                    'endDate' => $activity->end_date ?: '',
+                    'documentReferenceNumber' => $activity->document_reference_number ?: '',
+                ])
+                ->values()
+                ->all(),
+        ])->values()->all();
     }
 
     private function activeRoundId(): ?int
@@ -1102,7 +1298,7 @@ class DashboardController extends Controller
     private function idpLearningMethods()
     {
         return DB::table('idp_learning_methods')
-            ->select('id', 'focus_type', 'title', 'template_file_name', 'is_active')
+            ->select('id', 'code', 'focus_type', 'title', 'template_file_name', 'is_active')
             ->whereIn('focus_type', ['experiential', 'social'])
             ->orderBy('focus_type')
             ->orderBy('sort_order')
@@ -1110,10 +1306,52 @@ class DashboardController extends Controller
             ->get()
             ->map(fn (object $item) => [
                 'id' => $item->id,
+                'code' => $item->code ?? '',
                 'focusType' => $item->focus_type,
                 'title' => $item->title,
                 'templateFileName' => $item->template_file_name ?? '',
                 'isActive' => (bool) $item->is_active,
             ]);
+    }
+
+    private function idpDeliveryTypeSettings(): array
+    {
+        $defaults = [
+            'e_learning' => [
+                'value' => 'e_learning',
+                'code' => '',
+                'label' => 'การฝึกอบรมออนไลน์ (e-Learning)',
+            ],
+            'in_class' => [
+                'value' => 'in_class',
+                'code' => '',
+                'label' => 'การฝึกอบรมในห้องเรียน (In Class Training)',
+            ],
+        ];
+
+        if (!Schema::hasTable('learning_catalog_delivery_types')) {
+            return array_values($defaults);
+        }
+
+        $deliveryTypes = DB::table('learning_catalog_delivery_types')
+            ->whereIn('key', array_keys($defaults))
+            ->get(['key', 'code', 'name_th', 'name_en', 'is_active'])
+            ->keyBy('key');
+
+        return collect($defaults)
+            ->map(function (array $item, string $deliveryType) use ($deliveryTypes) {
+                $row = $deliveryTypes[$deliveryType] ?? null;
+
+                return [
+                    ...$item,
+                    'code' => $row->code ?? $item['code'],
+                    'label' => $row
+                        ? trim($row->name_th.' '.($row->name_en ? "({$row->name_en})" : ''))
+                        : $item['label'],
+                    'isActive' => $row ? (bool) $row->is_active : true,
+                ];
+            })
+            ->values()
+            ->all();
     }
 }

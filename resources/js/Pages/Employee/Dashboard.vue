@@ -35,7 +35,7 @@ const currentRole = ref('employee');
 const users = ref(clone(INITIAL_USERS));
 const page = usePage();
 
-const learningMethods = ref([
+const defaultLearningMethods = [
     {
         key: 'experiential',
         label: 'Experiential Learning',
@@ -54,7 +54,7 @@ const learningMethods = ref([
         desc: 'การเรียนรู้อย่างเป็นทางการผ่านหลักสูตรหรือการอบรม',
         color: '#c7432b',
     },
-]);
+];
 
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
@@ -76,6 +76,10 @@ const currentProfileUser = computed(() =>
 );
 const assignedCompetencies = computed(() => page.props.currentUserCompetencies || []);
 const competencyGaps = computed(() => page.props.currentUserCompetencyGaps || []);
+const learningMethods = computed(() => page.props.learningMethods?.length ? page.props.learningMethods : defaultLearningMethods);
+const learningCatalogs = computed(() => page.props.hrCatalogItems || []);
+const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
+const currentUserIdp = computed(() => page.props.currentUserIdp || null);
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value || {};
     const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
@@ -174,6 +178,11 @@ const logout = () => router.post(route('logout'));
                 <EmployeeIDP
                     v-else-if="activePage === 'emp-idp'"
                     :learning-methods="learningMethods"
+                    :idp-learning-methods="idpLearningMethods"
+                    :learning-catalogs="learningCatalogs"
+                    :gaps="competencyGaps"
+                    :idp="currentUserIdp"
+                    :user="currentProfileUser"
                 />
 
                 <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
