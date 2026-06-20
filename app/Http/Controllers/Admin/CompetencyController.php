@@ -54,6 +54,10 @@ class CompetencyController extends Controller
                     ->where('competency_id', $competency->id)
                     ->delete();
 
+                DB::table('assessment_indicator_results')
+                    ->where('competency_id', $competency->id)
+                    ->delete();
+
                 DB::table('scores')
                     ->where('competency_id', $competency->id)
                     ->delete();

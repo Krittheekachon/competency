@@ -136,17 +136,19 @@ class DemoIdpGapSeeder extends Seeder
                 ->where($assessmentAttributes)
                 ->value('id');
 
-            DB::table('assessment_evidences')
+            DB::table('assessment_indicator_results')
                 ->where('assessment_id', $assessmentId)
                 ->where('competency_id', $competencyId)
                 ->delete();
 
             foreach ($this->passedIndicatorKeys($competencyId) as $indicatorKey) {
-                DB::table('assessment_evidences')->insert([
+                DB::table('assessment_indicator_results')->insert([
                     'assessment_id' => $assessmentId,
                     'competency_id' => $competencyId,
-                    'uploaded_by' => $employeeId,
                     'indicator_key' => $indicatorKey,
+                    'is_checked' => true,
+                    'checked_by' => $employeeId,
+                    'checked_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);

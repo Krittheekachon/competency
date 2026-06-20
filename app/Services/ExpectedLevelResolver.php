@@ -8,13 +8,29 @@ use Illuminate\Support\Facades\DB;
 
 class ExpectedLevelResolver
 {
+    private array $expectedLevelCache = [];
+
+    private array $levelIdsCache = [];
+
+    private array $jobFamilyIdsCache = [];
+
+    private array $positionIdsCache = [];
+
+    private array $worklineIdCache = [];
+
     public function forUserCompetency(User $user, int $competencyId): ?int
     {
+        $cacheKey = $this->userCacheKey($user).':'.$competencyId;
+
+        if (array_key_exists($cacheKey, $this->expectedLevelCache)) {
+            return $this->expectedLevelCache[$cacheKey];
+        }
+
         $levelIds = $this->levelIdsForUser($user);
         $jobFamilyIds = $this->jobFamilyIdsForUser($user);
 
         if ($levelIds->isEmpty()) {
-            return null;
+            return $this->expectedLevelCache[$cacheKey] = null;
         }
 
         $expectedLevels = $jobFamilyIds->isEmpty()
@@ -30,7 +46,7 @@ class ExpectedLevelResolver
                 ->map(fn ($level): int => (int) $level);
 
         if ($expectedLevels->isNotEmpty()) {
-            return $expectedLevels->max();
+            return $this->expectedLevelCache[$cacheKey] = $expectedLevels->max();
         }
 
         $positionIds = $this->positionIdsForUser($user);
@@ -41,7 +57,7 @@ class ExpectedLevelResolver
                 ->exists();
 
         if (! $hasPositionCompetency) {
-            return null;
+            return $this->expectedLevelCache[$cacheKey] = null;
         }
 
         $levelExpectedLevels = DB::table('levels')
@@ -50,11 +66,19 @@ class ExpectedLevelResolver
             ->filter(fn ($level) => $level !== null)
             ->map(fn ($level): int => (int) $level);
 
-        return $levelExpectedLevels->isEmpty() ? null : $levelExpectedLevels->max();
+        return $this->expectedLevelCache[$cacheKey] = $levelExpectedLevels->isEmpty()
+            ? null
+            : $levelExpectedLevels->max();
     }
 
     private function levelIdsForUser(User $user): Collection
     {
+        $cacheKey = $this->userCacheKey($user);
+
+        if (isset($this->levelIdsCache[$cacheKey])) {
+            return $this->levelIdsCache[$cacheKey];
+        }
+
         $levelIds = collect();
         $worklineId = $this->worklineIdFromUser($user);
 
@@ -81,11 +105,17 @@ class ExpectedLevelResolver
             $levelIds = $levelIds->merge($matchingLevels);
         }
 
-        return $levelIds->filter()->unique()->values();
+        return $this->levelIdsCache[$cacheKey] = $levelIds->filter()->unique()->values();
     }
 
     private function jobFamilyIdsForUser(User $user): Collection
     {
+        $cacheKey = $this->userCacheKey($user);
+
+        if (isset($this->jobFamilyIdsCache[$cacheKey])) {
+            return $this->jobFamilyIdsCache[$cacheKey];
+        }
+
         $jobFamilyIds = collect();
 
         if ($user->position_id) {
@@ -116,11 +146,17 @@ class ExpectedLevelResolver
             );
         }
 
-        return $jobFamilyIds->filter()->unique()->values();
+        return $this->jobFamilyIdsCache[$cacheKey] = $jobFamilyIds->filter()->unique()->values();
     }
 
     private function positionIdsForUser(User $user): Collection
     {
+        $cacheKey = $this->userCacheKey($user);
+
+        if (isset($this->positionIdsCache[$cacheKey])) {
+            return $this->positionIdsCache[$cacheKey];
+        }
+
         $positionIds = collect();
 
         if ($user->position_id) {
@@ -128,7 +164,7 @@ class ExpectedLevelResolver
         }
 
         if (! $user->position) {
-            return $positionIds->filter()->unique()->values();
+            return $this->positionIdsCache[$cacheKey] = $positionIds->filter()->unique()->values();
         }
 
         $worklineId = $this->worklineIdFromUser($user);
@@ -147,7 +183,11 @@ class ExpectedLevelResolver
             })
             ->pluck('positions.id');
 
-        return $positionIds->merge($matchedIds)->filter()->unique()->values();
+        return $this->positionIdsCache[$cacheKey] = $positionIds
+            ->merge($matchedIds)
+            ->filter()
+            ->unique()
+            ->values();
     }
 
     private function worklineIdFromUser(User $user): ?int
@@ -157,6 +197,11 @@ class ExpectedLevelResolver
         }
 
         $workline = trim($user->workline);
+
+        if (array_key_exists($workline, $this->worklineIdCache)) {
+            return $this->worklineIdCache[$workline];
+        }
+
         $withoutPrefix = preg_replace('/^สาย/u', '', $workline) ?: $workline;
         $candidates = collect([
             $workline,
@@ -169,6 +214,11 @@ class ExpectedLevelResolver
             ->whereIn('name', $candidates)
             ->value('id');
 
-        return $id ? (int) $id : null;
+        return $this->worklineIdCache[$workline] = $id ? (int) $id : null;
+    }
+
+    private function userCacheKey(User $user): string
+    {
+        return (string) ($user->getKey() ?? spl_object_id($user));
     }
 }

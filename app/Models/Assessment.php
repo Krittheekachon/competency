@@ -8,6 +8,7 @@ class Assessment extends Model
 {
     protected $fillable = [
         'user_id',
+        'assessment_round_id',
         'competency_id',
         'score',
         'note',

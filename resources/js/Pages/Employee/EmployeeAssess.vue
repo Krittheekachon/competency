@@ -20,9 +20,10 @@ const isSaving = ref(false);
 const showSubmitConfirm = ref(false);
 const lockedCompetencies = ref<Record<string, boolean>>({});
 const competencyStatuses = ref<Record<string, string>>({});
+const competencyRejectComments = ref<Record<string, string>>({});
 
 const isLockedStatus = (status: string) => !['draft', 'revision_required'].includes(status);
-const isApprovedStatus = (status: string) => ['unit_evaluated', 'dept_evaluated', 'dean_approved'].includes(status);
+const isApprovedStatus = (status: string) => ['unit_evaluated', 'dept_evaluated', 'approved', 'dean_approved'].includes(status);
 const competencyStatus = (item: any) => competencyStatuses.value[String(item?.id || '')] || item?.assessmentStatus || 'draft';
 const competencyStatusLabel = (item: any) => {
   const status = competencyStatus(item);
@@ -49,6 +50,7 @@ const openCompetencyDetail = async (item: any) => {
     if (data.note) competencyNotes.value[String(item.id)] = data.note;
     competencyStatuses.value[String(item.id)] = data.status || 'draft';
     lockedCompetencies.value[String(item.id)] = Boolean(data.locked);
+    competencyRejectComments.value[String(item.id)] = data.reject_comment || item.rejectComment || '';
   } catch {
     // ถ้า load ไม่ได้ ใช้ค่าเดิม
   }
@@ -104,6 +106,7 @@ const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
 const isSelectedCompetencyApproved = computed(() => isApprovedStatus(selectedCompetencyStatus.value));
+const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
 
 const flattenedIndicators = computed(() => {
   const rows: any[] = [];
@@ -216,6 +219,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
             <p v-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
             <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว จะแก้ไขได้เมื่อผู้บังคับบัญชาส่งกลับมาแก้ไข</p>
+            <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
           </div>
           <button class="btn btn-s btn-sm" type="button" @click="closeCompetencyDetail">ปิด</button>
         </div>
@@ -234,6 +238,11 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
               <div class="description-label">คำอธิบายสมรรถนะ</div>
               <p>{{ selectedCompetency.det || 'ไม่มีคำอธิบาย' }}</p>
             </div>
+          </section>
+
+          <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
+            <div class="reviewer-comment-label">Comment จากผู้ประเมิน</div>
+            <p>{{ selectedRejectComment }}</p>
           </section>
 
           <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
@@ -305,7 +314,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
         <div class="modal-foot">
           <span>คะแนนปัจจุบัน {{ currentScore }}/5.00 จาก {{ selectedIndicators }}/{{ totalIndicators }} พฤติกรรม</span>
           <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked" @click="openSubmitConfirm">
-            {{ isSelectedCompetencyApproved ? 'อนุมัติแล้ว' : (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและปิด')) }}
+            {{ isSelectedCompetencyApproved ? 'อนุมัติแล้ว' : (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>
         </div>
@@ -315,7 +324,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
     <div v-if="showSubmitConfirm" class="confirm-backdrop" @click.self="cancelSubmitConfirm">
       <div class="confirm-modal">
         <div class="confirm-title">ยืนยันการส่งผลการประเมิน</div>
-        <p>หากกดบันทึกและปิดจะเป็นการยืนยันผลการประเมินและส่งต่อไปยังผู้บังคับบัญชา ต้องการยืนยันหรือไม่</p>
+        <p>หากกดบันทึกและส่งตรวจจะเป็นการยืนยันผลการประเมินและส่งต่อไปยังผู้บังคับบัญชา ต้องการยืนยันหรือไม่</p>
         <div class="confirm-actions">
           <button class="btn btn-s" type="button" @click="cancelSubmitConfirm">ยกเลิก</button>
           <button class="btn btn-t" type="button" :disabled="isSaving" @click="saveAndClose">ยืนยัน</button>
@@ -661,6 +670,28 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   background: #f8fafc;
   color: #94a3b8;
   cursor: not-allowed;
+}
+.reviewer-comment-section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  background: #fff7ed;
+  padding: 16px 18px;
+  color: #7c2d12;
+  box-shadow: 0 8px 22px rgba(194, 65, 12, .08);
+}
+.reviewer-comment-label {
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 900;
+}
+.reviewer-comment-section p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #431407;
+  font-size: 14px;
+  line-height: 1.65;
 }
 .modal-foot {
   display: flex;

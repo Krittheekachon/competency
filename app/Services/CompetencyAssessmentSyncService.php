@@ -98,8 +98,8 @@ class CompetencyAssessmentSyncService
             })
             ->whereNotExists(function ($query) {
                 $query->selectRaw('1')
-                    ->from('assessment_evidences')
-                    ->whereColumn('assessment_evidences.assessment_id', 'assessments.id');
+                    ->from('assessment_indicator_results')
+                    ->whereColumn('assessment_indicator_results.assessment_id', 'assessments.id');
             })
             ->delete();
     }

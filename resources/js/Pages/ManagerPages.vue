@@ -1090,7 +1090,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
                                                         <td>
                                                             {s.s === 'unit_evaluated' && <span class="b bt">Unit Head ประเมินแล้ว</span>}
                                                             {s.s === 'dept_evaluated' && <span class="b bg-blue text-white">ผู้บริหารประเมินแล้ว</span>}
-                                                            {s.s === 'dean_approved' && <span class="b bg-green text-white">คณบดีอนุมัติแล้ว</span>}
+                                                            {s.s === 'approved' && <span class="b bg-green text-white">อนุมัติแล้ว</span>}
                                                             {s.s === 'self_submitted' && <span class="b by">รอ Unit Head</span>}
                                                             {(!s.s || s.s === 'draft') && <span class="b muted">รอดำเนินการ</span>}
                                                         </td>

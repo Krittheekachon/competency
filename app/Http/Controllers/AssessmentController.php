@@ -6,6 +6,7 @@ use App\Models\Assessment;
 use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class AssessmentController extends Controller
@@ -18,7 +19,7 @@ class AssessmentController extends Controller
     {
         $request->validate([
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
-            'checked_indicators' => ['required', 'array'],
+            'checked_indicators' => ['present', 'array'],
             'note' => ['nullable', 'string', 'max:2000'],
             'score' => ['required', 'numeric'],
         ]);
@@ -27,7 +28,9 @@ class AssessmentController extends Controller
 
         $userId = auth()->id();
 
-        DB::transaction(function () use ($request, $userId): void {
+        $submittedStatus = $this->initialSubmittedStatusForUser($request->user());
+
+        DB::transaction(function () use ($request, $userId, $submittedStatus): void {
             $competencyId = (int) $request->competency_id;
             $checkedIndicators = collect($request->checked_indicators)
                 ->filter()
@@ -43,30 +46,37 @@ class AssessmentController extends Controller
                 ]);
             }
 
-            $assessment = Assessment::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'competency_id' => $competencyId,
-                ],
-                [
-                    'score' => $request->score,
-                    'note' => $request->note ?? '',
-                    'status' => 'self_submitted',
-                    'last_draft_saved_at' => now(),
-                    'self_submitted_at' => now(),
-                ]
-            );
+            $assessmentAttributes = [
+                'user_id' => $userId,
+                'competency_id' => $competencyId,
+            ];
+            $assessmentValues = [
+                'score' => $request->score,
+                'note' => $request->note ?? '',
+                'status' => $submittedStatus,
+                'last_draft_saved_at' => now(),
+                'self_submitted_at' => now(),
+            ];
 
-            DB::table('assessment_evidences')
+            if (Schema::hasColumn('assessments', 'assessment_round_id')) {
+                $assessmentValues['assessment_round_id'] = $this->activeAssessmentRoundId();
+            }
+
+            $assessment = Assessment::updateOrCreate($assessmentAttributes, $assessmentValues);
+
+            DB::table('assessment_indicator_results')
                 ->where('assessment_id', $assessment->id)
+                ->where('competency_id', $competencyId)
                 ->delete();
 
             foreach (array_keys($checkedIndicators) as $key) {
-                DB::table('assessment_evidences')->insert([
+                DB::table('assessment_indicator_results')->insert([
                     'assessment_id' => $assessment->id,
                     'competency_id' => $competencyId,
-                    'uploaded_by' => $userId,
                     'indicator_key' => $key,
+                    'is_checked' => true,
+                    'checked_by' => $userId,
+                    'checked_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -89,7 +99,7 @@ class AssessmentController extends Controller
                     'actual_level' => $actualLevel,
                     'gap' => $gap,
                     'requires_idp' => $gap !== null && $gap < 0,
-                    'status' => 'self_submitted',
+                    'status' => $submittedStatus,
                     'updated_at' => now(),
                 ]
             );
@@ -112,13 +122,27 @@ class AssessmentController extends Controller
             ->first();
 
         if (! $assessment) {
-            return response()->json(['checked' => [], 'note' => '', 'score' => 0, 'status' => 'draft', 'locked' => false]);
+            return response()->json([
+                'checked' => [],
+                'note' => '',
+                'score' => 0,
+                'status' => 'draft',
+                'locked' => false,
+                'reject_comment' => '',
+            ]);
         }
 
-        $indicators = DB::table('assessment_evidences')
+        $indicators = DB::table('assessment_indicator_results')
             ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $assessment->competency_id)
+            ->where('is_checked', true)
             ->pluck('indicator_key')
             ->mapWithKeys(fn ($key) => [$key => true]);
+
+        $gap = DB::table('competency_gaps')
+            ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $assessment->competency_id)
+            ->first();
 
         return response()->json([
             'checked' => $indicators,
@@ -126,6 +150,7 @@ class AssessmentController extends Controller
             'score' => $assessment->score ?? 0,
             'status' => $assessment->status ?? 'draft',
             'locked' => ! in_array($assessment->status ?? 'draft', ['draft', 'revision_required'], true),
+            'reject_comment' => $gap?->reject_comment ?? '',
         ]);
     }
 
@@ -133,14 +158,28 @@ class AssessmentController extends Controller
     {
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'competency_id' => ['required', 'integer', 'exists:competencies,id'],
+            'comment' => ['nullable', 'string'],
         ]);
+        $comment = trim((string) ($data['comment'] ?? ''));
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
 
-        DB::transaction(function () use ($data, $decision): void {
-            $assessmentIds = Assessment::where('user_id', $data['user_id'])->pluck('id');
+        DB::transaction(function () use ($data, $decision, $request, $comment): void {
+            $assessmentIds = Assessment::where('user_id', $data['user_id'])
+                ->where('competency_id', $data['competency_id'])
+                ->pluck('id');
+            $reviewerScoreId = $this->upsertReviewerScore(
+                $assessmentIds,
+                (int) $data['competency_id'],
+                (int) $request->user()->id,
+                $decision['review_step'],
+                $comment,
+                'approved'
+            );
 
             Assessment::whereIn('id', $assessmentIds)
+                ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
                     'status' => $decision['approved_status'],
@@ -150,9 +189,14 @@ class AssessmentController extends Controller
 
             DB::table('competency_gaps')
                 ->whereIn('assessment_id', $assessmentIds)
+                ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
                     'status' => $decision['approved_status'],
+                    'supervisor_2_score_id' => $reviewerScoreId,
+                    'rejected_by' => null,
+                    'reject_comment' => null,
+                    'decided_at' => now(),
                     'updated_at' => now(),
                 ]);
         });
@@ -164,14 +208,33 @@ class AssessmentController extends Controller
     {
         $data = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
+            'competency_id' => ['required', 'integer', 'exists:competencies,id'],
+            'comment' => ['required', 'string', 'min:1'],
         ]);
+        $comment = trim((string) $data['comment']);
+        if ($comment === '') {
+            throw ValidationException::withMessages([
+                'comment' => 'กรุณากรอก Comment ก่อนส่งกลับแก้ไข',
+            ]);
+        }
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
 
-        DB::transaction(function () use ($data, $decision): void {
-            $assessmentIds = Assessment::where('user_id', $data['user_id'])->pluck('id');
+        DB::transaction(function () use ($data, $decision, $request, $comment): void {
+            $assessmentIds = Assessment::where('user_id', $data['user_id'])
+                ->where('competency_id', $data['competency_id'])
+                ->pluck('id');
+            $reviewerScoreId = $this->upsertReviewerScore(
+                $assessmentIds,
+                (int) $data['competency_id'],
+                (int) $request->user()->id,
+                $decision['review_step'],
+                $comment,
+                'rejected'
+            );
 
             Assessment::whereIn('id', $assessmentIds)
+                ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
                     'status' => 'revision_required',
@@ -180,9 +243,14 @@ class AssessmentController extends Controller
 
             DB::table('competency_gaps')
                 ->whereIn('assessment_id', $assessmentIds)
+                ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
                     'status' => 'revision_required',
+                    'supervisor_2_score_id' => $reviewerScoreId,
+                    'rejected_by' => $request->user()->id,
+                    'reject_comment' => $comment,
+                    'decided_at' => now(),
                     'updated_at' => now(),
                 ]);
         });
@@ -202,28 +270,41 @@ class AssessmentController extends Controller
             return;
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
-            throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้บังคับบัญชาก่อน',
-            ]);
-        }
-
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
-            throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินลำดับที่ 3 ก่อน',
-            ]);
-        }
-
-        $hasAssignedHeadOrSupervisor = collect([
+        $hasAssignedEvaluator = collect([
             $user->supervisor_id_1,
             $user->supervisor_id_2,
+            $user->supervisor_id_3,
         ])->contains(fn ($id) => filled($id));
 
-        if (! $hasAssignedHeadOrSupervisor) {
+        if (! $hasAssignedEvaluator) {
             throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดหัวหน้างานหรือผู้บังคับบัญชาก่อน',
+                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินก่อน',
             ]);
         }
+    }
+
+    private function activeAssessmentRoundId(): int
+    {
+        $existingId = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->value('id')
+            ?: DB::table('assessment_rounds')
+                ->orderByDesc('year')
+                ->orderByDesc('id')
+                ->value('id');
+
+        if ($existingId) {
+            return (int) $existingId;
+        }
+
+        return DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบประเมิน',
+            'year' => (int) now()->format('Y'),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function normalizeRoleKey(string $roleKey): string
@@ -238,11 +319,6 @@ class AssessmentController extends Controller
     private function decisionContextForUser($reviewer, int $userId): array
     {
         $target = DB::table('users')->where('id', $userId)->first();
-        $roleKey = $this->normalizeRoleKey(
-            $reviewer->relationLoaded('role')
-                ? ($reviewer->role?->key ?: '')
-                : (DB::table('roles')->where('id', $reviewer->role_id)->value('key') ?: '')
-        );
 
         if (! $target) {
             throw ValidationException::withMessages([
@@ -250,24 +326,108 @@ class AssessmentController extends Controller
             ]);
         }
 
-        if ($roleKey === 'dept_head' && (int) $target->supervisor_id_1 === (int) $reviewer->id) {
-            return [
-                'expected_status' => 'self_submitted',
-                'approved_status' => 'unit_evaluated',
-                'submitted_at_column' => 'supervisor_1_submitted_at',
-            ];
+        $reviewStep = $this->reviewStepForReviewer($target, (int) $reviewer->id);
+
+        if (! $reviewStep) {
+            throw ValidationException::withMessages([
+                'assessment' => 'คุณไม่มีสิทธิ์อนุมัติผลการประเมินของบุคลากรคนนี้',
+            ]);
         }
 
-        if ($roleKey === 'supervisor' && (int) $target->supervisor_id_2 === (int) $reviewer->id) {
-            return [
-                'expected_status' => 'unit_evaluated',
-                'approved_status' => 'dept_evaluated',
-                'submitted_at_column' => 'supervisor_2_submitted_at',
-            ];
+        return [
+            'expected_status' => $this->pendingStatusForStep($reviewStep),
+            'approved_status' => $this->nextStatusAfterStep($target, $reviewStep),
+            'submitted_at_column' => $this->submittedAtColumnForStep($reviewStep),
+            'review_step' => $reviewStep,
+        ];
+    }
+
+    private function upsertReviewerScore($assessmentIds, int $competencyId, int $reviewerId, int $reviewStep, string $comment, string $status): ?int
+    {
+        $scoreId = null;
+        $now = now();
+
+        foreach ($assessmentIds as $assessmentId) {
+            DB::table('scores')->updateOrInsert(
+                [
+                    'assessment_id' => $assessmentId,
+                    'competency_id' => $competencyId,
+                    'assessor_id' => $reviewerId,
+                ],
+                [
+                    'assessor_role' => 'supervisor_'.$reviewStep,
+                    'comment' => $comment === '' ? null : $comment,
+                    'status' => $status,
+                    'submitted_at' => $now,
+                    'updated_at' => $now,
+                    'created_at' => $now,
+                ]
+            );
+
+            $scoreId ??= (int) DB::table('scores')
+                ->where('assessment_id', $assessmentId)
+                ->where('competency_id', $competencyId)
+                ->where('assessor_id', $reviewerId)
+                ->value('id');
+        }
+
+        return $scoreId;
+    }
+
+    private function initialSubmittedStatusForUser($user): string
+    {
+        foreach ([1, 2, 3] as $step) {
+            if (filled($user->{'supervisor_id_'.$step})) {
+                return $this->pendingStatusForStep($step);
+            }
         }
 
         throw ValidationException::withMessages([
-            'assessment' => 'คุณไม่มีสิทธิ์อนุมัติผลการประเมินของบุคลากรคนนี้',
+            'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินก่อน',
         ]);
+    }
+
+    private function reviewStepForReviewer($target, int $reviewerId): ?int
+    {
+        foreach ([1, 2, 3] as $step) {
+            if ((int) ($target->{'supervisor_id_'.$step} ?? 0) === $reviewerId) {
+                return $step;
+            }
+        }
+
+        return null;
+    }
+
+    private function pendingStatusForStep(int $step): string
+    {
+        return match ($step) {
+            1 => 'self_submitted',
+            2 => 'unit_evaluated',
+            3 => 'dept_evaluated',
+            default => throw ValidationException::withMessages([
+                'assessment' => 'ลำดับผู้ประเมินไม่ถูกต้อง',
+            ]),
+        };
+    }
+
+    private function nextStatusAfterStep($target, int $currentStep): string
+    {
+        for ($step = $currentStep + 1; $step <= 3; $step++) {
+            if (filled($target->{'supervisor_id_'.$step} ?? null)) {
+                return $this->pendingStatusForStep($step);
+            }
+        }
+
+        return 'approved';
+    }
+
+    private function submittedAtColumnForStep(int $step): string
+    {
+        return match ($step) {
+            1 => 'supervisor_1_submitted_at',
+            2 => 'supervisor_2_submitted_at',
+            3 => 'dean_approved_at',
+            default => 'updated_at',
+        };
     }
 }

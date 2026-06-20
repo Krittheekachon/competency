@@ -14,7 +14,7 @@ export const NAV_CONFIG = {
       sec: "การประเมินของฉัน",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "แผนพัฒนา IDP" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
@@ -26,7 +26,7 @@ export const NAV_CONFIG = {
       sec: "ของฉัน (บุคลากร)",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
@@ -46,7 +46,7 @@ export const NAV_CONFIG = {
       sec: "ของฉัน (บุคลากร)",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
@@ -65,7 +65,7 @@ export const NAV_CONFIG = {
       sec: "ของฉัน (บุคลากร)",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
@@ -84,7 +84,7 @@ export const NAV_CONFIG = {
       sec: "ของฉัน (บุคลากร)",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
@@ -105,7 +105,7 @@ export const NAV_CONFIG = {
       sec: "ของฉัน (บุคลากร)",
       items: [
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผล Competency Gap" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
         { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
         { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }

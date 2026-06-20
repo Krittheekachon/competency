@@ -80,7 +80,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       notSent: supervisorEmployee.filter((u) => u.evalStatus === "draft" || !u.evalStatus).length,
       pending: supervisorEmployee.filter((u) => u.evalStatus === "self_submitted").length,
       forwarded: supervisorEmployee.filter((u) => u.evalStatus === "unit_evaluated" || u.evalStatus === "dept_evaluated").length,
-      done: supervisorEmployee.filter((u) => u.evalStatus === "dean_approved").length
+      done: supervisorEmployee.filter((u) => u.evalStatus === "approved").length
     };
 
     const statusBadge = (user: any) => {
@@ -88,7 +88,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       if (user.evalStatus === "self_submitted") return <span class="b by" style={style}>รอตรวจ</span>;
       if (user.evalStatus === "unit_evaluated") return <span class="b bo" style={style}>รอหัวหน้าฝ่าย</span>;
       if (user.evalStatus === "dept_evaluated") return <span class="b bb" style={style}>รอคณบดี</span>;
-      if (user.evalStatus === "dean_approved") return <span class="b bg" style={style}>เสร็จแล้ว</span>;
+      if (user.evalStatus === "approved") return <span class="b bg" style={style}>เสร็จแล้ว</span>;
       return <span class="b br" style={style}>ยังไม่ส่ง</span>;
     };
     const scoreLabels = ["ต่ำมาก", "ต่ำ", "พอใช้", "ดี", "ดีมาก"];
@@ -167,7 +167,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       setTimeout(() => {
         let nextStatus = selectedEmployee.value.evalStatus;
         let msg = "";
-        if (isDean) {nextStatus = 'dean_approved';msg = `อนุมัติการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} เรียบร้อยแล้ว`;} else
+        if (isDean) {nextStatus = 'approved';msg = `อนุมัติการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} เรียบร้อยแล้ว`;} else
         if (isDeptHead) {nextStatus = 'dept_evaluated';msg = `ส่งผลการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} ให้คณบดีอนุมัติเรียบร้อยแล้ว`;} else
         if (isUnitHead) {nextStatus = 'unit_evaluated';msg = `ส่งผลการประเมินของ ${selectedEmployee.value.t}${selectedEmployee.value.n} ให้หัวหน้าฝ่ายเรียบร้อยแล้ว`;}
 
@@ -287,7 +287,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                                         {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                         {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                         {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
-                                                        {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
+                                                        {u.evalStatus === 'approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
                                                         {(u.evalStatus === 'draft' || !u.evalStatus) && <span class="b muted" style={{ fontSize: '8px', padding: '1px 4px' }}>ยังไม่ส่ง</span>}
                                                     </div>
                                                 </div>
@@ -323,7 +323,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                                             {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                             {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                             {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
-                                                            {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
+                                                            {u.evalStatus === 'approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
                                                             {(u.evalStatus === 'draft' || !u.evalStatus) && <span class="b muted" style={{ fontSize: '8px', padding: '1px 4px' }}>ยังไม่ส่ง</span>}
                                                         </div>
                                                     </div>
@@ -349,7 +349,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                                                     {u.evalStatus === 'self_submitted' && <span class="b by" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Employee)</span>}
                                                                     {u.evalStatus === 'unit_evaluated' && <span class="b bt" style={{ fontSize: '8px', padding: '1px 4px' }}>รอประเมิน (Dept)</span>}
                                                                     {u.evalStatus === 'dept_evaluated' && <span class="b bg-blue text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>รอกลั่นกรอง (Dean)</span>}
-                                                                    {u.evalStatus === 'dean_approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
+                                                                    {u.evalStatus === 'approved' && <span class="b bg-green text-white" style={{ fontSize: '8px', padding: '1px 4px' }}>อนุมัติแล้ว</span>}
                                                                     {(u.evalStatus === 'draft' || !u.evalStatus) && <span class="b muted" style={{ fontSize: '8px', padding: '1px 4px' }}>ยังไม่ส่ง</span>}
                                                                 </div>
                                                             </div>

@@ -43,7 +43,7 @@ const sections = [
         title: 'ของฉัน (บุคลากร)',
         items: [
             { id: 'employee-assess', icon: '', label: 'ประเมินตนเอง' },
-            { id: 'employee-gap', icon: '', label: 'ผล Competency Gap' },
+            { id: 'employee-gap', icon: '', label: 'ผลการประเมิน' },
             { id: 'employee-idp', icon: '', label: 'IDP ของฉัน' },
             { id: 'employee-progress', icon: '', label: 'อัปเดตความก้าวหน้า' },
             { id: 'employee-idp-detail', icon: '', label: 'รายละเอียด IDP' },
@@ -67,7 +67,7 @@ const sections = [
 
 const pageTitles = {
     'employee-assess': 'ประเมินตนเอง',
-    'employee-gap': 'ผล Competency Gap',
+    'employee-gap': 'ผลการประเมิน',
     'employee-idp': 'IDP ของฉัน',
     'employee-progress': 'อัปเดตความก้าวหน้า',
     'employee-idp-detail': 'รายละเอียด IDP',
