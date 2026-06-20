@@ -2,6 +2,7 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import {
     NAV_CONFIG,
     PAGE_TITLES,
@@ -17,6 +18,13 @@ import EmployeeGap from '../Employee/EmployeeGap.vue';
 import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
+
+const props = defineProps({
+    pageTitle: {
+        type: String,
+        default: 'จัดการผู้ใช้งาน',
+    },
+});
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const setRef = (target) => (next) => {
@@ -189,7 +197,7 @@ const legacyLevelOption = computed(() => {
 
     return level && !levelOptions.value.includes(level) ? level : '';
 });
-const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const currentNavConfig = computed(() => {
     const sections = NAV_CONFIG[currentRole.value] || [];
@@ -495,9 +503,6 @@ const handleRoleChange = () => {
         userForm.value.p = userForm.value.job;
     }
 
-    if (!canPickEvaluator1.value) userForm.value.sup = '';
-    if (!canPickEvaluator2.value) userForm.value.evaluator2 = '';
-    if (!canPickEvaluator3.value) userForm.value.evaluator3 = '';
     if (!canPickEvaluator1.value) userForm.value.supervisor_id_1 = '';
     if (!canPickEvaluator2.value) userForm.value.supervisor_id_2 = '';
     if (!canPickEvaluator3.value) userForm.value.supervisor_id_3 = '';
@@ -613,10 +618,6 @@ const saveUser = () => {
         return;
     }
 
-    const supervisor1 = evaluatorFromId(form.supervisor_id_1);
-    const supervisor2 = evaluatorFromId(form.supervisor_id_2);
-    const supervisor3 = evaluatorFromId(form.supervisor_id_3);
-
     const nextUser = {
         ...form,
         db_id: form.db_id,
@@ -695,7 +696,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Admin - CIDP" />
+    <Head :title="currentPageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
@@ -740,8 +741,7 @@ const logout = () => router.post(route('logout'));
                 >
                     ☰
                 </button>
-                <div class="tb-title">{{ pageTitle }}</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
+                <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

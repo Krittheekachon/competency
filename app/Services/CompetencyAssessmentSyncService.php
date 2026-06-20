@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CompetencyAssessmentSyncService
 {
@@ -73,9 +74,12 @@ class CompetencyAssessmentSyncService
     {
         $competencyIds = $competencyIds->filter()->unique()->values();
         $now = now();
+        $assessmentRoundId = Schema::hasColumn('assessments', 'assessment_round_id')
+            ? $this->activeAssessmentRoundId()
+            : null;
 
         foreach ($competencyIds as $competencyId) {
-            DB::table('assessments')->insertOrIgnore([
+            $attributes = [
                     'user_id' => $userId,
                     'competency_id' => $competencyId,
                     'status' => 'draft',
@@ -83,7 +87,13 @@ class CompetencyAssessmentSyncService
                     'note' => '',
                     'created_at' => $now,
                     'updated_at' => $now,
-            ]);
+            ];
+
+            if ($assessmentRoundId) {
+                $attributes['assessment_round_id'] = $assessmentRoundId;
+            }
+
+            DB::table('assessments')->insertOrIgnore($attributes);
         }
 
         DB::table('assessments')
@@ -102,6 +112,27 @@ class CompetencyAssessmentSyncService
                     ->whereColumn('assessment_indicator_results.assessment_id', 'assessments.id');
             })
             ->delete();
+    }
+
+    private function activeAssessmentRoundId(): int
+    {
+        $roundId = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('id');
+
+        if ($roundId) {
+            return (int) $roundId;
+        }
+
+        return (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบประเมินปัจจุบัน',
+            'year' => (int) now()->format('Y') + 543,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function competencyIdsForUser(User $user): Collection

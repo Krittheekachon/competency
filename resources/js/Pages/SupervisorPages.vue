@@ -16,7 +16,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const currentUserId = Number(currentUser.db_id);const currentUserNames = [currentUser.n, `${currentUser.t || ""}${currentUser.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);const isSamePersonName = (name: string) => currentUserNames.includes(String(name || "").trim());const isAssignedReviewer = (u: any) => currentUserId > 0 && [u.supervisor_id_1, u.supervisor_id_2, u.supervisor_id_3].some((id) => Number(id) === currentUserId) || isSamePersonName(u.sup) || isSamePersonName(u.evaluator2) || isSamePersonName(u.evaluator3);const supervisorMode = ['supervisor', 'manager_dept', 'dept_head'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี' || currentUser.r === 'dean' || currentUser.r === 'manager';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || ['manager_dept', 'dept_head'].includes(currentUser.r);if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = isAssignedReviewer(u);const hasAccess = isDean || isDeptIncharge || isDirectSub;
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const currentUserId = Number(currentUser.db_id);const isAssignedReviewer = (u: any) => currentUserId > 0 && [u.supervisor_id_1, u.supervisor_id_2, u.supervisor_id_3].some((id) => Number(id) === currentUserId);const supervisorMode = ['supervisor', 'manager_dept', 'dept_head'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี' || currentUser.r === 'dean' || currentUser.r === 'manager';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || ['manager_dept', 'dept_head'].includes(currentUser.r);if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = isAssignedReviewer(u);const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -551,11 +551,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     ["การทำงานเป็นทีม", "การใช้เทคโนโลยีดิจิทัล"]];
 
     const currentUserId = Number(currentUser?.db_id);
-    const currentUserNames = [currentUser?.n, `${currentUser?.t || ""}${currentUser?.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);
-    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId) ||
-      currentUserNames.includes(String(user.sup || "").trim()) ||
-      currentUserNames.includes(String(user.evaluator2 || "").trim()) ||
-      currentUserNames.includes(String(user.evaluator3 || "").trim());
+    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId);
     const directGapPeople = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso &&
@@ -1095,11 +1091,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
     const [feedback, setFeedback] = useState<Record<string, string>>({});
 
     const currentUserId = Number(currentUser?.db_id);
-    const currentUserNames = [currentUser?.n, `${currentUser?.t || ""}${currentUser?.n || ""}`].map((name) => String(name || "").trim()).filter(Boolean);
-    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId) ||
-      currentUserNames.includes(String(user.sup || "").trim()) ||
-      currentUserNames.includes(String(user.evaluator2 || "").trim()) ||
-      currentUserNames.includes(String(user.evaluator3 || "").trim());
+    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId);
     const directReports = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso &&

@@ -14,8 +14,20 @@ class HrPositionCompetencyTest extends TestCase
 
     public function test_hr_can_attach_and_detach_competencies_to_a_position(): void
     {
-        $hrUser = User::factory()->create(['role_id' => 1, 'role_key' => 'hr']);
+        $hrUser = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'hr')->value('id'),
+        ]);
         [$positionId, $competencyId] = $this->createPositionAndCompetency();
+        $employee = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'employee')->value('id'),
+            'position_id' => $positionId,
+            'is_active' => true,
+        ]);
+        $supervisor = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'supervisor')->value('id'),
+            'position_id' => $positionId,
+            'is_active' => true,
+        ]);
 
         $this->actingAs($hrUser)
             ->post(route('hr.position-competencies.store'), [
@@ -26,6 +38,14 @@ class HrPositionCompetencyTest extends TestCase
 
         $this->assertDatabaseHas('position_competencies', [
             'position_id' => $positionId,
+            'competency_id' => $competencyId,
+        ]);
+        $this->assertDatabaseHas('assessments', [
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+        ]);
+        $this->assertDatabaseHas('assessments', [
+            'user_id' => $supervisor->id,
             'competency_id' => $competencyId,
         ]);
 
@@ -53,7 +73,9 @@ class HrPositionCompetencyTest extends TestCase
 
     public function test_hr_dashboard_loads_position_competency_mapping(): void
     {
-        $hrUser = User::factory()->create(['role_id' => 1, 'role_key' => 'hr']);
+        $hrUser = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'hr')->value('id'),
+        ]);
         [$positionId, $competencyId] = $this->createPositionAndCompetency();
 
         DB::table('position_competencies')->insert([

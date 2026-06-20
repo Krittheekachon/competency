@@ -5,9 +5,17 @@ import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import PageTitleBlock from '@/Components/PageTitleBlock.vue';
 import { Link } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+
+defineProps({
+    pageTitle: {
+        type: String,
+        default: 'หน้าหลัก',
+    },
+});
 </script>
 
 <template>
@@ -182,10 +190,11 @@ const showingNavigationDropdown = ref(false);
             <!-- Page Heading -->
             <header
                 class="bg-white shadow"
-                v-if="$slots.header"
             >
                 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-                    <slot name="header" />
+                    <slot name="header">
+                        <PageTitleBlock :page-title="pageTitle" />
+                    </slot>
                 </div>
             </header>
 

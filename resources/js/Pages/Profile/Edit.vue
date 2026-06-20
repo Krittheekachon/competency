@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
 
 const props = defineProps({
@@ -12,6 +13,10 @@ const props = defineProps({
     status: {
         type: String,
         default: '',
+    },
+    pageTitle: {
+        type: String,
+        default: 'โปรไฟล์',
     },
 });
 
@@ -50,8 +55,6 @@ const form = useForm({
     department: props.profileUser?.d || '',
     position: props.profileUser?.p || '',
     level: props.profileUser?.l || '',
-    supervisor: props.profileUser?.sup || '',
-    evaluator2: props.profileUser?.evaluator2 || '',
     profile_photo: props.profileUser?.photo || '',
 });
 
@@ -111,7 +114,7 @@ const saveProfile = () => {
 </script>
 
 <template>
-    <Head title="โปรไฟล์" />
+    <Head :title="props.pageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <aside v-if="showSidebar" class="sidebar">
@@ -147,8 +150,7 @@ const saveProfile = () => {
         <main class="main">
             <div class="topbar">
                 <button class="menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
-                <div class="tb-title">โปรไฟล์</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
+                <PageTitleBlock :page-title="props.pageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>

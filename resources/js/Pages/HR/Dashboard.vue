@@ -1,9 +1,33 @@
 <script setup>
-import { router, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import PageTitleBlock from '../../Components/PageTitleBlock.vue';
+import EmployeeAssess from '../Employee/EmployeeAssess.vue';
+import EmployeeGap from '../Employee/EmployeeGap.vue';
+import EmployeeIDP from '../Employee/EmployeeIDP.vue';
+import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
+import EmployeeProgress from '../Employee/EmployeeProgress.vue';
+import ManagerGap from '../Executive/ManagerGap.vue';
+import ManagerIDP from '../Executive/ManagerIDP.vue';
 
 const props = defineProps({
+    users: {
+        type: Array,
+        default: () => [],
+    },
+    currentUser: {
+        type: Object,
+        default: () => ({}),
+    },
+    currentUserCompetencies: {
+        type: Array,
+        default: () => [],
+    },
+    currentUserCompetencyGaps: {
+        type: Array,
+        default: () => [],
+    },
     hrSummary: {
         type: Object,
         required: true,
@@ -47,6 +71,10 @@ const props = defineProps({
     activeCycleName: {
         type: String,
         default: '',
+    },
+    pageTitle: {
+        type: String,
+        default: 'กำหนดสมรรถนะ',
     },
 });
 
@@ -100,20 +128,72 @@ const deliveryTypeOptions = [
 
 const sections = [
     {
+        title: 'ภาพรวมคณะ',
+        items: [
+            { id: 'manager-competency-overview', label: 'Competency Gap คณะ' },
+            { id: 'manager-idp-overview', label: 'ติดตาม IDP ภาพรวม' },
+        ],
+    },
+    {
+        title: 'ของฉัน (บุคลากร)',
+        items: [
+            { id: 'emp-assess', label: 'ประเมินตนเอง' },
+            { id: 'emp-gap', label: 'ผล Competency Gap' },
+            { id: 'emp-idp', label: 'IDP ของฉัน' },
+            { id: 'emp-progress', label: 'อัปเดตความก้าวหน้า' },
+            { id: 'emp-idp-detail', label: 'รายละเอียด IDP' },
+        ],
+    },
+    {
         title: 'HR',
         items: [
             { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
         ],
     },
+    {
+        title: 'ภาพรวมคณะ',
+        items: [
+            { id: 'hr-competency-overview', label: 'Competency Gap คณะ' },
+        ],
+    },
 ];
 
 const pageTitles = {
-    'hr-position-competencies': 'กำหนดสมรรถนะประจำตำแหน่ง',
+    'manager-competency-overview': 'ภาพรวมองค์กร',
+    'manager-idp-overview': 'แผนพัฒนารายบุคคล',
+    'emp-assess': 'ประเมินตนเอง',
+    'emp-gap': 'สรุปผลสมรรถนะ',
+    'emp-idp': 'แผนพัฒนารายบุคคล',
+    'emp-progress': 'อัปเดตความก้าวหน้า',
+    'emp-idp-detail': 'รายละเอียด IDP',
+    'hr-position-competencies': 'กำหนดสมรรถนะ',
+    'hr-competency-overview': 'Competency Gap คณะ',
 };
 
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
-const currentPageTitle = computed(() => pageTitles[activePage.value] || 'HR');
-const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
+const currentPageTitle = computed(() => pageTitles[activePage.value] || props.pageTitle);
+const currentProfileUser = computed(() => props.currentUser || {});
+const selfAssessmentBlockReasons = computed(() => {
+    const user = currentProfileUser.value;
+    const reasons = Array.isArray(user?.structureIssues) ? [...user.structureIssues] : [];
+    const hasAssignedEvaluator = [
+        user?.supervisor_id_1,
+        user?.supervisor_id_2,
+        user?.supervisor_id_3,
+    ].some((id) => Number(id) > 0);
+
+    if (!hasAssignedEvaluator) {
+        reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
+    }
+
+    if (user?.structureStatus === 'invalid' && reasons.length === 0) {
+        reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
+    }
+
+    return Array.from(new Set(reasons.filter(Boolean)));
+});
+const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
+const updateUsers = () => {};
 const worklineOptions = computed(() => props.worklines || []);
 
 const familiesForSelectedWorkline = computed(() => {
@@ -426,6 +506,8 @@ const formatWeight = (weight) => {
 </script>
 
 <template>
+    <Head :title="currentPageTitle" />
+
     <div class="shell">
         <aside v-if="isSidebarOpen" class="sidebar">
             <SidebarBrand />
@@ -465,13 +547,32 @@ const formatWeight = (weight) => {
                 >
                     ☰
                 </button>
-                <div class="tb-title">{{ currentPageTitle }}</div>
-                <span class="tb-badge">{{ cycleBadge }}</span>
+                <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
 
             <main class="content">
-                <template v-if="activePage === 'hr-position-competencies'">
+                <EmployeeAssess
+                    v-if="activePage === 'emp-assess'"
+                    :user="currentProfileUser"
+                    :set-users="updateUsers"
+                    :competencies="props.currentUserCompetencies"
+                    :blocked="isSelfAssessmentBlocked"
+                    :block-reasons="selfAssessmentBlockReasons"
+                />
+                <EmployeeGap
+                    v-else-if="activePage === 'emp-gap'"
+                    :set-page="(pageId) => (activePage = pageId)"
+                    :gaps="props.currentUserCompetencyGaps"
+                    :eval-status="currentProfileUser.evalStatus"
+                />
+                <EmployeeIDP
+                    v-else-if="activePage === 'emp-idp'"
+                    :learning-methods="props.learningMethods"
+                />
+                <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
+                <template v-else-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">
                         <div>
                             <div class="position-kicker">COMPETENCY SETUP</div>
@@ -491,7 +592,6 @@ const formatWeight = (weight) => {
                             </div>
                         </div>
                     </div>
-
                     <div class="position-scope mb14">
                         <div class="position-workline">
                             <div class="position-scope-label">สายงาน</div>
@@ -630,6 +730,12 @@ const formatWeight = (weight) => {
                         </aside>
                     </div>
                 </template>
+
+                <ManagerGap
+                    v-else-if="activePage === 'hr-competency-overview'"
+                    :users="props.users"
+                    :can-send-reminders="true"
+                />
 
                 <template v-else-if="activePage === 'hr-catalog'">
                     <div class="hr-page-head mb20">

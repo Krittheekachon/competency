@@ -33,7 +33,7 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Reset Password" />
+        <Head :title="$page.props.pageTitle || 'ตั้งรหัสผ่านใหม่'" />
 
         <form @submit.prevent="submit">
             <div>

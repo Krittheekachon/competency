@@ -382,14 +382,6 @@ class DashboardController extends Controller
             return $evaluatorRoleIssues;
         }
 
-        if ($roleKey === 'supervisor' && ! $user->supervisor_id_2) {
-            return ['หัวหน้างานยังไม่ได้กำหนดผู้ประเมินลำดับที่ 2'];
-        }
-
-        if ($roleKey === 'dept_head' && ! $user->supervisor_id_3) {
-            return ['ผู้บังคับบัญชายังไม่ได้กำหนดผู้ประเมินลำดับที่ 3'];
-        }
-
         $hasAnyEvaluator = collect([
             $user->supervisor_id_1,
             $user->supervisor_id_2,

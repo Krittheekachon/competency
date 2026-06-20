@@ -22,7 +22,7 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Register" />
+        <Head :title="$page.props.pageTitle || 'สมัครใช้งาน'" />
 
         <form @submit.prevent="submit">
             <div>
