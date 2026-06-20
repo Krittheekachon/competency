@@ -34,6 +34,45 @@ Work as a maintainer of the existing ENKKU Competency and IDP application. Prese
 6. Add or update a feature test for backend behavior. Run a frontend build for Vue changes.
 7. For visible UI changes, verify the relevant local page through mock SSO when possible.
 
+## Current System Summary
+
+Treat the system as this end-to-end flow:
+
+```text
+organization and competency setup
+  -> employee self-assessment
+  -> configured reviewer chain
+  -> approved competency result
+  -> competency gap
+  -> one IDP item per negative competency
+  -> many development activities
+  -> submit, approve, or reject each IDP item independently
+  -> activity progress updates and evidence
+```
+
+Use these tables as the primary data ownership boundaries:
+
+| Area | Tables | Purpose |
+| --- | --- | --- |
+| Organization | `users`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` | Store users, roles, reporting lines, and organization structure. |
+| Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `hr_expectations` | Define competencies, expected levels, behaviors, and position assignments. |
+| Assessment | `assessments`, `assessment_indicator_results`, `scores` | Store competency assessments, checked behaviors, reviewer scores, decisions, and comments. |
+| Gap | `competency_gaps` | Store the approved result, expected level, actual level, level gap, and `requires_idp`. |
+| IDP plan | `idps`, `idp_items` | Store one yearly user plan and one plan item for each negative competency gap. |
+| IDP activities | `idp_activities`, `idp_activity_updates` | Store multiple development activities and their progress updates or evidence. |
+| Development choices | `learning_method_types`, `idp_learning_methods`, `learning_catalogs`, `learning_catalog_competency`, `learning_catalog_delivery_types` | Supply experiential, social, and competency-filtered formal learning choices. |
+
+Preserve these core business rules:
+
+- Calculate the canonical gap as `actual_level - expected_level`; create IDP only when the approved gap is negative.
+- Use one `idp_item` per failed competency, not per failed behavior indicator.
+- Allow many `idp_activities` under one item and require their total weight to equal 100% before submission.
+- Auto-save editable IDP items as drafts; never overwrite submitted or approved items.
+- Submit, approve, or reject each competency item separately. Other items may remain draft.
+- Require a rejection comment and return only that item to `revision_required`.
+- Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
+- Support reviewer slots `supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`; skip empty slots and determine the current reviewer from the assigned user IDs.
+
 ## Domain Model
 
 ### Roles
@@ -66,7 +105,7 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 
 Use `AssessmentController` as the authority for write behavior.
 
-The reviewer chain is configured by `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`. Missing steps are skipped.
+The reviewer chain is configured by `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`. Missing steps are skipped. Do not require one specific evaluator slot merely because of the user's role. A non-admin user has a valid reporting line when at least one evaluator slot is assigned and every assigned evaluator has the correct role for that slot.
 
 Status flow:
 
@@ -83,6 +122,7 @@ Rules:
 - Permit employee editing only in `draft` or `revision_required`.
 - Require an assigned evaluator before ordinary users can self-assess.
 - Allow only the reviewer assigned to the current step to approve or reject.
+- Determine the active review step from the actual evaluator IDs, not from a hard-coded mapping between a reviewer role and one fixed step.
 - On rejection, return the assessment and gap to `revision_required` and require a comment.
 - Keep legacy `dean_approved` readable as approved where existing data requires compatibility, but write canonical `approved`.
 - Store checked indicators in `assessment_indicator_results`, not the legacy `assessment_evidences` table.
@@ -102,6 +142,8 @@ Calculate:
 gap = actual_level - expected_level
 requires_idp = gap < 0
 ```
+
+Keep the canonical gap as a level difference. Do not replace it with `checked indicator count - expected indicator count`. Indicator counts may be supporting UI detail but must not change the stored gap or the rule that triggers IDP creation.
 
 An IDP item is valid only when:
 
@@ -125,6 +167,23 @@ Store plans in:
 - `idps`: one current plan per user and active assessment year;
 - `idp_items`: one plan item per selected competency gap/competency;
 - `idp_activities`: one or more development activities under that competency plan, including learning method, catalog activity, dates, weight, and progress fields.
+
+Submit and approve IDP plans per competency item:
+
+```text
+idp_items.status
+  draft / revision_required
+  -> submitted
+  -> approved
+  or revision_required when rejected
+```
+
+- Permit an employee to submit one complete `idp_item` while other competency items remain draft.
+- Lock submitted and approved items against employee editing and background auto-save.
+- Continue auto-saving only editable draft or revision-required items.
+- Let the assigned supervisor approve or reject each submitted item independently.
+- Require a rejection comment and show it when the employee edits the returned item.
+- Derive the parent `idps.status` from its item statuses. Do not require every competency item to be ready before one item can be submitted.
 
 For every activity under an IDP item, require the user to select one learning focus:
 
