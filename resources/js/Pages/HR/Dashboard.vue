@@ -570,7 +570,10 @@ const formatWeight = (weight) => {
                     v-else-if="activePage === 'emp-idp'"
                     :learning-methods="props.learningMethods"
                 />
-                <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
+                <EmployeeProgress
+                    v-else-if="activePage === 'emp-progress'"
+                    :activities="page.props.currentUserApprovedIdpActivities || []"
+                />
                 <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
                 <template v-else-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">

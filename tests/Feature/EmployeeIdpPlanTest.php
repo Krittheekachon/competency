@@ -185,8 +185,12 @@ class EmployeeIdpPlanTest extends TestCase
 
     public function test_employee_can_submit_one_competency_plan_while_another_remains_draft(): void
     {
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
+            'supervisor_id_1' => $supervisor->id,
         ]);
         $firstCompetencyId = $this->competencyId('CC-FIRST');
         $secondCompetencyId = $this->competencyId('CC-SECOND');
@@ -226,7 +230,9 @@ class EmployeeIdpPlanTest extends TestCase
 
         $this->assertDatabaseHas('idp_items', [
             'competency_gap_id' => $firstGapId,
-            'status' => 'submitted',
+            'status' => 'review_step_1',
+            'submission_version' => 1,
+            'current_review_step' => 1,
         ]);
         $this->assertDatabaseHas('idp_items', [
             'competency_gap_id' => $secondGapId,
@@ -236,8 +242,12 @@ class EmployeeIdpPlanTest extends TestCase
 
     public function test_auto_save_does_not_overwrite_submitted_competency_plan(): void
     {
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
+            'supervisor_id_1' => $supervisor->id,
         ]);
         $competencyId = $this->competencyId('CC-LOCKED');
         $gapId = $this->approvedGap($employee, $competencyId);
@@ -253,7 +263,9 @@ class EmployeeIdpPlanTest extends TestCase
             'competency_gap_id' => $gapId,
             'goal' => 'เป้าหมายที่ส่งแล้ว',
             'success_criteria' => 'เกณฑ์เดิม',
-            'status' => 'submitted',
+            'status' => 'review_step_1',
+            'submission_version' => 1,
+            'current_review_step' => 1,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -272,7 +284,7 @@ class EmployeeIdpPlanTest extends TestCase
         $this->assertDatabaseHas('idp_items', [
             'competency_gap_id' => $gapId,
             'goal' => 'เป้าหมายที่ส่งแล้ว',
-            'status' => 'submitted',
+            'status' => 'review_step_1',
         ]);
     }
 
