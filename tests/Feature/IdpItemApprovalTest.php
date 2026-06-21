@@ -224,6 +224,7 @@ class IdpItemApprovalTest extends TestCase
     private function withIsolatedMigrationDatabase(callable $callback): void
     {
         $originalConnection = DB::getDefaultConnection();
+        $originalConfiguredConnection = config('database.default');
 
         config()->set('database.connections.idp_migration_test', [
             'driver' => 'sqlite',
@@ -231,6 +232,7 @@ class IdpItemApprovalTest extends TestCase
             'prefix' => '',
             'foreign_key_constraints' => true,
         ]);
+        config()->set('database.default', 'idp_migration_test');
 
         DB::purge('idp_migration_test');
         DB::setDefaultConnection('idp_migration_test');
@@ -256,6 +258,7 @@ class IdpItemApprovalTest extends TestCase
             $callback();
         } finally {
             DB::purge('idp_migration_test');
+            config()->set('database.default', $originalConfiguredConnection);
             DB::setDefaultConnection($originalConnection);
         }
     }
