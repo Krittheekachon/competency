@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Assessment;
 use App\Services\ExpectedLevelResolver;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
@@ -15,94 +16,32 @@ class AssessmentController extends Controller
     {
     }
 
-    public function save(Request $request)
+    public function draft(Request $request)
     {
-        $request->validate([
-            'competency_id' => ['required', 'integer', 'exists:competencies,id'],
-            'checked_indicators' => ['present', 'array'],
-            'note' => ['nullable', 'string', 'max:2000'],
-            'score' => ['required', 'numeric'],
-        ]);
+        $data = $this->validatedAssessmentPayload($request);
 
         $this->assertCanSelfAssess($request->user());
 
-        $userId = auth()->id();
+        $savedAt = null;
+        DB::transaction(function () use ($request, $data, &$savedAt): void {
+            $savedAt = $this->persistSelfAssessment($request, $data, false);
+        });
 
-        $submittedStatus = $this->initialSubmittedStatusForUser($request->user());
+        return response()->json([
+            'status' => 'draft',
+            'lastDraftSavedAt' => $savedAt?->toISOString(),
+            'message' => 'บันทึกฉบับร่างแล้ว',
+        ]);
+    }
 
-        DB::transaction(function () use ($request, $userId, $submittedStatus): void {
-            $competencyId = (int) $request->competency_id;
-            $checkedIndicators = collect($request->checked_indicators)
-                ->filter()
-                ->filter(fn ($checked, string $key): bool => str_starts_with($key, $competencyId.':'))
-                ->all();
-            $existingAssessment = Assessment::where('user_id', $userId)
-                ->where('competency_id', $competencyId)
-                ->first();
+    public function save(Request $request)
+    {
+        $data = $this->validatedAssessmentPayload($request);
 
-            if ($existingAssessment && ! in_array($existingAssessment->status, ['draft', 'revision_required'], true)) {
-                throw ValidationException::withMessages([
-                    'assessment' => 'ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
-                ]);
-            }
+        $this->assertCanSelfAssess($request->user());
 
-            $assessmentAttributes = [
-                'user_id' => $userId,
-                'competency_id' => $competencyId,
-            ];
-            $assessmentValues = [
-                'score' => $request->score,
-                'note' => $request->note ?? '',
-                'status' => $submittedStatus,
-                'last_draft_saved_at' => now(),
-                'self_submitted_at' => now(),
-            ];
-
-            if (Schema::hasColumn('assessments', 'assessment_round_id')) {
-                $assessmentValues['assessment_round_id'] = $this->activeAssessmentRoundId();
-            }
-
-            $assessment = Assessment::updateOrCreate($assessmentAttributes, $assessmentValues);
-
-            DB::table('assessment_indicator_results')
-                ->where('assessment_id', $assessment->id)
-                ->where('competency_id', $competencyId)
-                ->delete();
-
-            foreach (array_keys($checkedIndicators) as $key) {
-                DB::table('assessment_indicator_results')->insert([
-                    'assessment_id' => $assessment->id,
-                    'competency_id' => $competencyId,
-                    'indicator_key' => $key,
-                    'is_checked' => true,
-                    'checked_by' => $userId,
-                    'checked_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-
-            $expectedLevel = $this->expectedLevelResolver->forUserCompetency(
-                $request->user(),
-                $competencyId
-            );
-            $actualLevel = round((float) $request->score, 2);
-            $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
-
-            DB::table('competency_gaps')->updateOrInsert(
-                [
-                    'assessment_id' => $assessment->id,
-                    'competency_id' => $competencyId,
-                ],
-                [
-                    'expected_level' => $expectedLevel,
-                    'actual_level' => $actualLevel,
-                    'gap' => $gap,
-                    'requires_idp' => $gap !== null && $gap < 0,
-                    'status' => $submittedStatus,
-                    'updated_at' => now(),
-                ]
-            );
+        DB::transaction(function () use ($request, $data): void {
+            $this->persistSelfAssessment($request, $data, true);
         });
 
         return back()->with('flash', [
@@ -127,6 +66,8 @@ class AssessmentController extends Controller
                 'note' => '',
                 'score' => 0,
                 'status' => 'draft',
+                'gapStatus' => null,
+                'lastDraftSavedAt' => null,
                 'locked' => false,
                 'reject_comment' => '',
             ]);
@@ -143,13 +84,17 @@ class AssessmentController extends Controller
             ->where('assessment_id', $assessment->id)
             ->where('competency_id', $assessment->competency_id)
             ->first();
+        $gapStatus = $gap?->status;
+        $status = $gapStatus ?? $assessment->status ?? 'draft';
 
         return response()->json([
             'checked' => $indicators,
             'note' => $assessment->note ?? '',
             'score' => $assessment->score ?? 0,
-            'status' => $assessment->status ?? 'draft',
-            'locked' => ! in_array($assessment->status ?? 'draft', ['draft', 'revision_required'], true),
+            'status' => $status,
+            'gapStatus' => $gapStatus,
+            'lastDraftSavedAt' => $this->isoTimestamp($assessment->last_draft_saved_at),
+            'locked' => ! in_array($status, ['draft', 'revision_required'], true),
             'reject_comment' => $gap?->reject_comment ?? '',
         ]);
     }
@@ -281,6 +226,104 @@ class AssessmentController extends Controller
                 'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินก่อน',
             ]);
         }
+    }
+
+    private function validatedAssessmentPayload(Request $request): array
+    {
+        return $request->validate([
+            'competency_id' => ['required', 'integer', 'exists:competencies,id'],
+            'checked_indicators' => ['present', 'array'],
+            'note' => ['nullable', 'string', 'max:2000'],
+            'score' => ['required', 'numeric'],
+        ]);
+    }
+
+    private function persistSelfAssessment(Request $request, array $data, bool $submit): Carbon
+    {
+        $userId = auth()->id();
+        $competencyId = (int) $data['competency_id'];
+        $checkedIndicators = collect($data['checked_indicators'])
+            ->filter()
+            ->filter(fn ($checked, string $key): bool => str_starts_with($key, $competencyId.':'))
+            ->all();
+        $existingAssessment = Assessment::where('user_id', $userId)
+            ->where('competency_id', $competencyId)
+            ->first();
+        $existingGapStatus = $existingAssessment
+            ? DB::table('competency_gaps')
+                ->where('assessment_id', $existingAssessment->id)
+                ->where('competency_id', $competencyId)
+                ->value('status')
+            : null;
+        $existingStatus = $existingGapStatus ?? $existingAssessment?->status;
+
+        if ($existingAssessment && ! in_array($existingStatus, ['draft', 'revision_required'], true)) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
+            ]);
+        }
+
+        $savedAt = now();
+        $submittedStatus = $submit ? $this->initialSubmittedStatusForUser($request->user()) : 'draft';
+        $assessmentAttributes = [
+            'user_id' => $userId,
+            'competency_id' => $competencyId,
+        ];
+        $assessmentValues = [
+            'score' => $data['score'],
+            'note' => $data['note'] ?? '',
+            'status' => $submittedStatus,
+            'last_draft_saved_at' => $savedAt,
+            'self_submitted_at' => $submit ? $savedAt : $existingAssessment?->self_submitted_at,
+        ];
+
+        if (Schema::hasColumn('assessments', 'assessment_round_id')) {
+            $assessmentValues['assessment_round_id'] = $this->activeAssessmentRoundId();
+        }
+
+        $assessment = Assessment::updateOrCreate($assessmentAttributes, $assessmentValues);
+
+        DB::table('assessment_indicator_results')
+            ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $competencyId)
+            ->delete();
+
+        foreach (array_keys($checkedIndicators) as $key) {
+            DB::table('assessment_indicator_results')->insert([
+                'assessment_id' => $assessment->id,
+                'competency_id' => $competencyId,
+                'indicator_key' => $key,
+                'is_checked' => true,
+                'checked_by' => $userId,
+                'checked_at' => $savedAt,
+                'created_at' => $savedAt,
+                'updated_at' => $savedAt,
+            ]);
+        }
+
+        $expectedLevel = $this->expectedLevelResolver->forUserCompetency(
+            $request->user(),
+            $competencyId
+        );
+        $actualLevel = round((float) $data['score'], 2);
+        $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+
+        DB::table('competency_gaps')->updateOrInsert(
+            [
+                'assessment_id' => $assessment->id,
+                'competency_id' => $competencyId,
+            ],
+            [
+                'expected_level' => $expectedLevel,
+                'actual_level' => $actualLevel,
+                'gap' => $gap,
+                'requires_idp' => $gap !== null && $gap < 0,
+                'status' => $submittedStatus,
+                'updated_at' => $savedAt,
+            ]
+        );
+
+        return $savedAt;
     }
 
     private function activeAssessmentRoundId(): int
@@ -429,5 +472,16 @@ class AssessmentController extends Controller
             3 => 'dean_approved_at',
             default => 'updated_at',
         };
+    }
+
+    private function isoTimestamp($value): ?string
+    {
+        if (! $value) {
+            return null;
+        }
+
+        return $value instanceof Carbon
+            ? $value->toISOString()
+            : Carbon::parse($value)->toISOString();
     }
 }

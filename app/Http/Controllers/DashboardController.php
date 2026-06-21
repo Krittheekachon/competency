@@ -697,9 +697,6 @@ class DashboardController extends Controller
         $jobFamilyIds = $jobFamilyIds->filter()->unique()->values();
 
         $expectedLevelResolver = app(ExpectedLevelResolver::class);
-        $assessmentStatuses = DB::table('assessments')
-            ->where('user_id', $user->id)
-            ->pluck('status', 'competency_id');
 
         $expectationRows = $levelIds->isEmpty()
             ? collect()
@@ -741,11 +738,27 @@ class DashboardController extends Controller
             ->merge($positionRows)
             ->sortBy('code')
             ->unique('id')
-            ->map(function (object $item) use ($user, $expectedLevelResolver, $assessmentStatuses): array {
+            ->map(function (object $item) use ($user, $expectedLevelResolver): array {
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
                     ?? $expectedLevelResolver->forUserCompetency($user, (int) $item->id);
-                $payload['assessmentStatus'] = $assessmentStatuses[$item->id] ?? 'draft';
+                $assessment = DB::table('assessments')
+                    ->where('user_id', $user->id)
+                    ->where('competency_id', $item->id)
+                    ->select('id', 'status', 'last_draft_saved_at')
+                    ->first();
+                $gapStatus = $assessment
+                    ? DB::table('competency_gaps')
+                        ->where('assessment_id', $assessment->id)
+                        ->where('competency_id', $item->id)
+                        ->value('status')
+                    : null;
+
+                $payload['assessmentStatus'] = $gapStatus ?? $assessment?->status ?? 'draft';
+                $lastDraftSavedAt = $assessment?->last_draft_saved_at;
+                $payload['lastDraftSavedAt'] = $lastDraftSavedAt
+                    ? \Carbon\Carbon::parse($lastDraftSavedAt)->toISOString()
+                    : null;
 
                 return $payload;
             })

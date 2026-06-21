@@ -810,13 +810,14 @@ const closeSupervisorApprovalModal = () => {
     approvalDecisionCompetency.value = null;
 };
 
-const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
+const competencyIdentity = (row) => row.competencyId || row.competency_id || row.id || row.code || row.title;
+const supervisorCompetencyKey = (row) => `${competencyIdentity(row)}`;
 const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
 const toggleSupervisorCompetency = (row) => {
     const key = supervisorCompetencyKey(row);
     openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
 };
-const checkedIndicatorKey = (row, level, index) => `${row.id}:${level.id || level.lvl}:${index}`;
+const checkedIndicatorKey = (row, level, index) => `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
 const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
 const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
 const totalIndicatorCount = (row) => (row.levels || [])
@@ -885,7 +886,7 @@ const submitApprovalDecision = () => {
     isSubmittingApprovalDecision.value = true;
     router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
         user_id: selectedSupervisorApproval.value.db_id,
-        competency_id: competency.id,
+        competency_id: competency.competencyId || competency.competency_id || competency.id,
         comment: approvalComment.value,
     }, {
         preserveScroll: true,
@@ -894,7 +895,7 @@ const submitApprovalDecision = () => {
                 user.sso === selectedSupervisorApproval.value.sso
                     ? (() => {
                         const competencyGaps = (user.competencyGaps || []).map((gap) =>
-                            Number(gap.id) === Number(competency.id)
+                            Number(competencyIdentity(gap)) === Number(competencyIdentity(competency))
                                 ? { ...gap, status: nextStatus, note: approvalComment.value, reviewerComment: approvalComment.value }
                                 : gap,
                         );
@@ -1491,10 +1492,10 @@ const logout = () => router.post(route('logout'));
                                             </label>
                                             <div class="approval-row-actions">
                                                 <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorCompetency(row)" @click.stop="requestApprovalDecision('reject', row)">
-                                                    ไม่อนุมัติข้อนี้
+                                                    ไม่อนุมัติ
                                                 </button>
                                                 <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorCompetency(row)" @click.stop="requestApprovalDecision('approve', row)">
-                                                    อนุมัติข้อนี้
+                                                    อนุมัติ
                                                 </button>
                                             </div>
                                         </div>
@@ -1512,17 +1513,6 @@ const logout = () => router.post(route('logout'));
                             <div class="approval-decision-modal">
                                 <div class="approval-decision-title">{{ approvalDecisionTitle }}</div>
                                 <div class="approval-decision-message">{{ approvalDecisionMessage }}</div>
-                                <label class="approval-decision-comment">
-                                    <span>
-                                        Comment จากผู้ประเมิน
-                                        <b v-if="approvalDecision === 'reject'">*</b>
-                                    </span>
-                                    <textarea
-                                        v-model="approvalComment"
-                                        rows="4"
-                                        :placeholder="approvalDecision === 'reject' ? 'กรอกเหตุผลที่ไม่อนุมัติ เพื่อให้ผู้รับการประเมินกลับไปแก้ไข' : 'เพิ่มข้อเสนอแนะให้ผู้รับการประเมิน (ไม่บังคับ)'"
-                                    ></textarea>
-                                </label>
                                 <div class="approval-decision-actions">
                                     <button class="btn btn-s" type="button" :disabled="isSubmittingApprovalDecision" @click="closeApprovalDecision">
                                         ยกเลิก
@@ -2212,42 +2202,6 @@ const logout = () => router.post(route('logout'));
 .approval-reviewer-comment textarea:disabled {
     background: #f1f5f9;
     color: var(--text3);
-}
-
-.approval-decision-comment {
-    display: grid;
-    gap: 8px;
-    margin-top: 16px;
-}
-
-.approval-decision-comment span {
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 900;
-}
-
-.approval-decision-comment b {
-    color: #dc2626;
-}
-
-.approval-decision-comment textarea {
-    width: 100%;
-    min-height: 104px;
-    resize: vertical;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: #f8fafc;
-    color: var(--text);
-    padding: 12px;
-    font-size: 13px;
-    line-height: 1.6;
-    outline: none;
-}
-
-.approval-decision-comment textarea:focus {
-    border-color: #93c5fd;
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
 }
 
 .approval-decision-actions {
