@@ -14,6 +14,15 @@ class IdpItemApprovalTest extends TestCase
 
     public function test_schema_supports_sequential_idp_review_history(): void
     {
+        $migration = dirname(__DIR__, 2)
+            .'/database/migrations/2026_06_21_000000_create_idp_item_reviews_table.php';
+
+        $this->artisan('migrate', [
+            '--path' => $migration,
+            '--realpath' => true,
+            '--force' => true,
+        ])->assertExitCode(0);
+
         $this->assertTrue(Schema::hasTable('idp_item_reviews'));
         $this->assertTrue(Schema::hasColumns('idp_items', [
             'submission_version',
