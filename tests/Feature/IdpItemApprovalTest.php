@@ -36,6 +36,13 @@ class IdpItemApprovalTest extends TestCase
             'status' => 'approved',
             'approved_by' => $supervisor->id,
         ]);
+        $this->assertDatabaseHas('idp_item_reviews', [
+            'idp_item_id' => $itemId,
+            'submission_version' => 1,
+            'review_step' => 1,
+            'reviewer_id' => $supervisor->id,
+            'decision' => 'approved',
+        ]);
     }
 
     public function test_unassigned_user_cannot_approve_competency_plan(): void
@@ -51,7 +58,7 @@ class IdpItemApprovalTest extends TestCase
 
         $this->assertDatabaseHas('idp_items', [
             'id' => $itemId,
-            'status' => 'submitted',
+            'status' => 'review_step_1',
         ]);
     }
 
@@ -65,6 +72,59 @@ class IdpItemApprovalTest extends TestCase
                 'comment' => '',
             ])
             ->assertSessionHasErrors('comment');
+    }
+
+    public function test_approval_advances_to_next_configured_reviewer(): void
+    {
+        $reviewer1 = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $reviewer3 = User::factory()->create([
+            'role_id' => $this->roleId('dean'),
+        ]);
+        [, $itemId] = $this->submittedItem($reviewer1, [
+            'supervisor_id_1' => $reviewer1->id,
+            'supervisor_id_3' => $reviewer3->id,
+        ]);
+
+        $this->actingAs($reviewer1)
+            ->post(route('idp-items.approve'), [
+                'idpItemId' => $itemId,
+                'comment' => 'ผ่านลำดับแรก',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('idp_items', [
+            'id' => $itemId,
+            'status' => 'review_step_3',
+            'current_review_step' => 3,
+        ]);
+    }
+
+    public function test_rejection_records_history_and_returns_item_to_employee(): void
+    {
+        [$supervisor, $itemId] = $this->submittedItem();
+
+        $this->actingAs($supervisor)
+            ->post(route('idp-items.reject'), [
+                'idpItemId' => $itemId,
+                'comment' => 'แก้ช่วงเวลาดำเนินการ',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('idp_items', [
+            'id' => $itemId,
+            'status' => 'revision_required',
+            'current_review_step' => null,
+            'reject_comment' => 'แก้ช่วงเวลาดำเนินการ',
+        ]);
+        $this->assertDatabaseHas('idp_item_reviews', [
+            'idp_item_id' => $itemId,
+            'submission_version' => 1,
+            'review_step' => 1,
+            'reviewer_id' => $supervisor->id,
+            'decision' => 'rejected',
+        ]);
     }
 
     public function test_migration_backfills_submitted_item_to_first_configured_reviewer_slot(): void
@@ -159,14 +219,15 @@ class IdpItemApprovalTest extends TestCase
         });
     }
 
-    private function submittedItem(): array
+    private function submittedItem(?User $supervisor = null, array $ownerOverrides = []): array
     {
-        $supervisor = User::factory()->create([
+        $supervisor ??= User::factory()->create([
             'role_id' => $this->roleId('supervisor'),
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'supervisor_id_1' => $supervisor->id,
+            ...$ownerOverrides,
         ]);
         $idpId = DB::table('idps')->insertGetId([
             'user_id' => $employee->id,
@@ -180,7 +241,9 @@ class IdpItemApprovalTest extends TestCase
             'idp_id' => $idpId,
             'goal' => 'พัฒนาสมรรถนะ',
             'success_criteria' => 'ผ่านตามเกณฑ์',
-            'status' => 'submitted',
+            'status' => 'review_step_1',
+            'submission_version' => 1,
+            'current_review_step' => 1,
             'submitted_at' => now(),
             'created_at' => now(),
             'updated_at' => now(),
