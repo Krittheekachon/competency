@@ -57,6 +57,7 @@ class DashboardController extends Controller
             'pendingIdpApprovals' => 0,
             'source' => 'database',
         ];
+        $approvedIdpActivities = $this->currentUserApprovedIdpActivities(auth()->user());
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
@@ -69,18 +70,21 @@ class DashboardController extends Controller
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
                 'idpDeliveryTypeSettings' => $this->idpDeliveryTypeSettings(),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dept_head' => Inertia::render('Head/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
@@ -91,6 +95,7 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
@@ -118,6 +123,7 @@ class DashboardController extends Controller
                         'evalStatus' => 'draft',
                         'act' => true,
                     ]),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
                 'users' => $users,
@@ -130,6 +136,7 @@ class DashboardController extends Controller
                 'trainingNeedRows' => [],
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             default => Inertia::render('Dashboard'),
         };
@@ -1224,6 +1231,54 @@ class DashboardController extends Controller
                 ->values()
                 ->all(),
         ])->values()->all();
+    }
+
+    private function currentUserApprovedIdpActivities(User $user): array
+    {
+        $latestUpdateIds = DB::table('idp_activity_updates')
+            ->selectRaw('MAX(id) as id, activity_id')
+            ->groupBy('activity_id');
+
+        return DB::table('idp_activities')
+            ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->leftJoinSub($latestUpdateIds, 'latest_update_ids', function ($join): void {
+                $join->on('idp_activities.id', '=', 'latest_update_ids.activity_id');
+            })
+            ->leftJoin('idp_activity_updates', 'latest_update_ids.id', '=', 'idp_activity_updates.id')
+            ->where('idps.user_id', $user->id)
+            ->where('idp_items.status', 'approved')
+            ->select(
+                'idp_activities.id',
+                'idp_activities.activity_name',
+                'idp_activities.start_date',
+                'idp_activities.end_date',
+                'competencies.code as competency_code',
+                'competencies.name as competency_name',
+                'idp_activity_updates.progress_note',
+                'idp_activity_updates.percent_complete',
+                'idp_activity_updates.evidence_url',
+                'idp_activity_updates.evidence_description'
+            )
+            ->orderBy('competencies.code')
+            ->orderBy('idp_activities.id')
+            ->get()
+            ->map(fn (object $activity): array => [
+                'id' => (int) $activity->id,
+                'competencyCode' => $activity->competency_code,
+                'competencyName' => $activity->competency_name,
+                'name' => $activity->activity_name,
+                'startDate' => $activity->start_date,
+                'endDate' => $activity->end_date,
+                'latestProgressNote' => $activity->progress_note ?? '',
+                'latestPercentComplete' => (int) ($activity->percent_complete ?? 0),
+                'latestEvidenceUrl' => $activity->evidence_url ?? '',
+                'latestEvidenceDescription' => $activity->evidence_description ?? '',
+            ])
+            ->values()
+            ->all();
     }
 
     private function activeRoundId(): ?int
