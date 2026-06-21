@@ -523,7 +523,7 @@ const canDecideSupervisorApproval = computed(() =>
     Boolean(approvalDecisionCompetency.value)
     && canDecideSupervisorCompetency(approvalDecisionCompetency.value),
 );
-const approvalCommentKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${row?.id || 'none'}`;
+const approvalCommentKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${competencyIdentity(row) || 'none'}`;
 const approvalDecisionTitle = computed(() => approvalDecision.value === 'approve'
     ? `อนุมัติ ${approvalDecisionCompetency.value?.code || ''} ของ ${supervisorApprovalName.value}`
     : `ส่งกลับ ${approvalDecisionCompetency.value?.code || ''} ให้ประเมินใหม่`);
@@ -541,11 +541,13 @@ const gapScoreFor = (person, comp, key, fallback) => {
     return Number(values?.[comp.id]?.[key] ?? values?.[`${comp.id}_${key}`] ?? comp[key] ?? fallback);
 };
 const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
+const competencyIdentity = (row) => String(row?.competencyId || row?.competency_id || row?.id || row?.code || row?.title || '');
 
 const gapResultRows = (person) => {
     if (!person) return [];
     const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => ({
         id: row.id || row.competency_id || row.name || row.title,
+        competencyId: row.competencyId || row.competency_id || row.id || null,
         title: row.title || row.name || row.n || row.competency_name || '-',
         group: row.group || row.type || row.t || '-',
         code: row.code || row.cd || '',
@@ -572,6 +574,7 @@ const gapResultRows = (person) => {
             const gap = Number(row.gap ?? headScore - expected);
             return {
                 id: row.id || row.competency_id || row.name || row.title,
+                competencyId: row.competencyId || row.competency_id || null,
                 title: row.title || row.name || row.n || row.competency_name || '-',
                 group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
@@ -591,8 +594,8 @@ const gapResultRows = (person) => {
             };
         });
 
-        const assessedKeys = new Set(assessedRows.map((row) => row.id || row.code || row.title));
-        const missingAssignedRows = assignedRows.filter((row) => !assessedKeys.has(row.id || row.code || row.title));
+        const assessedKeys = new Set(assessedRows.map((row) => competencyIdentity(row)).filter(Boolean));
+        const missingAssignedRows = assignedRows.filter((row) => !assessedKeys.has(competencyIdentity(row)));
 
         return [...assessedRows, ...missingAssignedRows];
     }
@@ -810,7 +813,6 @@ const closeSupervisorApprovalModal = () => {
     approvalDecisionCompetency.value = null;
 };
 
-const competencyIdentity = (row) => row.competencyId || row.competency_id || row.id || row.code || row.title;
 const supervisorCompetencyKey = (row) => `${competencyIdentity(row)}`;
 const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
 const toggleSupervisorCompetency = (row) => {
@@ -878,7 +880,8 @@ const submitApprovalDecision = () => {
     if (!selectedSupervisorApproval.value || !approvalDecision.value || !competency) return;
 
     const decision = approvalDecision.value;
-    if (decision === 'reject' && !approvalComment.value.trim()) {
+    const comment = (reviewerComments.value[approvalCommentKey(competency)] || approvalComment.value || '').trim();
+    if (decision === 'reject' && !comment) {
         return;
     }
 
@@ -887,7 +890,7 @@ const submitApprovalDecision = () => {
     router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
         user_id: selectedSupervisorApproval.value.db_id,
         competency_id: competency.competencyId || competency.competency_id || competency.id,
-        comment: approvalComment.value,
+        comment,
     }, {
         preserveScroll: true,
         onSuccess: () => {
@@ -896,10 +899,10 @@ const submitApprovalDecision = () => {
                     ? (() => {
                         const competencyGaps = (user.competencyGaps || []).map((gap) =>
                             Number(competencyIdentity(gap)) === Number(competencyIdentity(competency))
-                                ? { ...gap, status: nextStatus, note: approvalComment.value, reviewerComment: approvalComment.value }
+                                ? { ...gap, status: nextStatus, note: comment, reviewerComment: comment }
                                 : gap,
                         );
-                        reviewerComments.value[approvalCommentKey(competency)] = approvalComment.value;
+                        reviewerComments.value[approvalCommentKey(competency)] = comment;
 
                         return {
                             ...user,
@@ -1427,7 +1430,7 @@ const logout = () => router.post(route('logout'));
                                 </div>
 
                                 <div class="approval-modal-body">
-                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
+                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${supervisorCompetencyKey(row)}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
                                         <button
                                             class="approval-competency-head"
                                             :class="{ open: isSupervisorCompetencyOpen(row) }"
@@ -1465,7 +1468,7 @@ const logout = () => router.post(route('logout'));
                                                 <div class="approval-checklist">
                                                     <label
                                                         v-for="{ indicator, index, checked } in level.indicatorsWithStatus"
-                                                        :key="`${row.id}-${level.id || level.lvl}-${index}`"
+                                                        :key="`${supervisorCompetencyKey(row)}-${level.id || level.lvl}-${index}`"
                                                         class="approval-check-row"
                                                         :class="{ selected: checked, muted: !checked }"
                                                     >
