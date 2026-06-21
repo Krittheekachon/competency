@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private const MISSING_REVIEWER_COMMENT = 'ยังไม่ได้กำหนดผู้อนุมัติแผน IDP';
+
     public function up(): void
     {
         Schema::table('idp_items', function (Blueprint $table): void {
@@ -71,7 +73,7 @@ return new class extends Migration
                             'current_review_step' => $firstStep,
                             'reject_comment' => $firstStep
                                 ? null
-                                : 'ยังไม่ได้กำหนดผู้อนุมัติแผน IDP',
+                                : self::MISSING_REVIEWER_COMMENT,
                         ]);
                 }
             }, 'idp_items.id', 'item_id');
@@ -82,6 +84,16 @@ return new class extends Migration
         DB::table('idp_items')
             ->whereIn('status', ['review_step_1', 'review_step_2', 'review_step_3'])
             ->update(['status' => 'submitted']);
+
+        DB::table('idp_items')
+            ->where('status', 'revision_required')
+            ->where('submission_version', 1)
+            ->whereNull('current_review_step')
+            ->where('reject_comment', self::MISSING_REVIEWER_COMMENT)
+            ->update([
+                'status' => 'submitted',
+                'reject_comment' => null,
+            ]);
 
         Schema::dropIfExists('idp_item_reviews');
 
