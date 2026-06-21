@@ -5,11 +5,21 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class IdpItemApprovalTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_schema_supports_sequential_idp_review_history(): void
+    {
+        $this->assertTrue(Schema::hasTable('idp_item_reviews'));
+        $this->assertTrue(Schema::hasColumns('idp_items', [
+            'submission_version',
+            'current_review_step',
+        ]));
+    }
 
     public function test_assigned_supervisor_can_approve_one_submitted_competency_plan(): void
     {
