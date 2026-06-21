@@ -1034,6 +1034,8 @@ class DashboardController extends Controller
                 'idp_items.goal',
                 'idp_items.success_criteria',
                 'idp_items.status',
+                'idp_items.submission_version',
+                'idp_items.current_review_step',
                 'idp_items.submitted_at',
                 'idp_items.approved_at',
                 'idp_items.reject_comment'
@@ -1073,6 +1075,10 @@ class DashboardController extends Controller
                     'goal' => $goal,
                     'successCriteria' => $successCriteria,
                     'status' => $first->status ?? 'draft',
+                    'submissionVersion' => (int) ($first->submission_version ?? 0),
+                    'currentReviewStep' => $first->current_review_step
+                        ? (int) $first->current_review_step
+                        : null,
                     'submittedAt' => $first->submitted_at,
                     'approvedAt' => $first->approved_at,
                     'rejectComment' => $first->reject_comment ?? '',
@@ -1119,12 +1125,22 @@ class DashboardController extends Controller
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
-            ->where('users.supervisor_id_1', $reviewer->id)
-            ->where('idp_items.status', 'submitted')
+            ->where(function ($query) use ($reviewer): void {
+                foreach ([1, 2, 3] as $step) {
+                    $method = $step === 1 ? 'where' : 'orWhere';
+                    $query->{$method}(function ($query) use ($reviewer, $step): void {
+                        $query->where("users.supervisor_id_{$step}", $reviewer->id)
+                            ->where('idp_items.current_review_step', $step)
+                            ->where('idp_items.status', "review_step_{$step}");
+                    });
+                }
+            })
             ->select(
                 'idp_items.id',
                 'idp_items.goal',
                 'idp_items.success_criteria',
+                'idp_items.submission_version',
+                'idp_items.current_review_step',
                 'idp_items.submitted_at',
                 'users.sso as user_sso',
                 'users.name as user_name',
@@ -1153,6 +1169,23 @@ class DashboardController extends Controller
             ->orderBy('idp_activities.id')
             ->get()
             ->groupBy('idp_item_id');
+        $history = DB::table('idp_item_reviews')
+            ->join('users', 'idp_item_reviews.reviewer_id', '=', 'users.id')
+            ->whereIn('idp_item_reviews.idp_item_id', $items->pluck('id'))
+            ->select(
+                'idp_item_reviews.idp_item_id',
+                'idp_item_reviews.submission_version',
+                'idp_item_reviews.review_step',
+                'idp_item_reviews.decision',
+                'idp_item_reviews.comment',
+                'idp_item_reviews.decided_at',
+                'users.name as reviewer_name',
+                'users.title as reviewer_title'
+            )
+            ->orderByDesc('idp_item_reviews.submission_version')
+            ->orderBy('idp_item_reviews.review_step')
+            ->get()
+            ->groupBy('idp_item_id');
 
         return $items->map(fn (object $item): array => [
             'id' => (int) $item->id,
@@ -1164,6 +1197,8 @@ class DashboardController extends Controller
             'competencyName' => $item->competency_name,
             'goal' => $item->goal ?: '',
             'successCriteria' => $item->success_criteria ?: '',
+            'submissionVersion' => (int) $item->submission_version,
+            'currentReviewStep' => (int) $item->current_review_step,
             'submittedAt' => $item->submitted_at,
             'activities' => ($activities[$item->id] ?? collect())
                 ->map(fn (object $activity): array => [
@@ -1174,6 +1209,17 @@ class DashboardController extends Controller
                     'startDate' => $activity->start_date ?: '',
                     'endDate' => $activity->end_date ?: '',
                     'documentReferenceNumber' => $activity->document_reference_number ?: '',
+                ])
+                ->values()
+                ->all(),
+            'reviewHistory' => ($history[$item->id] ?? collect())
+                ->map(fn (object $review): array => [
+                    'submissionVersion' => (int) $review->submission_version,
+                    'reviewStep' => (int) $review->review_step,
+                    'reviewerName' => trim(($review->reviewer_title ?: '').$review->reviewer_name),
+                    'decision' => $review->decision,
+                    'comment' => $review->comment ?: '',
+                    'decidedAt' => $review->decided_at,
                 ])
                 ->values()
                 ->all(),
