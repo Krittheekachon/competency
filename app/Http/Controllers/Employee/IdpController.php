@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
+use App\Services\IdpItemReviewWorkflow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,6 +13,11 @@ use Illuminate\Validation\ValidationException;
 
 class IdpController extends Controller
 {
+    public function __construct(
+        private readonly IdpItemReviewWorkflow $reviewWorkflow
+    ) {
+    }
+
     public function saveDraft(Request $request): RedirectResponse|JsonResponse
     {
         $this->persist($request, 'draft');
@@ -102,8 +108,11 @@ class IdpController extends Controller
             $toolFocusById,
             $catalogCompetencies,
         );
+        $owner = DB::table('users')
+            ->where('id', auth()->id())
+            ->first(['id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3']);
 
-        DB::transaction(function () use ($items, $status, $methodIdsByKey): void {
+        DB::transaction(function () use ($items, $status, $methodIdsByKey, $owner): void {
             $idpId = $this->currentUserIdpId();
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
@@ -112,21 +121,37 @@ class IdpController extends Controller
                     ->where('competency_gap_id', $gapId)
                     ->first();
 
-                if ($existing && in_array($existing->status, ['submitted', 'approved'], true)) {
+                if ($existing && ($existing->status === 'approved'
+                    || $this->reviewWorkflow->isUnderReview($existing->status))) {
                     continue;
                 }
 
+                $isSubmission = $status === 'submitted';
+                $firstReviewStep = $isSubmission
+                    ? $this->reviewWorkflow->firstStep($owner)
+                    : null;
+                $itemStatus = $isSubmission
+                    ? $this->reviewWorkflow->statusForStep($firstReviewStep)
+                    : (($existing->status ?? null) === 'revision_required'
+                        ? 'revision_required'
+                        : 'draft');
                 $values = [
                     'behavior_key' => 'competency-gap:'.$item['competencyGapId'],
                     'behavior_description' => null,
                     'goal' => $item['goal'] ?? null,
                     'success_criteria' => $item['successCriteria'] ?? null,
-                    'status' => $status,
-                    'submitted_at' => $status === 'submitted' ? now() : null,
+                    'status' => $itemStatus,
+                    'submission_version' => $isSubmission
+                        ? ((int) ($existing->submission_version ?? 0) + 1)
+                        : (int) ($existing->submission_version ?? 0),
+                    'current_review_step' => $firstReviewStep,
+                    'submitted_at' => $isSubmission
+                        ? now()
+                        : ($existing->submitted_at ?? null),
                     'updated_at' => now(),
                 ];
 
-                if ($status === 'submitted') {
+                if ($isSubmission) {
                     $values = [
                         ...$values,
                         'approved_by' => null,
@@ -170,7 +195,7 @@ class IdpController extends Controller
                 }
             }
 
-            $this->syncIdpStatus($idpId);
+            $this->reviewWorkflow->syncParentStatus($idpId);
         });
     }
 
@@ -312,21 +337,4 @@ class IdpController extends Controller
         ]);
     }
 
-    private function syncIdpStatus(int $idpId): void
-    {
-        $statuses = DB::table('idp_items')->where('idp_id', $idpId)->pluck('status');
-        $status = match (true) {
-            $statuses->isNotEmpty() && $statuses->every(fn (string $itemStatus) => $itemStatus === 'approved') => 'approved',
-            $statuses->contains('submitted') => 'partially_submitted',
-            $statuses->contains('revision_required') => 'revision_required',
-            $statuses->contains('approved') => 'in_progress',
-            default => 'draft',
-        };
-
-        DB::table('idps')->where('id', $idpId)->update([
-            'status' => $status,
-            'submitted_at' => $statuses->contains('submitted') ? now() : null,
-            'updated_at' => now(),
-        ]);
-    }
 }

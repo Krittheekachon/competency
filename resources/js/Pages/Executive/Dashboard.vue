@@ -163,7 +163,10 @@ const logout = () => router.post(route('logout'));
                     :set-page="(pageId) => (activePage = pageId)"
                 />
                 <EmployeeIDP v-else-if="activePage === 'employee-idp'" />
-                <EmployeeProgress v-else-if="activePage === 'employee-progress'" />
+                <EmployeeProgress
+                    v-else-if="activePage === 'employee-progress'"
+                    :activities="page.props.currentUserApprovedIdpActivities || []"
+                />
                 <EmployeeIDPDetail v-else-if="activePage === 'employee-idp-detail'" />
             </main>
         </section>

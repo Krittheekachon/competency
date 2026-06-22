@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\IdpItemReviewWorkflow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,24 +10,52 @@ use Illuminate\Validation\ValidationException;
 
 class IdpApprovalController extends Controller
 {
+    public function __construct(
+        private readonly IdpItemReviewWorkflow $reviewWorkflow
+    ) {
+    }
+
     public function approve(Request $request): RedirectResponse
     {
-        $item = $this->reviewableItem((int) $request->validate([
+        $validated = $request->validate([
             'idpItemId' => ['required', 'integer'],
-        ])['idpItemId']);
+            'comment' => ['nullable', 'string'],
+        ]);
 
-        DB::transaction(function () use ($item): void {
-            DB::table('idp_items')->where('id', $item->id)->update([
-                'status' => 'approved',
-                'approved_by' => auth()->id(),
-                'approved_at' => now(),
-                'rejected_by' => null,
-                'rejected_at' => null,
-                'reject_comment' => null,
-                'updated_at' => now(),
-            ]);
+        DB::transaction(function () use ($validated): void {
+            $item = $this->reviewableItem((int) $validated['idpItemId']);
+            $step = (int) $item->current_review_step;
+            $now = now();
 
-            $this->syncParentStatus((int) $item->idp_id);
+            $this->recordDecision(
+                $item,
+                $step,
+                'approved',
+                filled($validated['comment'] ?? null)
+                    ? trim($validated['comment'])
+                    : null,
+                $now
+            );
+
+            $nextStep = $this->reviewWorkflow->nextStep($item, $step);
+            DB::table('idp_items')->where('id', $item->id)->update($nextStep
+                ? [
+                    'status' => $this->reviewWorkflow->statusForStep($nextStep),
+                    'current_review_step' => $nextStep,
+                    'updated_at' => $now,
+                ]
+                : [
+                    'status' => 'approved',
+                    'current_review_step' => null,
+                    'approved_by' => auth()->id(),
+                    'approved_at' => $now,
+                    'rejected_by' => null,
+                    'rejected_at' => null,
+                    'reject_comment' => null,
+                    'updated_at' => $now,
+                ]);
+
+            $this->reviewWorkflow->syncParentStatus((int) $item->idp_id);
         });
 
         return back()->with('success', 'อนุมัติแผนสมรรถนะแล้ว');
@@ -38,20 +67,27 @@ class IdpApprovalController extends Controller
             'idpItemId' => ['required', 'integer'],
             'comment' => ['required', 'string'],
         ]);
-        $item = $this->reviewableItem((int) $validated['idpItemId']);
 
-        DB::transaction(function () use ($item, $validated): void {
+        DB::transaction(function () use ($validated): void {
+            $item = $this->reviewableItem((int) $validated['idpItemId']);
+            $step = (int) $item->current_review_step;
+            $comment = trim($validated['comment']);
+            $now = now();
+
+            $this->recordDecision($item, $step, 'rejected', $comment, $now);
+
             DB::table('idp_items')->where('id', $item->id)->update([
                 'status' => 'revision_required',
+                'current_review_step' => null,
                 'approved_by' => null,
                 'approved_at' => null,
                 'rejected_by' => auth()->id(),
-                'rejected_at' => now(),
-                'reject_comment' => trim($validated['comment']),
-                'updated_at' => now(),
+                'rejected_at' => $now,
+                'reject_comment' => $comment,
+                'updated_at' => $now,
             ]);
 
-            $this->syncParentStatus((int) $item->idp_id);
+            $this->reviewWorkflow->syncParentStatus((int) $item->idp_id);
         });
 
         return back()->with('success', 'ตีกลับแผนสมรรถนะให้แก้ไขแล้ว');
@@ -67,33 +103,43 @@ class IdpApprovalController extends Controller
                 'idp_items.id',
                 'idp_items.idp_id',
                 'idp_items.status',
-                'users.supervisor_id_1'
+                'idp_items.submission_version',
+                'idp_items.current_review_step',
+                'users.supervisor_id_1',
+                'users.supervisor_id_2',
+                'users.supervisor_id_3'
             )
+            ->lockForUpdate()
             ->first();
 
-        if (! $item || (int) $item->supervisor_id_1 !== (int) auth()->id() || $item->status !== 'submitted') {
+        if (! $item) {
             throw ValidationException::withMessages([
-                'idpItemId' => 'คุณไม่มีสิทธิ์ตรวจแผนสมรรถนะนี้ หรือแผนไม่ได้อยู่ในสถานะรอตรวจ',
+                'idpItemId' => 'ไม่พบแผนสมรรถนะ',
             ]);
         }
+
+        $this->reviewWorkflow->assertCurrentReviewer($item, (int) auth()->id());
 
         return $item;
     }
 
-    private function syncParentStatus(int $idpId): void
-    {
-        $statuses = DB::table('idp_items')->where('idp_id', $idpId)->pluck('status');
-        $status = match (true) {
-            $statuses->isNotEmpty() && $statuses->every(fn (string $itemStatus) => $itemStatus === 'approved') => 'approved',
-            $statuses->contains('submitted') => 'partially_submitted',
-            $statuses->contains('revision_required') => 'revision_required',
-            $statuses->contains('approved') => 'in_progress',
-            default => 'draft',
-        };
-
-        DB::table('idps')->where('id', $idpId)->update([
-            'status' => $status,
-            'updated_at' => now(),
+    private function recordDecision(
+        object $item,
+        int $step,
+        string $decision,
+        ?string $comment,
+        $decidedAt
+    ): void {
+        DB::table('idp_item_reviews')->insert([
+            'idp_item_id' => $item->id,
+            'submission_version' => $item->submission_version,
+            'review_step' => $step,
+            'reviewer_id' => auth()->id(),
+            'decision' => $decision,
+            'comment' => $comment,
+            'decided_at' => $decidedAt,
+            'created_at' => $decidedAt,
+            'updated_at' => $decidedAt,
         ]);
     }
 }

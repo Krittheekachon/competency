@@ -57,6 +57,7 @@ class DashboardController extends Controller
             'pendingIdpApprovals' => 0,
             'source' => 'database',
         ];
+        $approvedIdpActivities = $this->currentUserApprovedIdpActivities(auth()->user());
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
@@ -69,18 +70,21 @@ class DashboardController extends Controller
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
                 'idpDeliveryTypeSettings' => $this->idpDeliveryTypeSettings(),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dept_head' => Inertia::render('Head/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload(auth()->user()),
@@ -91,6 +95,7 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
                 'hrSummary' => [
@@ -118,6 +123,7 @@ class DashboardController extends Controller
                         'evalStatus' => 'draft',
                         'act' => true,
                     ]),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
                 'users' => $users,
@@ -130,6 +136,7 @@ class DashboardController extends Controller
                 'trainingNeedRows' => [],
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             default => Inertia::render('Dashboard'),
         };
@@ -1047,6 +1054,8 @@ class DashboardController extends Controller
                 'idp_items.goal',
                 'idp_items.success_criteria',
                 'idp_items.status',
+                'idp_items.submission_version',
+                'idp_items.current_review_step',
                 'idp_items.submitted_at',
                 'idp_items.approved_at',
                 'idp_items.reject_comment'
@@ -1086,6 +1095,10 @@ class DashboardController extends Controller
                     'goal' => $goal,
                     'successCriteria' => $successCriteria,
                     'status' => $first->status ?? 'draft',
+                    'submissionVersion' => (int) ($first->submission_version ?? 0),
+                    'currentReviewStep' => $first->current_review_step
+                        ? (int) $first->current_review_step
+                        : null,
                     'submittedAt' => $first->submitted_at,
                     'approvedAt' => $first->approved_at,
                     'rejectComment' => $first->reject_comment ?? '',
@@ -1132,12 +1145,22 @@ class DashboardController extends Controller
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
-            ->where('users.supervisor_id_1', $reviewer->id)
-            ->where('idp_items.status', 'submitted')
+            ->where(function ($query) use ($reviewer): void {
+                foreach ([1, 2, 3] as $step) {
+                    $method = $step === 1 ? 'where' : 'orWhere';
+                    $query->{$method}(function ($query) use ($reviewer, $step): void {
+                        $query->where("users.supervisor_id_{$step}", $reviewer->id)
+                            ->where('idp_items.current_review_step', $step)
+                            ->where('idp_items.status', "review_step_{$step}");
+                    });
+                }
+            })
             ->select(
                 'idp_items.id',
                 'idp_items.goal',
                 'idp_items.success_criteria',
+                'idp_items.submission_version',
+                'idp_items.current_review_step',
                 'idp_items.submitted_at',
                 'users.sso as user_sso',
                 'users.name as user_name',
@@ -1166,6 +1189,23 @@ class DashboardController extends Controller
             ->orderBy('idp_activities.id')
             ->get()
             ->groupBy('idp_item_id');
+        $history = DB::table('idp_item_reviews')
+            ->join('users', 'idp_item_reviews.reviewer_id', '=', 'users.id')
+            ->whereIn('idp_item_reviews.idp_item_id', $items->pluck('id'))
+            ->select(
+                'idp_item_reviews.idp_item_id',
+                'idp_item_reviews.submission_version',
+                'idp_item_reviews.review_step',
+                'idp_item_reviews.decision',
+                'idp_item_reviews.comment',
+                'idp_item_reviews.decided_at',
+                'users.name as reviewer_name',
+                'users.title as reviewer_title'
+            )
+            ->orderByDesc('idp_item_reviews.submission_version')
+            ->orderBy('idp_item_reviews.review_step')
+            ->get()
+            ->groupBy('idp_item_id');
 
         return $items->map(fn (object $item): array => [
             'id' => (int) $item->id,
@@ -1177,6 +1217,8 @@ class DashboardController extends Controller
             'competencyName' => $item->competency_name,
             'goal' => $item->goal ?: '',
             'successCriteria' => $item->success_criteria ?: '',
+            'submissionVersion' => (int) $item->submission_version,
+            'currentReviewStep' => (int) $item->current_review_step,
             'submittedAt' => $item->submitted_at,
             'activities' => ($activities[$item->id] ?? collect())
                 ->map(fn (object $activity): array => [
@@ -1190,7 +1232,66 @@ class DashboardController extends Controller
                 ])
                 ->values()
                 ->all(),
+            'reviewHistory' => ($history[$item->id] ?? collect())
+                ->map(fn (object $review): array => [
+                    'submissionVersion' => (int) $review->submission_version,
+                    'reviewStep' => (int) $review->review_step,
+                    'reviewerName' => trim(($review->reviewer_title ?: '').$review->reviewer_name),
+                    'decision' => $review->decision,
+                    'comment' => $review->comment ?: '',
+                    'decidedAt' => $review->decided_at,
+                ])
+                ->values()
+                ->all(),
         ])->values()->all();
+    }
+
+    private function currentUserApprovedIdpActivities(User $user): array
+    {
+        $latestUpdateIds = DB::table('idp_activity_updates')
+            ->selectRaw('MAX(id) as id, activity_id')
+            ->groupBy('activity_id');
+
+        return DB::table('idp_activities')
+            ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->leftJoinSub($latestUpdateIds, 'latest_update_ids', function ($join): void {
+                $join->on('idp_activities.id', '=', 'latest_update_ids.activity_id');
+            })
+            ->leftJoin('idp_activity_updates', 'latest_update_ids.id', '=', 'idp_activity_updates.id')
+            ->where('idps.user_id', $user->id)
+            ->where('idp_items.status', 'approved')
+            ->select(
+                'idp_activities.id',
+                'idp_activities.activity_name',
+                'idp_activities.start_date',
+                'idp_activities.end_date',
+                'competencies.code as competency_code',
+                'competencies.name as competency_name',
+                'idp_activity_updates.progress_note',
+                'idp_activity_updates.percent_complete',
+                'idp_activity_updates.evidence_url',
+                'idp_activity_updates.evidence_description'
+            )
+            ->orderBy('competencies.code')
+            ->orderBy('idp_activities.id')
+            ->get()
+            ->map(fn (object $activity): array => [
+                'id' => (int) $activity->id,
+                'competencyCode' => $activity->competency_code,
+                'competencyName' => $activity->competency_name,
+                'name' => $activity->activity_name,
+                'startDate' => $activity->start_date,
+                'endDate' => $activity->end_date,
+                'latestProgressNote' => $activity->progress_note ?? '',
+                'latestPercentComplete' => (int) ($activity->percent_complete ?? 0),
+                'latestEvidenceUrl' => $activity->evidence_url ?? '',
+                'latestEvidenceDescription' => $activity->evidence_description ?? '',
+            ])
+            ->values()
+            ->all();
     }
 
     private function activeRoundId(): ?int

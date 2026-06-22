@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\IdpController as EmployeeIdpController;
+use App\Http\Controllers\Employee\IdpActivityUpdateController;
 use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
@@ -83,6 +84,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/employee/idp/draft', [EmployeeIdpController::class, 'saveDraft'])->name('employee.idp.draft');
     Route::post('/employee/idp/submit', [EmployeeIdpController::class, 'submit'])->name('employee.idp.submit');
     Route::post('/employee/idp/submit-item', [EmployeeIdpController::class, 'submitItem'])->name('employee.idp.submit-item');
+    Route::post('/employee/idp-activities/progress', [IdpActivityUpdateController::class, 'store'])
+        ->name('employee.idp-activities.update-progress');
     Route::post('/idp-items/approve', [IdpApprovalController::class, 'approve'])->name('idp-items.approve');
     Route::post('/idp-items/reject', [IdpApprovalController::class, 'reject'])->name('idp-items.reject');
     Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');

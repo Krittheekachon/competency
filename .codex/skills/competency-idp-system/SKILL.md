@@ -58,7 +58,7 @@ Use these tables as the primary data ownership boundaries:
 | Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `hr_expectations` | Define competencies, expected levels, behaviors, and position assignments. |
 | Assessment | `assessments`, `assessment_indicator_results`, `scores` | Store competency assessments, checked behaviors, reviewer scores, decisions, and comments. |
 | Gap | `competency_gaps` | Store the approved result, expected level, actual level, level gap, and `requires_idp`. |
-| IDP plan | `idps`, `idp_items` | Store one yearly user plan and one plan item for each negative competency gap. |
+| IDP plan | `idps`, `idp_items`, `idp_item_reviews` | Store one user plan, one item for each negative competency gap, and append-only reviewer decisions. |
 | IDP activities | `idp_activities`, `idp_activity_updates` | Store multiple development activities and their progress updates or evidence. |
 | Development choices | `learning_method_types`, `idp_learning_methods`, `learning_catalogs`, `learning_catalog_competency`, `learning_catalog_delivery_types` | Supply experiential, social, and competency-filtered formal learning choices. |
 
@@ -67,7 +67,7 @@ Preserve these core business rules:
 - Calculate the canonical gap as `actual_level - expected_level`; create IDP only when the approved gap is negative.
 - Use one `idp_item` per failed competency, not per failed behavior indicator.
 - Allow many `idp_activities` under one item and require their total weight to equal 100% before submission.
-- Auto-save editable IDP items as drafts; never overwrite submitted or approved items.
+- Auto-save editable IDP items as drafts; never overwrite items under review or approved items.
 - Submit, approve, or reject each competency item separately. Other items may remain draft.
 - Require a rejection comment and return only that item to `revision_required`.
 - Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
@@ -173,16 +173,22 @@ Submit and approve IDP plans per competency item:
 ```text
 idp_items.status
   draft / revision_required
-  -> submitted
+  -> review_step_1
+  -> review_step_2
+  -> review_step_3
   -> approved
-  or revision_required when rejected
 ```
 
 - Permit an employee to submit one complete `idp_item` while other competency items remain draft.
-- Lock submitted and approved items against employee editing and background auto-save.
+- Resolve review steps from `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`, and skip slots that are not configured.
+- Lock every `review_step_N` and approved item against employee editing and background auto-save.
 - Continue auto-saving only editable draft or revision-required items.
-- Let the assigned supervisor approve or reject each submitted item independently.
+- Let only the reviewer assigned to the current step approve or reject the item.
+- Store every decision in `idp_item_reviews` with `submission_version`, review step, reviewer, decision, comment, and decision time.
 - Require a rejection comment and show it when the employee edits the returned item.
+- After rejection, return the item to `revision_required`; resubmission increments `submission_version` and restarts at the first configured reviewer.
+- Treat `submission_version` as the revision number of one IDP item, not as a competency assessment cycle.
+- Allow activity progress updates only after the item reaches final `approved`.
 - Derive the parent `idps.status` from its item statuses. Do not require every competency item to be ready before one item can be submitted.
 
 For every activity under an IDP item, require the user to select one learning focus:

@@ -1008,7 +1008,10 @@ const logout = () => router.post(route('logout'));
                     :learning-methods="learningMethods"
                 />
 
-                <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
+                <EmployeeProgress
+                    v-else-if="activePage === 'emp-progress'"
+                    :activities="page.props.currentUserApprovedIdpActivities || []"
+                />
 
                 <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 

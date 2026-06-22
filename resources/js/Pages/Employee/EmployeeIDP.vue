@@ -48,6 +48,8 @@ type Plan = {
   goal: string;
   successCriteria: string;
   status: string;
+  submissionVersion: number;
+  currentReviewStep: number | null;
   rejectComment: string;
   activities: Activity[];
 };
@@ -79,7 +81,9 @@ const activeTools = computed(() => (props.idpLearningMethods || []).filter((tool
 const activeCatalogs = computed(() => (props.learningCatalogs || []).filter((catalog) => catalog.isActive !== false));
 const selectedGap = computed(() => idpGaps.value.find((gap) => gap.id === selectedGapId.value) || null);
 const selectedPlan = computed(() => plans.value.find((plan) => plan.competencyGapId === selectedGapId.value) || null);
-const isPlanLocked = (plan: Plan | null) => ['submitted', 'approved'].includes(plan?.status || '');
+const isReviewStatus = (status: string) => /^review_step_[123]$/.test(status);
+const isPlanLocked = (plan: Plan | null) =>
+  plan?.status === 'approved' || isReviewStatus(plan?.status || '');
 const selectedPlanLocked = computed(() => isPlanLocked(selectedPlan.value));
 const errors = computed(() => page.props.errors || {});
 
@@ -107,6 +111,8 @@ const hydratePlans = () => {
       goal: item?.goal || '',
       successCriteria: item?.successCriteria || '',
       status: item?.status || 'draft',
+      submissionVersion: item?.submissionVersion || 0,
+      currentReviewStep: item?.currentReviewStep || null,
       rejectComment: item?.rejectComment || '',
       activities: (item?.activities || []).map((activity) => ({
         ...activity,
@@ -140,9 +146,11 @@ const catalogsFor = (gap: Gap) => activeCatalogs.value.filter((catalog) =>
   (catalog.competencyIds || []).includes(gap.competencyId));
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
 const planStatusLabel = (plan: Plan | null) => ({
-  submitted: 'รอหัวหน้าอนุมัติ',
-  approved: 'อนุมัติแล้ว',
-  revision_required: 'หัวหน้าตีกลับให้แก้ไข',
+  review_step_1: 'รอผู้อนุมัติลำดับ 1',
+  review_step_2: 'รอผู้อนุมัติลำดับ 2',
+  review_step_3: 'รอผู้อนุมัติลำดับ 3',
+  approved: 'อนุมัติครบทุกลำดับแล้ว',
+  revision_required: 'ตีกลับให้แก้ไข',
 }[plan?.status || ''] || 'ร่าง');
 
 const addActivity = (plan: Plan) => {
@@ -501,7 +509,8 @@ const submitSelectedPlan = () => {
     <footer v-if="idpGaps.length" class="submit-bar">
       <div>
         <strong>{{ selectedPlan ? `${selectedGap?.cd} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
-        <span>{{ selectedPlanLocked ? 'สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้' : 'ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก' }}</span>
+        <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
+        <span v-else>{{ selectedPlanLocked ? 'สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้' : 'ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก' }}</span>
       </div>
       <button type="button" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!planIssue(selectedPlan)" @click="submitSelectedPlan">
         {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : 'ส่งสมรรถนะนี้ให้หัวหน้า' }}
