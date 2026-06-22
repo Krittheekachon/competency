@@ -19,6 +19,7 @@ use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssign
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 use App\Http\Controllers\IdpApprovalController;
+use App\Services\NotificationService;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -37,6 +38,7 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
 if (app()->environment('local')) {
     Route::get('/mock-sso', [MockSsoController::class, 'showLogin'])->name('mock.sso');
     Route::post('/mock-sso', [MockSsoController::class, 'login'])->name('mock.sso.login');
+    Route::post('/mock-sso/test-notification', [MockSsoController::class, 'testNotification'])->name('mock.sso.test-notification');
 }
 
 Route::middleware('auth')->group(function () {
@@ -97,6 +99,14 @@ Route::middleware('auth')->group(function () {
     Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
     Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
     Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
+    Route::post('/hr/remind-assess', function (NotificationService $notifications) {
+        $notifications->remindPendingEmployees();
+
+        return back()->with('flash', [
+            'type' => 'success',
+            'message' => 'ส่งอีเมลแจ้งเตือนการประเมินตนเองแล้ว',
+        ]);
+    })->middleware('role:hr')->name('hr.remind-assess');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

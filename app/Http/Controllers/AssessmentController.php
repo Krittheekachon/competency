@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Assessment;
+use App\Models\User;
 use App\Services\ExpectedLevelResolver;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 class AssessmentController extends Controller
 {
-    public function __construct(private ExpectedLevelResolver $expectedLevelResolver)
+    public function __construct(
+        private ExpectedLevelResolver $expectedLevelResolver,
+        private NotificationService $notifications,
+    )
     {
     }
 
@@ -43,6 +48,11 @@ class AssessmentController extends Controller
         DB::transaction(function () use ($request, $data): void {
             $this->persistSelfAssessment($request, $data, true);
         });
+
+        $this->notifications->notifyFirstReviewerOnSubmit(
+            $request->user(),
+            $this->competencyName((int) $data['competency_id']),
+        );
 
         return back()->with('flash', [
             'type' => 'success',
@@ -109,6 +119,8 @@ class AssessmentController extends Controller
         $comment = trim((string) ($data['comment'] ?? ''));
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
+        $employee = User::findOrFail((int) $data['user_id']);
+        $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
 
         DB::transaction(function () use ($data, $decision, $request, $comment): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
@@ -145,6 +157,16 @@ class AssessmentController extends Controller
                     'updated_at' => now(),
                 ]);
         });
+
+        $this->notifications->notifyEmployeeStatusUpdate($employee, $decision['approved_status']);
+
+        if ($decision['approved_status'] !== 'approved') {
+            $this->notifications->notifyNextReviewerForAssessment(
+                $employee,
+                $competencyName,
+                $decision['approved_status'],
+            );
+        }
 
         return back();
     }
@@ -357,6 +379,17 @@ class AssessmentController extends Controller
             'manager_dept' => 'dept_head',
             default => $roleKey,
         };
+    }
+
+    private function competencyName(int $competencyId): string
+    {
+        if ($competencyId <= 0) {
+            return 'หลายสมรรถนะ';
+        }
+
+        return DB::table('competencies')
+            ->where('id', $competencyId)
+            ->value('name') ?? 'ไม่ระบุสมรรถนะ';
     }
 
     private function decisionContextForUser($reviewer, int $userId): array
