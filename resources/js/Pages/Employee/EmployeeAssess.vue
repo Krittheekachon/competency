@@ -47,6 +47,8 @@ const competencyStatusLabel = (item: any) => {
 };
 
 const draftStatusText = (item: any) => {
+  const status = competencyStatus(item);
+  if (!['draft', 'revision_required'].includes(status)) return '';
   const value = competencyDraftSavedAt.value[String(item?.id || '')] || item?.lastDraftSavedAt || '';
   const date = value ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) return '';
