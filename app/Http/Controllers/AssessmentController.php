@@ -186,6 +186,7 @@ class AssessmentController extends Controller
         }
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
+        $employee = User::findOrFail((int) $data['user_id']);
 
         DB::transaction(function () use ($data, $decision, $request, $comment): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
@@ -221,6 +222,8 @@ class AssessmentController extends Controller
                     'updated_at' => now(),
                 ]);
         });
+
+        $this->notifications->notifyEmployeeStatusUpdate($employee, 'revision_required', $comment);
 
         return back();
     }

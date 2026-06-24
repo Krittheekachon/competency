@@ -16,6 +16,11 @@ use Throwable;
 
 class NotificationService
 {
+    private const DEFAULT_TEST_RECIPIENT = 'krittheekachon.s@kkumail.com';
+    private const REVIEWER_1_RECIPIENT = 'krittheekachon.s@kkumail.com';
+    private const REVIEWER_2_3_RECIPIENT = 'chin172755@gmail.com';
+    private const EMPLOYEE_REVISION_RECIPIENT = 'polysaccc1351@gmail.com';
+
     public function notifyFirstReviewerOnSubmit(User $employee, string $competencyName): void
     {
         $employee->loadMissing('evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3');
@@ -27,6 +32,11 @@ class NotificationService
                 $employee->evaluatorLevel3,
             ])->first(),
             new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
+            $this->recipientForReviewer(collect([
+                $employee->evaluatorLevel1,
+                $employee->evaluatorLevel2,
+                $employee->evaluatorLevel3,
+            ])->first()),
         );
     }
 
@@ -44,6 +54,7 @@ class NotificationService
         $this->sendToUser(
             $reviewer,
             new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
+            $this->recipientForReviewer($reviewer),
         );
     }
 
@@ -120,11 +131,12 @@ class NotificationService
         );
     }
 
-    public function notifyEmployeeStatusUpdate(User $employee, string $status): void
+    public function notifyEmployeeStatusUpdate(User $employee, string $status, string $rejectComment = ''): void
     {
         $this->sendToUser(
             $employee,
-            new AssessmentStatusUpdateMail($employee, $status, $this->dashboardUrl()),
+            new AssessmentStatusUpdateMail($employee, $status, $this->dashboardUrl(), $rejectComment),
+            $this->recipientForEmployeeStatus($status),
         );
     }
 
@@ -182,20 +194,48 @@ class NotificationService
         });
     }
 
-    private function sendToUser(?User $user, $mailable): void
+    private function sendToUser(?User $user, $mailable, ?string $recipient = null): void
     {
-        if (! $user?->email) {
+        if (! $user) {
             return;
         }
 
         try {
-            Mail::to($user)->send($mailable);
+            Mail::to($recipient ?? self::DEFAULT_TEST_RECIPIENT)->send($mailable);
         } catch (Throwable $exception) {
             Log::warning('Unable to send notification email.', [
                 'user_id' => $user->id,
+                'recipient' => $recipient ?? self::DEFAULT_TEST_RECIPIENT,
                 'mail' => $mailable::class,
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function recipientForReviewer(?User $reviewer): string
+    {
+        $roleKey = $this->normalizeRoleKey($reviewer?->role?->key ?? $reviewer?->role_key ?? '');
+
+        return match ($roleKey) {
+            'supervisor' => self::REVIEWER_1_RECIPIENT,
+            'dept_head', 'dean' => self::REVIEWER_2_3_RECIPIENT,
+            default => self::DEFAULT_TEST_RECIPIENT,
+        };
+    }
+
+    private function recipientForEmployeeStatus(string $status): string
+    {
+        return $status === 'revision_required'
+            ? self::EMPLOYEE_REVISION_RECIPIENT
+            : self::DEFAULT_TEST_RECIPIENT;
+    }
+
+    private function normalizeRoleKey(string $roleKey): string
+    {
+        return match ($roleKey) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => $roleKey,
+        };
     }
 }

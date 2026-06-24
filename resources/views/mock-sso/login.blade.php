@@ -20,6 +20,8 @@
     .mail-grid form { margin: 0; }
     .mail-button { border: 1px solid #bbf7d0; border-radius: 6px; padding: 7px 9px; background: #f0fdf4; color: #15803d; font-size: 12px; font-weight: 800; cursor: pointer; }
     .mail-button:hover { background: #dcfce7; }
+    .danger-button { border: 1px solid #fecaca; border-radius: 6px; padding: 7px 9px; background: #fef2f2; color: #b91c1c; font-size: 12px; font-weight: 800; cursor: pointer; }
+    .danger-button:hover { background: #fee2e2; }
     .notice { margin-bottom: 16px; padding: 10px 12px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f0fdf4; color: #15803d; font-size: 13px; font-weight: 700; }
     .error { margin-bottom: 16px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-size: 13px; font-weight: 700; }
   </style>
@@ -88,7 +90,7 @@
       </div>
 
       <div class="mail-test">
-        <div class="mail-title">ทดสอบแจ้งเตือนตามบทบาท ไปที่ krittheekachon.s@kkumail.com</div>
+        <div class="mail-title">ทดสอบแจ้งเตือน reviewer 1 ไปที่ krittheekachon.s@kkumail.com · reviewer 2/3 ไปที่ chin172755@gmail.com</div>
         <div class="mail-grid">
           @foreach($mailTests as $type => $label)
             <form method="POST" action="{{ route('mock.sso.test-notification') }}">
@@ -98,6 +100,13 @@
               <button class="mail-button" type="submit">{{ $label }}</button>
             </form>
           @endforeach
+          @if($user['db_id'] === 36)
+            <form method="POST" action="{{ route('mock.sso.reset-assessment-flow') }}" onsubmit="return confirm('ล้างข้อมูลประเมินของนายซีอิ๊วขาว เด็กสมบูรณ์ ใช่ไหม');">
+              @csrf
+              <input type="hidden" name="user_id" value="{{ $user['db_id'] }}">
+              <button class="danger-button" type="submit">ล้าง flow การประเมิน</button>
+            </form>
+          @endif
         </div>
       </div>
     </div>

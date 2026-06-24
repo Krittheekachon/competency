@@ -17,6 +17,7 @@ class AssessmentStatusUpdateMail extends Mailable
         public User $employee,
         public string $status,
         public string $actionUrl,
+        public string $rejectComment = '',
     ) {
     }
 
@@ -35,6 +36,7 @@ class AssessmentStatusUpdateMail extends Mailable
                 'employee' => $this->employee,
                 'status' => $this->status,
                 'actionUrl' => $this->actionUrl,
+                'rejectComment' => $this->rejectComment,
             ],
         );
     }

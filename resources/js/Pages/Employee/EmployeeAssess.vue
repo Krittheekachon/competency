@@ -28,19 +28,22 @@ const suppressAutoSave = ref(false);
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isLockedStatus = (status: string) => !['draft', 'revision_required'].includes(status);
-const isApprovedStatus = (status: string) => ['unit_evaluated', 'dept_evaluated', 'approved', 'dean_approved'].includes(status);
+const isFinalApprovedStatus = (status: string) => ['approved', 'dean_approved'].includes(status);
+const isReviewInProgressStatus = (status: string) => ['unit_evaluated', 'dept_evaluated'].includes(status);
 const competencyStatus = (item: any) => competencyStatuses.value[String(item?.id || '')] || item?.assessmentStatus || 'draft';
 const submittedAssessmentCount = computed(() =>
   assignedCompetencies.value.reduce((total: number, item: any) => {
     const status = competencyStatus(item);
     if (status === 'revision_required') return total - 1;
-    if (status === 'self_submitted' || isApprovedStatus(status)) return total + 1;
+    if (status === 'self_submitted' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
     return total;
   }, 0),
 );
 const competencyStatusLabel = (item: any) => {
   const status = competencyStatus(item);
-  if (isApprovedStatus(status)) return 'อนุมัติแล้ว';
+  if (status === 'unit_evaluated') return 'หัวหน้างานอนุมัติผลการประเมิน รอการตรวจสอบจากผู้บังคับบัญชา';
+  if (status === 'dept_evaluated') return 'ผู้บังคับบัญชาอนุมัติผลการประเมิน รอการตรวจสอบขั้นถัดไป';
+  if (isFinalApprovedStatus(status)) return 'อนุมัติแล้ว';
   if (status === 'self_submitted') return 'รออนุมัติ';
   if (status === 'revision_required') return 'ส่งกลับแก้ไข';
   return '';
@@ -221,7 +224,19 @@ const currentScore = computed(() => (selectedIndicators.value * 0.25).toFixed(2)
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
-const isSelectedCompetencyApproved = computed(() => isApprovedStatus(selectedCompetencyStatus.value));
+const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
+const selectedCompetencyStatusCopy = computed(() => {
+  if (selectedCompetencyStatus.value === 'unit_evaluated') {
+    return 'รอการตรวจสอบจากผู้บังคับบัญชา';
+  }
+  if (selectedCompetencyStatus.value === 'dept_evaluated') {
+    return 'รอการตรวจสอบขั้นถัดไป';
+  }
+  if (isFinalApprovedStatus(selectedCompetencyStatus.value)) {
+    return 'อนุมัติแล้ว';
+  }
+  return '';
+});
 const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
 
 const flattenedIndicators = computed(() => {
@@ -315,8 +330,8 @@ onBeforeUnmount(() => {
           :key="item.id"
           class="competency-row"
           :class="{
-            'status-approved': isApprovedStatus(competencyStatus(item)),
-            'status-pending': competencyStatus(item) === 'self_submitted',
+            'status-approved': isFinalApprovedStatus(competencyStatus(item)),
+            'status-pending': competencyStatus(item) === 'self_submitted' || isReviewInProgressStatus(competencyStatus(item)),
             'status-revision': competencyStatus(item) === 'revision_required',
             'status-draft': competencyStatus(item) === 'draft',
           }"
@@ -332,8 +347,8 @@ onBeforeUnmount(() => {
               v-if="competencyStatusLabel(item)"
               class="assessment-status"
               :class="{
-                approved: isApprovedStatus(competencyStatus(item)),
-                pending: competencyStatus(item) === 'self_submitted',
+                approved: isFinalApprovedStatus(competencyStatus(item)),
+                pending: competencyStatus(item) === 'self_submitted' || isReviewInProgressStatus(competencyStatus(item)),
                 revision: competencyStatus(item) === 'revision_required'
               }"
             >
@@ -360,9 +375,11 @@ onBeforeUnmount(() => {
             </div>
             <h2>{{ selectedCompetency.n }}</h2>
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
-            <p v-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
-          <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว จะแก้ไขได้เมื่อผู้บังคับบัญชาส่งกลับมาแก้ไข</p>
-          <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
+            <p v-if="selectedCompetencyStatus === 'unit_evaluated'" class="approved-copy">หัวหน้างานอนุมัติผลการประเมินแล้ว รอการตรวจสอบจากผู้บังคับบัญชา</p>
+            <p v-else-if="selectedCompetencyStatus === 'dept_evaluated'" class="approved-copy">ผู้บังคับบัญชาอนุมัติผลการประเมินแล้ว รอการตรวจสอบขั้นถัดไป</p>
+            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
+            <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว จะแก้ไขได้เมื่อผู้บังคับบัญชาส่งกลับมาแก้ไข</p>
+            <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
           </div>
           <button class="btn btn-s btn-sm" type="button" @click="closeCompetencyDetail">ปิด</button>
         </div>
@@ -466,7 +483,7 @@ onBeforeUnmount(() => {
             </small>
           </div>
           <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked" @click="openSubmitConfirm">
-            {{ isSelectedCompetencyApproved ? 'อนุมัติแล้ว' : (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
+            {{ selectedCompetencyStatusCopy || (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>
         </div>

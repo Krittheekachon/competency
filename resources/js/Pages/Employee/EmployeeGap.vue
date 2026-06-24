@@ -12,14 +12,24 @@ const passedRows = computed(() => rows.value.filter((row) => Number(row.gap) >= 
 const failedRows = computed(() => rows.value
   .filter((row) => Number(row.gap) < 0)
   .sort((a, b) => Number(a.gap) - Number(b.gap)));
-const isGapConfirmed = computed(() =>
-  ['unit_evaluated', 'dept_evaluated', 'dean_approved'].includes(props.evalStatus || '')
-);
-const gapStatusLabel = computed(() =>
-  isGapConfirmed.value
-    ? 'Gap (ยืนยันแล้ว)'
-    : 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้างาน'
-);
+const isFinalApproved = computed(() => ['approved', 'dean_approved'].includes(props.evalStatus || ''));
+const gapStatusLabel = computed(() => {
+  if (props.evalStatus === 'unit_evaluated') {
+    return 'หัวหน้างานอนุมัติผลการประเมินแล้ว — รอการตรวจสอบจากผู้บังคับบัญชา';
+  }
+  if (props.evalStatus === 'dept_evaluated') {
+    return 'ผู้บังคับบัญชาอนุมัติผลการประเมินแล้ว — รอการตรวจสอบขั้นถัดไป';
+  }
+  if (isFinalApproved.value) {
+    return 'Gap (ยืนยันครบทุกลำดับแล้ว)';
+  }
+
+  return 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้างาน';
+});
+const developmentStatusLabel = (row: any) => {
+  if (Number(row.gap) >= 0) return 'ผ่านเกณฑ์';
+  return isFinalApproved.value ? 'เข้า IDP' : 'รอผลอนุมัติ';
+};
 
 const formatLevel = (value: unknown) => {
   if (value === null || value === undefined || value === '') return '-';
@@ -46,7 +56,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
       <div>
         <h1>ผลการประเมิน</h1>
         <p>คำนวณจากคะแนนการประเมินตนเองลบด้วยค่าความคาดหวัง</p>
-        <span class="gap-status-badge" :class="{ confirmed: isGapConfirmed }">
+        <span class="gap-status-badge" :class="{ confirmed: isFinalApproved }">
           {{ gapStatusLabel }}
         </span>
       </div>
@@ -97,7 +107,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
       <div class="section-head">
         <div>
           <h2>สมรรถนะที่ไม่ผ่านเกณฑ์</h2>
-          <p>เรียงจาก Gap ติดลบมากไปน้อย เพื่อส่งต่อไปสร้าง IDP</p>
+          <p>{{ isFinalApproved ? 'เรียงจาก Gap ติดลบมากไปน้อย เพื่อส่งต่อไปสร้าง IDP' : 'แสดงรายการที่อาจต้องพัฒนา เมื่ออนุมัติครบทุกลำดับแล้วจึงจะจัดทำ IDP ได้' }}</p>
         </div>
         <span>{{ failedRows.length }} รายการ</span>
       </div>
@@ -176,7 +186,7 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
               </td>
               <td>
                 <span class="status-pill" :class="{ failed: Number(row.gap) < 0, passed: Number(row.gap) >= 0 }">
-                  {{ Number(row.gap) < 0 ? 'เข้า IDP' : 'ผ่านเกณฑ์' }}
+                  {{ developmentStatusLabel(row) }}
                 </span>
               </td>
             </tr>

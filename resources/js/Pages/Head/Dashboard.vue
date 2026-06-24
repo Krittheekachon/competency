@@ -346,40 +346,61 @@ const assessCounts = computed(() => ({
     forwarded: teamMembers.value.filter((user) => ['unit_evaluated', 'dept_evaluated'].includes(user.evalStatus)).length,
     done: teamMembers.value.filter((user) => user.evalStatus === 'approved').length,
 }));
-const supervisorApprovalStatus = (person) => {
-    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
-    if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
-    if (person.evalStatus === 'approved') return { label: 'อนุมัติแล้ว', cls: 'bg' };
+const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
+const reviewerStepCountForUser = (user) => [1, 2, 3].filter((step) => Number(user?.[`supervisor_id_${step}`])).length;
+const reviewProgressLabel = (completed, total) => `ตรวจสอบแล้ว ${completed}/${total}`;
+const reviewedStatusesForStep = (step) => ({
+    1: ['revision_required', 'unit_evaluated', 'dept_evaluated', 'approved'],
+    2: ['revision_required', 'dept_evaluated', 'approved'],
+    3: ['revision_required', 'approved'],
+}[step] || ['approved']);
+const isReviewedByStep = (status, step) => reviewedStatusesForStep(step).includes(normalizeAssessmentStatus(status));
+const assessmentReviewProgress = (person, results = []) => {
+    const rows = Array.isArray(results) ? results : [];
+    const step = reviewerStepForUser(person);
+    const total = rows.length;
 
-    const currentStep = reviewerStepForUser(person);
+    if (!total) return { completed: 0, total: 0 };
 
-    if (person.evalStatus === pendingStatusForReviewerStep(currentStep)) {
-        return { label: 'รอตรวจสอบ (คุณ)', cls: 'by' };
-    }
-
-    const labels = {
-        self_submitted: 'รอผู้ประเมินลำดับ 1 ตรวจ',
-        unit_evaluated: 'รอผู้ประเมินลำดับ 2 ตรวจ',
-        dept_evaluated: 'รอผู้ประเมินลำดับ 3 ตรวจ',
+    return {
+        completed: rows.filter((row) => row.hasAssessment && isReviewedByStep(row.status, step)).length,
+        total,
     };
+};
+const supervisorApprovalStatus = (person, results = []) => {
+    const progress = assessmentReviewProgress(person, results);
 
-    if (labels[person.evalStatus]) return { label: labels[person.evalStatus], cls: 'bt' };
+    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    if (progress.total) {
+        return {
+            label: reviewProgressLabel(progress.completed, progress.total),
+            cls: person.evalStatus === 'revision_required'
+                ? 'br'
+                : (progress.completed >= progress.total ? 'bg' : 'by'),
+        };
+    }
 
     return { label: person.evalStatus, cls: 'bgr' };
 };
 const competencyApprovalStatus = (row) => {
-    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
-    if (row.status === 'revision_required') return { label: 'รอประเมินอีกรอบ', cls: 'br' };
-    if (row.status === selectedSupervisorApproval.value?.approvalExpectedStatus) return { label: 'รอตรวจสอบ', cls: 'by' };
-    if (row.status === 'approved') return { label: 'อนุมัติแล้ว', cls: 'bg' };
+    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    const completed = isReviewedByStep(row.status, row.reviewStep) ? 1 : 0;
 
-    return { label: 'ส่งต่อแล้ว', cls: 'bt' };
+    return {
+        label: reviewProgressLabel(completed, 1),
+        cls: row.status === 'revision_required' ? 'br' : (completed ? 'bg' : 'by'),
+    };
 };
 const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
-    const results = gapResultRows(person);
+    const reviewStep = reviewerStepForUser(person);
+    const approvalTotalSteps = reviewerStepCountForUser(person);
+    const results = gapResultRows(person).map((row) => ({
+        ...row,
+        reviewStep,
+        approvalTotalSteps,
+    }));
     const hasSubmittedAssessment = results.some((row) => row.hasAssessment) || (person.evalStatus && person.evalStatus !== 'draft');
     const hasReviewableCompetencies = results.length > 0;
-    const reviewStep = reviewerStepForUser(person);
     const approvalExpectedStatus = pendingStatusForReviewerStep(reviewStep);
     const approvalNextStatus = reviewStep ? nextStatusAfterReviewerStep(person, reviewStep) : null;
 
@@ -389,9 +410,10 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         reviewStep,
         approvalExpectedStatus,
         approvalNextStatus,
+        approvalTotalSteps,
         hasSubmittedAssessment,
         hasReviewableCompetencies,
-        statusMeta: supervisorApprovalStatus(person),
+        statusMeta: supervisorApprovalStatus(person, results),
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
@@ -540,11 +562,11 @@ const gapScoreFor = (person, comp, key, fallback) => {
     const values = person?.competencyScores || person?.scores || person?.assessmentScores || {};
     return Number(values?.[comp.id]?.[key] ?? values?.[`${comp.id}_${key}`] ?? comp[key] ?? fallback);
 };
-const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
 const competencyIdentity = (row) => String(row?.competencyId || row?.competency_id || row?.id || row?.code || row?.title || '');
 
 const gapResultRows = (person) => {
     if (!person) return [];
+    const assessmentStatusFromAssigned = (row) => normalizeAssessmentStatus(row.assessmentStatus || row.status);
     const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => ({
         id: row.id || row.competency_id || row.name || row.title,
         competencyId: row.competencyId || row.competency_id || row.id || null,
@@ -557,13 +579,14 @@ const gapResultRows = (person) => {
         gap: null,
         feedback: '',
         note: '',
+        reviewerComment: row.reviewerComment || row.rejectComment || '',
         levels: row.levels || [],
         checkedIndicatorKeys: [],
         checkedIndicatorCount: 0,
         updatedAt: '',
         failed: false,
-        status: 'draft',
-        hasAssessment: false,
+        status: assessmentStatusFromAssigned(row),
+        hasAssessment: assessmentStatusFromAssigned(row) !== 'draft',
     })) : [];
     const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
@@ -582,8 +605,9 @@ const gapResultRows = (person) => {
                 selfScore,
                 headScore,
                 gap,
-                feedback: row.feedback || row.note || '',
-                note: row.note || row.feedback || '',
+                feedback: row.feedback || '',
+                note: row.note || '',
+                reviewerComment: row.reviewerComment || row.evaluatorComment || row.rejectComment || '',
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
@@ -899,7 +923,7 @@ const submitApprovalDecision = () => {
                     ? (() => {
                         const competencyGaps = (user.competencyGaps || []).map((gap) =>
                             Number(competencyIdentity(gap)) === Number(competencyIdentity(competency))
-                                ? { ...gap, status: nextStatus, note: comment, reviewerComment: comment }
+                                ? { ...gap, status: nextStatus, reviewerComment: comment }
                                 : gap,
                         );
                         reviewerComments.value[approvalCommentKey(competency)] = comment;
@@ -1484,15 +1508,16 @@ const logout = () => router.post(route('logout'));
                                                 </div>
                                             </div>
                                             <div class="approval-comment-box">
-                                                <div class="fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
+                                                <div class="fs12 fw8">Note จากผู้ประเมินตนเอง</div>
                                                 <div>{{ row.note || 'ไม่มี Note' }}</div>
                                             </div>
                                             <label class="approval-reviewer-comment">
-                                                <span>Comment จากผู้ประเมิน</span>
+                                                <span>Comment จากผู้บังคับบัญชา</span>
                                                 <textarea
-                                                    v-model="reviewerComments[approvalCommentKey(row)]"
+                                                    :value="reviewerComments[approvalCommentKey(row)] ?? row.reviewerComment ?? ''"
                                                     rows="3"
                                                     :disabled="!canDecideSupervisorCompetency(row)"
+                                                    @input="reviewerComments[approvalCommentKey(row)] = $event.target.value"
                                                     placeholder="พิมพ์ข้อเสนอแนะสำหรับสมรรถนะนี้ หากไม่อนุมัติต้องกรอกเหตุผลก่อน"
                                                 ></textarea>
                                             </label>
