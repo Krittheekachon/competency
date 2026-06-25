@@ -107,8 +107,8 @@ const reject = (item) => {
             </details>
 
             <footer>
-                <button class="reject" type="button" :disabled="processingId === item.id" @click="reject(item)">ตีกลับให้แก้ไข</button>
-                <button class="approve" type="button" :disabled="processingId === item.id" @click="approve(item)">อนุมัติสมรรถนะนี้</button>
+                <button class="reject" type="button" :disabled="processingId === item.id" @click="reject(item)">ไม่อนุมัติ</button>
+                <button class="approve" type="button" :disabled="processingId === item.id" @click="approve(item)">อนุมัติ</button>
             </footer>
         </article>
     </section>

@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Assessment;
 use App\Models\User;
+use App\Mail\AssessmentStatusUpdateMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -159,13 +161,18 @@ class AssessmentReviewerChainTest extends TestCase
         $reviewer = User::factory()->create([
             'role_id' => $this->roleId('supervisor'),
         ]);
+        $nextReviewer = User::factory()->create([
+            'role_id' => $this->roleId('dept_head'),
+        ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'supervisor_id_1' => $reviewer->id,
+            'supervisor_id_2' => $nextReviewer->id,
         ]);
         $firstCompetencyId = $this->competencyId('CC-REJECT');
         $secondCompetencyId = $this->competencyId('CC-STAY');
         $firstAssessment = $this->assessment($employee, $firstCompetencyId, 'self_submitted');
+        $firstAssessment->forceFill(['note' => 'ประเมินตนเองไว้ก่อนส่งหัวหน้า'])->save();
         $secondAssessment = $this->assessment($employee, $secondCompetencyId, 'self_submitted');
         $rejectComment = trim(str_repeat('ควรประเมินใหม่พร้อมเหตุผลละเอียด ', 12));
 
@@ -180,6 +187,7 @@ class AssessmentReviewerChainTest extends TestCase
         $this->assertDatabaseHas('assessments', [
             'id' => $firstAssessment->id,
             'status' => 'revision_required',
+            'note' => 'ประเมินตนเองไว้ก่อนส่งหัวหน้า',
         ]);
         $this->assertDatabaseHas('assessments', [
             'id' => $secondAssessment->id,
@@ -207,6 +215,46 @@ class AssessmentReviewerChainTest extends TestCase
             ->assertJsonPath('status', 'revision_required')
             ->assertJsonPath('reject_comment', $rejectComment)
             ->assertJsonPath('locked', false);
+    }
+
+    public function test_supervisor_approval_mail_uses_intermediate_status_copy(): void
+    {
+        Mail::fake();
+
+        $reviewer = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $nextReviewer = User::factory()->create([
+            'role_id' => $this->roleId('dept_head'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'supervisor_id_1' => $reviewer->id,
+            'supervisor_id_2' => $nextReviewer->id,
+        ]);
+        $competencyId = $this->competencyId('CC-MAIL');
+        $this->assessment($employee, $competencyId, 'self_submitted');
+
+        $this->actingAs($reviewer)
+            ->post(route('assessments.approve'), [
+                'user_id' => $employee->id,
+                'competency_id' => $competencyId,
+            ])
+            ->assertSessionHasNoErrors();
+
+        Mail::assertSent(AssessmentStatusUpdateMail::class, function (AssessmentStatusUpdateMail $mail) {
+            if ($mail->status !== 'unit_evaluated') {
+                return false;
+            }
+
+            $rendered = $mail->render();
+
+            $this->assertStringContainsString('หัวหน้างานอนุมัติผลการประเมินแล้ว', $rendered);
+            $this->assertStringContainsString('รอการตรวจสอบจากผู้บังคับบัญชา', $rendered);
+            $this->assertStringNotContainsString('สามารถเริ่มทำแผนพัฒนารายบุคคล (IDP) ได้', $rendered);
+
+            return true;
+        });
     }
 
     public function test_self_assessment_stores_checked_indicators_separately_from_evidence(): void

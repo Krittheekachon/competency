@@ -10,6 +10,8 @@ const props = defineProps<{
 const selectedUser = ref<any | null>(null);
 const openedCompetencyKey = ref<string | null>(null);
 const processingUserId = ref<number | null>(null);
+const rejectDecision = ref<{ user: any; row: any } | null>(null);
+const rejectNote = ref('');
 
 const evaluatorLevel = (user: any) => {
   const currentUserId = Number(props.currentUserId || 0);
@@ -59,6 +61,9 @@ const approvedRows = computed(() => rows.value.filter((user) => user.evalStatus 
 const canApprove = (user: any) =>
   Boolean(user?.db_id) && user.evalStatus === expectedStatus(user);
 
+const canApproveCompetency = (user: any, row: any) =>
+  Boolean(user?.db_id) && row?.hasAssessment && row?.status === expectedStatus(user);
+
 const statusMeta = (user: any) => {
   if (canApprove(user)) return { label: 'รอตรวจ', cls: 'pending' };
   if (!user?.evalStatus || user.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'muted' };
@@ -68,6 +73,21 @@ const statusMeta = (user: any) => {
   if (user.evalStatus === 'dept_evaluated') return { label: evaluatorLevel(user) === 3 ? 'รอตรวจ' : 'รอคณบดีอนุมัติ', cls: 'pending' };
   if (user.evalStatus === 'dean_approved') return { label: 'ปิดรอบประเมินแล้ว', cls: 'success' };
   return { label: user.evalStatus, cls: 'muted' };
+};
+
+const approvalProgressMeta = (user: any) => {
+  const submittedRows = (user.results || []).filter((row: any) => row.hasAssessment);
+  if (submittedRows.length === 0) {
+    return { label: 'ยังไม่ได้รับผลการประเมิน', cls: 'muted' };
+  }
+
+  const expected = expectedStatus(user);
+  const reviewedRows = submittedRows.filter((row: any) => row.status && row.status !== expected);
+
+  return {
+    label: `ประเมิน ${reviewedRows.length}/${submittedRows.length}`,
+    cls: reviewedRows.length === submittedRows.length ? 'success' : 'pending',
+  };
 };
 
 function assessmentRows(user: any) {
@@ -103,25 +123,34 @@ const totalIndicatorCount = (row: any) => {
     .reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0);
 };
 
+const competencyIdentity = (row: any) => row.competencyId || row.competency_id || row.id || row.code || row.title;
+
 const checkedIndicatorKey = (row: any, level: any, index: number) =>
-  `${row.id}:${level.id || level.lvl}:${index}`;
+  `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
 
 const checkedIndicatorSet = (row: any) => new Set(row.checkedIndicatorKeys || []);
 
-const checkedIndicatorsForLevel = (row: any, level: any) =>
+const indicatorsForLevel = (row: any, level: any) =>
   (level.indicators || [])
-    .map((indicator: string, index: number) => ({ indicator, index }))
-    .filter(({ index }: any) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index)));
+    .map((indicator: string, index: number) => ({
+      indicator,
+      index,
+      checked: checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index)),
+    }));
 
 const checkedLevelsForRow = (row: any) =>
   (row.levels || [])
-    .map((level: any) => ({
-      ...level,
-      checkedIndicators: checkedIndicatorsForLevel(row, level),
-    }))
-    .filter((level: any) => level.checkedIndicators.length > 0);
+    .map((level: any) => {
+      const indicators = indicatorsForLevel(row, level);
+      return {
+        ...level,
+        visibleIndicators: indicators,
+        checkedIndicators: indicators.filter((item: any) => item.checked),
+      };
+    })
+    .filter((level: any) => level.visibleIndicators.length > 0);
 
-const competencyKey = (row: any) => String(row.id || row.code || row.title);
+const competencyKey = (row: any) => String(competencyIdentity(row));
 
 const toggleCompetency = (row: any) => {
   if (!row.hasAssessment) return;
@@ -139,32 +168,69 @@ const closeModal = () => {
   if (processingUserId.value) return;
   selectedUser.value = null;
   openedCompetencyKey.value = null;
+  rejectDecision.value = null;
+  rejectNote.value = '';
 };
 
-const approve = (user: any) => {
-  if (!canApprove(user) || processingUserId.value) return;
+const approve = (user: any, row: any) => {
+  if (!canApproveCompetency(user, row) || processingUserId.value) return;
 
   processingUserId.value = Number(user.db_id);
   router.post(route('assessments.approve'), {
     user_id: user.db_id,
+    competency_id: row.competencyId || row.competency_id || row.id,
   }, {
     preserveScroll: true,
-    onSuccess: closeModal,
+    preserveState: true,
+    only: [],
+    onSuccess: () => {
+      selectedUser.value = {
+        ...selectedUser.value,
+        results: (selectedUser.value?.results || []).map((item: any) =>
+          String(competencyIdentity(item)) === String(competencyIdentity(row)) ? { ...item, status: nextStatus(user) } : item),
+      };
+    },
     onFinish: () => {
       processingUserId.value = null;
     },
   });
 };
 
-const reject = (user: any) => {
-  if (!canApprove(user) || processingUserId.value) return;
+const reject = (user: any, row: any) => {
+  if (!canApproveCompetency(user, row) || processingUserId.value) return;
+  rejectDecision.value = { user, row };
+  rejectNote.value = '';
+};
+
+const closeRejectDecision = () => {
+  if (processingUserId.value) return;
+  rejectDecision.value = null;
+  rejectNote.value = '';
+};
+
+const submitReject = () => {
+  const user = rejectDecision.value?.user;
+  const row = rejectDecision.value?.row;
+  if (!user || !row || !canApproveCompetency(user, row) || processingUserId.value) return;
 
   processingUserId.value = Number(user.db_id);
   router.post(route('assessments.reject'), {
     user_id: user.db_id,
+    competency_id: row.competencyId || row.competency_id || row.id,
+    reject_note: rejectNote.value,
   }, {
     preserveScroll: true,
-    onSuccess: closeModal,
+    preserveState: true,
+    only: [],
+    onSuccess: () => {
+      selectedUser.value = {
+        ...selectedUser.value,
+        results: (selectedUser.value?.results || []).map((item: any) =>
+          String(competencyIdentity(item)) === String(competencyIdentity(row)) ? { ...item, status: 'revision_required' } : item),
+      };
+      rejectDecision.value = null;
+      rejectNote.value = '';
+    },
     onFinish: () => {
       processingUserId.value = null;
     },
@@ -236,8 +302,8 @@ const reject = (user: any) => {
               <td>{{ user.p || 'ยังไม่ระบุตำแหน่ง' }}</td>
               <td>{{ user.submittedAt }}</td>
               <td>
-                <span class="approval-status-pill" :class="statusMeta(user).cls">
-                  {{ statusMeta(user).label }}
+                <span class="approval-status-pill" :class="approvalProgressMeta(user).cls">
+                  {{ approvalProgressMeta(user).label }}
                 </span>
               </td>
             </tr>
@@ -268,17 +334,37 @@ const reject = (user: any) => {
               :class="{ disabled: !row.hasAssessment }"
             >
               <h3>{{ row.code }}</h3>
-              <p>ระดับคาดหวัง {{ row.expected ?? '-' }} (คิดเป็นพฤติกรรมบ่งชี้ {{ expectedCount(row) }} ข้อ)</p>
+              <div class="approval-score-meta">
+                <span>ระดับ {{ row.expected ?? '-' }}</span>
+                <span>{{ expectedCount(row) }} พฤติกรรมบ่งชี้</span>
+              </div>
               <template v-if="row.hasAssessment">
-                <span>Gap</span>
-                <strong :class="{ danger: gapValue(row) < 0 }">{{ gapValue(row) > 0 ? '+' : '' }}{{ gapValue(row) }}</strong>
-                <em :class="{ danger: gapValue(row) < 0 }">{{ gapValue(row) < 0 ? 'ต่ำกว่าเกณฑ์ที่คาดหวัง' : 'ผ่านตามเกณฑ์' }}</em>
+                <div class="approval-gap-row">
+                  <span>Gap</span>
+                  <strong
+                    :class="{
+                      negative: gapValue(row) < 0,
+                      positive: gapValue(row) > 0,
+                      neutral: gapValue(row) === 0,
+                    }"
+                  >{{ gapValue(row) > 0 ? '+' : '' }}{{ gapValue(row) }}</strong>
+                </div>
+                <em
+                  :class="{
+                    negative: gapValue(row) < 0,
+                    positive: gapValue(row) > 0,
+                    neutral: gapValue(row) === 0,
+                  }"
+                >{{ gapValue(row) < 0 ? 'ต่ำกว่าเกณฑ์' : 'ผ่านเกณฑ์' }}</em>
               </template>
               <template v-else>
-                <span>ยังไม่ประเมิน</span>
-                <strong>-</strong>
+                <div class="approval-gap-row muted">
+                  <span>Gap</span>
+                  <strong>-</strong>
+                </div>
+                <em class="neutral">ยังไม่ประเมิน</em>
               </template>
-              <small>ประเมินได้ {{ actualCount(row) }} ข้อ / คาดหวัง {{ expectedCount(row) }} ข้อ</small>
+              <small>{{ actualCount(row) }}/{{ expectedCount(row) }} ข้อ</small>
             </article>
           </div>
 
@@ -292,11 +378,12 @@ const reject = (user: any) => {
             class="approval-competency-card"
             :class="{ disabled: !row.hasAssessment }"
           >
-            <button
+            <div
               class="approval-competency-head"
               :class="{ open: openedCompetencyKey === competencyKey(row), disabled: !row.hasAssessment }"
-              type="button"
-              :disabled="!row.hasAssessment"
+              role="button"
+              tabindex="0"
+              :aria-disabled="!row.hasAssessment"
               :aria-expanded="openedCompetencyKey === competencyKey(row)"
               @click="toggleCompetency(row)"
             >
@@ -308,8 +395,29 @@ const reject = (user: any) => {
               <span class="approval-competency-meta">
                 <span>ระดับคาดหวัง {{ row.expected ?? '-' }}</span>
                 <strong>ประเมินได้ {{ actualCount(row) }}/{{ expectedCount(row) }} ข้อ</strong>
+                <span v-if="!canApproveCompetency(selectedUser, row)" class="approval-row-status">
+                  {{ row.status === 'revision_required' ? 'ส่งกลับแก้ไขแล้ว' : row.status === nextStatus(selectedUser) ? 'อนุมัติแล้ว' : 'ยังไม่พร้อมอนุมัติ' }}
+                </span>
+                <span v-else class="approval-row-actions" @click.stop>
+                  <button
+                    class="approval-row-button reject"
+                    type="button"
+                    :disabled="processingUserId === Number(selectedUser.db_id)"
+                    @click="reject(selectedUser, row)"
+                  >
+                    ส่งกลับแก้ไข
+                  </button>
+                  <button
+                    class="approval-row-button approve"
+                    type="button"
+                    :disabled="processingUserId === Number(selectedUser.db_id)"
+                    @click="approve(selectedUser, row)"
+                  >
+                    อนุมัติ
+                  </button>
+                </span>
               </span>
-            </button>
+            </div>
 
             <div v-if="openedCompetencyKey === competencyKey(row)" class="approval-accordion-body">
               <section
@@ -323,17 +431,18 @@ const reject = (user: any) => {
                 </div>
                 <div class="approval-checklist">
                   <label
-                    v-for="{ indicator, index } in level.checkedIndicators"
+                    v-for="{ indicator, index, checked } in level.visibleIndicators"
                     :key="`${competencyKey(row)}-${level.id || level.lvl}-${index}`"
                     class="approval-check-row"
+                    :class="{ unchecked: !checked }"
                   >
-                    <input checked disabled type="checkbox" />
+                    <input :checked="checked" disabled type="checkbox" />
                     <span><strong>ข้อ {{ level.lvl }}.{{ index + 1 }}</strong> {{ indicator }}</span>
                   </label>
                 </div>
               </section>
               <div v-if="checkedLevelsForRow(row).length === 0" class="approval-empty compact">
-                ไม่มีพฤติกรรมบ่งชี้ที่ถูกเลือก
+                ไม่มีพฤติกรรมบ่งชี้
               </div>
               <div class="approval-comment-box">
                 <strong>Comment จากผู้ประเมินตนเอง</strong>
@@ -347,25 +456,34 @@ const reject = (user: any) => {
           </div>
         </div>
 
-        <footer class="approval-modal-actions">
-          <button
-            class="approval-reject-button"
-            type="button"
-            :disabled="!canApprove(selectedUser) || processingUserId === Number(selectedUser.db_id)"
-            @click="reject(selectedUser)"
-          >
-            ไม่อนุมัติ
-          </button>
-          <button
-            class="approval-confirm-button"
-            type="button"
-            :disabled="!canApprove(selectedUser) || processingUserId === Number(selectedUser.db_id)"
-            @click="approve(selectedUser)"
-          >
-            อนุมัติ
-          </button>
-        </footer>
       </section>
+    </div>
+
+    <div v-if="rejectDecision" class="approval-decision-backdrop" @click.self="closeRejectDecision">
+      <div class="approval-decision-modal">
+        <div class="approval-decision-title">ยืนยันส่งกลับแก้ไข</div>
+        <div class="approval-decision-message">
+          ต้องการส่งกลับให้แก้ไขผลการประเมินรายสมรรถนะ
+          {{ rejectDecision.row.code }} - {{ rejectDecision.row.title }} หรือไม่
+        </div>
+        <label class="approval-reject-note">
+          <span>Note สำหรับแจ้งกลับ</span>
+          <textarea
+            v-model="rejectNote"
+            rows="4"
+            maxlength="2000"
+            placeholder="ระบุเหตุผลหรือข้อเสนอแนะสำหรับการแก้ไข"
+          ></textarea>
+        </label>
+        <div class="approval-decision-actions">
+          <button class="btn btn-s" type="button" :disabled="Boolean(processingUserId)" @click="closeRejectDecision">
+            ยกเลิก
+          </button>
+          <button class="approval-reject-button" type="button" :disabled="Boolean(processingUserId)" @click="submitReject">
+            {{ processingUserId ? 'กำลังดำเนินการ...' : 'ยืนยัน' }}
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -601,12 +719,15 @@ const reject = (user: any) => {
 .approval-score-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .approval-score-card {
-  min-height: 164px;
-  padding: 16px;
+  min-height: 132px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #fff;
@@ -614,44 +735,83 @@ const reject = (user: any) => {
 
 .approval-score-card.disabled {
   background: #f8fafc;
-  opacity: 0.58;
+  opacity: 1;
 }
 
 .approval-score-card h3 {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--text);
   font-size: 14px;
   font-weight: 900;
 }
 
-.approval-score-card p,
-.approval-score-card span,
+.approval-score-meta,
+.approval-gap-row,
 .approval-score-card small,
 .approval-score-card em {
-  display: block;
   color: var(--text3);
   font-size: 11px;
   font-style: normal;
   font-weight: 800;
 }
 
-.approval-score-card strong {
-  display: block;
-  margin: 4px 0;
-  color: #16a34a;
-  font-size: 28px;
-  font-weight: 900;
+.approval-score-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.approval-score-card strong.danger,
-.approval-score-card em.danger {
+.approval-score-meta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+.approval-gap-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.approval-gap-row strong {
+  color: #64748b;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.approval-gap-row strong.negative,
+.approval-score-card em.negative {
   color: #dc2626;
+}
+
+.approval-gap-row strong.positive,
+.approval-score-card em.positive {
+  color: #16a34a;
+}
+
+.approval-gap-row strong.neutral,
+.approval-score-card em.neutral,
+.approval-gap-row.muted strong {
+  color: #64748b;
+}
+
+.approval-score-card em {
+  line-height: 1.25;
+}
+
+.approval-score-card small {
+  margin-top: 2px;
+  color: #94a3b8;
 }
 
 .approval-gap-note {
   padding: 12px 14px;
-  border-left: 4px solid #2563eb;
-  background: #eff6ff;
+  border-left: 3px solid #94a3b8;
+  background: #f8fafc;
   color: #334155;
   font-size: 12px;
 }
@@ -704,6 +864,48 @@ const reject = (user: any) => {
   color: var(--text);
   font-size: 13px;
   font-weight: 900;
+}
+
+.approval-row-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.approval-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.approval-row-button {
+  min-height: 28px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.approval-row-button.reject {
+  border-color: #fecaca;
+  background: #fff;
+  color: #dc2626;
+}
+
+.approval-row-button.approve {
+  background: #c93a25;
+  color: #fff;
+}
+
+.approval-row-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .approval-tag {
@@ -783,6 +985,10 @@ const reject = (user: any) => {
   margin-top: 2px;
 }
 
+.approval-check-row.unchecked {
+  color: var(--text3);
+}
+
 .approval-comment-box {
   display: grid;
   gap: 6px;
@@ -804,6 +1010,74 @@ const reject = (user: any) => {
   border-radius: 6px;
   background: #fff;
   font-size: 12px;
+}
+
+.approval-decision-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.approval-decision-modal {
+  width: min(460px, 100%);
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.approval-decision-title {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.approval-decision-message {
+  margin-top: 10px;
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.approval-reject-note {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.approval-reject-note textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.approval-reject-note textarea:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.approval-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .approval-modal-actions {

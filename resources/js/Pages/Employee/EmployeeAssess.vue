@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps<{
@@ -20,22 +20,125 @@ const isSaving = ref(false);
 const showSubmitConfirm = ref(false);
 const lockedCompetencies = ref<Record<string, boolean>>({});
 const competencyStatuses = ref<Record<string, string>>({});
+const competencyDraftSavedAt = ref<Record<string, string>>({});
 const competencyRejectComments = ref<Record<string, string>>({});
+const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
+const draftSavedAt = ref<string>('');
+const suppressAutoSave = ref(false);
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isLockedStatus = (status: string) => !['draft', 'revision_required'].includes(status);
-const isApprovedStatus = (status: string) => ['unit_evaluated', 'dept_evaluated', 'approved', 'dean_approved'].includes(status);
+const isFinalApprovedStatus = (status: string) => ['approved', 'dean_approved'].includes(status);
+const isReviewInProgressStatus = (status: string) => ['unit_evaluated', 'dept_evaluated'].includes(status);
 const competencyStatus = (item: any) => competencyStatuses.value[String(item?.id || '')] || item?.assessmentStatus || 'draft';
+const submittedAssessmentCount = computed(() =>
+  assignedCompetencies.value.reduce((total: number, item: any) => {
+    const status = competencyStatus(item);
+    if (status === 'revision_required') return total - 1;
+    if (status === 'self_submitted' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
+    return total;
+  }, 0),
+);
 const competencyStatusLabel = (item: any) => {
   const status = competencyStatus(item);
-  if (isApprovedStatus(status)) return 'อนุมัติแล้ว';
+  if (status === 'unit_evaluated') return 'หัวหน้างานอนุมัติผลการประเมิน รอการตรวจสอบจากผู้บังคับบัญชา';
+  if (status === 'dept_evaluated') return 'ผู้บังคับบัญชาอนุมัติผลการประเมิน รอการตรวจสอบขั้นถัดไป';
+  if (isFinalApprovedStatus(status)) return 'อนุมัติแล้ว';
   if (status === 'self_submitted') return 'รออนุมัติ';
   if (status === 'revision_required') return 'ส่งกลับแก้ไข';
   return '';
 };
 
+const draftStatusText = (item: any) => {
+  const status = competencyStatus(item);
+  if (!['draft', 'revision_required'].includes(status)) return '';
+  const value = competencyDraftSavedAt.value[String(item?.id || '')] || item?.lastDraftSavedAt || '';
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+
+  return `บันทึกฉบับร่างเมื่อ ${new Intl.DateTimeFormat('th-TH', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`;
+};
+
+const formatDraftSavedAt = (value: string) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('th-TH', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const autoSaveText = computed(() => {
+  if (isSelectedCompetencyLocked.value) return '';
+  if (autoSaveState.value === 'saving') return 'กำลังบันทึกฉบับร่าง...';
+  if (autoSaveState.value === 'error') return 'บันทึกฉบับร่างไม่สำเร็จ';
+  const time = formatDraftSavedAt(draftSavedAt.value);
+  return time ? `บันทึกฉบับร่าง เมื่อ ${time}` : 'ยังไม่ได้บันทึกฉบับร่าง';
+});
+
+const clearAutoSaveTimer = () => {
+  if (!autoSaveTimer) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+};
+
+const checkedIndicatorsForCompetency = (competencyId: string | number) => {
+  const prefix = `${competencyId}:`;
+  return Object.fromEntries(
+    Object.entries(checkedIndicators.value).filter(([key, checked]) => key.startsWith(prefix) && checked),
+  );
+};
+
+const autosaveSignature = computed(() => {
+  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return '';
+  const competencyId = selectedCompetency.value.id;
+
+  return JSON.stringify({
+    competencyId,
+    checked: checkedIndicatorsForCompetency(competencyId),
+    note: competencyNotes.value[noteKey.value] || '',
+    score: currentScore.value,
+  });
+});
+
+const saveDraft = async () => {
+  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return;
+
+  autoSaveState.value = 'saving';
+
+  try {
+    const { data } = await (window as any).axios.post(route('assessments.draft'), {
+      competency_id: selectedCompetency.value.id,
+      checked_indicators: checkedIndicators.value,
+      note: competencyNotes.value[noteKey.value] || '',
+      score: parseFloat(currentScore.value),
+    });
+
+    draftSavedAt.value = data.lastDraftSavedAt || new Date().toISOString();
+    competencyDraftSavedAt.value[String(selectedCompetency.value.id)] = draftSavedAt.value;
+    selectedCompetency.value.lastDraftSavedAt = draftSavedAt.value;
+    competencyStatuses.value[String(selectedCompetency.value.id)] = data.status || 'draft';
+    autoSaveState.value = 'saved';
+  } catch {
+    autoSaveState.value = 'error';
+  }
+};
+
 const openCompetencyDetail = async (item: any) => {
   if (isAssessmentBlocked.value) return;
 
+  clearAutoSaveTimer();
+  suppressAutoSave.value = true;
+  autoSaveState.value = 'idle';
+  draftSavedAt.value = '';
   selectedCompetency.value = item;
   competencyStatuses.value[String(item.id)] = item.assessmentStatus || 'draft';
   lockedCompetencies.value[String(item.id)] = isLockedStatus(competencyStatuses.value[String(item.id)]);
@@ -46,19 +149,34 @@ const openCompetencyDetail = async (item: any) => {
       + `?competency_id=${item.id}`
     );
     const data = await res.json();
-    if (data.checked) checkedIndicators.value = { ...checkedIndicators.value, ...data.checked };
-    if (data.note) competencyNotes.value[String(item.id)] = data.note;
+    const prefix = `${item.id}:`;
+    checkedIndicators.value = {
+      ...Object.fromEntries(Object.entries(checkedIndicators.value).filter(([key]) => !key.startsWith(prefix))),
+      ...(data.checked || {}),
+    };
+    competencyNotes.value[String(item.id)] = data.note || '';
     competencyStatuses.value[String(item.id)] = data.status || 'draft';
     lockedCompetencies.value[String(item.id)] = Boolean(data.locked);
+    draftSavedAt.value = data.lastDraftSavedAt || '';
     competencyRejectComments.value[String(item.id)] = data.reject_comment || item.rejectComment || '';
+    if (data.lastDraftSavedAt) {
+      competencyDraftSavedAt.value[String(item.id)] = data.lastDraftSavedAt;
+      selectedCompetency.value.lastDraftSavedAt = data.lastDraftSavedAt;
+    }
+    autoSaveState.value = data.lastDraftSavedAt ? 'saved' : 'idle';
   } catch {
     // ถ้า load ไม่ได้ ใช้ค่าเดิม
+  } finally {
+    suppressAutoSave.value = false;
   }
 };
 
 const closeCompetencyDetail = () => {
+  clearAutoSaveTimer();
   showSubmitConfirm.value = false;
   selectedCompetency.value = null;
+  autoSaveState.value = 'idle';
+  draftSavedAt.value = '';
 };
 
 const openSubmitConfirm = () => {
@@ -73,6 +191,7 @@ const cancelSubmitConfirm = () => {
 
 const saveAndClose = async () => {
   if (!selectedCompetency.value || isSaving.value || isAssessmentBlocked.value || isSelectedCompetencyLocked.value) return;
+  clearAutoSaveTimer();
   isSaving.value = true;
   showSubmitConfirm.value = false;
 
@@ -105,7 +224,19 @@ const currentScore = computed(() => (selectedIndicators.value * 0.25).toFixed(2)
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
-const isSelectedCompetencyApproved = computed(() => isApprovedStatus(selectedCompetencyStatus.value));
+const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
+const selectedCompetencyStatusCopy = computed(() => {
+  if (selectedCompetencyStatus.value === 'unit_evaluated') {
+    return 'รอการตรวจสอบจากผู้บังคับบัญชา';
+  }
+  if (selectedCompetencyStatus.value === 'dept_evaluated') {
+    return 'รอการตรวจสอบขั้นถัดไป';
+  }
+  if (isFinalApprovedStatus(selectedCompetencyStatus.value)) {
+    return 'อนุมัติแล้ว';
+  }
+  return '';
+});
 const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
 
 const flattenedIndicators = computed(() => {
@@ -137,6 +268,19 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
     });
   }
 };
+
+watch(autosaveSignature, (signature) => {
+  clearAutoSaveTimer();
+  if (!signature || suppressAutoSave.value) return;
+
+  autoSaveTimer = setTimeout(() => {
+    saveDraft();
+  }, 1000);
+});
+
+onBeforeUnmount(() => {
+  clearAutoSaveTimer();
+});
 </script>
 
 <template>
@@ -167,8 +311,8 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
       </div>
       <div class="summary-card">
         <div class="summary-label">ประเมินตนเองแล้ว</div>
-        <div class="summary-value">0</div>
-        <div class="summary-copy">รอพัฒนาแบบฟอร์มให้คะแนนจริง</div>
+        <div class="summary-value">{{ Math.max(0, submittedAssessmentCount) }}</div>
+        <div class="summary-copy">รายการ</div>
       </div>
     </div>
 
@@ -181,22 +325,36 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
         </div>
       </div>
       <div class="competency-list">
-        <button v-for="item in assignedCompetencies" :key="item.id" class="competency-row" type="button" @click="openCompetencyDetail(item)">
-          <div class="competency-title">{{ item.n }}</div>
+        <button
+          v-for="item in assignedCompetencies"
+          :key="item.id"
+          class="competency-row"
+          :class="{
+            'status-approved': isFinalApprovedStatus(competencyStatus(item)),
+            'status-pending': competencyStatus(item) === 'self_submitted' || isReviewInProgressStatus(competencyStatus(item)),
+            'status-revision': competencyStatus(item) === 'revision_required',
+            'status-draft': competencyStatus(item) === 'draft',
+          }"
+          type="button"
+          @click="openCompetencyDetail(item)"
+        >
+          <div class="competency-title">
+            <strong>{{ item.n }}</strong>
+          </div>
           <div class="row-actions">
+            <span v-if="draftStatusText(item)" class="draft-status">{{ draftStatusText(item) }}</span>
             <span
               v-if="competencyStatusLabel(item)"
               class="assessment-status"
               :class="{
-                approved: isApprovedStatus(competencyStatus(item)),
-                pending: competencyStatus(item) === 'self_submitted',
+                approved: isFinalApprovedStatus(competencyStatus(item)),
+                pending: competencyStatus(item) === 'self_submitted' || isReviewInProgressStatus(competencyStatus(item)),
                 revision: competencyStatus(item) === 'revision_required'
               }"
             >
               {{ competencyStatusLabel(item) }}
             </span>
-            <span class="level-pill">Expected {{ item.expectedLevel || '-' }}</span>
-            <span class="detail-link">รายละเอียด</span>
+            <span class="chevron-btn" aria-label="รายละเอียด">›</span>
           </div>
         </button>
       </div>
@@ -217,7 +375,9 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
             </div>
             <h2>{{ selectedCompetency.n }}</h2>
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
-            <p v-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
+            <p v-if="selectedCompetencyStatus === 'unit_evaluated'" class="approved-copy">หัวหน้างานอนุมัติผลการประเมินแล้ว รอการตรวจสอบจากผู้บังคับบัญชา</p>
+            <p v-else-if="selectedCompetencyStatus === 'dept_evaluated'" class="approved-copy">ผู้บังคับบัญชาอนุมัติผลการประเมินแล้ว รอการตรวจสอบขั้นถัดไป</p>
+            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
             <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว จะแก้ไขได้เมื่อผู้บังคับบัญชาส่งกลับมาแก้ไข</p>
             <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
           </div>
@@ -238,11 +398,6 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
               <div class="description-label">คำอธิบายสมรรถนะ</div>
               <p>{{ selectedCompetency.det || 'ไม่มีคำอธิบาย' }}</p>
             </div>
-          </section>
-
-          <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
-            <div class="reviewer-comment-label">Comment จากผู้ประเมิน</div>
-            <p>{{ selectedRejectComment }}</p>
           </section>
 
           <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
@@ -300,6 +455,11 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
             </div>
           </section>
 
+          <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
+            <div class="reviewer-comment-label">Comment จากผู้ประเมิน</div>
+            <p>{{ selectedRejectComment }}</p>
+          </section>
+
           <section v-if="selectedCompetency.levels?.length" class="emp-note-section">
             <label for="competency-note">ความคิดเห็นต่อสมรรถนะนี้</label>
             <textarea
@@ -312,9 +472,18 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
         </div>
 
         <div class="modal-foot">
-          <span>คะแนนปัจจุบัน {{ currentScore }}/5.00 จาก {{ selectedIndicators }}/{{ totalIndicators }} พฤติกรรม</span>
+          <div class="assessment-save-meta">
+            <span>คะแนนปัจจุบัน {{ currentScore }}/5.00 จาก {{ selectedIndicators }}/{{ totalIndicators }} พฤติกรรม</span>
+            <small
+              v-if="autoSaveText"
+              class="autosave-status"
+              :class="{ saving: autoSaveState === 'saving', saved: autoSaveState === 'saved', error: autoSaveState === 'error' }"
+            >
+              {{ autoSaveText }}
+            </small>
+          </div>
           <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked" @click="openSubmitConfirm">
-            {{ isSelectedCompetencyApproved ? 'อนุมัติแล้ว' : (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
+            {{ selectedCompetencyStatusCopy || (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>
         </div>
@@ -373,12 +542,13 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
 .card-head p { margin: 6px 0 0; color: var(--text3); font-size: 12px; }
 .competency-list { display: grid; gap: 10px; padding: 16px 20px; }
 .competency-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 320px 150px 42px;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   width: 100%;
   border: 1px solid var(--border);
+  border-left: 3px solid #94a3b8;
   border-radius: 12px;
   background: #fff;
   padding: 14px 16px;
@@ -386,8 +556,34 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   cursor: pointer;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
+.competency-row.status-approved { border-left-color: #10b981; }
+.competency-row.status-pending { border-left-color: #f59e0b; }
+.competency-row.status-revision { border-left-color: #ef4444; }
+.competency-row.status-draft { border-left-color: #94a3b8; }
 .competency-row:hover { border-color: rgba(37, 99, 235, .35); box-shadow: 0 12px 28px rgba(15, 23, 42, .08); }
-.competency-title { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 14px; font-weight: 900; }
+.competency-row.status-approved:hover { border-left-color: #10b981; }
+.competency-row.status-pending:hover { border-left-color: #f59e0b; }
+.competency-row.status-revision:hover { border-left-color: #ef4444; }
+.competency-row.status-draft:hover { border-left-color: #94a3b8; }
+.competency-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text);
+  line-height: 1.35;
+}
+.competency-title strong {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.competency-title small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
 .type-tag {
   min-width: 28px;
   border-radius: 8px;
@@ -398,21 +594,36 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   font-size: 11px;
   font-weight: 900;
 }
-.row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.row-actions {
+  display: contents;
+}
+.draft-status {
+  grid-column: 2;
+  align-items: center;
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .assessment-status {
+  grid-column: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 30px;
+  min-height: 24px;
   border: 1px solid #dbe5f1;
   border-radius: 999px;
   background: #f8fafc;
   color: #475569;
-  padding: 5px 12px;
-  font-size: 12px;
+  padding: 3px 9px;
+  font-size: 11px;
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
+  justify-self: center;
 }
 .assessment-status.approved {
   border-color: #bbf7d0;
@@ -429,21 +640,24 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   background: #fef2f2;
   color: #b91c1c;
 }
-.detail-link {
+.chevron-btn {
+  grid-column: 4;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background: #eff6ff;
-  color: var(--blue);
-  padding: 0 14px;
-  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  padding: 0;
+  font-size: 22px;
   font-weight: 900;
+  line-height: 1;
+  justify-self: end;
 }
-.row-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.detail-link { color: var(--blue); font-size: 12px; font-weight: 900; }
+.chevron-btn { font-weight: 900; }
 .empty-card {
   display: grid;
   place-items: center;
@@ -498,6 +712,10 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
 }
 .modal-head .approved-copy {
   color: #047857;
+  font-weight: 900;
+}
+.modal-head .revision-copy {
+  color: #b91c1c;
   font-weight: 900;
 }
 .modal-body {
@@ -736,6 +954,37 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   color: var(--text3);
   font-size: 12px;
 }
+.assessment-save-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.assessment-save-meta > span {
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.autosave-status {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.autosave-status.saving {
+  color: #d97706;
+}
+
+.autosave-status.saved {
+  color: #16a34a;
+}
+
+.autosave-status.error {
+  color: #dc2626;
+}
+
 .modal-foot .btn {
   display: inline-flex;
   align-items: center;
@@ -762,7 +1011,7 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   font-weight: 800;
   white-space: nowrap;
 }
-.modal-foot small { font-size: 11px; opacity: .85; }
+.modal-foot .btn small { font-size: 11px; opacity: .85; }
 .confirm-backdrop {
   position: fixed;
   inset: 0;
@@ -835,8 +1084,23 @@ const handleIndicatorChange = (level: any, indicatorIndex: number) => {
 @media (max-width: 760px) {
   .page-head { align-items: flex-start; flex-direction: column; }
   .summary-grid { grid-template-columns: 1fr; }
-  .competency-row { align-items: flex-start; flex-direction: column; }
-  .row-actions { width: 100%; justify-content: space-between; }
+  .competency-row {
+    grid-template-columns: minmax(0, 1fr) 42px;
+    align-items: flex-start;
+  }
+  .draft-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .assessment-status {
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: start;
+  }
+  .chevron-btn {
+    grid-column: 2;
+    grid-row: 1;
+  }
   .modal-head,
   .modal-foot { flex-direction: column; align-items: stretch; }
   .modal-body,

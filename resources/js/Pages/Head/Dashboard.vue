@@ -346,40 +346,61 @@ const assessCounts = computed(() => ({
     forwarded: teamMembers.value.filter((user) => ['unit_evaluated', 'dept_evaluated'].includes(user.evalStatus)).length,
     done: teamMembers.value.filter((user) => user.evalStatus === 'approved').length,
 }));
-const supervisorApprovalStatus = (person) => {
-    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
-    if (person.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'br' };
-    if (person.evalStatus === 'approved') return { label: 'อนุมัติแล้ว', cls: 'bg' };
+const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
+const reviewerStepCountForUser = (user) => [1, 2, 3].filter((step) => Number(user?.[`supervisor_id_${step}`])).length;
+const reviewProgressLabel = (completed, total) => `ตรวจสอบแล้ว ${completed}/${total}`;
+const reviewedStatusesForStep = (step) => ({
+    1: ['revision_required', 'unit_evaluated', 'dept_evaluated', 'approved'],
+    2: ['revision_required', 'dept_evaluated', 'approved'],
+    3: ['revision_required', 'approved'],
+}[step] || ['approved']);
+const isReviewedByStep = (status, step) => reviewedStatusesForStep(step).includes(normalizeAssessmentStatus(status));
+const assessmentReviewProgress = (person, results = []) => {
+    const rows = Array.isArray(results) ? results : [];
+    const step = reviewerStepForUser(person);
+    const total = rows.length;
 
-    const currentStep = reviewerStepForUser(person);
+    if (!total) return { completed: 0, total: 0 };
 
-    if (person.evalStatus === pendingStatusForReviewerStep(currentStep)) {
-        return { label: 'รอตรวจสอบ (คุณ)', cls: 'by' };
-    }
-
-    const labels = {
-        self_submitted: 'รอผู้ประเมินลำดับ 1 ตรวจ',
-        unit_evaluated: 'รอผู้ประเมินลำดับ 2 ตรวจ',
-        dept_evaluated: 'รอผู้ประเมินลำดับ 3 ตรวจ',
+    return {
+        completed: rows.filter((row) => row.hasAssessment && isReviewedByStep(row.status, step)).length,
+        total,
     };
+};
+const supervisorApprovalStatus = (person, results = []) => {
+    const progress = assessmentReviewProgress(person, results);
 
-    if (labels[person.evalStatus]) return { label: labels[person.evalStatus], cls: 'bt' };
+    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    if (progress.total) {
+        return {
+            label: reviewProgressLabel(progress.completed, progress.total),
+            cls: person.evalStatus === 'revision_required'
+                ? 'br'
+                : (progress.completed >= progress.total ? 'bg' : 'by'),
+        };
+    }
 
     return { label: person.evalStatus, cls: 'bgr' };
 };
 const competencyApprovalStatus = (row) => {
-    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
-    if (row.status === 'revision_required') return { label: 'รอประเมินอีกรอบ', cls: 'br' };
-    if (row.status === selectedSupervisorApproval.value?.approvalExpectedStatus) return { label: 'รอตรวจสอบ', cls: 'by' };
-    if (row.status === 'approved') return { label: 'อนุมัติแล้ว', cls: 'bg' };
+    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
+    const completed = isReviewedByStep(row.status, row.reviewStep) ? 1 : 0;
 
-    return { label: 'ส่งต่อแล้ว', cls: 'bt' };
+    return {
+        label: reviewProgressLabel(completed, 1),
+        cls: row.status === 'revision_required' ? 'br' : (completed ? 'bg' : 'by'),
+    };
 };
 const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
-    const results = gapResultRows(person);
+    const reviewStep = reviewerStepForUser(person);
+    const approvalTotalSteps = reviewerStepCountForUser(person);
+    const results = gapResultRows(person).map((row) => ({
+        ...row,
+        reviewStep,
+        approvalTotalSteps,
+    }));
     const hasSubmittedAssessment = results.some((row) => row.hasAssessment) || (person.evalStatus && person.evalStatus !== 'draft');
     const hasReviewableCompetencies = results.length > 0;
-    const reviewStep = reviewerStepForUser(person);
     const approvalExpectedStatus = pendingStatusForReviewerStep(reviewStep);
     const approvalNextStatus = reviewStep ? nextStatusAfterReviewerStep(person, reviewStep) : null;
 
@@ -389,9 +410,10 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         reviewStep,
         approvalExpectedStatus,
         approvalNextStatus,
+        approvalTotalSteps,
         hasSubmittedAssessment,
         hasReviewableCompetencies,
-        statusMeta: supervisorApprovalStatus(person),
+        statusMeta: supervisorApprovalStatus(person, results),
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
@@ -523,7 +545,7 @@ const canDecideSupervisorApproval = computed(() =>
     Boolean(approvalDecisionCompetency.value)
     && canDecideSupervisorCompetency(approvalDecisionCompetency.value),
 );
-const approvalCommentKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${row?.id || 'none'}`;
+const approvalCommentKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${competencyIdentity(row) || 'none'}`;
 const approvalDecisionTitle = computed(() => approvalDecision.value === 'approve'
     ? `อนุมัติ ${approvalDecisionCompetency.value?.code || ''} ของ ${supervisorApprovalName.value}`
     : `ส่งกลับ ${approvalDecisionCompetency.value?.code || ''} ให้ประเมินใหม่`);
@@ -540,12 +562,14 @@ const gapScoreFor = (person, comp, key, fallback) => {
     const values = person?.competencyScores || person?.scores || person?.assessmentScores || {};
     return Number(values?.[comp.id]?.[key] ?? values?.[`${comp.id}_${key}`] ?? comp[key] ?? fallback);
 };
-const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
+const competencyIdentity = (row) => String(row?.competencyId || row?.competency_id || row?.id || row?.code || row?.title || '');
 
 const gapResultRows = (person) => {
     if (!person) return [];
+    const assessmentStatusFromAssigned = (row) => normalizeAssessmentStatus(row.assessmentStatus || row.status);
     const assignedRows = Array.isArray(person.assignedCompetencies) ? person.assignedCompetencies.map((row) => ({
         id: row.id || row.competency_id || row.name || row.title,
+        competencyId: row.competencyId || row.competency_id || row.id || null,
         title: row.title || row.name || row.n || row.competency_name || '-',
         group: row.group || row.type || row.t || '-',
         code: row.code || row.cd || '',
@@ -555,13 +579,14 @@ const gapResultRows = (person) => {
         gap: null,
         feedback: '',
         note: '',
+        reviewerComment: row.reviewerComment || row.rejectComment || '',
         levels: row.levels || [],
         checkedIndicatorKeys: [],
         checkedIndicatorCount: 0,
         updatedAt: '',
         failed: false,
-        status: 'draft',
-        hasAssessment: false,
+        status: assessmentStatusFromAssigned(row),
+        hasAssessment: assessmentStatusFromAssigned(row) !== 'draft',
     })) : [];
     const rawRows = person.competencyGaps || person.competencyResults || person.assessmentResults || person.evaluationResults;
     if (Array.isArray(rawRows) && rawRows.length) {
@@ -572,6 +597,7 @@ const gapResultRows = (person) => {
             const gap = Number(row.gap ?? headScore - expected);
             return {
                 id: row.id || row.competency_id || row.name || row.title,
+                competencyId: row.competencyId || row.competency_id || null,
                 title: row.title || row.name || row.n || row.competency_name || '-',
                 group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
@@ -579,8 +605,9 @@ const gapResultRows = (person) => {
                 selfScore,
                 headScore,
                 gap,
-                feedback: row.feedback || row.note || '',
-                note: row.note || row.feedback || '',
+                feedback: row.feedback || '',
+                note: row.note || '',
+                reviewerComment: row.reviewerComment || row.evaluatorComment || row.rejectComment || '',
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
@@ -591,8 +618,8 @@ const gapResultRows = (person) => {
             };
         });
 
-        const assessedKeys = new Set(assessedRows.map((row) => row.id || row.code || row.title));
-        const missingAssignedRows = assignedRows.filter((row) => !assessedKeys.has(row.id || row.code || row.title));
+        const assessedKeys = new Set(assessedRows.map((row) => competencyIdentity(row)).filter(Boolean));
+        const missingAssignedRows = assignedRows.filter((row) => !assessedKeys.has(competencyIdentity(row)));
 
         return [...assessedRows, ...missingAssignedRows];
     }
@@ -810,13 +837,13 @@ const closeSupervisorApprovalModal = () => {
     approvalDecisionCompetency.value = null;
 };
 
-const supervisorCompetencyKey = (row) => `${row.id || row.code || row.title}`;
+const supervisorCompetencyKey = (row) => `${competencyIdentity(row)}`;
 const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
 const toggleSupervisorCompetency = (row) => {
     const key = supervisorCompetencyKey(row);
     openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
 };
-const checkedIndicatorKey = (row, level, index) => `${row.id}:${level.id || level.lvl}:${index}`;
+const checkedIndicatorKey = (row, level, index) => `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
 const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
 const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
 const totalIndicatorCount = (row) => (row.levels || [])
@@ -877,7 +904,8 @@ const submitApprovalDecision = () => {
     if (!selectedSupervisorApproval.value || !approvalDecision.value || !competency) return;
 
     const decision = approvalDecision.value;
-    if (decision === 'reject' && !approvalComment.value.trim()) {
+    const comment = (reviewerComments.value[approvalCommentKey(competency)] || approvalComment.value || '').trim();
+    if (decision === 'reject' && !comment) {
         return;
     }
 
@@ -885,8 +913,8 @@ const submitApprovalDecision = () => {
     isSubmittingApprovalDecision.value = true;
     router.post(route(decision === 'approve' ? 'assessments.approve' : 'assessments.reject'), {
         user_id: selectedSupervisorApproval.value.db_id,
-        competency_id: competency.id,
-        comment: approvalComment.value,
+        competency_id: competency.competencyId || competency.competency_id || competency.id,
+        comment,
     }, {
         preserveScroll: true,
         onSuccess: () => {
@@ -894,11 +922,11 @@ const submitApprovalDecision = () => {
                 user.sso === selectedSupervisorApproval.value.sso
                     ? (() => {
                         const competencyGaps = (user.competencyGaps || []).map((gap) =>
-                            Number(gap.id) === Number(competency.id)
-                                ? { ...gap, status: nextStatus, note: approvalComment.value, reviewerComment: approvalComment.value }
+                            Number(competencyIdentity(gap)) === Number(competencyIdentity(competency))
+                                ? { ...gap, status: nextStatus, reviewerComment: comment }
                                 : gap,
                         );
-                        reviewerComments.value[approvalCommentKey(competency)] = approvalComment.value;
+                        reviewerComments.value[approvalCommentKey(competency)] = comment;
 
                         return {
                             ...user,
@@ -1429,7 +1457,7 @@ const logout = () => router.post(route('logout'));
                                 </div>
 
                                 <div class="approval-modal-body">
-                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${row.id}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
+                                    <div v-for="row in selectedSupervisorApproval.results" :key="`detail-${supervisorCompetencyKey(row)}`" class="approval-competency-card" :class="{ disabled: !row.hasAssessment }">
                                         <button
                                             class="approval-competency-head"
                                             :class="{ open: isSupervisorCompetencyOpen(row) }"
@@ -1467,7 +1495,7 @@ const logout = () => router.post(route('logout'));
                                                 <div class="approval-checklist">
                                                     <label
                                                         v-for="{ indicator, index, checked } in level.indicatorsWithStatus"
-                                                        :key="`${row.id}-${level.id || level.lvl}-${index}`"
+                                                        :key="`${supervisorCompetencyKey(row)}-${level.id || level.lvl}-${index}`"
                                                         class="approval-check-row"
                                                         :class="{ selected: checked, muted: !checked }"
                                                     >
@@ -1480,24 +1508,25 @@ const logout = () => router.post(route('logout'));
                                                 </div>
                                             </div>
                                             <div class="approval-comment-box">
-                                                <div class="fs12 fw8">Comment จากผู้ประเมินตนเอง</div>
+                                                <div class="fs12 fw8">Note จากผู้ประเมินตนเอง</div>
                                                 <div>{{ row.note || 'ไม่มี Note' }}</div>
                                             </div>
                                             <label class="approval-reviewer-comment">
-                                                <span>Comment จากผู้ประเมิน</span>
+                                                <span>Comment จากผู้บังคับบัญชา</span>
                                                 <textarea
-                                                    v-model="reviewerComments[approvalCommentKey(row)]"
+                                                    :value="reviewerComments[approvalCommentKey(row)] ?? row.reviewerComment ?? ''"
                                                     rows="3"
                                                     :disabled="!canDecideSupervisorCompetency(row)"
+                                                    @input="reviewerComments[approvalCommentKey(row)] = $event.target.value"
                                                     placeholder="พิมพ์ข้อเสนอแนะสำหรับสมรรถนะนี้ หากไม่อนุมัติต้องกรอกเหตุผลก่อน"
                                                 ></textarea>
                                             </label>
                                             <div class="approval-row-actions">
                                                 <button class="btn btn-r" type="button" :disabled="!canDecideSupervisorCompetency(row)" @click.stop="requestApprovalDecision('reject', row)">
-                                                    ไม่อนุมัติข้อนี้
+                                                    ไม่อนุมัติ
                                                 </button>
                                                 <button class="btn btn-t" type="button" :disabled="!canDecideSupervisorCompetency(row)" @click.stop="requestApprovalDecision('approve', row)">
-                                                    อนุมัติข้อนี้
+                                                    อนุมัติ
                                                 </button>
                                             </div>
                                         </div>
@@ -1515,17 +1544,6 @@ const logout = () => router.post(route('logout'));
                             <div class="approval-decision-modal">
                                 <div class="approval-decision-title">{{ approvalDecisionTitle }}</div>
                                 <div class="approval-decision-message">{{ approvalDecisionMessage }}</div>
-                                <label class="approval-decision-comment">
-                                    <span>
-                                        Comment จากผู้ประเมิน
-                                        <b v-if="approvalDecision === 'reject'">*</b>
-                                    </span>
-                                    <textarea
-                                        v-model="approvalComment"
-                                        rows="4"
-                                        :placeholder="approvalDecision === 'reject' ? 'กรอกเหตุผลที่ไม่อนุมัติ เพื่อให้ผู้รับการประเมินกลับไปแก้ไข' : 'เพิ่มข้อเสนอแนะให้ผู้รับการประเมิน (ไม่บังคับ)'"
-                                    ></textarea>
-                                </label>
                                 <div class="approval-decision-actions">
                                     <button class="btn btn-s" type="button" :disabled="isSubmittingApprovalDecision" @click="closeApprovalDecision">
                                         ยกเลิก
@@ -2215,42 +2233,6 @@ const logout = () => router.post(route('logout'));
 .approval-reviewer-comment textarea:disabled {
     background: #f1f5f9;
     color: var(--text3);
-}
-
-.approval-decision-comment {
-    display: grid;
-    gap: 8px;
-    margin-top: 16px;
-}
-
-.approval-decision-comment span {
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 900;
-}
-
-.approval-decision-comment b {
-    color: #dc2626;
-}
-
-.approval-decision-comment textarea {
-    width: 100%;
-    min-height: 104px;
-    resize: vertical;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: #f8fafc;
-    color: var(--text);
-    padding: 12px;
-    font-size: 13px;
-    line-height: 1.6;
-    outline: none;
-}
-
-.approval-decision-comment textarea:focus {
-    border-color: #93c5fd;
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
 }
 
 .approval-decision-actions {

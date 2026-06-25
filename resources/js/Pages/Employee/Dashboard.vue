@@ -180,6 +180,7 @@ const logout = () => router.post(route('logout'));
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
                     :gaps="competencyGaps"
+                    :eval-status="currentProfileUser?.evalStatus"
                 />
 
                 <EmployeeIDP
