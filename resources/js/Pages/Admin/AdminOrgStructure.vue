@@ -25,11 +25,9 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setWorklines: any;
   competencyTypes: any[];
   setCompetencyTypes: any;
-  learningMethods: {key: string;label: string;desc?: string;}[];
-  setLearningMethods: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "levelsByJobFamily", "setLevelsByJobFamily", "levelExpectationsByJobFamily", "setLevelExpectationsByJobFamily", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes", "learningMethods", "setLearningMethods"], setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "orgSups", "setOrgSups", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "levelsByJobFamily", "setLevelsByJobFamily", "levelExpectationsByJobFamily", "setLevelExpectationsByJobFamily", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes"], setup(__props) {const {
       setAcademicDepts,
       setSupportPositionGroups,
       setAdminDepts,
@@ -46,8 +44,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setAcademicRank,
       setSupportRank,
       setWorklines,
-      setCompetencyTypes,
-      learningMethods, setLearningMethods
+      setCompetencyTypes
     } = __props as any;
     let academicDepts = [...((__props as any).academicDepts || [])];
     let supportDepts = [...((__props as any).supportDepts || [])];
@@ -78,7 +75,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const [isSavingAddItem, setIsSavingAddItem] = useState(false);
     const [expandedSupportGroups, setExpandedSupportGroups] = useState<Record<string, boolean>>({});
     const [showAllSupportGroups, setShowAllSupportGroups] = useState(false);
-    const learningMethodList = ref<any[]>([...((__props as any).learningMethods || [])]);
     const [addItemData, setAddItemData] = useState({
       category: "workline",
       type: "1",
@@ -102,9 +98,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     useEffect(() => {
       competencyTypeList.value = [...((( __props as any).competencyTypes) || [])];
     }, [(__props as any).competencyTypes]);
-    useEffect(() => {
-      learningMethodList.value = [...((( __props as any).learningMethods) || [])];
-    }, [(__props as any).learningMethods]);
     const applyCompetencyTypes = (next: any[]) => {
       competencyTypeList.value = [...next];
       setCompetencyTypes(next);
@@ -113,16 +106,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const syncCompetencyTypesFromPage = (responsePage: any) => {
       if (Array.isArray(responsePage.props.competencyTypes)) {
         applyCompetencyTypes(responsePage.props.competencyTypes);
-      }
-    };
-    const applyLearningMethods = (next: any[]) => {
-      learningMethodList.value = [...next];
-      setLearningMethods(next);
-      setStructureVersion((current: number) => current + 1);
-    };
-    const syncLearningMethodsFromPage = (responsePage: any) => {
-      if (Array.isArray(responsePage.props.learningMethods)) {
-        applyLearningMethods(responsePage.props.learningMethods);
       }
     };
     const applyWorklines = (nextWorklines: string[]) => {
@@ -614,17 +597,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             }
             return;
           }
-        case "learning-method":
-          putStructure("admin.structure.learning-methods.update", {
-            old_key: oldName,
-            key: oldName,
-            label: newValue.value,
-            description: editingItem.value.item?.desc || ""
-          }, () => {
-            applyLearningMethods(learningMethodList.value.map((item) => item.key === oldName ? { ...item, label: newValue.value } : item));
-            setEditingId(null);
-          });
-          return;
       }
       setEditingId(null);
     };
@@ -786,12 +758,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             }
             return;
           }
-        case "learning-method":
-          deleteStructure("admin.structure.learning-methods.destroy", { key: oldName }, () => {
-            applyLearningMethods(learningMethodList.value.filter((item) => item.key !== oldName));
-            setEditingId(null);
-          });
-          return;
       }
       setEditingId(null);
     };
@@ -815,7 +781,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
       if (addItemData.value.category === "support-dept") return { title: "เพิ่มฝ่าย", label: "ชื่อฝ่าย" };
       if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "รหัสประเภทสมรรถนะ" };
-      if (addItemData.value.category === "learning") return { title: "เพิ่มประเภทการเรียนรู้", label: "ชื่อประเภทการเรียนรู้" };
       if (addItemData.value.category === "dept") return { title: `เพิ่มกลุ่มงาน${typeLabel}`, label: "ชื่อกลุ่มงาน" };
       if (addItemData.value.category === "pos") {
         return {
@@ -951,33 +916,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               syncCompetencyTypesFromPage(responsePage);
               setShowAddModal(false);
             }
-          });
-          return;
-        } else if (category === "learning") {
-          const baseKey = trimmedName.
-          toLowerCase().
-          replace(/[^a-z0-9]+/g, "-").
-          replace(/^-+|-+$/g, "") || `learning-${learningMethods.length + 1}`;
-          let uniqueKey = baseKey;
-          let suffix = 2;
-          while (learningMethodList.value.some((item) => item.key === uniqueKey)) {
-            uniqueKey = `${baseKey}-${suffix}`;
-            suffix += 1;
-          }
-          postStructure("admin.structure.learning-methods.store", {
-            key: uniqueKey,
-            label: trimmedName,
-            description: desc.trim() || ""
-          }, () => {
-            syncLearningMethodsFromPage({ props: { learningMethods: [
-              ...learningMethodList.value,
-              {
-                key: uniqueKey,
-                label: trimmedName,
-                desc: desc.trim() || ""
-              }
-            ] } });
-            setShowAddModal(false);
           });
           return;
         }
@@ -1347,24 +1285,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   {competencyTypeList.value.length === 0 && <div class="structure-empty">ยังไม่มีข้อมูล</div>}
                 </div>
               </section>
-              <section class="structure-section comp-section-card">
-                <div class="structure-section-head">
-                  <div class="fw7 fs14 text-navy">ประเภทการเรียนรู้</div>
-                  <button class="btn btn-s btn-sm" onClick={() => {setAddItemData({ category: "learning", type: "1", name: "", desc: "", parent: "", grandparent: "" });setShowAddModal(true);}}>+ เพิ่มประเภทการเรียนรู้</button>
-                </div>
-                <div class="structure-grid">
-                  {learningMethodList.value.map((item) =>
-                <div key={item.key} class="structure-item group" style={{ alignItems: "flex-start", minHeight: "72px" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div class="fs13 fw6 text-gray-700 truncate">{item.label}</div>
-                        <div class="muted fs11" style={{ marginTop: "4px" }}>{item.desc || "-"}</div>
-                      </div>
-                      <button class="btn-link opacity-0 group-hover:opacity-100" style={{ fontSize: "12px" }} onClick={() => startEdit("learning-method", item.key, { item })}>✎</button>
-                    </div>
-                )}
-                  {learningMethodList.value.length === 0 && <div class="structure-empty">ยังไม่มีประเภทการเรียนรู้</div>}
-                </div>
-              </section>
               </div>
             </div>
           }
@@ -1408,12 +1328,6 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   <textarea class="ta" rows={3} value={addItemData.value.desc} onChange={(e) => setAddItemData({ ...addItemData.value, desc: e.target.value })} placeholder="อธิบายความหมายและขอบเขตของประเภทสมรรถนะนี้..." />
                 </div>
               </>
-            }
-              {addItemData.value.category === "learning" &&
-            <div class="fg">
-                  <label class="lbl fw8" style={{ color: "var(--navy)" }}>รายละเอียดแบบย่อ</label>
-                  <textarea class="ta" rows={3} value={addItemData.value.desc} onChange={(e) => setAddItemData({ ...addItemData.value, desc: e.target.value })} placeholder="อธิบายลักษณะของประเภทการเรียนรู้นี้โดยย่อ..." />
-                </div>
             }
               {addItemData.value.category === "rank" &&
             <div class="fg">

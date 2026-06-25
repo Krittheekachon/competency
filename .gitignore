@@ -1,5 +1,9 @@
 /vendor/
+vendor */
+vendor.broken-*/
 node_modules/
+node_modules.broken-*/
+.metadata_never_index
 npm-debug.log
 yarn-error.log
 
@@ -25,6 +29,7 @@ Homestead.json
 /public/build
 /storage/pail
 /.worktrees/
+/.superpowers/
 .env.backup
 .env.production
 .phpactor.json

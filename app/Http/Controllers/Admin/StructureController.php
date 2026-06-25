@@ -573,55 +573,17 @@ class StructureController extends Controller
 
     public function storeLearningMethod(Request $request): RedirectResponse
     {
-        $data = $request->validate([
-            'key' => ['required', 'string', 'max:255', 'unique:learning_method_types,key'],
-            'label' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-        ]);
-
-        DB::table('learning_method_types')->insert([
-            'key' => $data['key'],
-            'label' => $data['label'],
-            'description' => $data['description'] ?? null,
-            'is_active' => true,
-            'sort_order' => DB::table('learning_method_types')->max('sort_order') + 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return back()->with('success', 'บันทึกประเภทการเรียนรู้เรียบร้อยแล้ว');
+        abort(403, 'ประเภทการเรียนรู้ถูกกำหนดตายตัวในระบบ');
     }
 
     public function updateLearningMethod(Request $request): RedirectResponse
     {
-        $data = $request->validate([
-            'old_key' => ['required', 'string', 'exists:learning_method_types,key'],
-            'key' => ['required', 'string', 'max:255', Rule::unique('learning_method_types', 'key')->ignore($request->old_key, 'key')],
-            'label' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-        ]);
-
-        DB::table('learning_method_types')
-            ->where('key', $data['old_key'])
-            ->update([
-                'key' => $data['key'],
-                'label' => $data['label'],
-                'description' => $data['description'] ?? null,
-                'updated_at' => now(),
-            ]);
-
-        return back()->with('success', 'อัปเดตประเภทการเรียนรู้เรียบร้อยแล้ว');
+        abort(403, 'ประเภทการเรียนรู้ถูกกำหนดตายตัวในระบบ');
     }
 
     public function destroyLearningMethod(Request $request): RedirectResponse
     {
-        $data = $request->validate([
-            'key' => ['required', 'string', 'exists:learning_method_types,key'],
-        ]);
-
-        DB::table('learning_method_types')->where('key', $data['key'])->delete();
-
-        return back()->with('success', 'ลบประเภทการเรียนรู้เรียบร้อยแล้ว');
+        abort(403, 'ประเภทการเรียนรู้ถูกกำหนดตายตัวในระบบ');
     }
 
     private function worklineId(?string $name): ?int

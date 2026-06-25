@@ -95,6 +95,83 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
     }
 
+    public function test_employee_can_save_activity_form_details(): void
+    {
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $competencyId = $this->competencyId('CC-FORM');
+        $assessment = $this->assessment($employee, $competencyId);
+        $gapId = DB::table('competency_gaps')->insertGetId([
+            'assessment_id' => $assessment->id,
+            'competency_id' => $competencyId,
+            'expected_level' => 3,
+            'actual_level' => 2,
+            'gap' => -1,
+            'requires_idp' => true,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('learning_method_types')->insert([
+            'key' => 'social',
+            'label' => 'Social Learning',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $toolId = DB::table('idp_learning_methods')->insertGetId([
+            'code' => '03',
+            'focus_type' => 'social',
+            'title' => 'การสอนงาน (Coaching)',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('employee.idp.draft'), [
+                'items' => [[
+                    'competencyGapId' => $gapId,
+                    'goal' => 'พัฒนาการสื่อสารกับผู้รับบริการ',
+                    'successCriteria' => 'ให้บริการได้ตามมาตรฐาน',
+                    'activities' => [[
+                        'methodKey' => 'social',
+                        'developmentToolId' => $toolId,
+                        'learningCatalogId' => null,
+                        'activityName' => '03 · การสอนงาน (Coaching)',
+                        'documentReferenceNumber' => 'DOC-5',
+                        'weightPercent' => 100,
+                        'startDate' => '2026-07-01',
+                        'endDate' => '2026-09-30',
+                        'formCode' => 'form_5_coaching',
+                        'formDetails' => [
+                            'coachType' => 'supervisor',
+                            'coachName' => 'หัวหน้างาน',
+                            'planRows' => [[
+                                'topic' => 'ฝึกสื่อสารกับผู้รับบริการ',
+                                'approach' => 'A',
+                                'period' => 'ก.ค.-ก.ย.',
+                                'sessionDuration' => '2 ชั่วโมง/ครั้ง',
+                            ]],
+                        ],
+                    ]],
+                ]],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')
+            ->where('activity_name', '03 · การสอนงาน (Coaching)')
+            ->first();
+
+        $this->assertNotNull($activity);
+        $this->assertSame('form_5_coaching', $activity->form_code);
+        $this->assertSame(
+            'ฝึกสื่อสารกับผู้รับบริการ',
+            json_decode($activity->form_details, true)['planRows'][0]['topic'],
+        );
+    }
+
     public function test_employee_must_complete_required_idp_fields_before_submit(): void
     {
         $employee = User::factory()->create([

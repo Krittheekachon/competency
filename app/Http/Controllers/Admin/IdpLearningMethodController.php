@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class IdpLearningMethodController extends Controller
@@ -14,7 +15,7 @@ class IdpLearningMethodController extends Controller
     {
         $data = $this->validatedData($request);
 
-        DB::table('idp_learning_methods')->insert([
+        $values = [
             'focus_type' => $data['focus_type'],
             'code' => $data['code'],
             'title' => $data['title'],
@@ -24,7 +25,12 @@ class IdpLearningMethodController extends Controller
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+        if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
+            $values['form_code'] = $data['form_code'] ?? null;
+        }
+
+        DB::table('idp_learning_methods')->insert($values);
 
         return back()->with('success', 'เพิ่มหัวข้อแนวทาง IDP เรียบร้อยแล้ว');
     }
@@ -33,14 +39,19 @@ class IdpLearningMethodController extends Controller
     {
         $data = $this->validatedData($request);
 
+        $values = [
+            'focus_type' => $data['focus_type'],
+            'code' => $data['code'],
+            'title' => $data['title'],
+            'updated_at' => now(),
+        ];
+        if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
+            $values['form_code'] = $data['form_code'] ?? null;
+        }
+
         DB::table('idp_learning_methods')
             ->where('id', $method)
-            ->update([
-                'focus_type' => $data['focus_type'],
-                'code' => $data['code'],
-                'title' => $data['title'],
-                'updated_at' => now(),
-            ]);
+            ->update($values);
 
         return back()->with('success', 'อัปเดตหัวข้อแนวทาง IDP เรียบร้อยแล้ว');
     }
@@ -58,6 +69,15 @@ class IdpLearningMethodController extends Controller
             'focus_type' => ['required', Rule::in(['experiential', 'social'])],
             'code' => ['required', 'string', 'max:50'],
             'title' => ['required', 'string', 'max:255'],
+            'form_code' => ['nullable', 'string', 'max:80', Rule::in([
+                'form_3_project_assignment',
+                'form_4_ojt',
+                'form_5_coaching',
+                'form_6_mentoring',
+                'form_7_group_activity',
+                'form_8_feedback',
+                'form_9_field_trip',
+            ])],
         ]);
     }
 }

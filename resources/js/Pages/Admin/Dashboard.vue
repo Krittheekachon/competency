@@ -827,8 +827,6 @@ const logout = () => router.post(route('logout'));
                     :set-worklines="setRef(worklines)"
                     :competency-types="competencyTypes"
                     :set-competency-types="setRef(competencyTypes)"
-                    :learning-methods="learningMethods"
-                    :set-learning-methods="setRef(learningMethods)"
                 />
 
                 <AdminDict

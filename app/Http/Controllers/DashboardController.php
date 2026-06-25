@@ -24,7 +24,8 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        $role = $this->roleKeyForUser(auth()->user());
+        $currentUser = auth()->user()->loadMissing(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3']);
+        $role = $this->roleKeyForUser($currentUser);
         $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
             'id' => $type->id,
             'code' => $type->code,
@@ -37,16 +38,7 @@ class DashboardController extends Controller
             ->get()
             ->map(fn (User $user) => $this->dashboardUserPayload($user));
         $activeCycleName = 'รอบประเมินปัจจุบัน';
-        $learningMethods = DB::table('learning_method_types')
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (object $method) => [
-                'key' => $method->key,
-                'label' => $method->label,
-                'desc' => $method->description ?? '',
-            ]);
+        $learningMethods = $this->canonicalLearningMethods();
         $managerSummary = [
             'totalUsers' => User::count(),
             'evaluatedUsers' => 0,
@@ -57,7 +49,7 @@ class DashboardController extends Controller
             'pendingIdpApprovals' => 0,
             'source' => 'database',
         ];
-        $approvedIdpActivities = $this->currentUserApprovedIdpActivities(auth()->user());
+        $approvedIdpActivities = $this->currentUserApprovedIdpActivities($currentUser);
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
@@ -75,22 +67,22 @@ class DashboardController extends Controller
             'supervisor' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'supervisor',
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dept_head' => Inertia::render('Head/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'dept_head',
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer(auth()->user()),
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
-                'currentUser' => $this->dashboardUserPayload(auth()->user()),
-                'currentUserCompetencies' => $this->assignedCompetenciesForUser(auth()->user()),
-                'currentUserCompetencyGaps' => $this->competencyGapsForUser(auth()->user()),
-                'currentUserIdp' => $this->currentUserIdpPayload(auth()->user()),
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
+                'currentUserIdp' => $this->currentUserIdpPayload($currentUser),
                 'activeCycleName' => $activeCycleName,
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
@@ -142,6 +134,27 @@ class DashboardController extends Controller
         };
     }
 
+    private function canonicalLearningMethods(): array
+    {
+        return [
+            [
+                'key' => 'experiential-learning',
+                'label' => 'Experiential Learning',
+                'desc' => 'การเรียนรู้ผ่านประสบการณ์จากการทำงานจริง เช่น OJT โครงการพิเศษ หรือ Job Rotation',
+            ],
+            [
+                'key' => 'social-learning',
+                'label' => 'Social Learning',
+                'desc' => 'การเรียนรู้ผ่านบุคคลอื่น การปฏิสัมพันธ์ แลกเปลี่ยนความคิดเห็น ประสบการณ์ร่วมกัน หรือการมีผู้คอยให้คำแนะนำ',
+            ],
+            [
+                'key' => 'formal-learning',
+                'label' => 'Formal Learning',
+                'desc' => 'การเรียนรู้อย่างเป็นทางการ มีแบบแผน หรือการเรียนในห้องเรียน',
+            ],
+        ];
+    }
+
     private function normalizeRoleKey(string $roleKey): string
     {
         return match ($roleKey) {
@@ -189,6 +202,7 @@ class DashboardController extends Controller
             'sup' => $this->displayNameForUser($user->evaluatorLevel1),
             'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
+            'supervisorChain' => $this->supervisorChainForUser($user),
             'assignedCompetencies' => $assignedCompetencies,
             'competencyGaps' => $competencyGaps,
             'gaps' => collect($competencyGaps)
@@ -244,6 +258,40 @@ class DashboardController extends Controller
         }
 
         return trim(($user->title ?: '').$user->name);
+    }
+
+    private function supervisorChainForUser(User $user): array
+    {
+        return collect([
+            ['step' => 1, 'label' => 'ผู้บังคับบัญชาลำดับ 1', 'user' => $user->evaluatorLevel1],
+            ['step' => 2, 'label' => 'ผู้บังคับบัญชาลำดับ 2', 'user' => $user->evaluatorLevel2],
+            ['step' => 3, 'label' => 'ผู้บังคับบัญชาลำดับ 3', 'user' => $user->evaluatorLevel3],
+        ])
+            ->filter(fn (array $item): bool => (bool) $item['user'])
+            ->map(fn (array $item): array => [
+                'id' => (int) $item['user']->id,
+                'step' => $item['step'],
+                'label' => $item['label'],
+                'name' => $this->displayNameForUser($item['user']),
+                'position' => $item['user']->position ?: '',
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function decodeJsonObject(mixed $value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (! is_string($value) || $value === '') {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     private function currentDepartmentForUser(User $user): string
@@ -1049,22 +1097,32 @@ class DashboardController extends Controller
             )
             ->orderBy('idp_items.id')
             ->get();
+        $activityColumns = [
+            'idp_activities.id',
+            'idp_activities.idp_item_id',
+            'idp_activities.learning_catalog_id',
+            'idp_activities.idp_learning_method_id',
+            'idp_activities.activity_name',
+            'idp_activities.weight_percent',
+            'idp_activities.start_date',
+            'idp_activities.end_date',
+            'idp_activities.description as activity_description',
+            'idp_activities.document_reference_number',
+            'learning_method_types.key as method_key',
+        ];
+
+        if (Schema::hasColumn('idp_activities', 'form_code')) {
+            $activityColumns[] = 'idp_activities.form_code';
+        }
+
+        if (Schema::hasColumn('idp_activities', 'form_details')) {
+            $activityColumns[] = 'idp_activities.form_details';
+        }
+
         $activitiesByItem = DB::table('idp_activities')
             ->leftJoin('learning_method_types', 'idp_activities.method_type_id', '=', 'learning_method_types.id')
             ->whereIn('idp_activities.idp_item_id', $items->pluck('id'))
-            ->select(
-                'idp_activities.id',
-                'idp_activities.idp_item_id',
-                'idp_activities.learning_catalog_id',
-                'idp_activities.idp_learning_method_id',
-                'idp_activities.activity_name',
-                'idp_activities.weight_percent',
-                'idp_activities.start_date',
-                'idp_activities.end_date',
-                'idp_activities.description as activity_description',
-                'idp_activities.document_reference_number',
-                'learning_method_types.key as method_key'
-            )
+            ->select($activityColumns)
             ->orderBy('idp_activities.id')
             ->get()
             ->groupBy('idp_item_id');
@@ -1108,6 +1166,8 @@ class DashboardController extends Controller
                                 : (float) $activity->weight_percent,
                             'startDate' => $activity->start_date ?? '',
                             'endDate' => $activity->end_date ?? '',
+                            'formCode' => $activity->form_code ?? '',
+                            'formDetails' => $this->decodeJsonObject($activity->form_details ?? null),
                         ])
                         ->values()
                         ->all(),
@@ -1390,8 +1450,13 @@ class DashboardController extends Controller
 
     private function idpLearningMethods()
     {
+        $columns = ['id', 'code', 'focus_type', 'title', 'template_file_name', 'is_active'];
+        if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
+            $columns[] = 'form_code';
+        }
+
         return DB::table('idp_learning_methods')
-            ->select('id', 'code', 'focus_type', 'title', 'template_file_name', 'is_active')
+            ->select($columns)
             ->whereIn('focus_type', ['experiential', 'social'])
             ->orderBy('focus_type')
             ->orderBy('sort_order')
@@ -1402,6 +1467,7 @@ class DashboardController extends Controller
                 'code' => $item->code ?? '',
                 'focusType' => $item->focus_type,
                 'title' => $item->title,
+                'formCode' => $item->form_code ?? '',
                 'templateFileName' => $item->template_file_name ?? '',
                 'isActive' => (bool) $item->is_active,
             ]);
