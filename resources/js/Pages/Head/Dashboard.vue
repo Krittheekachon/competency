@@ -665,6 +665,7 @@ const teamHeatmapCompetencies = computed(() => {
     return Array.from(byCode.values()).sort((left, right) => left.code.localeCompare(right.code, 'th'));
 });
 const formatTeamGap = (value) => {
+    if (value === null || value === undefined || value === '') return '-';
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue)) return '-';
     if (numberValue === 0) return '0';
@@ -679,19 +680,23 @@ const formatTeamGap = (value) => {
 };
 const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const resultRows = gapResultRows(person);
+    const assessed = resultRows.some((row) =>
+        row.hasAssessment || normalizeAssessmentStatus(row.status) !== 'draft',
+    );
     const scores = teamHeatmapCompetencies.value.map((comp) => {
         const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
-        return matching ? Number(matching.gap ?? 0) : 0;
+        return assessed && matching ? Number(matching.gap ?? 0) : null;
     });
-    const missingCount = scores.filter((score) => score < 0).length;
-    const assessed = resultRows.length > 0;
+    const missingCount = assessed ? scores.filter((score) => Number(score) < 0).length : 0;
 
     return {
         ...person,
         scores,
         assessed,
         missingCount,
-        summary: missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง',
+        summary: assessed
+            ? (missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง')
+            : 'ยังไม่ประเมินตนเอง',
     };
 }));
 const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
@@ -701,8 +706,8 @@ const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, 
     const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
     return { ...comp, average };
 }));
-const teamStrongest = computed(() => [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0]);
-const teamWeakest = computed(() => [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0]);
+const teamStrongest = computed(() => teamAssessedRows.value.length ? [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0] : null);
+const teamWeakest = computed(() => teamAssessedRows.value.length ? [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0] : null);
 const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
     const gapCount = gapResultRows(person).filter((row) => row.failed).length || normalizeGaps(person).length;
     const phaseMeta = idpStatusFor(person.phase);
@@ -1238,7 +1243,7 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
 
-                    <div v-if="teamAssessedRows.length === 0" class="card empty-card">
+                    <div v-if="teamHeatmapRows.length === 0" class="card empty-card">
                         ยังไม่ได้รับผลการประเมินจากผู้ใต้บังคับบัญชา
                     </div>
 
@@ -1294,13 +1299,13 @@ const logout = () => router.post(route('logout'));
                                                 <td v-for="(score, scoreIndex) in row.scores" :key="`${row.sso}-${scoreIndex}`">
                                                     <span
                                                         class="gap-chip"
-                                                        :class="{ ok: Number(score) >= 0, bad: Number(score) < 0 }"
+                                                        :class="{ ok: score !== null && Number(score) >= 0, bad: score !== null && Number(score) < 0 }"
                                                     >
                                                         {{ formatTeamGap(score) }}
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <span class="b" :class="row.missingCount ? 'br' : 'bb'">{{ row.summary }}</span>
+                                                    <span class="b" :class="!row.assessed ? 'bgr' : (row.missingCount ? 'br' : 'bb')">{{ row.summary }}</span>
                                                 </td>
                                             </tr>
                                         </tbody>
