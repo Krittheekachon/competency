@@ -35,6 +35,7 @@ type Catalog = {
   code?: string;
   name: string;
   deliveryType?: string;
+  formCode?: string;
   competencyIds?: number[];
   description?: string;
   isActive?: boolean;
@@ -270,7 +271,7 @@ const formCodeForActivity = (activity: Activity) => {
   }
 
   if (focusType(activity.methodKey) === 'formal') {
-    return 'form_10_training';
+    return catalogFor(activity)?.formCode || activity.formCode || 'form_10_training';
   }
 
   return '';

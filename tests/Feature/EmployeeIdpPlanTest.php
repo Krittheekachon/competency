@@ -32,7 +32,7 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $methodTypeId = DB::table('learning_method_types')->insertGetId([
-            'key' => 'experiential',
+            'key' => 'experiential-learning',
             'label' => 'Experiential Learning',
             'is_active' => true,
             'created_at' => now(),
@@ -47,7 +47,7 @@ class EmployeeIdpPlanTest extends TestCase
                     'successCriteria' => '',
                     'activities' => [
                         [
-                            'methodKey' => 'experiential',
+                            'methodKey' => 'experiential-learning',
                             'developmentToolId' => null,
                             'learningCatalogId' => null,
                             'activityName' => 'Project Assignment',
@@ -58,7 +58,7 @@ class EmployeeIdpPlanTest extends TestCase
                             'endDate' => '2026-07-16',
                         ],
                         [
-                            'methodKey' => 'experiential',
+                            'methodKey' => 'experiential-learning',
                             'developmentToolId' => null,
                             'learningCatalogId' => null,
                             'activityName' => 'Job Rotation',
@@ -114,7 +114,7 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         DB::table('learning_method_types')->insert([
-            'key' => 'social',
+            'key' => 'social-learning',
             'label' => 'Social Learning',
             'is_active' => true,
             'created_at' => now(),
@@ -136,7 +136,7 @@ class EmployeeIdpPlanTest extends TestCase
                     'goal' => 'พัฒนาการสื่อสารกับผู้รับบริการ',
                     'successCriteria' => 'ให้บริการได้ตามมาตรฐาน',
                     'activities' => [[
-                        'methodKey' => 'social',
+                        'methodKey' => 'social-learning',
                         'developmentToolId' => $toolId,
                         'learningCatalogId' => null,
                         'activityName' => '03 · การสอนงาน (Coaching)',
@@ -223,7 +223,7 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $formalMethodId = DB::table('learning_method_types')->insertGetId([
-            'key' => 'formal',
+            'key' => 'formal-learning',
             'label' => 'Formal Learning',
             'is_active' => true,
             'created_at' => now(),
@@ -248,7 +248,7 @@ class EmployeeIdpPlanTest extends TestCase
                     'goal' => 'พัฒนาสมรรถนะ',
                     'successCriteria' => 'ทำงานได้ตามเกณฑ์',
                     'activities' => [[
-                        'methodKey' => 'formal',
+                        'methodKey' => 'formal-learning',
                         'learningCatalogId' => $catalogId,
                         'activityName' => 'หลักสูตรคนละสมรรถนะ',
                         'weightPercent' => 100,

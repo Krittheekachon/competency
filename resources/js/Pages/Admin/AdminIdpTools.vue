@@ -60,14 +60,24 @@ const initialDeliveryTypeCodes = () => {
   });
   return codes;
 };
+const initialDeliveryTypeForms = () => {
+  const forms = { e_learning: 'form_9_field_trip', in_class: 'form_10_training' };
+  props.deliveryTypeSettings.forEach((setting) => {
+    const value = setting.value || setting.delivery_type;
+    if (value && forms[value] !== undefined) forms[value] = String(setting.formCode || setting.form_code || forms[value]);
+  });
+  return forms;
+};
 const toolModalOpen = ref(false);
 const toolMode = ref('create');
 const toolForm = ref({ id: null, focusType: 'experiential', code: '', title: '', formCode: '' });
 const previewFormCode = ref('');
 const previewPickerOpen = ref(false);
 const deliveryTypeCodes = ref(initialDeliveryTypeCodes());
+const deliveryTypeForms = ref(initialDeliveryTypeForms());
 const deliveryCodeErrors = ref({});
 const deliveryCodeSaving = ref(false);
+const deliveryEditing = ref(false);
 const catalogModalOpen = ref(false);
 const catalogMode = ref('create');
 const catalogSearch = ref('');
@@ -100,6 +110,7 @@ const deliveryTypeSettingsByValue = computed(() => Object.fromEntries(
 const deliveryTypeOptions = computed(() => deliveryTypeBaseOptions.map((item) => ({
   value: item.value,
   code: deliveryTypeCodes.value[item.value] || deliveryTypeSettingsByValue.value[item.value]?.code || item.defaultCode,
+  formCode: deliveryTypeForms.value[item.value] || deliveryTypeSettingsByValue.value[item.value]?.formCode,
   label: deliveryTypeSettingsByValue.value[item.value]?.label || item.label,
 })));
 const isCatalogELearning = computed(() => catalogForm.value.deliveryType === 'e_learning');
@@ -160,7 +171,7 @@ const toolPayload = () => ({
   form_code: toolForm.value.formCode || null,
 });
 const activityFormLabel = (formCode) =>
-  activityFormOptions.find((option) => option.value === (formCode || ''))?.label || 'ไม่มีแบบฟอร์มรายละเอียด';
+  [...activityFormOptions, ...previewFormOptions].find((option) => option.value === (formCode || ''))?.label || 'ไม่มีแบบฟอร์มรายละเอียด';
 const activePreviewOptions = computed(() => previewFormOptions);
 const previewForm = computed(() => formDefinitions[previewFormCode.value] || null);
 const previewRows = computed(() => {
@@ -335,22 +346,42 @@ const updateDeliveryTypeCode = (value, code) => {
     [value]: String(code || '').replace(/\D/g, '').slice(0, 20),
   };
 };
+const updateDeliveryTypeForm = (value, formCode) => {
+  deliveryTypeForms.value = {
+    ...deliveryTypeForms.value,
+    [value]: formCode,
+  };
+};
 const deliveryCodeError = (value) => deliveryCodeErrors.value[`delivery_types.${value}`] || '';
+const deliveryFormError = (value) => deliveryCodeErrors.value[`delivery_forms.${value}`] || '';
+const resetDeliveryTypeSettings = () => {
+  deliveryTypeCodes.value = initialDeliveryTypeCodes();
+  deliveryTypeForms.value = initialDeliveryTypeForms();
+  deliveryCodeErrors.value = {};
+};
+const cancelDeliveryTypeEdit = () => {
+  resetDeliveryTypeSettings();
+  deliveryEditing.value = false;
+};
 const saveDeliveryTypeCodes = () => {
   deliveryCodeErrors.value = {};
   router.put(route('admin.idp-delivery-type-settings.update'), {
     delivery_types: deliveryTypeCodes.value,
+    delivery_forms: deliveryTypeForms.value,
   }, {
     preserveScroll: true,
     onStart: () => { deliveryCodeSaving.value = true; },
     onFinish: () => { deliveryCodeSaving.value = false; },
     onError: (errors) => { deliveryCodeErrors.value = errors; },
+    onSuccess: () => { deliveryEditing.value = false; },
   });
 };
 const deliveryTypeOption = (value) => deliveryTypeOptions.value.find((item) => item.value === value);
 const deliveryTypeCode = (value) => deliveryTypeOption(value)?.code || '-';
 const deliveryTypeLabel = (value) => deliveryTypeOption(value)?.label || '-';
 const deliveryTypeSelectLabel = (option) => (option.code ? `${option.code} ${option.label}` : option.label);
+const deliveryTypeFormCode = (value) => deliveryTypeOption(value)?.formCode || 'form_10_training';
+const deliveryTypeFormLabel = (value) => activityFormLabel(deliveryTypeFormCode(value));
 const deliveryTypeDisplay = (value) => {
   const option = deliveryTypeOption(value);
   if (!option) return '-';
@@ -415,22 +446,68 @@ const deliveryTypeDisplay = (value) => {
           <div class="delivery-code-title">ตั้งค่ารหัสรูปแบบ</div>
           <div class="delivery-code-sub">แก้ตรงนี้ครั้งเดียว ทุกกิจกรรมที่ใช้รูปแบบเดียวกันจะใช้รหัสนี้ร่วมกัน</div>
         </div>
-        <div class="delivery-code-fields">
-          <label v-for="option in deliveryTypeOptions" :key="option.value" class="delivery-code-field">
-            <span>{{ option.label }}</span>
-            <input
-              class="inp delivery-code-input"
-              inputmode="numeric"
-              maxlength="20"
-              pattern="[0-9]*"
-              :value="option.code"
-              @input="updateDeliveryTypeCode(option.value, $event.target.value)"
-            />
+        <div class="delivery-type-settings">
+          <div v-for="option in deliveryTypeOptions" :key="option.value" class="delivery-type-setting" :class="{ readonly: !deliveryEditing }">
+            <div class="delivery-setting-head">
+              <div>
+                <strong>{{ option.label }}</strong>
+                <span>Formal Learning</span>
+              </div>
+              <em>{{ option.code || '--' }}</em>
+            </div>
+            <div v-if="!deliveryEditing" class="delivery-setting-summary">
+              <div class="delivery-summary-code">
+                <span>รหัส</span>
+                <strong>{{ option.code || '--' }}</strong>
+              </div>
+              <div class="delivery-summary-form">
+                <span>แบบฟอร์ม</span>
+                <strong>{{ activityFormLabel(option.formCode) }}</strong>
+              </div>
+              <button class="btn btn-s btn-sm delivery-preview-btn" type="button" @click="openFormPreview(option.formCode)">ดูตัวอย่าง</button>
+            </div>
+            <div v-else class="delivery-setting-controls">
+              <label class="delivery-code-field">
+                <span>รหัส</span>
+                <input
+                  class="inp delivery-code-input"
+                  inputmode="numeric"
+                  maxlength="20"
+                  pattern="[0-9]*"
+                  :value="option.code"
+                  @input="updateDeliveryTypeCode(option.value, $event.target.value)"
+                />
+              </label>
+              <label class="delivery-form-field">
+                <span>แบบฟอร์ม</span>
+                <select
+                  class="sel delivery-form-select"
+                  :class="{ invalid: deliveryFormError(option.value) }"
+                  :value="option.formCode"
+                  @change="updateDeliveryTypeForm(option.value, $event.target.value)"
+                >
+                  <option v-for="formOption in previewFormOptions" :key="formOption.value" :value="formOption.value">{{ formOption.label }}</option>
+                </select>
+              </label>
+              <button class="btn btn-s btn-sm delivery-preview-btn" type="button" @click="openFormPreview(option.formCode)">ดูตัวอย่าง</button>
+            </div>
             <small v-if="deliveryCodeError(option.value)" class="field-error">{{ deliveryCodeError(option.value) }}</small>
-          </label>
-          <button class="btn btn-p btn-sm" type="button" :disabled="deliveryCodeSaving" @click="saveDeliveryTypeCodes">
-            {{ deliveryCodeSaving ? 'กำลังบันทึก' : 'บันทึกรหัสรูปแบบ' }}
-          </button>
+            <small v-if="deliveryFormError(option.value)" class="field-error">{{ deliveryFormError(option.value) }}</small>
+          </div>
+          <div class="delivery-save-row">
+            <button
+              v-if="!deliveryEditing"
+              class="btn btn-s btn-sm"
+              type="button"
+              @click="deliveryEditing = true"
+            >แก้ไข</button>
+            <template v-else>
+            <button class="btn btn-s btn-sm" type="button" :disabled="deliveryCodeSaving" @click="cancelDeliveryTypeEdit">ยกเลิก</button>
+            <button class="btn btn-p btn-sm" type="button" :disabled="deliveryCodeSaving" @click="saveDeliveryTypeCodes">
+              {{ deliveryCodeSaving ? 'กำลังบันทึก' : 'บันทึกรหัสรูปแบบ' }}
+            </button>
+            </template>
+          </div>
         </div>
       </section>
 
@@ -507,6 +584,7 @@ const deliveryTypeDisplay = (value) => {
                   <td class="fw8">{{ item.code || '-' }}</td>
                   <td>
                     <div class="fw8">{{ item.name }}</div>
+                    <div class="catalog-form-label">{{ deliveryTypeFormLabel(item.deliveryType) }}</div>
                   </td>
                   <td>
                     <div class="catalog-format-cell">
@@ -591,6 +669,18 @@ const deliveryTypeDisplay = (value) => {
                 <label class="lbl">รหัสรูปแบบ</label>
                 <div class="readonly-field">{{ deliveryTypeDisplay(catalogForm.deliveryType) }}</div>
                 <div class="field-hint">แก้รหัสรูปแบบได้จากแผงตั้งค่าด้านบนตาราง Learning Catalog</div>
+              </div>
+              <div class="fg span-2">
+                <label class="lbl">แบบฟอร์มที่ใช้</label>
+                <div class="form-select-row">
+                  <div class="readonly-field">{{ deliveryTypeFormLabel(catalogForm.deliveryType) }}</div>
+                  <button
+                    class="btn btn-s"
+                    type="button"
+                    @click="openFormPreview(deliveryTypeFormCode(catalogForm.deliveryType))"
+                  >ดูตัวอย่าง</button>
+                </div>
+                <div class="field-hint">ฟอร์มผูกกับหัวข้อรูปแบบด้านบน ไม่ได้ผูกแยกตามกิจกรรมย่อย</div>
               </div>
             </div>
           </section>
@@ -951,12 +1041,34 @@ const deliveryTypeDisplay = (value) => {
 .tool-title strong { min-width: 0; }
 .tool-title small { grid-column: 2; color: var(--text3); font-size: 11px; font-weight: 800; }
 .tool-code { border-radius: 999px; background: #eef4ff; color: #2563eb; font-size: 11px; font-weight: 900; padding: 5px 9px; white-space: nowrap; }
-.delivery-code-card { display: grid; grid-template-columns: minmax(220px, 0.55fr) minmax(0, 1fr); gap: 14px; align-items: center; padding: 16px 18px; background: #fff; }
+.delivery-code-card { display: grid; grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr); gap: 22px; align-items: start; padding: 20px 22px; background: #fff; }
 .delivery-code-title { color: var(--text); font-size: 14px; font-weight: 900; }
 .delivery-code-sub { margin-top: 3px; color: var(--text3); font-size: 12px; font-weight: 700; line-height: 1.45; }
-.delivery-code-fields { display: flex; align-items: flex-end; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
-.delivery-code-field { min-width: 260px; display: grid; gap: 6px; color: var(--text2); font-size: 12px; font-weight: 900; }
-.delivery-code-input { width: 92px; min-height: 40px; text-align: center; font-size: 15px; font-weight: 900; letter-spacing: 0; }
+.delivery-type-settings { display: grid; gap: 10px; }
+.delivery-type-setting { display: grid; gap: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fbfdff; padding: 12px; }
+.delivery-type-setting.readonly { background: #fff; padding: 14px; }
+.delivery-setting-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.delivery-setting-head strong,
+.delivery-setting-head span { display: block; }
+.delivery-setting-head strong { color: var(--text); font-size: 13px; font-weight: 900; line-height: 1.35; }
+.delivery-setting-head span { margin-top: 2px; color: var(--text3); font-size: 11px; font-weight: 800; }
+.delivery-setting-head em { min-width: 46px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #dbe7f7; border-radius: 8px; background: #fff; color: var(--text); font-size: 15px; font-style: normal; font-weight: 900; }
+.delivery-setting-summary { display: grid; grid-template-columns: 94px minmax(260px, 1fr) auto; gap: 10px; align-items: stretch; }
+.delivery-summary-code,
+.delivery-summary-form { min-width: 0; display: grid; align-content: center; gap: 4px; min-height: 44px; border: 1px solid #dbe3ec; border-radius: 8px; background: #f8fafc; padding: 8px 12px; }
+.delivery-summary-code { text-align: center; }
+.delivery-summary-code span,
+.delivery-summary-form span { color: var(--text3); font-size: 10px; font-weight: 900; line-height: 1; }
+.delivery-summary-code strong,
+.delivery-summary-form strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 900; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.delivery-summary-code strong { font-size: 18px; }
+.delivery-setting-controls { display: grid; grid-template-columns: 94px minmax(260px, 1fr) auto; gap: 10px; align-items: end; }
+.delivery-code-field,
+.delivery-form-field { min-width: 0; display: grid; gap: 6px; color: var(--text2); font-size: 11px; font-weight: 900; }
+.delivery-code-input { width: 100%; min-height: 40px; text-align: center; font-size: 15px; font-weight: 900; letter-spacing: 0; }
+.delivery-form-select { width: 100%; min-height: 40px; border-radius: 8px; font-size: 12px; }
+.delivery-preview-btn { min-height: 40px; white-space: nowrap; }
+.delivery-save-row { display: flex; justify-content: flex-end; gap: 10px; padding-top: 2px; }
 .catalog-card { background: #fff; }
 .catalog-card-head { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .catalog-filter-bar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.55fr) minmax(130px, 0.32fr) auto; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fbfdff; }
@@ -972,6 +1084,7 @@ const deliveryTypeDisplay = (value) => {
 .catalog-format-cell { display: grid; gap: 5px; align-items: start; }
 .catalog-code-badge { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; border-radius: 8px; background: #f8fafc; color: var(--text); font-size: 12px; font-weight: 900; letter-spacing: 0; padding: 3px 9px; }
 .catalog-delivery-label { color: var(--text2); font-size: 12px; font-weight: 800; line-height: 1.35; }
+.catalog-form-label { margin-top: 4px; color: var(--text3); font-size: 11px; font-weight: 800; line-height: 1.4; }
 .status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 900; white-space: nowrap; }
 .status-pill.active { border: 1px solid #bbf7d0; background: #dcfce7; color: #15803d; }
 .status-pill.inactive { border: 1px solid #fecaca; background: #fee2e2; color: #b91c1c; }
@@ -1059,7 +1172,7 @@ const deliveryTypeDisplay = (value) => {
 .count-pill.ghost { cursor: pointer; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; }
 .readonly-field { min-height: 42px; display: flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; color: var(--text); font-size: 13px; font-weight: 800; padding: 8px 12px; }
-.inp.invalid { border-color: #fca5a5; background: #fff7f7; }
+.inp.invalid, .sel.invalid { border-color: #fca5a5; background: #fff7f7; }
 .form-alert { margin-bottom: 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; font-weight: 900; padding: 10px 12px; }
 .field-error { margin-top: 6px; color: #b91c1c; font-size: 12px; font-weight: 800; }
 .field-hint { margin-top: 6px; color: var(--text3); font-size: 12px; font-weight: 800; }
@@ -1093,8 +1206,9 @@ const deliveryTypeDisplay = (value) => {
 @media (max-width: 900px) {
   .focus-tabs, .form-grid, .level-grid, .catalog-filter-bar { grid-template-columns: 1fr; }
   .delivery-code-card { grid-template-columns: 1fr; }
-  .delivery-code-fields { justify-content: flex-start; }
-  .delivery-code-field { min-width: min(100%, 260px); }
+  .delivery-setting-summary { grid-template-columns: 1fr; }
+  .delivery-setting-controls { grid-template-columns: 1fr; }
+  .delivery-save-row { justify-content: flex-start; }
   .span-2 { grid-column: auto; }
   .tool-row { grid-template-columns: 1fr; }
   .form-select-row, .preview-meta-grid, .preview-meta-grid.three { grid-template-columns: 1fr; }

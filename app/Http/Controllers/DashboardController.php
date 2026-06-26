@@ -1409,24 +1409,29 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('learning_catalog_id')
             ->map(fn ($items) => $items->pluck('competency_id')->values());
+        $formCodesByDeliveryType = Schema::hasColumn('learning_catalog_delivery_types', 'form_code')
+            ? DB::table('learning_catalog_delivery_types')->pluck('form_code', 'key')
+            : collect(['e_learning' => 'form_9_field_trip', 'in_class' => 'form_10_training']);
+
+        $columns = [
+            'learning_catalogs.id',
+            'learning_catalogs.code',
+            'learning_catalogs.name',
+            'learning_catalogs.delivery_type',
+            'learning_catalogs.source_type',
+            'learning_catalogs.provider',
+            'learning_catalogs.cost',
+            'learning_catalogs.hours',
+            'learning_catalogs.expected_levels',
+            'learning_catalogs.description',
+            'learning_catalogs.is_active',
+            'learning_method_types.key as method_key',
+            'learning_method_types.label as method_label',
+        ];
 
         return DB::table('learning_catalogs')
             ->leftJoin('learning_method_types', 'learning_catalogs.method_type_id', '=', 'learning_method_types.id')
-            ->select(
-                'learning_catalogs.id',
-                'learning_catalogs.code',
-                'learning_catalogs.name',
-                'learning_catalogs.delivery_type',
-                'learning_catalogs.source_type',
-                'learning_catalogs.provider',
-                'learning_catalogs.cost',
-                'learning_catalogs.hours',
-                'learning_catalogs.expected_levels',
-                'learning_catalogs.description',
-                'learning_catalogs.is_active',
-                'learning_method_types.key as method_key',
-                'learning_method_types.label as method_label'
-            )
+            ->select($columns)
             ->orderBy('learning_catalogs.name')
             ->get()
             ->map(fn (object $item) => [
@@ -1436,6 +1441,7 @@ class DashboardController extends Controller
                 'methodKey' => $item->method_key,
                 'methodLabel' => $item->method_label,
                 'deliveryType' => $item->delivery_type ?? 'e_learning',
+                'formCode' => $formCodesByDeliveryType[$item->delivery_type ?? 'e_learning'] ?? 'form_10_training',
                 'sourceType' => $item->source_type ?? 'internal',
                 'provider' => $item->provider ?? '',
                 'cost' => $item->cost,
@@ -1494,11 +1500,13 @@ class DashboardController extends Controller
                 'value' => 'e_learning',
                 'code' => '',
                 'label' => 'การฝึกอบรมออนไลน์ (e-Learning)',
+                'formCode' => 'form_9_field_trip',
             ],
             'in_class' => [
                 'value' => 'in_class',
                 'code' => '',
                 'label' => 'การฝึกอบรมในห้องเรียน (In Class Training)',
+                'formCode' => 'form_10_training',
             ],
         ];
 
@@ -1506,9 +1514,14 @@ class DashboardController extends Controller
             return array_values($defaults);
         }
 
+        $deliveryColumns = ['key', 'code', 'name_th', 'name_en', 'is_active'];
+        if (Schema::hasColumn('learning_catalog_delivery_types', 'form_code')) {
+            $deliveryColumns[] = 'form_code';
+        }
+
         $deliveryTypes = DB::table('learning_catalog_delivery_types')
             ->whereIn('key', array_keys($defaults))
-            ->get(['key', 'code', 'name_th', 'name_en', 'is_active'])
+            ->get($deliveryColumns)
             ->keyBy('key');
 
         return collect($defaults)
@@ -1521,6 +1534,7 @@ class DashboardController extends Controller
                     'label' => $row
                         ? trim($row->name_th.' '.($row->name_en ? "({$row->name_en})" : ''))
                         : $item['label'],
+                    'formCode' => $row->form_code ?? ($deliveryType === 'e_learning' ? 'form_9_field_trip' : 'form_10_training'),
                     'isActive' => $row ? (bool) $row->is_active : true,
                 ];
             })
