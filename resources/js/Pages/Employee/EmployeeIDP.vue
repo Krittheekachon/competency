@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
+import {
+  formDefinitions,
+  hasGroupedRowFields,
+  rowHeaderCells,
+  rowSubHeaderFields,
+  type RowField,
+} from '../../idpFormDefinitions';
 
 type Gap = {
   id: number;
@@ -22,15 +29,25 @@ type Gap = {
 };
 
 type Method = { key: string; label: string; desc?: string };
-type DevelopmentTool = { id: number; code?: string; focusType: string; title: string; isActive?: boolean };
+type DevelopmentTool = { id: number; code?: string; focusType: string; title: string; formCode?: string; isActive?: boolean };
 type Catalog = {
   id: number;
   code?: string;
   name: string;
+  deliveryType?: string;
+  formCode?: string;
   competencyIds?: number[];
   description?: string;
   isActive?: boolean;
 };
+type SupervisorChainOption = {
+  id: number;
+  step: number;
+  label: string;
+  name: string;
+  position?: string;
+};
+type FormDetails = Record<string, any>;
 type Activity = {
   clientKey: string;
   methodKey: string;
@@ -42,6 +59,8 @@ type Activity = {
   weightPercent: number | '';
   startDate: string;
   endDate: string;
+  formCode: string;
+  formDetails: FormDetails;
 };
 type Plan = {
   competencyGapId: number;
@@ -66,6 +85,8 @@ const props = defineProps<{
 const page = usePage();
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
+const activeFormActivityKey = ref<string | null>(null);
+const showCoachingApproachHelp = ref(false);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const lastSavedAt = ref('');
 const lastSavedSignature = ref('');
@@ -79,6 +100,7 @@ const idpGaps = computed(() => (props.gaps || [])
 const methods = computed(() => props.learningMethods || []);
 const activeTools = computed(() => (props.idpLearningMethods || []).filter((tool) => tool.isActive !== false));
 const activeCatalogs = computed(() => (props.learningCatalogs || []).filter((catalog) => catalog.isActive !== false));
+const supervisorChainOptions = computed<SupervisorChainOption[]>(() => props.user?.supervisorChain || []);
 const selectedGap = computed(() => idpGaps.value.find((gap) => gap.id === selectedGapId.value) || null);
 const selectedPlan = computed(() => plans.value.find((plan) => plan.competencyGapId === selectedGapId.value) || null);
 const isReviewStatus = (status: string) => /^review_step_[123]$/.test(status);
@@ -86,6 +108,84 @@ const isPlanLocked = (plan: Plan | null) =>
   plan?.status === 'approved' || isReviewStatus(plan?.status || '');
 const selectedPlanLocked = computed(() => isPlanLocked(selectedPlan.value));
 const errors = computed(() => page.props.errors || {});
+const coachingApproachDescriptions = [
+  {
+    code: 'A',
+    title: 'ส่งเสริม',
+    summary: 'เน้นเสริมจุดแข็งและพฤติกรรมที่ดีให้ชัดขึ้น',
+    items: [
+      'ความรับผิดชอบ: รับผิดชอบต่อหน้าที่และการกระทำของตนเอง',
+      'ความซื่อสัตย์และจริยธรรม: ยึดมั่นในจริยธรรมในการทำงาน',
+      'ความขยันหมั่นเพียร: มีความพยายามและมุ่งมั่นในการทำงานเพื่อบรรลุเป้าหมาย',
+      'การทำงานเป็นทีม: ทำงานร่วมกับผู้อื่นได้อย่างมีประสิทธิภาพ',
+      'ความคิดสร้างสรรค์และนวัตกรรม: คิดค้นวิธีการใหม่ ๆ ในการทำงาน',
+      'การพัฒนาตนเอง: เรียนรู้และพัฒนาทักษะใหม่อย่างต่อเนื่อง',
+      'การสื่อสารที่มีประสิทธิภาพ: สื่อสารได้อย่างชัดเจน',
+      'การคิดเชิงวิพากษ์: วิเคราะห์และประเมินสถานการณ์ได้รอบคอบ',
+      'ความยืดหยุ่นและการปรับตัว: ปรับตัวได้ดีในสถานการณ์ที่เปลี่ยนแปลง',
+      'การให้และรับข้อเสนอแนะ: รับข้อเสนอแนะเพื่อการพัฒนาอย่างสร้างสรรค์',
+      'ความเป็นผู้นำ: นำทีมและมีอิทธิพลเชิงบวกต่อผู้อื่น',
+      'การตัดสินใจที่ดี: ตัดสินใจรวดเร็วและแม่นยำในแนวทางที่เหมาะสม',
+    ],
+  },
+  {
+    code: 'B',
+    title: 'สร้างสรรค์',
+    summary: 'เน้นการคิดนอกกรอบและสร้างแนวทางใหม่',
+    items: [
+      'ความคิดนอกกรอบ: คิดต่างจากคนทั่วไปและหาแนวทางใหม่ในการแก้ปัญหา',
+      'การมีจินตนาการสูง: สร้างภาพในจินตนาการและสร้างสรรค์สิ่งใหม่',
+      'การยอมรับความเสี่ยง: กล้าลองสิ่งใหม่แม้มีความเสี่ยง',
+      'การมองเห็นโอกาส: มองเห็นโอกาสในสถานการณ์ต่าง ๆ',
+      'ความยืดหยุ่น: ปรับตัวและปรับวิธีทำงานตามสถานการณ์',
+      'ความอยากรู้อยากเห็น: สนใจเรียนรู้สิ่งใหม่อยู่เสมอ',
+      'การมองโลกในแง่บวก: เห็นโอกาสและไม่ย่อท้อต่ออุปสรรค',
+      'การคิดวิเคราะห์: วิเคราะห์และใช้ข้อมูลสร้างสรรค์ผลงาน',
+      'การทำงานร่วมกับผู้อื่น: รับฟังและแลกเปลี่ยนความคิดเห็นได้ดี',
+      'ความอดทนและความพยายาม: มุ่งมั่นแม้เจออุปสรรค',
+      'ความมั่นใจในตนเอง: เชื่อมั่นในความคิดและความสามารถของตนเอง',
+      'การรับข้อเสนอแนะ: รับฟังข้อเสนอแนะเพื่อปรับปรุงผลงาน',
+    ],
+  },
+  {
+    code: 'C',
+    title: 'กระตุ้น',
+    summary: 'เน้นกระตุ้นให้เกิดความมั่นใจ แรงจูงใจ และการลงมือทำ',
+    items: [
+      'ความรับผิดชอบ: กระตุ้นให้รับผิดชอบต่อหน้าที่และการกระทำของตนเอง',
+      'ความคิดสร้างสรรค์: ส่งเสริมให้คิดนอกกรอบและเสนอแนวคิดใหม่',
+      'การทำงานเป็นทีม: กระตุ้นการทำงานร่วมกันและแบ่งปันข้อมูล',
+      'การพัฒนาตนเอง: สนับสนุนให้เรียนรู้และพัฒนาทักษะใหม่อย่างต่อเนื่อง',
+      'ความขยันหมั่นเพียร: กระตุ้นให้มุ่งมั่นและพยายามบรรลุเป้าหมาย',
+      'การคิดเชิงวิพากษ์: ส่งเสริมการวิเคราะห์และประเมินสถานการณ์อย่างรอบคอบ',
+      'ความมั่นใจในตนเอง: กระตุ้นให้กล้าตัดสินใจในสถานการณ์ต่าง ๆ',
+      'การให้และรับข้อเสนอแนะ: สนับสนุนการแลกเปลี่ยนข้อเสนอแนะเพื่อพัฒนา',
+      'การจัดการเวลา: กระตุ้นให้บริหารเวลาอย่างมีประสิทธิภาพ',
+      'ความยืดหยุ่นและการปรับตัว: ส่งเสริมการปรับตัวต่อสถานการณ์เปลี่ยนแปลง',
+      'ความเป็นผู้นำ: กระตุ้นศักยภาพด้านการนำทีม',
+      'การสื่อสารที่มีประสิทธิภาพ: สนับสนุนการสื่อสารอย่างชัดเจน',
+    ],
+  },
+  {
+    code: 'D',
+    title: 'แก้ไขปัญหา',
+    summary: 'เน้นวิเคราะห์ปัญหา เลือกวิธีแก้ และตัดสินใจอย่างมีข้อมูล',
+    items: [
+      'การคิดเชิงวิพากษ์: วิเคราะห์ข้อมูลและสถานการณ์อย่างรอบคอบ',
+      'ความคิดสร้างสรรค์: คิดนอกกรอบและเสนอวิธีใหม่ในการแก้ปัญหา',
+      'ความสามารถในการวิเคราะห์: ใช้เครื่องมือ เช่น SWOT เพื่อหาสาเหตุและผลกระทบของปัญหา',
+      'ความมั่นใจในตนเอง: มั่นใจในการตัดสินใจและการกระทำแม้ในสถานการณ์ยาก',
+      'ความยืดหยุ่น: ปรับวิธีหรือแผนตามสถานการณ์และข้อมูลใหม่',
+      'การรวบรวมข้อมูล: จัดการข้อมูลที่เกี่ยวข้องเพื่อสนับสนุนการตัดสินใจ',
+      'การทำงานเป็นทีม: ทำงานร่วมกับผู้อื่นเพื่อหาวิธีแก้ปัญหา',
+      'ทักษะการสื่อสาร: สื่อสารปัญหาและแนวทางแก้ไขให้ทีมเข้าใจ',
+      'การจัดลำดับความสำคัญ: กำหนดลำดับการแก้ไขอย่างมีประสิทธิภาพ',
+      'การใช้เครื่องมือและเทคนิค: ใช้เครื่องมือที่ช่วยแก้ปัญหา เช่น การวิเคราะห์ข้อมูลหรือการสร้างแผนภูมิ',
+      'ความอดทนและความพยายาม: ไม่ย่อท้อต่อปัญหาและความท้าทาย',
+      'การเรียนรู้จากประสบการณ์: นำบทเรียนจากความผิดพลาดมาปรับปรุงแนวทางในอนาคต',
+    ],
+  },
+];
 
 const nextClientKey = () => `activity-${Date.now()}-${++activitySequence}`;
 const blankActivity = (): Activity => ({
@@ -99,6 +199,8 @@ const blankActivity = (): Activity => ({
   weightPercent: '',
   startDate: '',
   endDate: '',
+  formCode: '',
+  formDetails: {},
 });
 const savedPlans = () => new Map((props.idp?.items || []).map((item) => [item.competencyGapId, item]));
 
@@ -117,6 +219,8 @@ const hydratePlans = () => {
       activities: (item?.activities || []).map((activity) => ({
         ...activity,
         clientKey: nextClientKey(),
+        formCode: activity.formCode || '',
+        formDetails: normalizeFormDetails(activity.formCode || '', activity.formDetails || {}),
       })),
     };
   });
@@ -145,6 +249,101 @@ const toolsFor = (activity: Activity) => activeTools.value.filter((tool) => tool
 const catalogsFor = (gap: Gap) => activeCatalogs.value.filter((catalog) =>
   (catalog.competencyIds || []).includes(gap.competencyId));
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
+const toolFor = (activity: Activity) => activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
+const catalogFor = (activity: Activity) => activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
+const normalizeCode = (code?: string) => String(code || '').trim().padStart(2, '0');
+const formCodeForActivity = (activity: Activity) => {
+  if (['experiential', 'social'].includes(focusType(activity.methodKey))) {
+    const tool = toolFor(activity);
+    if (tool && typeof tool.formCode === 'string') {
+      return tool.formCode;
+    }
+    const code = normalizeCode(toolFor(activity)?.code);
+    return ({
+      '01': 'form_3_project_assignment',
+      '02': 'form_4_ojt',
+      '03': 'form_5_coaching',
+      '04': 'form_6_mentoring',
+      '05': 'form_7_group_activity',
+      '06': 'form_8_feedback',
+      '07': 'form_9_field_trip',
+    } as Record<string, string>)[code] || '';
+  }
+
+  if (focusType(activity.methodKey) === 'formal') {
+    return catalogFor(activity)?.formCode || activity.formCode || 'form_10_training';
+  }
+
+  return '';
+};
+const effectiveFormCode = (activity: Activity) => {
+  if (['experiential', 'social'].includes(focusType(activity.methodKey)) && activity.developmentToolId) {
+    return formCodeForActivity(activity);
+  }
+  return activity.formCode || formCodeForActivity(activity);
+};
+const formDefinitionFor = (activity: Activity) => formDefinitions[effectiveFormCode(activity)] || null;
+const hasActivityForm = (activity: Activity) => Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
+const isFormSaved = (activity: Activity) => Boolean(activity.formDetails?._saved);
+const shouldShowDetailField = (field: { showWhen?: { key: string; value: string } }, detail: Record<string, any>) =>
+  !field.showWhen || detail[field.showWhen.key] === field.showWhen.value;
+const toggleChoice = (row: Record<string, any>, key: string, choice: string) => {
+  row[key] = row[key] === choice ? '' : choice;
+};
+const multiChoices = (row: Record<string, any>, key: string) => {
+  if (!Array.isArray(row[key])) row[key] = [];
+  return row[key] as string[];
+};
+const toggleMultiChoice = (row: Record<string, any>, key: string, choice: string, checked: boolean) => {
+  const choices = multiChoices(row, key);
+  row[key] = checked
+    ? Array.from(new Set([...choices, choice]))
+    : choices.filter((item) => item !== choice);
+};
+const fixedTopicLabel = (activity: Activity | null, row: Record<string, any>, rowIndex: number) => {
+  const formCode = activity ? effectiveFormCode(activity) : '';
+  if (formCode === 'form_7_group_activity') {
+    return row.fixedTopicLabel ||
+      (rowIndex === 0
+        ? '1) หัวข้อการเรียนรู้ฯ'
+        : rowIndex === 1
+          ? '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้'
+          : '');
+  }
+  if (formCode === 'form_9_field_trip') {
+    return row.fixedTopicLabel ||
+      (rowIndex === 0
+        ? '1) ประเด็นที่ต้องการพัฒนา'
+        : rowIndex === 1
+          ? '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการศึกษาดูงาน'
+          : '');
+  }
+  return row.fixedTopicLabel || '';
+};
+const hasFixedFormRows = (activity: Activity | null) =>
+  activity ? ['form_7_group_activity', 'form_9_field_trip'].includes(effectiveFormCode(activity)) : false;
+const hasLockedFormRows = (activity: Activity | null) =>
+  activity ? ['form_7_group_activity', 'form_9_field_trip', 'form_10_training'].includes(effectiveFormCode(activity)) : false;
+const hasDetailFields = (activity: Activity | null) =>
+  activity ? Boolean(formDefinitionFor(activity)?.detailFields.length) : false;
+const shouldPlaceDetailAtBottom = (activity: Activity | null) =>
+  activity ? effectiveFormCode(activity) === 'form_9_field_trip' && hasDetailFields(activity) : false;
+const isFixedTopicField = (field: RowField, rowIndex: number) =>
+  activeFormActivity.value &&
+  hasFixedFormRows(activeFormActivity.value) &&
+  ['learningTopic', 'skillTopic'].includes(field.key) &&
+  rowIndex < 2;
+const handleDetailChoiceChange = (fieldKey: string) => {
+  if (!activeFormActivity.value) return;
+  const detail = activeFormActivity.value.formDetails.detail;
+  const selectedValue = detail[fieldKey];
+
+  formDefinitionFor(activeFormActivity.value)?.detailFields
+    .filter((field) => field.showWhen?.key === fieldKey && field.showWhen.value !== selectedValue)
+    .forEach((field) => {
+      detail[field.key] = '';
+    });
+};
 const planStatusLabel = (plan: Plan | null) => ({
   review_step_1: 'รอผู้อนุมัติลำดับ 1',
   review_step_2: 'รอผู้อนุมัติลำดับ 2',
@@ -164,15 +363,135 @@ const changeMethod = (activity: Activity) => {
   activity.learningCatalogId = null;
   activity.activityName = '';
   activity.activityDescription = '';
+  activity.formCode = '';
+  activity.formDetails = {};
 };
 const chooseTool = (activity: Activity) => {
   const tool = activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
   activity.activityName = tool ? `${tool.code ? `${tool.code} · ` : ''}${tool.title}` : '';
+  activity.formCode = formCodeForActivity(activity);
+  activity.formDetails = defaultFormDetails(activity.formCode);
 };
 const chooseCatalog = (activity: Activity) => {
   const catalog = activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
   activity.activityName = catalog?.name || '';
   activity.activityDescription = catalog?.description || '';
+  activity.formCode = formCodeForActivity(activity);
+  activity.formDetails = {
+    ...defaultFormDetails(activity.formCode),
+    planRows: defaultPlanRows(activity.formCode).map((row, index) => index === 0 ? {
+      ...row,
+      trainingType: catalog?.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning',
+      courseCode: catalog?.code || '',
+      courseName: catalog?.name || '',
+      cost: '',
+    } : row),
+  };
+};
+const defaultPlanRows = (formCode: string) => {
+  if (formCode === 'form_7_group_activity') {
+    return [
+      { fixedTopicLabel: '1) หัวข้อการเรียนรู้ฯ', learningTopic: '' },
+      { fixedTopicLabel: '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้', learningTopic: '' },
+    ];
+  }
+  if (formCode === 'form_9_field_trip') {
+    return [
+      { fixedTopicLabel: '1) ประเด็นที่ต้องการพัฒนา', skillTopic: '' },
+      { fixedTopicLabel: '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการศึกษาดูงาน', skillTopic: '' },
+    ];
+  }
+  if (formCode === 'form_10_training') {
+    return Array.from({ length: 6 }, () => ({}));
+  }
+
+  return [{}];
+};
+const defaultFormDetails = (formCode: string): FormDetails => ({
+  detail: {},
+  planRows: defaultPlanRows(formCode),
+  developmentResult: {},
+  assessment: {},
+  acknowledgements: {},
+  _saved: false,
+  _formCode: formCode,
+});
+const normalizeFormDetails = (formCode: string, details?: FormDetails): FormDetails => {
+  const source = details || {};
+  const rows = Array.isArray(source.planRows) && source.planRows.length
+    ? source.planRows
+    : defaultPlanRows(formCode);
+  const rowsWithFormDefaults = formCode === 'form_10_training'
+    ? defaultPlanRows(formCode).map((defaultRow, index) => ({
+      ...defaultRow,
+      ...(rows[index] || {}),
+      trainingHours: rows[index]?.trainingHours || rows[index]?.trainingDays || defaultRow.trainingHours,
+    }))
+    : ['form_7_group_activity', 'form_9_field_trip'].includes(formCode) && !rows.some((row: Record<string, any>) => row?.fixedTopicLabel)
+    ? defaultPlanRows(formCode).map((defaultRow, index) => ({
+      ...(rows[index] || {}),
+      ...defaultRow,
+      learningTopic: rows[index]?.learningTopic || defaultRow.learningTopic,
+      skillTopic: rows[index]?.skillTopic || defaultRow.skillTopic,
+    }))
+    : rows;
+  const normalizedRows = rowsWithFormDefaults.map((row: Record<string, any>) => {
+    const cloned = { ...(row || {}) };
+    const legacyApproaches = ['A', 'B', 'C', 'D'].filter((code) => cloned[`approach${code}`]);
+    if (!Array.isArray(cloned.coachingApproaches) && legacyApproaches.length) {
+      cloned.coachingApproaches = legacyApproaches;
+    }
+    return cloned;
+  });
+
+  return {
+    ...defaultFormDetails(formCode),
+    ...source,
+    detail: { ...(source.detail || {}) },
+    planRows: normalizedRows,
+    developmentResult: { ...(source.developmentResult || {}) },
+    assessment: { ...(source.assessment || {}) },
+    acknowledgements: { ...(source.acknowledgements || {}) },
+  };
+};
+const openActivityForm = (activity: Activity) => {
+  if (!activity.formCode) {
+    activity.formCode = effectiveFormCode(activity);
+  }
+  activity.formDetails = normalizeFormDetails(activity.formCode, activity.formDetails);
+  showCoachingApproachHelp.value = false;
+  activeFormActivityKey.value = activity.clientKey;
+};
+const closeActivityForm = () => {
+  showCoachingApproachHelp.value = false;
+  activeFormActivityKey.value = null;
+};
+const activeFormActivity = computed(() =>
+  selectedPlan.value?.activities.find((activity) => activity.clientKey === activeFormActivityKey.value) || null);
+const saveActivityForm = () => {
+  if (activeFormActivity.value) {
+    activeFormActivity.value.formDetails = {
+      ...activeFormActivity.value.formDetails,
+      _saved: true,
+    };
+  }
+  closeActivityForm();
+};
+const addFormRow = (activity: Activity) => {
+  if (hasLockedFormRows(activity)) return;
+  const rows = Array.isArray(activity.formDetails?.planRows) ? activity.formDetails.planRows : [];
+  activity.formDetails.planRows = [...rows, {}];
+};
+const removeFormRow = (activity: Activity, index: number) => {
+  if (hasLockedFormRows(activity)) return;
+  const rows = Array.isArray(activity.formDetails?.planRows) ? activity.formDetails.planRows : [];
+  activity.formDetails.planRows = rows.filter((_, rowIndex) => rowIndex !== index);
+};
+const formRows = (activity: Activity) => {
+  if (!Array.isArray(activity.formDetails?.planRows) || activity.formDetails.planRows.length === 0) {
+    activity.formDetails.planRows = [{}];
+  }
+  return activity.formDetails.planRows;
 };
 
 const requestPayload = () => ({
@@ -188,7 +507,7 @@ const requestPayload = () => ({
 });
 const signature = () => JSON.stringify(requestPayload());
 
-watch(() => [props.gaps, props.idp], hydratePlans, { immediate: true, deep: true });
+watch(() => [props.gaps, props.idp], hydratePlans, { immediate: true });
 
 const csrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
 
@@ -246,6 +565,9 @@ const planIssue = (plan: Plan): string => {
   for (const activity of plan.activities) {
     if (!activity.methodKey || !activity.activityName || activity.weightPercent === '' || !activity.startDate || !activity.endDate) {
       return 'ข้อมูลกิจกรรมยังไม่ครบ';
+    }
+    if (hasActivityForm(activity) && !isFormSaved(activity)) {
+      return 'ยังไม่ได้กรอกรายละเอียดฟอร์มกิจกรรม';
     }
     if (['experiential', 'social'].includes(focusType(activity.methodKey)) && !activity.developmentToolId) {
       return 'ยังไม่ได้เลือกเครื่องมือพัฒนา';
@@ -432,7 +754,7 @@ const submitSelectedPlan = () => {
                 <label>
                   <span>รูปแบบการเรียนรู้</span>
                   <select v-model="activity.methodKey" :disabled="selectedPlanLocked" @change="changeMethod(activity)">
-                    <option value="">เลือกรูปแบบ</option>
+                    <option value="">เลือกจากรายการ: รูปแบบการเรียนรู้</option>
                     <option v-for="method in methods" :key="method.key" :value="method.key">{{ method.label }}</option>
                   </select>
                 </label>
@@ -440,7 +762,7 @@ const submitSelectedPlan = () => {
                 <label v-if="['experiential', 'social'].includes(focusType(activity.methodKey))">
                   <span>เครื่องมือพัฒนา</span>
                   <select v-model.number="activity.developmentToolId" :disabled="selectedPlanLocked" @change="chooseTool(activity)">
-                    <option :value="null">เลือกเครื่องมือ</option>
+                    <option :value="null">เลือกจากรายการ: เครื่องมือพัฒนา</option>
                     <option v-for="tool in toolsFor(activity)" :key="tool.id" :value="tool.id">
                       {{ tool.code ? `${tool.code} · ` : '' }}{{ tool.title }}
                     </option>
@@ -450,7 +772,7 @@ const submitSelectedPlan = () => {
                 <label v-else-if="focusType(activity.methodKey) === 'formal'">
                   <span>Learning Catalog</span>
                   <select v-model.number="activity.learningCatalogId" :disabled="selectedPlanLocked" @change="chooseCatalog(activity)">
-                    <option :value="null">เลือกหลักสูตร</option>
+                    <option :value="null">เลือกจากรายการ: หลักสูตร</option>
                     <option v-for="catalog in catalogsFor(selectedGap)" :key="catalog.id" :value="catalog.id">
                       {{ catalog.code ? `${catalog.code} · ` : '' }}{{ catalog.name }}
                     </option>
@@ -466,10 +788,6 @@ const submitSelectedPlan = () => {
                   <span>ชื่อกิจกรรม</span>
                   <input v-model="activity.activityName" :disabled="selectedPlanLocked" placeholder="ชื่อกิจกรรมที่ต้องดำเนินการ" />
                 </label>
-                <label class="wide">
-                  <span>รายละเอียดกิจกรรม</span>
-                  <textarea v-model="activity.activityDescription" :disabled="selectedPlanLocked" rows="2" placeholder="รายละเอียด ขอบเขต หรือผลลัพธ์ของกิจกรรม" />
-                </label>
                 <label class="document-reference-field">
                   <span>เอกสารประกอบหมายเลข</span>
                   <input
@@ -479,8 +797,16 @@ const submitSelectedPlan = () => {
                   />
                 </label>
                 <label>
-                  <span>น้ำหนัก (%)</span>
-                  <input v-model.number="activity.weightPercent" :disabled="selectedPlanLocked" type="number" min="0" max="100" />
+                  <span>สัดส่วนกิจกรรม (%)</span>
+                  <input
+                    v-model.number="activity.weightPercent"
+                    :disabled="selectedPlanLocked"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="เช่น 30"
+                  />
                 </label>
                 <label>
                   <span>วันที่เริ่ม</span>
@@ -490,6 +816,21 @@ const submitSelectedPlan = () => {
                   <span>วันที่สิ้นสุด</span>
                   <input v-model="activity.endDate" :disabled="selectedPlanLocked" type="date" />
                 </label>
+                <div class="activity-detail-action wide">
+                  <div>
+                    <strong>{{ formDefinitionFor(activity)?.title || 'ยังไม่มีแบบฟอร์มรายละเอียดสำหรับหัวข้อนี้' }}</strong>
+                    <span :class="{ saved: isFormSaved(activity) }">
+                      {{ !hasActivityForm(activity) ? 'หัวข้อนี้ยังไม่เปิดให้กรอกรายละเอียดฟอร์ม' : isFormSaved(activity) ? 'กรอกรายละเอียดฟอร์มแล้ว' : 'ยังไม่ได้กรอกรายละเอียดฟอร์ม' }}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    :disabled="!hasActivityForm(activity) || selectedPlanLocked"
+                    @click="openActivityForm(activity)"
+                  >
+                    กรอกรายละเอียดฟอร์ม
+                  </button>
+                </div>
                 </div>
               </article>
 
@@ -504,6 +845,371 @@ const submitSelectedPlan = () => {
           </div>
         </template>
       </main>
+    </div>
+
+    <div v-if="activeFormActivity && formDefinitionFor(activeFormActivity) && selectedGap && selectedPlan" class="form-modal-backdrop">
+      <div class="form-modal">
+        <header class="form-modal-top">
+          <div>
+            <strong>กรอกรายละเอียดฟอร์มกิจกรรม</strong>
+            <span>แบบฟอร์มที่ {{ formDefinitionFor(activeFormActivity)?.number }} · {{ formDefinitionFor(activeFormActivity)?.title }}</span>
+          </div>
+          <button type="button" @click="closeActivityForm">×</button>
+        </header>
+
+        <div class="form-paper">
+          <section class="form-title-band">
+            <div>
+              <h3>แบบฟอร์มที่ {{ formDefinitionFor(activeFormActivity)?.number }} {{ formDefinitionFor(activeFormActivity)?.title }}</h3>
+              <p>{{ formDefinitionFor(activeFormActivity)?.focus }}</p>
+            </div>
+            <label>
+              <span>เอกสารประกอบหมายเลข</span>
+              <input v-model="activeFormActivity.documentReferenceNumber" />
+            </label>
+          </section>
+
+          <section class="form-block readonly-block">
+            <header>
+              <h4>ข้อมูลผู้รับการพัฒนา</h4>
+              <span>ดึงจากระบบ</span>
+            </header>
+            <div class="form-grid three">
+              <label>
+                <span>ชื่อผู้รับการพัฒนา</span>
+                <input :value="`${props.user?.t || ''}${props.user?.n || '-'}`" disabled />
+              </label>
+              <label>
+                <span>รหัสพนักงาน</span>
+                <input :value="props.user?.sso || '-'" disabled />
+              </label>
+              <label>
+                <span>ตำแหน่ง</span>
+                <input :value="props.user?.p || '-'" disabled />
+              </label>
+              <label class="wide">
+                <span>สังกัด</span>
+                <input :value="props.user?.d || '-'" disabled />
+              </label>
+            </div>
+          </section>
+
+          <section class="form-block readonly-block">
+            <header>
+              <h4>ข้อมูลประกอบการวางแผน</h4>
+              <span>จากสมรรถนะที่ต้องพัฒนา</span>
+            </header>
+            <div class="form-grid three">
+              <label>
+                <span>รหัส</span>
+                <input :value="selectedGap.cd" disabled />
+              </label>
+              <label>
+                <span>ชื่อสมรรถนะ</span>
+                <input :value="selectedGap.n" disabled />
+              </label>
+              <label>
+                <span>Gap</span>
+                <input :value="formatNumber(selectedGap.gap)" disabled />
+              </label>
+            </div>
+          </section>
+
+          <section v-if="hasDetailFields(activeFormActivity) && !shouldPlaceDetailAtBottom(activeFormActivity)" class="form-block">
+            <header>
+              <h4>{{ formDefinitionFor(activeFormActivity)?.detailTitle }}</h4>
+              <span>พนักงานกรอกตอนทำแผน</span>
+            </header>
+            <div class="form-grid">
+              <label
+                v-for="field in formDefinitionFor(activeFormActivity)?.detailFields"
+                :key="field.key"
+                v-show="shouldShowDetailField(field, activeFormActivity.formDetails.detail)"
+                :class="{ wide: field.type === 'area' }"
+              >
+                <span>{{ field.label }}</span>
+                <textarea
+                  v-if="field.type === 'area'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  rows="3"
+                />
+                <select
+                  v-else-if="field.type === 'choice'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  @change="handleDetailChoiceChange(field.key)"
+                >
+                  <option value="">เลือกจากรายการ</option>
+                  <option v-for="choice in field.choices" :key="choice" :value="choice">{{ choice }}</option>
+                </select>
+                <select
+                  v-else-if="field.type === 'supervisor-chain'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  :disabled="supervisorChainOptions.length === 0"
+                >
+                  <option value="">
+                    {{ supervisorChainOptions.length ? 'เลือกจากรายการ: สายการบังคับบัญชา' : 'ยังไม่ได้กำหนดสายการบังคับบัญชา' }}
+                  </option>
+                  <option v-for="person in supervisorChainOptions" :key="person.id" :value="person.id">
+                    {{ person.label }} · {{ person.name }}{{ person.position ? ` (${person.position})` : '' }}
+                  </option>
+                </select>
+                <input
+                  v-else-if="field.type === 'expert-name'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  placeholder="กรอกชื่อผู้เชี่ยวชาญ"
+                />
+                <input v-else v-model="activeFormActivity.formDetails.detail[field.key]" />
+              </label>
+            </div>
+          </section>
+
+          <section class="form-block">
+            <header>
+              <h4>{{ formDefinitionFor(activeFormActivity)?.rowTitle }}</h4>
+              <button v-if="!hasLockedFormRows(activeFormActivity)" type="button" @click="addFormRow(activeFormActivity)">+ เพิ่มแถว</button>
+            </header>
+            <div class="form-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th
+                      v-if="!hasFixedFormRows(activeFormActivity)"
+                      class="row-number"
+                      :rowspan="hasGroupedRowFields(formDefinitionFor(activeFormActivity)?.rowFields || []) ? 2 : 1"
+                    >ที่</th>
+                    <th
+                      v-for="cell in rowHeaderCells(formDefinitionFor(activeFormActivity)?.rowFields || [])"
+                      :key="cell.key"
+                      :colspan="cell.colspan"
+                      :rowspan="cell.rowspan"
+                    >
+                      {{ cell.label }}
+                      <small v-if="cell.owner">{{ cell.owner }}</small>
+                    </th>
+                    <th
+                      v-if="!hasLockedFormRows(activeFormActivity)"
+                      class="row-control"
+                      :rowspan="hasGroupedRowFields(formDefinitionFor(activeFormActivity)?.rowFields || []) ? 2 : 1"
+                    ></th>
+                  </tr>
+                  <tr v-if="hasGroupedRowFields(formDefinitionFor(activeFormActivity)?.rowFields || [])">
+                    <th
+                      v-for="(field, fieldIndex) in rowSubHeaderFields(formDefinitionFor(activeFormActivity)?.rowFields || [])"
+                      :key="`sub-${field.key}-${field.label}-${fieldIndex}`"
+                    >
+                      {{ field.label }}
+                      <small v-if="field.owner">{{ field.owner }}</small>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex">
+                    <td v-if="!hasFixedFormRows(activeFormActivity)" class="row-number">{{ rowIndex + 1 }}</td>
+                    <td
+                      v-for="(field, fieldIndex) in formDefinitionFor(activeFormActivity)?.rowFields"
+                      :key="`${field.key}-${field.label}-${fieldIndex}`"
+                    >
+                      <select v-if="field.type === 'choice'" v-model="row[field.key]">
+                        <option value="">เลือกจากรายการ</option>
+                        <option v-for="choice in field.choices" :key="choice" :value="choice">{{ choice }}</option>
+                      </select>
+                      <div v-else-if="field.type === 'checkbox-choice'" class="checkbox-choice-group">
+                        <label v-for="choice in field.choices" :key="choice">
+                          <input
+                            type="checkbox"
+                            :checked="row[field.key] === choice"
+                            @change="toggleChoice(row, field.key, choice)"
+                          />
+                          <span>{{ choice }}</span>
+                        </label>
+                      </div>
+                      <button
+                        v-else-if="field.type === 'multi-checkbox'"
+                        type="button"
+                        class="multi-check-button"
+                        :class="{ checked: multiChoices(row, field.key).includes(field.value || field.label) }"
+                        :aria-pressed="multiChoices(row, field.key).includes(field.value || field.label)"
+                        @click.stop="toggleMultiChoice(row, field.key, field.value || field.label, !multiChoices(row, field.key).includes(field.value || field.label))"
+                      >
+                        <span>✓</span>
+                      </button>
+                      <div v-else-if="isFixedTopicField(field, rowIndex)" class="fixed-topic-cell">
+                        <strong>{{ fixedTopicLabel(activeFormActivity, row, rowIndex) }}</strong>
+                        <label v-if="rowIndex === 0">
+                          <span>ระบุ</span>
+                          <textarea v-model="row[field.key]" class="table-textarea" rows="2" />
+                        </label>
+                      </div>
+                      <textarea
+                        v-else-if="field.type === 'area'"
+                        v-model="row[field.key]"
+                        class="table-textarea"
+                        rows="3"
+                      />
+                      <input v-else v-model="row[field.key]" :placeholder="field.placeholder || ''" />
+                    </td>
+                    <td v-if="!hasLockedFormRows(activeFormActivity)" class="row-control">
+                      <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="formDefinitionFor(activeFormActivity)?.note" class="form-note">
+              <span>{{ formDefinitionFor(activeFormActivity)?.note }}</span>
+              <button
+                v-if="effectiveFormCode(activeFormActivity) === 'form_5_coaching'"
+                type="button"
+                @click="showCoachingApproachHelp = true"
+              >
+                ดูคำอธิบายแนวทาง
+              </button>
+            </div>
+          </section>
+
+          <section class="form-block result-block">
+            <header>
+              <h4>ผลการดำเนินการ</h4>
+              <span>ใช้หลังแผนอนุมัติแล้ว</span>
+            </header>
+            <div class="form-grid three">
+              <label>
+                <span>เป้าหมายในการพัฒนา (Behavior Result)</span>
+                <textarea :value="selectedPlan.goal" disabled rows="3" />
+              </label>
+              <label>
+                <span>ตัวชี้วัดผลสำเร็จของการพัฒนา</span>
+                <textarea :value="selectedPlan.successCriteria" disabled rows="3" />
+              </label>
+              <label>
+                <span>ผลลัพธ์จากการพัฒนา</span>
+                <textarea v-model="activeFormActivity.formDetails.developmentResult.outcome" rows="3" />
+              </label>
+            </div>
+          </section>
+
+          <section class="form-block assessment-block">
+            <header>
+              <h4>การติดตามประเมินผล / คำรับรอง</h4>
+              <span>หัวหน้าใช้ตอนติดตามผล</span>
+            </header>
+            <div class="form-grid">
+              <label>
+                <span>ผลดำเนินการ</span>
+                <select v-model="activeFormActivity.formDetails.assessment.operationStatus">
+                  <option value="">เลือกจากรายการ</option>
+                  <option value="ตามแผน">เป็นไปตามแผน</option>
+                  <option value="ไม่ตามแผน">ไม่เป็นไปตามแผน</option>
+                </select>
+              </label>
+              <label>
+                <span>ผลการพัฒนา</span>
+                <select v-model="activeFormActivity.formDetails.assessment.developmentStatus">
+                  <option value="">เลือกจากรายการ</option>
+                  <option value="บรรลุ">บรรลุเป้าหมายที่กำหนด</option>
+                  <option value="ไม่บรรลุ">ไม่บรรลุผล ควรพัฒนาต่อ</option>
+                </select>
+              </label>
+              <label class="wide">
+                <span>เหตุผล / หมายเหตุ</span>
+                <textarea v-model="activeFormActivity.formDetails.assessment.comment" rows="2" />
+              </label>
+            </div>
+          </section>
+
+          <section v-if="shouldPlaceDetailAtBottom(activeFormActivity)" class="form-block">
+            <header>
+              <h4>{{ formDefinitionFor(activeFormActivity)?.detailTitle }}</h4>
+              <span>กรอกตอนท้าย</span>
+            </header>
+            <div class="form-grid">
+              <label
+                v-for="field in formDefinitionFor(activeFormActivity)?.detailFields"
+                :key="field.key"
+                v-show="shouldShowDetailField(field, activeFormActivity.formDetails.detail)"
+                :class="{ wide: field.type === 'area' }"
+              >
+                <span>{{ field.label }}</span>
+                <textarea
+                  v-if="field.type === 'area'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  rows="3"
+                />
+                <select
+                  v-else-if="field.type === 'choice'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  @change="handleDetailChoiceChange(field.key)"
+                >
+                  <option value="">เลือกจากรายการ</option>
+                  <option v-for="choice in field.choices" :key="choice" :value="choice">{{ choice }}</option>
+                </select>
+                <select
+                  v-else-if="field.type === 'supervisor-chain'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  :disabled="supervisorChainOptions.length === 0"
+                >
+                  <option value="">
+                    {{ supervisorChainOptions.length ? 'เลือกจากรายการ: สายการบังคับบัญชา' : 'ยังไม่ได้กำหนดสายการบังคับบัญชา' }}
+                  </option>
+                  <option v-for="person in supervisorChainOptions" :key="person.id" :value="person.id">
+                    {{ person.label }} · {{ person.name }}{{ person.position ? ` (${person.position})` : '' }}
+                  </option>
+                </select>
+                <input
+                  v-else-if="field.type === 'expert-name'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  placeholder="กรอกชื่อผู้เชี่ยวชาญ"
+                />
+                <input v-else v-model="activeFormActivity.formDetails.detail[field.key]" />
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <footer class="form-modal-footer">
+          <button type="button" @click="closeActivityForm">ยกเลิก</button>
+          <button type="button" class="primary" @click="saveActivityForm">บันทึกฟอร์ม</button>
+        </footer>
+      </div>
+    </div>
+
+    <div v-if="showCoachingApproachHelp" class="approach-modal-backdrop">
+      <div class="approach-modal" role="dialog" aria-modal="true" aria-labelledby="coaching-approach-title">
+        <header class="approach-modal-header">
+          <div>
+            <h3 id="coaching-approach-title">คำอธิบายแนวทางการสอนงาน</h3>
+            <p>ใช้ประกอบการเลือกแนวทาง A, B, C, D ในแบบฟอร์มการสอนงาน</p>
+          </div>
+          <span class="approach-modal-badge">4 แนวทาง</span>
+          <button type="button" aria-label="ปิดคำอธิบายแนวทาง" @click="showCoachingApproachHelp = false">×</button>
+        </header>
+        <div class="approach-modal-guide">
+          <strong>วิธีใช้:</strong>
+          <span>อ่านความหมายของแต่ละแนวทาง แล้วเลือก A, B, C หรือ D ในช่องแนวทางการสอนงานของแต่ละแถว</span>
+        </div>
+        <div class="approach-modal-body">
+          <article
+            v-for="approach in coachingApproachDescriptions"
+            :key="approach.code"
+            class="approach-help-card"
+            :class="`approach-${approach.code.toLowerCase()}`"
+          >
+            <header>
+              <b>{{ approach.code }}</b>
+              <div>
+                <strong>{{ approach.title }}</strong>
+                <span>{{ approach.summary }}</span>
+              </div>
+            </header>
+            <ul>
+              <li v-for="item in approach.items" :key="item">{{ item }}</li>
+            </ul>
+          </article>
+        </div>
+        <footer class="approach-modal-footer">
+          <button type="button" @click="showCoachingApproachHelp = false">ปิด</button>
+        </footer>
+      </div>
     </div>
 
     <footer v-if="idpGaps.length" class="submit-bar">
@@ -591,9 +1297,23 @@ const submitSelectedPlan = () => {
 .goal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 label { display: grid; gap: 6px; min-width: 0; color: #59677a; font-size: 11px; font-weight: 800; }
 input, select, textarea { width: 100%; border: 1px solid #d5dde7; border-radius: 6px; background: #fff; padding: 9px 10px; color: #172033; font: inherit; font-size: 12px; box-sizing: border-box; }
+select {
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #667085 50%),
+    linear-gradient(135deg, #667085 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
 textarea { resize: vertical; line-height: 1.5; }
 input:focus, select:focus, textarea:focus { outline: 2px solid #b9d8cf; border-color: #247260; }
 input:disabled, select:disabled, textarea:disabled { background: #f2f4f7; color: #7a8798; }
+select:disabled { cursor: not-allowed; }
 .goal-section label > span { color: #3970a6; }
 .goal-section textarea { border-color: #c8d8e8; background: #fbfdff; }
 .weight-total { min-width: 112px; padding: 6px 9px; border: 1px solid #e8b7b7; border-radius: 5px; background: #fff; color: #b42318; text-align: center; font-size: 11px; font-weight: 900; }
@@ -611,11 +1331,90 @@ input:disabled, select:disabled, textarea:disabled { background: #f2f4f7; color:
 .activity > header button { width: 28px; height: 28px; border: 1px solid #e3c5c8; border-radius: 5px; background: #fff; color: #b42318; font-size: 18px; cursor: pointer; }
 .activity-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; padding: 13px; }
 .activity-form .wide { grid-column: span 3; }
-.document-reference-field input { border-color: #dfc36f; background: #fffbed; }
-.document-reference-field > span { color: #80610c; }
+.activity-detail-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #d7e4ee; border-radius: 7px; background: #fbfdff; padding: 12px; }
+.activity-detail-action strong, .activity-detail-action span { display: block; }
+.activity-detail-action strong { color: #172033; font-size: 12px; }
+.activity-detail-action span { margin-top: 4px; color: #9a4d00; font-size: 11px; font-weight: 900; }
+.activity-detail-action span.saved { color: #16835d; }
+.activity-detail-action button { border: 0; border-radius: 6px; background: #247260; padding: 9px 12px; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.activity-detail-action button:disabled { background: #aab5c2; cursor: not-allowed; }
 .add-activity { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 11px; border: 1px dashed #9dbbb3; border-radius: 6px; background: #f6fbf9; padding: 11px; color: #246b5a; font-size: 12px; font-weight: 900; cursor: pointer; }
 .add-activity span { font-size: 18px; }
 .error-box { margin-top: 12px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; color: #b42318; font-size: 12px; }
+.form-modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(15, 23, 42, .48); padding: 8px; }
+.form-modal { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(1680px, calc(100vw - 16px)); max-height: calc(100vh - 28px); overflow: hidden; border-radius: 10px; background: #f8fafc; box-shadow: 0 30px 90px rgba(15, 23, 42, .3); }
+.form-modal-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #d8e0e9; background: #fff; padding: 14px 18px; }
+.form-modal-top strong, .form-modal-top span { display: block; }
+.form-modal-top strong { font-size: 16px; }
+.form-modal-top span { margin-top: 4px; color: #667085; font-size: 12px; font-weight: 800; }
+.form-modal-top button { width: 36px; height: 36px; border: 1px solid #d8e0e9; border-radius: 7px; background: #fff; color: #b42318; font-size: 22px; cursor: pointer; }
+.form-paper { overflow: auto; padding: 18px; }
+.form-title-band { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border: 1px solid #f3c8b7; border-radius: 8px; background: #fff1e8; padding: 13px 15px; }
+.form-title-band h3, .form-title-band p { margin: 0; }
+.form-title-band h3 { font-size: 20px; }
+.form-title-band p { margin-top: 5px; color: #667085; font-size: 12px; font-weight: 800; }
+.form-title-band label { width: 260px; }
+.form-block { margin-top: 14px; overflow: hidden; border: 1px solid #d8e0e9; border-radius: 8px; background: #fff; }
+.form-block > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #d8e0e9; background: #f8fafc; padding: 10px 12px; }
+.form-block > header h4 { margin: 0; font-size: 14px; }
+.form-block > header span { color: #667085; font-size: 11px; font-weight: 900; }
+.form-block > header button { border: 1px solid #98c9b7; border-radius: 6px; background: #edf8f4; color: #247260; padding: 7px 10px; font-size: 11px; font-weight: 900; cursor: pointer; }
+.readonly-block > header { background: #edf8f4; }
+.result-block > header { background: #fff0fb; }
+.assessment-block > header { background: #eef6ff; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+.form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.form-grid .wide { grid-column: 1 / -1; }
+.form-table-wrap { overflow-x: auto; padding: 12px; }
+.form-table-wrap table { width: 100%; min-width: 1180px; border-collapse: collapse; }
+.form-table-wrap th, .form-table-wrap td { border: 1px solid #cfd8e3; padding: 8px; vertical-align: top; }
+.form-table-wrap th { background: #f8fafc; color: #475467; font-size: 11px; font-weight: 900; text-align: left; }
+.form-table-wrap th small { display: block; margin-top: 3px; color: #9a4d00; font-size: 10px; }
+.form-table-wrap input, .form-table-wrap select { min-width: 120px; }
+.form-table-wrap .table-textarea { min-width: 240px; min-height: 72px; }
+.fixed-topic-cell { display: grid; gap: 10px; min-width: 280px; color: #172033; font-size: 12px; font-weight: 900; }
+.fixed-topic-cell label { display: grid; gap: 6px; color: #475467; font-size: 11px; font-weight: 900; }
+.fixed-topic-cell .table-textarea { min-width: 260px; min-height: 56px; }
+.checkbox-choice-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 150px; padding: 7px 2px; }
+.checkbox-choice-group label { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: #172033; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.checkbox-choice-group input { width: 14px; min-width: 14px; height: 14px; margin: 0; padding: 0; accent-color: #247260; }
+.multi-check-button { display: grid; place-items: center; width: 22px; height: 22px; margin: 0 auto; border: 1.5px solid #b8c7d9; border-radius: 5px; background: #fff; color: transparent; cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.multi-check-button span { color: inherit; font-size: 14px; font-weight: 900; line-height: 1; }
+.multi-check-button.checked { border-color: #247260; background: #247260; color: #fff; box-shadow: 0 0 0 3px rgba(36, 114, 96, .14); }
+.row-number { width: 42px; text-align: center !important; }
+.row-control { width: 62px; text-align: center; }
+.row-control button { border: 1px solid #efb8b8; border-radius: 5px; background: #fff; color: #b42318; padding: 7px 9px; font-size: 11px; font-weight: 900; }
+.row-control button:disabled { opacity: .35; }
+.form-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 12px 12px; border-left: 4px solid #f59e0b; background: #fffbeb; padding: 9px 11px; color: #8a5300; font-size: 12px; font-weight: 800; }
+.form-note button { border: 1px solid #f2b94b; border-radius: 6px; background: #fff7d6; color: #8a5300; padding: 7px 10px; font-size: 11px; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.approach-modal-backdrop { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; background: rgba(15, 23, 42, .62); padding: 6px; }
+.approach-modal { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1360px, calc(100vw - 12px)); height: calc(100vh - 12px); min-height: 0; overflow: hidden; border: 1px solid #d7e0ea; border-radius: 12px; background: #fff; box-shadow: 0 26px 80px rgba(15, 23, 42, .34); }
+.approach-modal-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; border-bottom: 1px solid #d8e0e9; background: #fff; padding: 14px 18px; }
+.approach-modal-header h3, .approach-modal-header p { margin: 0; }
+.approach-modal-header h3 { color: #172033; font-size: 22px; font-weight: 900; }
+.approach-modal-header p { margin-top: 4px; color: #667085; font-size: 14px; font-weight: 800; }
+.approach-modal-badge { border: 1px solid #b9ddd4; border-radius: 999px; background: #edf8f5; color: #247260; padding: 8px 13px; font-size: 13px; font-weight: 900; white-space: nowrap; }
+.approach-modal-header button { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #efb8b8; border-radius: 7px; background: #fff; color: #b42318; font-size: 26px; font-weight: 600; line-height: 1; cursor: pointer; }
+.approach-modal-guide { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d8e0e9; background: #f7fbfa; padding: 10px 18px; color: #46576b; font-size: 14px; font-weight: 800; }
+.approach-modal-guide strong { color: #247260; }
+.approach-modal-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; background: #eef3f6; padding: 14px 18px 18px; }
+.approach-help-card { display: block; flex: 0 0 auto; border: 1px solid #d8e0e9; border-radius: 10px; background: #fff; overflow: visible; }
+.approach-help-card header { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #dfe6ee; background: #f8fafc; padding: 14px 16px; }
+.approach-help-card header b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: #247260; color: #fff; font-size: 15px; flex: 0 0 auto; box-shadow: 0 8px 18px rgba(36, 114, 96, .18); }
+.approach-help-card header strong, .approach-help-card header span { display: block; }
+.approach-help-card header strong { color: #172033; font-size: 17px; font-weight: 900; }
+.approach-help-card header span { margin-top: 5px; color: #667085; font-size: 14px; font-weight: 800; line-height: 1.4; }
+.approach-help-card ul { display: grid; gap: 8px; margin: 0; padding: 16px 28px 18px 46px; color: #344054; font-size: 15px; line-height: 1.55; list-style: none; }
+.approach-help-card li { position: relative; margin: 0; padding-left: 18px; }
+.approach-help-card li::before { content: ''; position: absolute; top: .68em; left: 0; width: 7px; height: 7px; border-radius: 50%; background: #247260; transform: translateY(-50%); }
+.approach-help-card.approach-b header b { background: #315f9f; box-shadow: 0 8px 18px rgba(49, 95, 159, .18); }
+.approach-help-card.approach-c header b { background: #8a5b18; box-shadow: 0 8px 18px rgba(138, 91, 24, .18); }
+.approach-help-card.approach-d header b { background: #8a3a4f; box-shadow: 0 8px 18px rgba(138, 58, 79, .18); }
+.approach-modal-footer { display: flex; justify-content: flex-end; border-top: 1px solid #d8e0e9; background: #fff; padding: 9px 14px; }
+.approach-modal-footer button { border: 1px solid #247260; border-radius: 7px; background: #247260; color: #fff; padding: 10px 20px; font-size: 14px; font-weight: 900; cursor: pointer; }
+.form-modal-footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #d8e0e9; background: #fff; padding: 13px 18px; }
+.form-modal-footer button { border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; padding: 10px 14px; font-size: 12px; font-weight: 900; cursor: pointer; }
+.form-modal-footer button.primary { border-color: #247260; background: #247260; color: #fff; }
 .submit-bar { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 16px; border: 1px solid #d7dfe8; border-radius: 8px; background: rgba(255,255,255,.96); box-shadow: 0 -8px 22px rgba(23,32,51,.08); }
 .submit-bar strong, .submit-bar span { display: block; }
 .submit-bar strong { font-size: 13px; }
@@ -627,8 +1426,13 @@ input:disabled, select:disabled, textarea:disabled { background: #f2f4f7; color:
   .page-header, .competency-header, .submit-bar { align-items: stretch; flex-direction: column; }
   .workspace { grid-template-columns: 1fr; }
   .plan-nav { border-right: 0; border-bottom: 1px solid #dfe5ed; }
-  .goal-grid, .activity-form { grid-template-columns: 1fr; }
+  .goal-grid, .activity-form, .form-grid, .form-grid.three { grid-template-columns: 1fr; }
+  .approach-modal-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .approach-modal-badge { display: none; }
+  .approach-modal-guide { align-items: flex-start; flex-direction: column; }
   .activity-form .wide { grid-column: span 1; }
+  .activity-detail-action, .form-title-band { align-items: stretch; flex-direction: column; }
+  .form-title-band label { width: 100%; }
   .score-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .indicator-row { grid-template-columns: 1fr; }
   .section-title { align-items: flex-start; }

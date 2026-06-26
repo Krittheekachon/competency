@@ -9,10 +9,17 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class IdpController extends Controller
 {
+    private const CANONICAL_LEARNING_METHOD_KEYS = [
+        'experiential-learning',
+        'social-learning',
+        'formal-learning',
+    ];
+
     public function __construct(
         private readonly IdpItemReviewWorkflow $reviewWorkflow
     ) {
@@ -67,6 +74,8 @@ class IdpController extends Controller
             'items.*.activities.*.weightPercent' => [$required, 'numeric', 'min:0', 'max:100'],
             'items.*.activities.*.startDate' => [$required, 'date'],
             'items.*.activities.*.endDate' => [$required, 'date'],
+            'items.*.activities.*.formCode' => ['nullable', 'string', 'max:120'],
+            'items.*.activities.*.formDetails' => ['nullable', 'array'],
         ]);
 
         $items = collect($validated['items'] ?? [])->values();
@@ -85,13 +94,32 @@ class IdpController extends Controller
             ]);
         }
 
+        $submittedMethodKeys = $items
+            ->flatMap(fn (array $item) => $item['activities'] ?? [])
+            ->pluck('methodKey')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $invalidMethodKeys = $submittedMethodKeys->diff(self::CANONICAL_LEARNING_METHOD_KEYS);
+        if ($invalidMethodKeys->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'ประเภทการเรียนรู้ต้องเป็น Experiential, Social หรือ Formal เท่านั้น',
+            ]);
+        }
+
         $methodIdsByKey = DB::table('learning_method_types')
-            ->whereIn('key', $items->flatMap(fn (array $item) => $item['activities'] ?? [])->pluck('methodKey')->filter()->unique())
+            ->whereIn('key', $submittedMethodKeys)
             ->pluck('id', 'key');
-        $toolFocusById = DB::table('idp_learning_methods')
+        $toolColumns = ['id', 'focus_type'];
+        if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
+            $toolColumns[] = 'form_code';
+        }
+        $toolsById = DB::table('idp_learning_methods')
             ->whereIn('id', $items->flatMap(fn (array $item) => $item['activities'] ?? [])->pluck('developmentToolId')->filter()->unique())
             ->where('is_active', true)
-            ->pluck('focus_type', 'id');
+            ->get($toolColumns)
+            ->keyBy('id');
         $catalogCompetencies = DB::table('learning_catalog_competency')
             ->join('learning_catalogs', 'learning_catalog_competency.learning_catalog_id', '=', 'learning_catalogs.id')
             ->whereIn('learning_catalog_id', $items->flatMap(fn (array $item) => $item['activities'] ?? [])->pluck('learningCatalogId')->filter()->unique())
@@ -105,7 +133,7 @@ class IdpController extends Controller
             $status,
             $validGaps,
             $methodIdsByKey,
-            $toolFocusById,
+            $toolsById,
             $catalogCompetencies,
         );
         $owner = DB::table('users')
@@ -187,6 +215,10 @@ class IdpController extends Controller
                         'end_date' => $activity['endDate'] ?? null,
                         'description' => $activity['activityDescription'] ?? null,
                         'document_reference_number' => $activity['documentReferenceNumber'] ?? null,
+                        'form_code' => $activity['formCode'] ?? null,
+                        'form_details' => isset($activity['formDetails'])
+                            ? json_encode($activity['formDetails'], JSON_UNESCAPED_UNICODE)
+                            : null,
                         'status' => 'planned',
                         'result' => 'pending',
                         'created_at' => now(),
@@ -213,7 +245,7 @@ class IdpController extends Controller
         string $status,
         Collection $validGaps,
         Collection $methodIdsByKey,
-        Collection $toolFocusById,
+        Collection $toolsById,
         Collection $catalogCompetencies,
     ): void {
         foreach ($items as $itemIndex => $item) {
@@ -237,21 +269,22 @@ class IdpController extends Controller
                 $prefix = "items.$itemIndex.activities.$activityIndex";
                 $methodKey = $activity['methodKey'] ?? '';
                 $focusType = $this->focusTypeForMethodKey($methodKey);
+                $toolId = $activity['developmentToolId'] ?? null;
+                $tool = $toolId ? $toolsById->get($toolId) : null;
 
-                if ($methodKey !== '' && ! $methodIdsByKey->has($methodKey)) {
+                if ($methodKey !== '' && (! in_array($methodKey, self::CANONICAL_LEARNING_METHOD_KEYS, true) || ! $methodIdsByKey->has($methodKey))) {
                     throw ValidationException::withMessages([
                         "$prefix.methodKey" => 'ไม่พบประเภทการเรียนรู้ที่เลือก',
                     ]);
                 }
 
                 if (in_array($focusType, ['experiential', 'social'], true)) {
-                    $toolId = $activity['developmentToolId'] ?? null;
                     if ($status === 'submitted' && ! $toolId) {
                         throw ValidationException::withMessages([
                             "$prefix.developmentToolId" => 'กรุณาเลือกเครื่องมือหรือแนวทางการพัฒนา',
                         ]);
                     }
-                    if ($toolId && ($toolFocusById[$toolId] ?? null) !== $focusType) {
+                    if ($toolId && (! $tool || ($tool->focus_type ?? null) !== $focusType)) {
                         throw ValidationException::withMessages([
                             "$prefix.developmentToolId" => 'เครื่องมือพัฒนาไม่ตรงกับประเภทการเรียนรู้',
                         ]);
@@ -279,20 +312,33 @@ class IdpController extends Controller
                         "$prefix.endDate" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
                     ]);
                 }
+
+                $requiresForm = $focusType === 'formal'
+                    || (in_array($focusType, ['experiential', 'social'], true)
+                        && ! empty($tool?->form_code));
+
+                if ($status === 'submitted' && $requiresForm && empty($activity['formCode'])) {
+                    throw ValidationException::withMessages([
+                        "$prefix.formCode" => 'กรุณากรอกรายละเอียดฟอร์มกิจกรรม',
+                    ]);
+                }
+
+                if ($status === 'submitted' && $requiresForm && empty($activity['formDetails']['_saved'])) {
+                    throw ValidationException::withMessages([
+                        "$prefix.formDetails" => 'กรุณาบันทึกฟอร์มกิจกรรมก่อนส่งแผน',
+                    ]);
+                }
             }
         }
     }
 
     private function focusTypeForMethodKey(string $methodKey): string
     {
-        $normalized = strtolower($methodKey);
-
-        return match (true) {
-            str_contains($normalized, 'experiential'),
-            str_contains($normalized, 'experience') => 'experiential',
-            str_contains($normalized, 'social') => 'social',
-            str_contains($normalized, 'formal') => 'formal',
-            default => $normalized,
+        return match ($methodKey) {
+            'experiential-learning' => 'experiential',
+            'social-learning' => 'social',
+            'formal-learning' => 'formal',
+            default => '',
         };
     }
 
