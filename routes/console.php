@@ -9,5 +9,12 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::call(fn () => app(NotificationDigestService::class)->sendHourlyDigest())->hourly();
-Schedule::call(fn () => app(NotificationDigestService::class)->sendDailyDigest())->dailyAt('09:00');
+Schedule::call(fn () => app(NotificationDigestService::class)->sendHourlyDigest())
+    ->name('notifications.hourly-digest')
+    ->timezone('Asia/Bangkok')
+    ->hourly();
+
+Schedule::call(fn () => app(NotificationDigestService::class)->sendDailyDigest())
+    ->name('notifications.daily-digest')
+    ->timezone('Asia/Bangkok')
+    ->dailyAt('09:00');

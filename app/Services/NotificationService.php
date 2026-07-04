@@ -60,6 +60,14 @@ class NotificationService
 
     public function notifyAdminNewUser(User $user): void
     {
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        $this->digest->queueIncompleteUser($user);
+
+        return;
+
         $this->sendToUsers(
             $this->usersWithRole('admin')->get(),
             fn () => new RoleNotificationMail(
