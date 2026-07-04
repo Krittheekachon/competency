@@ -21,7 +21,7 @@ class UnmappedPositionMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '[A-IDP] มีตำแหน่งที่ยังไม่ผูกสมรรถนะ',
+            subject: 'มีตำแหน่งที่ยังไม่ผูกสมรรถนะ',
         );
     }
 

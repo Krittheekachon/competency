@@ -22,7 +22,7 @@ class NewUserIncompleteMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '[A-IDP] มีผู้ใช้งานใหม่ข้อมูลไม่ครบ',
+            subject: 'มีผู้ใช้งานใหม่ข้อมูลไม่ครบ',
         );
     }
 

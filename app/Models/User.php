@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Schema;
+use App\Models\Assessment;
 use App\Models\Role;
 
 #[Fillable([
@@ -55,6 +55,11 @@ class User extends Authenticatable
     public function evaluatorLevel3()
     {
         return $this->belongsTo(User::class, 'supervisor_id_3');
+    }
+
+    public function assessments()
+    {
+        return $this->hasMany(Assessment::class);
     }
 
     public function hasRole(string|array $roleKey): bool
