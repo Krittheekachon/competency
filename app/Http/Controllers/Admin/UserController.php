@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,14 +16,20 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
+    public function __construct(private NotificationService $notifications)
+    {
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedData($request);
 
-        User::create([
+        $user = User::create([
             ...$this->userAttributes($data),
             'password' => Hash::make(Str::password(32)),
         ]);
+
+        $this->notifications->notifyAdminNewUser($user);
 
         return back()->with('success', 'บันทึกผู้ใช้เรียบร้อยแล้ว');
     }

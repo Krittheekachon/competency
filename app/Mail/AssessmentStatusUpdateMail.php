@@ -24,7 +24,7 @@ class AssessmentStatusUpdateMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '[A-IDP] อัปเดตสถานะผลการประเมิน',
+            subject: 'อัปเดตสถานะผลการประเมิน',
         );
     }
 

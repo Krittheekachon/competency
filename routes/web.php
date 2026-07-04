@@ -20,6 +20,7 @@ use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 use App\Http\Controllers\IdpApprovalController;
 use App\Services\NotificationService;
+use Illuminate\Support\Facades\Cache;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -40,6 +41,12 @@ if (app()->environment('local')) {
     Route::post('/mock-sso', [MockSsoController::class, 'login'])->name('mock.sso.login');
     Route::post('/mock-sso/test-notification', [MockSsoController::class, 'testNotification'])->name('mock.sso.test-notification');
     Route::post('/mock-sso/reset-assessment-flow', [MockSsoController::class, 'resetAssessmentFlow'])->name('mock.sso.reset-assessment-flow');
+    Route::get('/mock-sso/notification-toggle', function () {
+        $enabled = ! Cache::get('dev_notifications_enabled', true);
+        Cache::forever('dev_notifications_enabled', $enabled);
+
+        return response()->json(['enabled' => $enabled]);
+    })->name('mock.sso.notification-toggle');
 }
 
 Route::middleware('auth')->group(function () {

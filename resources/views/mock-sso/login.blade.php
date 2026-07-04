@@ -22,6 +22,9 @@
     .mail-button:hover { background: #dcfce7; }
     .danger-button { border: 1px solid #fecaca; border-radius: 6px; padding: 7px 9px; background: #fef2f2; color: #b91c1c; font-size: 12px; font-weight: 800; cursor: pointer; }
     .danger-button:hover { background: #fee2e2; }
+    .notification-toggle { position: fixed; right: 20px; bottom: 20px; z-index: 20; border: 0; border-radius: 999px; padding: 10px 14px; color: #fff; font-size: 12px; font-weight: 800; cursor: pointer; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18); }
+    .notification-toggle.on { background: #16a34a; }
+    .notification-toggle.off { background: #dc2626; }
     .notice { margin-bottom: 16px; padding: 10px 12px; border: 1px solid #bbf7d0; border-radius: 6px; background: #f0fdf4; color: #15803d; font-size: 13px; font-weight: 700; }
     .error { margin-bottom: 16px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 6px; background: #fef2f2; color: #b91c1c; font-size: 13px; font-weight: 700; }
   </style>
@@ -113,5 +116,42 @@
   @empty
     <p style="color:#94a3b8;">ยังไม่มี User ในระบบ - กรุณา Import ข้อมูลก่อน</p>
   @endforelse
+  @php($notificationsEnabled = \Illuminate\Support\Facades\Cache::get('dev_notifications_enabled', true))
+  <button
+    id="notification-toggle"
+    class="notification-toggle {{ $notificationsEnabled ? 'on' : 'off' }}"
+    type="button"
+    data-enabled="{{ $notificationsEnabled ? '1' : '0' }}"
+  >
+    Notifications: {{ $notificationsEnabled ? 'ON' : 'OFF' }}
+  </button>
+
+  <script>
+    (() => {
+      const button = document.getElementById('notification-toggle');
+      if (!button) return;
+
+      const render = (enabled) => {
+        button.dataset.enabled = enabled ? '1' : '0';
+        button.classList.toggle('on', enabled);
+        button.classList.toggle('off', !enabled);
+        button.textContent = `Notifications: ${enabled ? 'ON' : 'OFF'}`;
+      };
+
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+
+        try {
+          const response = await fetch('{{ route('mock.sso.notification-toggle') }}', {
+            headers: { Accept: 'application/json' },
+          });
+          const data = await response.json();
+          render(Boolean(data.enabled));
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

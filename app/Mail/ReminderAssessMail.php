@@ -22,7 +22,7 @@ class ReminderAssessMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '[A-IDP] แจ้งเตือน: กรุณาประเมินตนเอง',
+            subject: 'แจ้งเตือน: กรุณาประเมินตนเอง',
         );
     }
 
