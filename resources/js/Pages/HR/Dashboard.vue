@@ -28,6 +28,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    currentUserFcTopicSelection: {
+        type: Object,
+        default: () => ({}),
+    },
     hrSummary: {
         type: Object,
         required: true,
@@ -45,6 +49,10 @@ const props = defineProps({
         default: () => [],
     },
     positionCompetencies: {
+        type: Object,
+        default: () => ({}),
+    },
+    positionFcSelectionRules: {
         type: Object,
         default: () => ({}),
     },
@@ -240,6 +248,10 @@ const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
+const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'FC').length);
+const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
+const requiredFcCount = ref(0);
+const savedRequiredFcCount = computed(() => Number(props.positionFcSelectionRules?.[currentPositionId.value] || 0));
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
@@ -304,6 +316,10 @@ watch(familiesForSelectedWorkline, (next) => {
 
 watch(positionOptions, (next) => {
     if (!next.includes(selectedPosition.value)) selectedPosition.value = next[0] || '';
+}, { immediate: true });
+
+watch([currentPositionId, savedRequiredFcCount], () => {
+    requiredFcCount.value = savedRequiredFcCount.value;
 }, { immediate: true });
 
 const openModal = (modal) => {
@@ -464,6 +480,17 @@ const removeCompetency = (itemId) => {
     });
 };
 
+const saveFcSelectionRule = () => {
+    if (!currentPositionId.value) return;
+
+    router.put(route('hr.position-fc-selection-rules.update'), {
+        position_id: currentPositionId.value,
+        required_fc_count: Number(requiredFcCount.value || 0),
+    }, {
+        preserveScroll: true,
+    });
+};
+
 const openCompetencyDetail = (item) => {
     selectedDetailCompetency.value = item;
     expandedDetailLevels.value = {};
@@ -548,6 +575,7 @@ const formatWeight = (weight) => {
                     :user="currentProfileUser"
                     :set-users="updateUsers"
                     :competencies="props.currentUserCompetencies"
+                    :fc-topic-selection="props.currentUserFcTopicSelection"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -638,10 +666,52 @@ const formatWeight = (weight) => {
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
                             <div class="position-card-sub">{{ savingAssignment ? 'กำลังบันทึก' : (assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ') }}</div>
                         </div>
+                        <div class="position-card type-breakdown-card">
+                            <div class="position-card-label">แยกตามประเภทที่กำหนด</div>
+                            <div class="type-breakdown">
+                                <div>
+                                    <span>CC</span>
+                                    <strong>{{ assignedCoreCompetencyCount }}</strong>
+                                </div>
+                                <div>
+                                    <span>FC</span>
+                                    <strong>{{ assignedFcCompetencyCount }}</strong>
+                                </div>
+                                <div>
+                                    <span>MC</span>
+                                    <strong>{{ assignedManagerialCompetencyCount }}</strong>
+                                </div>
+                            </div>
+                            <div class="position-card-sub">นับจากรายการที่ผูกกับตำแหน่งนี้</div>
+                        </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
                             <div class="position-card-title warn">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
                             <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
+                        </div>
+                        <div class="position-card fc-rule-card">
+                            <div class="position-card-label">FC ที่ต้องให้ผู้ประเมินเลือก</div>
+                            <div class="fc-rule-control">
+                                <input
+                                    v-model.number="requiredFcCount"
+                                    class="inp fc-rule-input"
+                                    type="number"
+                                    min="0"
+                                    :max="assignedFcCompetencyCount"
+                                    :disabled="!currentPositionId"
+                                />
+                                <button
+                                    class="btn btn-p btn-sm"
+                                    type="button"
+                                    :disabled="!currentPositionId || requiredFcCount > assignedFcCompetencyCount"
+                                    @click="saveFcSelectionRule"
+                                >
+                                    บันทึก
+                                </button>
+                            </div>
+                            <div class="position-card-sub">
+                                มี FC ในตำแหน่งนี้ {{ assignedFcCompetencyCount }} ข้อ · 0 คือไม่ใช้ flow เลือกหัวข้อ
+                            </div>
                         </div>
                     </div>
 
@@ -728,6 +798,7 @@ const formatWeight = (weight) => {
                 <ManagerGap
                     v-else-if="activePage === 'hr-competency-overview'"
                     :users="props.users"
+                    :active-cycle-name="props.activeCycleName"
                     :can-send-reminders="true"
                 />
 
@@ -1474,7 +1545,7 @@ const formatWeight = (weight) => {
 
 .position-board {
     display: grid;
-    grid-template-columns: 1.35fr repeat(2, minmax(180px, 0.65fr));
+    grid-template-columns: 1.25fr repeat(4, minmax(160px, 0.65fr));
     gap: 14px;
 }
 
@@ -1515,6 +1586,48 @@ const formatWeight = (weight) => {
     font-size: 12px;
     font-weight: 600;
     margin-top: 7px;
+}
+
+.type-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.type-breakdown div {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+}
+
+.type-breakdown span {
+    display: block;
+    color: var(--text3);
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.type-breakdown strong {
+    display: block;
+    margin-top: 2px;
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.fc-rule-control {
+    display: grid;
+    grid-template-columns: minmax(80px, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.fc-rule-input {
+    min-height: 38px;
+    font-size: 18px;
+    font-weight: 800;
 }
 
 .position-layout {

@@ -249,8 +249,8 @@ class AssessmentReviewerChainTest extends TestCase
 
             $rendered = $mail->render();
 
-            $this->assertStringContainsString('หัวหน้างานอนุมัติผลการประเมินแล้ว', $rendered);
-            $this->assertStringContainsString('รอการตรวจสอบจากผู้บังคับบัญชา', $rendered);
+            $this->assertStringContainsString('หัวหน้าหน่วยอนุมัติผลการประเมินแล้ว', $rendered);
+            $this->assertStringContainsString('รอการตรวจสอบจากหัวหน้างาน', $rendered);
             $this->assertStringNotContainsString('สามารถเริ่มทำแผนพัฒนารายบุคคล (IDP) ได้', $rendered);
 
             return true;

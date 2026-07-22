@@ -274,7 +274,7 @@ export const EmployeeGap = defineComponent({ name: "EmployeeGap", props: Object 
                         <th style={{ textAlign: 'center' }}>ประเภท</th>
                         <th style={{ textAlign: 'center' }}>ระดับคาดหวัง</th>
                         <th style={{ textAlign: 'center' }}>ประเมินตนเอง</th>
-                        <th style={{ textAlign: 'center' }}>ผู้บังคับบัญชา</th>
+                        <th style={{ textAlign: 'center' }}>หัวหน้างาน</th>
                         <th style={{ textAlign: 'center' }}>สถานะ</th>
                         <th style={{ textAlign: 'center' }}>Priority</th>
                       </tr>

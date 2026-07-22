@@ -68,8 +68,8 @@ const statusMeta = (user: any) => {
   if (canApprove(user)) return { label: 'รอตรวจ', cls: 'pending' };
   if (!user?.evalStatus || user.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'muted' };
   if (user.evalStatus === 'revision_required') return { label: 'ส่งกลับแก้ไข', cls: 'danger' };
-  if (user.evalStatus === 'self_submitted') return { label: 'รอหัวหน้างานอนุมัติ', cls: 'pending' };
-  if (user.evalStatus === 'unit_evaluated') return { label: evaluatorLevel(user) === 2 ? 'รอตรวจ' : 'รอผู้บังคับบัญชาอนุมัติ', cls: 'pending' };
+  if (user.evalStatus === 'self_submitted') return { label: 'รอหัวหน้าหน่วยอนุมัติ', cls: 'pending' };
+  if (user.evalStatus === 'unit_evaluated') return { label: evaluatorLevel(user) === 2 ? 'รอตรวจ' : 'รอหัวหน้างานอนุมัติ', cls: 'pending' };
   if (user.evalStatus === 'dept_evaluated') return { label: evaluatorLevel(user) === 3 ? 'รอตรวจ' : 'รอคณบดีอนุมัติ', cls: 'pending' };
   if (user.evalStatus === 'dean_approved') return { label: 'ปิดรอบประเมินแล้ว', cls: 'success' };
   return { label: user.evalStatus, cls: 'muted' };

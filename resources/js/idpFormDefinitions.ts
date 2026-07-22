@@ -36,7 +36,7 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'คำรับรอง',
     detailFields: [
       { key: 'employeeAcknowledgement', label: 'คำรับรองผู้รับการพัฒนา', type: 'area' },
-      { key: 'supervisorAcknowledgement', label: 'คำรับรองผู้บังคับบัญชา', type: 'area' },
+      { key: 'supervisorAcknowledgement', label: 'คำรับรองหัวหน้างาน', type: 'area' },
     ],
     rowTitle: 'ข้อมูลประกอบการวางแผน',
     rowFields: [
@@ -90,8 +90,8 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     focus: 'Experiential Learning Focus (70)',
     detailTitle: 'รายละเอียดการมอบหมายงาน/โครงการ',
     detailFields: [
-      { key: 'supervisorType', label: 'ผู้สอนงาน/ผู้มอบหมาย', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'supervisorUserId', label: 'เลือกผู้บังคับบัญชาในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'supervisorType', value: 'ผู้บังคับบัญชา' } },
+      { key: 'supervisorType', label: 'ผู้สอนงาน/ผู้มอบหมาย', type: 'choice', choices: ['หัวหน้างาน', 'ผู้เชี่ยวชาญ'] },
+      { key: 'supervisorUserId', label: 'เลือกหัวหน้างานในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'supervisorType', value: 'หัวหน้างาน' } },
       { key: 'expertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'supervisorType', value: 'ผู้เชี่ยวชาญ' } },
       { key: 'workTopic', label: 'หัวข้อ/งานที่ปฏิบัติจริง', type: 'area' },
     ],
@@ -111,8 +111,8 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     focus: 'Social Learning Focus (20)',
     detailTitle: 'รายละเอียดการสอนงาน',
     detailFields: [
-      { key: 'coachType', label: 'ผู้สอนงาน', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'coachSupervisorUserId', label: 'เลือกผู้บังคับบัญชาในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'coachType', value: 'ผู้บังคับบัญชา' } },
+      { key: 'coachType', label: 'ผู้สอนงาน', type: 'choice', choices: ['หัวหน้างาน', 'ผู้เชี่ยวชาญ'] },
+      { key: 'coachSupervisorUserId', label: 'เลือกหัวหน้างานในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'coachType', value: 'หัวหน้างาน' } },
       { key: 'coachExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'coachType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'แผนดำเนินงาน',
@@ -137,8 +137,8 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     focus: 'Social Learning Focus (20)',
     detailTitle: 'รายละเอียดการเป็นพี่เลี้ยง',
     detailFields: [
-      { key: 'mentorType', label: 'ผู้สอนงาน', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'mentorSupervisorUserId', label: 'เลือกผู้บังคับบัญชาในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'mentorType', value: 'ผู้บังคับบัญชา' } },
+      { key: 'mentorType', label: 'ผู้สอนงาน', type: 'choice', choices: ['หัวหน้างาน', 'ผู้เชี่ยวชาญ'] },
+      { key: 'mentorSupervisorUserId', label: 'เลือกหัวหน้างานในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'mentorType', value: 'หัวหน้างาน' } },
       { key: 'mentorExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'mentorType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'แผนดำเนินงาน',
@@ -159,8 +159,8 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     focus: 'Social Learning Focus (20)',
     detailTitle: 'รายละเอียดการเป็นพี่เลี้ยง',
     detailFields: [
-      { key: 'facilitatorType', label: 'ผู้นำเสนอ/ผู้นำกิจกรรม', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'facilitatorSupervisorUserId', label: 'เลือกผู้บังคับบัญชาในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'facilitatorType', value: 'ผู้บังคับบัญชา' } },
+      { key: 'facilitatorType', label: 'ผู้นำเสนอ/ผู้นำกิจกรรม', type: 'choice', choices: ['หัวหน้างาน', 'ผู้เชี่ยวชาญ'] },
+      { key: 'facilitatorSupervisorUserId', label: 'เลือกหัวหน้างานในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'facilitatorType', value: 'หัวหน้างาน' } },
       { key: 'facilitatorExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'facilitatorType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'แผนดำเนินงาน',
@@ -179,8 +179,8 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     focus: 'Social Learning Focus (20)',
     detailTitle: 'รายละเอียดการให้ข้อมูลป้อนกลับ',
     detailFields: [
-      { key: 'feedbackProviderType', label: 'ผู้ให้ข้อมูล', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'feedbackSupervisorUserId', label: 'เลือกผู้บังคับบัญชาในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'feedbackProviderType', value: 'ผู้บังคับบัญชา' } },
+      { key: 'feedbackProviderType', label: 'ผู้ให้ข้อมูล', type: 'choice', choices: ['หัวหน้างาน', 'ผู้เชี่ยวชาญ'] },
+      { key: 'feedbackSupervisorUserId', label: 'เลือกหัวหน้างานในสายการบังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'feedbackProviderType', value: 'หัวหน้างาน' } },
       { key: 'feedbackExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'feedbackProviderType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'แผนดำเนินงาน',
@@ -194,7 +194,7 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
       { key: 'operationResult', label: 'ผลการดำเนินงาน', type: 'checkbox-choice', choices: ['สำเร็จ', 'ไม่สำเร็จ'], owner: 'อัปเดตผล' },
       { key: 'developmentAdvice', label: 'ข้อแนะนำในการพัฒนา', type: 'area', owner: 'หัวหน้า' },
     ],
-    note: 'แหล่งข้อมูลป้อนกลับ เช่น สถิติการขาด ลา มาสาย, รายงานผลการปฏิบัติงาน, ข้อร้องเรียน, ข้อสังเกตจากผู้บังคับบัญชา, ผลประเมิน 360',
+    note: 'แหล่งข้อมูลป้อนกลับ เช่น สถิติการขาด ลา มาสาย, รายงานผลการปฏิบัติงาน, ข้อร้องเรียน, ข้อสังเกตจากหัวหน้างาน, ผลประเมิน 360',
   },
   form_9_field_trip: {
     number: '9',

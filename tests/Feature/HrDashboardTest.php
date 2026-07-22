@@ -16,12 +16,12 @@ class HrDashboardTest extends TestCase
     {
         $hrUser = User::factory()->create([
             'email' => 'hr@example.com',
-            'role_id' => 1,
+            'role_id' => $this->roleId('hr'),
         ]);
 
         User::factory()->create([
             'email' => 'staff@example.com',
-            'role_id' => 4,
+            'role_id' => $this->roleId('employee'),
         ]);
 
         $this->actingAs($hrUser)
@@ -31,8 +31,9 @@ class HrDashboardTest extends TestCase
                 ->component('HR/Dashboard')
                 ->where('hrSummary.totalUsers', 2)
                 ->where('hrSummary.hrUsers', 1)
-                ->where('hrSummary.staffUsers', 1)
+                ->where('hrSummary.employeeUsers', 1)
                 ->where('hrSummary.source', 'database')
+                ->has('users', 2)
                 ->missing('roleSwitcher')
             );
     }
@@ -41,7 +42,7 @@ class HrDashboardTest extends TestCase
     {
         $hrUser = User::factory()->create([
             'email' => 'hr-position@example.com',
-            'role_id' => 1,
+            'role_id' => $this->roleId('hr'),
         ]);
 
         $worklineId = DB::table('worklines')->insertGetId([
@@ -79,5 +80,13 @@ class HrDashboardTest extends TestCase
                 ->where('jobFamiliesByWorkline.สายทดสอบ.กลุ่มงานทดสอบ.0', 'ตำแหน่งจากตาราง position')
                 ->missing('levelsByWorkline')
             );
+    }
+
+    private function roleId(string $key): int
+    {
+        return (int) DB::table('roles')
+            ->where('key', $key)
+            ->orWhere('role_key', $key)
+            ->value('id');
     }
 }

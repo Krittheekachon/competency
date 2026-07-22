@@ -16,7 +16,7 @@ const useEffect = (effect: any) => {
   });
 };
 
-import { ExcelImportModal } from "../../Components/SharedUI.vue";interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: any[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { setCompetencies, competencyTypes, onDirtyChange } = __props as any;const competencyList = ref<any[]>([...((__props as any).competencies || [])]);watch(() => (__props as any).competencies, (next) => {competencyList.value = [...(next || [])];}, { deep: true });const [showImport, setShowImport] = useState(false);const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
+interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTypes: any[];onDirtyChange?: (dirty: boolean) => void;}const AdminDict = defineComponent({ name: "AdminDict", props: ["competencies", "setCompetencies", "competencyTypes", "onDirtyChange"], setup(__props) {const { setCompetencies, competencyTypes, onDirtyChange } = __props as any;const competencyList = ref<any[]>([...((__props as any).competencies || [])]);watch(() => (__props as any).competencies, (next) => {competencyList.value = [...(next || [])];}, { deep: true });const [view, setView] = useState("list");const [isDirty, setIsDirty] = useState(false);const [status, setStatus] = useState<any>(null);const showStatus = (type: string, msg: string) => {setStatus({ type, msg });setTimeout(() => setStatus(null), 4000);};const [expandedCode, setExpandedCode] = useState<string | null>(null);
     const [expandedLevel, setExpandedLevel] = useState<number | null>(null);
     const [sortBy, setSortBy] = useState("newest");
     const [typeFilter, setTypeFilter] = useState("ทั้งหมด");
@@ -313,28 +313,12 @@ import { ExcelImportModal } from "../../Components/SharedUI.vue";interface Admin
         </div>
         <div class="flex" style={{ gap: "8px" }}>
           {view.value === 'list' ?
-          <>
-              <button class="btn btn-s" onClick={() => setShowImport(true)}> Import Excel</button>
-              <button class="btn btn-p" onClick={() => {clearForm();setType(getCompetencyTypeCode(competencyTypes[0]) || "");setView("add");}}>+ เพิ่มสมรรถนะ</button>
-            </> :
+          <button class="btn btn-p" onClick={() => {clearForm();setType(getCompetencyTypeCode(competencyTypes[0]) || "");setView("add");}}>+ เพิ่มสมรรถนะ</button> :
 
           <button class="btn btn-s" onClick={closeForm}>⬅ กลับหน้ารายการ</button>
           }
         </div>
       </div>
-
-      {showImport.value &&
-      <ExcelImportModal
-        title="นำเข้าข้อมูลสมรรถนะ"
-        templateName="Competency_Template.xlsx"
-        importUrl={route("admin.competencies.import")}
-        onImported={(responsePage: any) => {
-          syncCompetenciesFromPage(responsePage);
-          showStatus("s", responsePage.props.flash?.success || "นำเข้าข้อมูลสมรรถนะเรียบร้อยแล้ว");
-        }}
-        onClose={() => setShowImport(false)} />
-
-      }
 
       {status.value &&
       <div class="status-msg anim-fade-in" style={{ position: "fixed", top: "20px", right: "20px", zIndex: 9999, padding: "12px 24px", borderRadius: "var(--r)", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.2)", background: status.value.type === 's' ? '#10b981' : '#ef4444', color: '#fff', fontWeight: 700, display: "flex", alignItems: "center", gap: "10px" }}>

@@ -21,7 +21,7 @@
         style="border-radius: 12px"
         @click="setChainView"
       >
-        จัดการลำดับการบังคับบัญชา
+        ลำดับการประเมิน
       </button>
     </div>
   </div>
@@ -109,8 +109,8 @@
                   <th>สายงาน</th>
                   <th style="min-width: 200px">กลุ่มงาน / สังกัด</th>
                   <th>ตำแหน่ง</th>
-                  <th>ผู้ประเมินคนที่ 1 (หัวหน้างาน)</th>
-                  <th>ผู้ประเมินคนที่ 2 (ผู้บังคับบัญชา)</th>
+                  <th>ผู้ประเมินคนที่ 1 (หัวหน้าหน่วย)</th>
+                  <th>ผู้ประเมินคนที่ 2 (หัวหน้างาน)</th>
                   <th>ผู้ประเมินคนที่ 3 (คณบดี)</th>
                   <th>บทบาท</th>
                   <th style="width: 130px"></th>
@@ -612,8 +612,8 @@ const evaluationLines = computed(() => chainScopedUsers.value.map((user) => {
     missing,
     steps: [
       { key: 'subject', label: roleBadge(user.r).label, user },
-      { key: 'level1', label: 'หัวหน้างาน', user: level1 },
-      { key: 'level2', label: 'ผู้บังคับบัญชา', user: level2 },
+      { key: 'level1', label: 'หัวหน้าหน่วย', user: level1 },
+      { key: 'level2', label: 'หัวหน้างาน', user: level2 },
       { key: 'level3', label: 'คณบดี', user: level3 },
     ],
   };
@@ -698,14 +698,14 @@ const roleBadge = (role?: string): RoleBadge => {
   const normalizedRole = normalizeRole(role);
   if (['manager_dept', 'dept_head'].includes(normalizedRole || '')) {
     return {
-      label: 'ผู้บังคับบัญชา',
+      label: 'หัวหน้างาน',
       className: 'bg',
       style: { background: '#f0f9ff', color: '#0284c7' },
     };
   }
   if (normalizedRole === 'supervisor') {
     return {
-      label: 'หัวหน้างาน',
+      label: 'หัวหน้าหน่วย',
       className: 'bg',
       style: { background: '#fff7ed', color: '#c2410c' },
     };
@@ -725,13 +725,13 @@ const roleBadge = (role?: string): RoleBadge => {
     case 'manager_dept':
     case 'dept_head':
       return {
-        label: 'ผู้บังคับบัญชา',
+        label: 'หัวหน้างาน',
         className: 'bg',
         style: { background: '#f0f9ff', color: '#0284c7' },
       };
     case 'supervisor':
       return {
-        label: 'หัวหน้างาน',
+        label: 'หัวหน้าหน่วย',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
@@ -775,7 +775,7 @@ const subordinatesFor = (user: User) => props.users
   }));
 const hasSubordinates = (user: User) => subordinatesFor(user).length > 0;
 const subordinateCount = (user: User) => subordinatesFor(user).length;
-const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้างาน): ${evaluatorName(user, 1) || '—'} · คนที่ 2 (ผู้บังคับบัญชา): ${evaluatorName(user, 2) || '—'} · คนที่ 3 (คณบดี): ${evaluatorName(user, 3) || '—'}`;
+const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้าหน่วย): ${evaluatorName(user, 1) || '—'} · คนที่ 2 (หัวหน้างาน): ${evaluatorName(user, 2) || '—'} · คนที่ 3 (คณบดี): ${evaluatorName(user, 3) || '—'}`;
 
 const popDrillPath = (index: number) => {
   drillPath.value = index === -1 ? [] : drillPath.value.slice(0, index + 1);

@@ -144,7 +144,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
                 ->component('Admin/Dashboard')
                 ->where('users.1.n', 'ZZ No Evaluator User')
                 ->where('users.1.structureStatus', 'invalid')
-                ->where('users.1.structureIssues.0', 'ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้างาน')
+                ->where('users.1.structureIssues.0', 'ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย')
             );
     }
 
@@ -250,7 +250,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
                 ->component('Admin/Dashboard')
                 ->where('users.2.n', 'ZZ Staff With Former Supervisor')
                 ->where('users.2.structureStatus', 'invalid')
-                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว')
+                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว')
             );
     }
 
@@ -288,7 +288,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
                 ->component('Admin/Dashboard')
                 ->where('users.2.n', 'ZZ Staff With Moved Supervisor')
                 ->where('users.2.structureStatus', 'invalid')
-                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว')
+                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว')
             );
     }
 

@@ -26,6 +26,7 @@ class AssessmentController extends Controller
         $data = $this->validatedAssessmentPayload($request);
 
         $this->assertCanSelfAssess($request->user());
+        $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         $savedAt = null;
         DB::transaction(function () use ($request, $data, &$savedAt): void {
@@ -44,6 +45,7 @@ class AssessmentController extends Controller
         $data = $this->validatedAssessmentPayload($request);
 
         $this->assertCanSelfAssess($request->user());
+        $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         DB::transaction(function () use ($request, $data): void {
             $this->persistSelfAssessment($request, $data, true);
@@ -253,6 +255,56 @@ class AssessmentController extends Controller
         }
     }
 
+    private function assertFcTopicsApprovedForAssessment($user, int $competencyId): void
+    {
+        $positionId = (int) ($user->position_id ?? 0);
+        if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
+            return;
+        }
+
+        $requiredCount = (int) DB::table('position_fc_selection_rules')
+            ->where('position_id', $positionId)
+            ->value('required_fc_count');
+
+        if ($requiredCount <= 0) {
+            return;
+        }
+
+        $selection = Schema::hasTable('fc_topic_selections')
+            ? DB::table('fc_topic_selections')
+                ->where('user_id', $user->id)
+                ->where('position_id', $positionId)
+                ->first()
+            : null;
+
+        if (! $selection || $selection->status !== 'approved') {
+            throw ValidationException::withMessages([
+                'assessment' => 'ยังไม่สามารถประเมินได้ กรุณาเลือกหัวข้อ FC และรอหัวหน้า 1 อนุมัติก่อน',
+            ]);
+        }
+
+        $isFcCompetency = DB::table('competencies')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('competencies.id', $competencyId)
+            ->where('competency_types.code', 'FC')
+            ->exists();
+
+        if (! $isFcCompetency) {
+            return;
+        }
+
+        $isSelectedFc = Schema::hasTable('fc_topic_selection_items') && DB::table('fc_topic_selection_items')
+            ->where('fc_topic_selection_id', $selection->id)
+            ->where('competency_id', $competencyId)
+            ->exists();
+
+        if (! $isSelectedFc) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ประเมินได้เฉพาะหัวข้อ FC ที่หัวหน้า 1 อนุมัติแล้วเท่านั้น',
+            ]);
+        }
+    }
+
     private function validatedAssessmentPayload(Request $request): array
     {
         return $request->validate([
@@ -284,7 +336,7 @@ class AssessmentController extends Controller
 
         if ($existingAssessment && ! in_array($existingStatus, ['draft', 'revision_required'], true)) {
             throw ValidationException::withMessages([
-                'assessment' => 'ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
+                'assessment' => 'ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
             ]);
         }
 

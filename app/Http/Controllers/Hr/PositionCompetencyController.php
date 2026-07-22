@@ -65,6 +65,38 @@ class PositionCompetencyController extends Controller
         return back()->with('success', 'ลบสมรรถนะออกจากตำแหน่งเรียบร้อยแล้ว');
     }
 
+    public function updateFcSelectionRule(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'required_fc_count' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $availableFcCount = DB::table('position_competencies')
+            ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('position_competencies.position_id', $data['position_id'])
+            ->where('competency_types.code', 'FC')
+            ->count();
+
+        if ((int) $data['required_fc_count'] > $availableFcCount) {
+            return back()->withErrors([
+                'required_fc_count' => 'จำนวน FC ที่ต้องเลือกมากกว่าจำนวน FC ที่ผูกกับตำแหน่งนี้',
+            ]);
+        }
+
+        DB::table('position_fc_selection_rules')->updateOrInsert(
+            ['position_id' => $data['position_id']],
+            [
+                'required_fc_count' => (int) $data['required_fc_count'],
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+
+        return back()->with('success', 'บันทึกจำนวน FC ที่ต้องเลือกเรียบร้อยแล้ว');
+    }
+
     private function syncUsersForPosition(int $positionId): void
     {
         $position = DB::table('positions')

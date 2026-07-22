@@ -68,6 +68,9 @@ class DashboardController extends Controller
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
@@ -75,12 +78,16 @@ class DashboardController extends Controller
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 'currentUser' => $this->dashboardUserPayload($currentUser),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'currentUserIdp' => $this->currentUserIdpPayload($currentUser),
                 'activeCycleName' => $activeCycleName,
@@ -97,6 +104,11 @@ class DashboardController extends Controller
                     'source' => 'database',
                 ],
                 ...$this->hrStructurePayload(),
+                'users' => $users,
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'competencies' => $competencies,
                 'assignedCompetenciesByScope' => $this->assignedCompetenciesByScope(),
                 'learningMethods' => $learningMethods,
@@ -205,6 +217,7 @@ class DashboardController extends Controller
             'supervisorChain' => $this->supervisorChainForUser($user),
             'assignedCompetencies' => $assignedCompetencies,
             'competencyGaps' => $competencyGaps,
+            'fcTopicSelection' => $this->fcTopicSelectionPayloadForUser($user),
             'gaps' => collect($competencyGaps)
                 ->filter(fn (array $gap): bool => (float) ($gap['gap'] ?? 0) < 0)
                 ->pluck('n')
@@ -263,9 +276,9 @@ class DashboardController extends Controller
     private function supervisorChainForUser(User $user): array
     {
         return collect([
-            ['step' => 1, 'label' => 'ผู้บังคับบัญชาลำดับ 1', 'user' => $user->evaluatorLevel1],
-            ['step' => 2, 'label' => 'ผู้บังคับบัญชาลำดับ 2', 'user' => $user->evaluatorLevel2],
-            ['step' => 3, 'label' => 'ผู้บังคับบัญชาลำดับ 3', 'user' => $user->evaluatorLevel3],
+            ['step' => 1, 'label' => 'หัวหน้าหน่วย', 'user' => $user->evaluatorLevel1],
+            ['step' => 2, 'label' => 'หัวหน้างาน', 'user' => $user->evaluatorLevel2],
+            ['step' => 3, 'label' => 'ผู้บริหารคณะ', 'user' => $user->evaluatorLevel3],
         ])
             ->filter(fn (array $item): bool => (bool) $item['user'])
             ->map(fn (array $item): array => [
@@ -443,14 +456,14 @@ class DashboardController extends Controller
             $user->supervisor_id_3,
         ])->contains(fn ($id) => filled($id));
 
-        return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้างาน'];
+        return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย'];
     }
 
     private function evaluatorRoleIssuesForUser(User $user): array
     {
         $expectedEvaluators = [
-            ['user' => $user->evaluatorLevel1, 'role' => 'supervisor', 'issue' => 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้างานแล้ว'],
-            ['user' => $user->evaluatorLevel2, 'role' => 'dept_head', 'issue' => 'ผู้ประเมินลำดับที่ 2 ไม่ใช่ผู้บังคับบัญชาแล้ว'],
+            ['user' => $user->evaluatorLevel1, 'role' => 'supervisor', 'issue' => 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว'],
+            ['user' => $user->evaluatorLevel2, 'role' => 'dept_head', 'issue' => 'ผู้ประเมินลำดับที่ 2 ไม่ใช่หัวหน้างานแล้ว'],
             ['user' => $user->evaluatorLevel3, 'role' => 'dean', 'issue' => 'ผู้ประเมินลำดับที่ 3 ไม่ใช่ผู้บริหารคณะแล้ว'],
         ];
 
@@ -619,6 +632,16 @@ class DashboardController extends Controller
             ->groupBy('position_id')
             ->map(fn ($items) => $items->pluck('competency_id')->values())
             ->all();
+
+        $structure['positionFcSelectionRules'] = Schema::hasTable('position_fc_selection_rules')
+            ? DB::table('position_fc_selection_rules')
+                ->select('position_id', 'required_fc_count')
+                ->get()
+                ->mapWithKeys(fn (object $rule) => [
+                    $rule->position_id => (int) $rule->required_fc_count,
+                ])
+                ->all()
+            : [];
 
         return $structure;
     }
@@ -789,10 +812,23 @@ class DashboardController extends Controller
                 )
                 ->get();
 
+        $fcSelection = $this->fcTopicSelectionPayloadForUser($user);
+        $selectedApprovedFcIds = collect($fcSelection['selectedCompetencyIds'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->values();
+        $shouldFilterFc = (int) ($fcSelection['requiredCount'] ?? 0) > 0;
+
         return $expectationRows
             ->merge($positionRows)
             ->sortBy('code')
             ->unique('id')
+            ->when($shouldFilterFc, fn ($items) => $items->filter(function (object $item) use ($selectedApprovedFcIds): bool {
+                if (($item->type_code ?? null) !== 'FC') {
+                    return true;
+                }
+
+                return $selectedApprovedFcIds->contains((int) $item->id);
+            }))
             ->map(function (object $item) use ($user, $expectedLevelResolver): array {
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
@@ -819,6 +855,75 @@ class DashboardController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function fcTopicSelectionPayloadForUser(User $user): array
+    {
+        $positionId = (int) ($user->position_id ?? 0);
+
+        if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
+            return [
+                'requiredCount' => 0,
+                'status' => 'not_required',
+                'availableCompetencies' => [],
+                'selectedCompetencyIds' => [],
+                'reviewComment' => '',
+            ];
+        }
+
+        $requiredCount = (int) DB::table('position_fc_selection_rules')
+            ->where('position_id', $positionId)
+            ->value('required_fc_count');
+
+        $availableCompetencies = DB::table('position_competencies')
+            ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('position_competencies.position_id', $positionId)
+            ->where('competency_types.code', 'FC')
+            ->select(
+                'competencies.id',
+                'competencies.competency_type_id',
+                'competencies.code',
+                'competencies.name',
+                'competencies.detail',
+                'competency_types.code as type_code',
+                DB::raw('NULL as expected_level')
+            )
+            ->orderBy('competencies.code')
+            ->get()
+            ->map(fn (object $item): array => $this->compactCompetencyPayload($item))
+            ->values()
+            ->all();
+
+        $selection = Schema::hasTable('fc_topic_selections')
+            ? DB::table('fc_topic_selections')
+                ->where('user_id', $user->id)
+                ->where('position_id', $positionId)
+                ->first()
+            : null;
+
+        $selectedIds = $selection && Schema::hasTable('fc_topic_selection_items')
+            ? DB::table('fc_topic_selection_items')
+                ->where('fc_topic_selection_id', $selection->id)
+                ->pluck('competency_id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all()
+            : [];
+
+        return [
+            'id' => $selection?->id,
+            'requiredCount' => $requiredCount,
+            'status' => $requiredCount > 0 ? ($selection?->status ?? 'draft') : 'not_required',
+            'positionId' => $positionId,
+            'availableCompetencies' => $availableCompetencies,
+            'selectedCompetencyIds' => $selectedIds,
+            'submittedTo' => $selection?->submitted_to,
+            'submittedAt' => $selection?->submitted_at ? \Carbon\Carbon::parse($selection->submitted_at)->toISOString() : null,
+            'reviewedBy' => $selection?->reviewed_by,
+            'reviewComment' => $selection?->review_comment ?? '',
+            'reviewedAt' => $selection?->reviewed_at ? \Carbon\Carbon::parse($selection->reviewed_at)->toISOString() : null,
+        ];
     }
 
     private function positionIdsForUser(User $user): \Illuminate\Support\Collection

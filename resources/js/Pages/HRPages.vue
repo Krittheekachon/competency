@@ -35,7 +35,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
         nextErrors.se = " วันปิดรอบต้องอยู่หลังวันเปิดรอบ";
       }
       if (next.ss && next.sup && next.sup < next.ss) {
-        nextErrors.sup = " เวลาสิ้นสุดหัวหน้างานต้องไม่ต่ำกว่าวันเปิดรอบประเมินตนเอง";
+        nextErrors.sup = " เวลาสิ้นสุดหัวหน้าหน่วยต้องไม่ต่ำกว่าวันเปิดรอบประเมินตนเอง";
       }
       setErrors(nextErrors);
       return !nextErrors.se && !nextErrors.sup;
@@ -88,7 +88,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
                             <th>รอบประเมิน</th>
                             <th>ปี</th>
                             <th>รอบประเมินตนเอง</th>
-                            <th>เวลาสิ้นสุดหัวหน้างาน</th>
+                            <th>เวลาสิ้นสุดหัวหน้าหน่วย</th>
                             <th>ส่งแล้ว</th>
                             <th>สถานะ</th>
                             <th></th>
@@ -155,7 +155,7 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
                                 </div>
                             </div>
                             <div class="fg mb20">
-                                <label class="lbl">เวลาสิ้นสุดหัวหน้างาน</label>
+                                <label class="lbl">เวลาสิ้นสุดหัวหน้าหน่วย</label>
                                 <input class="inp" type="date" value={form.value.sup} onChange={(e) => updateForm("sup", e.target.value)} style={{ marginTop: 4 }} />
                                 {errors.value.sup && <div class="cycle-field-error">{errors.value.sup}</div>}
                             </div>
@@ -183,10 +183,10 @@ export const HRCycle = defineComponent({ name: "HRCycle", props: Object as PropT
 
 export const HRCatalog = defineComponent({ name: "HRCatalog", props: Object as PropType<{openModal: (type: string) => void;}>, setup(__props) {const { openModal } = __props as any;
     const catalog = [
-    { n: "OJT / มอบหมายโครงการพิเศษ", t: "experiential", tc: "bo", prov: "หัวหน้างาน", cost: 0, act: true, desc: "มอบหมายงานหรือโครงการจริงให้บุคลากรฝึกปฏิบัติ พร้อมติดตามผลจากหัวหน้างาน" },
+    { n: "OJT / มอบหมายโครงการพิเศษ", t: "experiential", tc: "bo", prov: "หัวหน้าหน่วย", cost: 0, act: true, desc: "มอบหมายงานหรือโครงการจริงให้บุคลากรฝึกปฏิบัติ พร้อมติดตามผลจากหัวหน้าหน่วย" },
     { n: "Job Rotation", t: "experiential", tc: "bo", prov: "ฝ่ายงาน", cost: 0, act: true, desc: "หมุนเวียนงานเพื่อเพิ่มประสบการณ์ข้ามภารกิจและเข้าใจกระบวนการทำงานของหน่วยงาน" },
     { n: "Mentoring Program", t: "social", tc: "bg", prov: "ภายใน", cost: 0, act: true, desc: "จับคู่ผู้มีประสบการณ์กับผู้เรียนรู้ เพื่อแลกเปลี่ยนแนวทางการทำงานและให้คำแนะนำต่อเนื่อง" },
-    { n: "Coaching by Supervisor", t: "social", tc: "bg", prov: "ผู้บังคับบัญชา", cost: 0, act: true, desc: "หัวหน้างานให้คำแนะนำเฉพาะจุดจากงานจริง พร้อมสะท้อนผลเพื่อพัฒนาพฤติกรรมการทำงาน" },
+    { n: "Coaching by Supervisor", t: "social", tc: "bg", prov: "หัวหน้างาน", cost: 0, act: true, desc: "หัวหน้าหน่วยให้คำแนะนำเฉพาะจุดจากงานจริง พร้อมสะท้อนผลเพื่อพัฒนาพฤติกรรมการทำงาน" },
     { n: "Peer Learning / Group Activity", t: "social", tc: "bg", prov: "ภายใน", cost: 0, act: true, desc: "เรียนรู้ร่วมกับเพื่อนร่วมงานผ่านกิจกรรมแลกเปลี่ยนประสบการณ์หรือชุมชนนักปฏิบัติ" },
     { n: "อบรม AI & Data Analytics", t: "formal", tc: "bb", prov: "ศูนย์คอมพิวเตอร์", cost: 4500, act: true, desc: "หลักสูตรพัฒนาทักษะการใช้ AI และการวิเคราะห์ข้อมูลเพื่อสนับสนุนการทำงาน" },
     { n: "Workshop การสื่อสาร", t: "formal", tc: "bb", prov: "ภายนอก", cost: 1500, act: true, desc: "เวิร์กชอปฝึกทักษะการสื่อสาร การนำเสนอ และการประสานงานอย่างมีประสิทธิภาพ" },

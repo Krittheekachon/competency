@@ -226,8 +226,8 @@ const page = usePage();
 const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
 const roleOptions = [
   'บุคลากร',
+  'หัวหน้าหน่วย',
   'หัวหน้างาน',
-  'ผู้บังคับบัญชา',
   'ผู้บริหารคณะ',
   'งานทรัพยากรบุคคล',
   'ผู้ดูแลระบบ',
@@ -305,13 +305,13 @@ const roleBadge = (role?: string): RoleBadge => {
       };
     case 'supervisor':
       return {
-        label: 'หัวหน้างาน',
+        label: 'หัวหน้าหน่วย',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
     case 'dept_head':
     case 'manager_dept':
-      return { label: 'ผู้บังคับบัญชา', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
+      return { label: 'หัวหน้างาน', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
     default:
       return { label: 'บุคลากร', className: 'bgr' };
   }

@@ -147,7 +147,7 @@ class EmployeeIdpPlanTest extends TestCase
                         'formCode' => 'form_5_coaching',
                         'formDetails' => [
                             'coachType' => 'supervisor',
-                            'coachName' => 'หัวหน้างาน',
+                            'coachName' => 'หัวหน้าหน่วย',
                             'planRows' => [[
                                 'topic' => 'ฝึกสื่อสารกับผู้รับบริการ',
                                 'approach' => 'A',

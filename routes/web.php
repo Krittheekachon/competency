@@ -15,6 +15,8 @@ use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\IdpController as EmployeeIdpController;
 use App\Http\Controllers\Employee\IdpActivityUpdateController;
+use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
+use App\Http\Controllers\FcTopicSelectionApprovalController;
 use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
@@ -84,6 +86,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
     Route::post('/assessments/approve', [AssessmentController::class, 'approve'])->name('assessments.approve');
     Route::post('/assessments/reject', [AssessmentController::class, 'reject'])->name('assessments.reject');
+    Route::post('/employee/fc-topic-selection/submit', [EmployeeFcTopicSelectionController::class, 'submit'])->name('employee.fc-topic-selection.submit');
+    Route::post('/fc-topic-selections/approve', [FcTopicSelectionApprovalController::class, 'approve'])->name('fc-topic-selections.approve');
+    Route::post('/fc-topic-selections/reject', [FcTopicSelectionApprovalController::class, 'reject'])->name('fc-topic-selections.reject');
     Route::post('/employee/idp/draft', [EmployeeIdpController::class, 'saveDraft'])->name('employee.idp.draft');
     Route::post('/employee/idp/submit', [EmployeeIdpController::class, 'submit'])->name('employee.idp.submit');
     Route::post('/employee/idp/submit-item', [EmployeeIdpController::class, 'submitItem'])->name('employee.idp.submit-item');
@@ -100,6 +105,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
     Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
     Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
+    Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
     Route::post('/hr/remind-assess', function (NotificationService $notifications) {
         $notifications->remindPendingEmployees();
 

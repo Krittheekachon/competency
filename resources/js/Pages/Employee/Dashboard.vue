@@ -83,6 +83,7 @@ const currentProfileUser = computed(() =>
     },
 );
 const assignedCompetencies = computed(() => page.props.currentUserCompetencies || []);
+const fcTopicSelection = computed(() => page.props.currentUserFcTopicSelection || {});
 const competencyGaps = computed(() => page.props.currentUserCompetencyGaps || []);
 const learningMethods = computed(() => page.props.learningMethods?.length ? page.props.learningMethods : defaultLearningMethods);
 const learningCatalogs = computed(() => page.props.hrCatalogItems || []);
@@ -172,6 +173,7 @@ const logout = () => router.post(route('logout'));
                     :user="currentProfileUser"
                     :set-users="setRef(users)"
                     :competencies="assignedCompetencies"
+                    :fc-topic-selection="fcTopicSelection"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />

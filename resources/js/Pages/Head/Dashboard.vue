@@ -142,7 +142,7 @@ const selfAssessmentBlockReasons = computed(() => {
         .some((id) => Number(id) > 0);
 
     if (!hasAssignedHeadOrSupervisor) {
-        reasons.push('ยังไม่ได้กำหนดหัวหน้างานหรือผู้บังคับบัญชา');
+        reasons.push('ยังไม่ได้กำหนดหัวหน้าหน่วยหรือหัวหน้างาน');
     }
 
     if (user.structureStatus === 'invalid' && reasons.length === 0) {
@@ -417,13 +417,75 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
-const approvalRoleLabel = computed(() => authRoleKey.value === 'dept_head' ? 'หัวหน้างาน' : 'ผู้บังคับบัญชา');
+const approvalRoleLabel = computed(() => authRoleKey.value === 'supervisor' ? 'หัวหน้าหน่วย' : 'หัวหน้างาน');
 const approvalForwardLabel = computed(() => 'ส่งต่อขั้นตอนถัดไปแล้ว');
 const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === person.approvalExpectedStatus));
 const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === person.approvalNextStatus));
 const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) =>
     (authRoleKey.value === 'dept_head' ? ['dept_evaluated', 'approved'] : ['approved']).includes(person.evalStatus),
 ));
+const fcTopicApprovalRows = computed(() => teamMembers.value
+    .map((person) => ({
+        ...person,
+        fcTopicSelection: person.fcTopicSelection || {},
+    }))
+    .filter((person) =>
+        Number(person.fcTopicSelection?.submittedTo) === Number(page.props.auth?.user?.id)
+        && person.fcTopicSelection?.status === 'submitted',
+    ));
+const selectedFcTopicApproval = ref(null);
+const fcTopicDecision = ref(null);
+const fcTopicComment = ref('');
+const isSubmittingFcTopicDecision = ref(false);
+const fcTopicNameList = (selection) => {
+    const selectedIds = new Set((selection?.selectedCompetencyIds || []).map((id) => Number(id)));
+
+    return (selection?.availableCompetencies || [])
+        .filter((item) => selectedIds.has(Number(item.id)))
+        .map((item) => `${item.cd} · ${item.n}`);
+};
+const openFcTopicDecision = (person, decision) => {
+    selectedFcTopicApproval.value = person;
+    fcTopicDecision.value = decision;
+    fcTopicComment.value = '';
+};
+const closeFcTopicDecision = () => {
+    if (isSubmittingFcTopicDecision.value) return;
+    selectedFcTopicApproval.value = null;
+    fcTopicDecision.value = null;
+    fcTopicComment.value = '';
+};
+const submitFcTopicDecision = () => {
+    const selectionId = selectedFcTopicApproval.value?.fcTopicSelection?.id;
+    if (!selectionId || !fcTopicDecision.value) return;
+    if (fcTopicDecision.value === 'reject' && !fcTopicComment.value.trim()) return;
+
+    isSubmittingFcTopicDecision.value = true;
+    router.post(route(fcTopicDecision.value === 'approve' ? 'fc-topic-selections.approve' : 'fc-topic-selections.reject'), {
+        selection_id: selectionId,
+        comment: fcTopicComment.value.trim(),
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            users.value = users.value.map((user) => {
+                if (user.sso !== selectedFcTopicApproval.value?.sso) return user;
+
+                return {
+                    ...user,
+                    fcTopicSelection: {
+                        ...(user.fcTopicSelection || {}),
+                        status: fcTopicDecision.value === 'approve' ? 'approved' : 'revision_required',
+                        reviewComment: fcTopicComment.value.trim(),
+                    },
+                };
+            });
+            closeFcTopicDecision();
+        },
+        onFinish: () => {
+            isSubmittingFcTopicDecision.value = false;
+        },
+    });
+};
 
 const gapRows = computed(() => teamMembers.value.map((user) => ({
     ...user,
@@ -884,7 +946,7 @@ const levelSelectionLabel = (level) => ({
 
 const submitAssessmentToManager = () => {
     if (!selectedAssessment.value) return;
-    persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อผู้บังคับบัญชาแล้ว');
+    persistAssessmentDraft({ ...activeDraft.value, submitted: true }, 'ส่งต่อหัวหน้างานแล้ว');
     users.value = users.value.map((user) => user.sso === selectedAssessment.value.sso ? { ...user, evalStatus: 'unit_evaluated' } : user);
 };
 const requestApprovalDecision = (decision, row) => {
@@ -1018,6 +1080,8 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentUser"
                     :set-users="setRef(users)"
+                    :competencies="page.props.currentUserCompetencies || []"
+                    :fc-topic-selection="page.props.currentUserFcTopicSelection || {}"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -1334,7 +1398,7 @@ const logout = () => router.post(route('logout'));
                                         <div>ประเภท</div>
                                         <div>คาดหวัง</div>
                                         <div>ประเมินตนเอง</div>
-                                        <div>หัวหน้างานประเมิน</div>
+                                        <div>หัวหน้าหน่วยประเมิน</div>
                                         <div>Gap</div>
                                         <div>สถานะ</div>
                                     </div>
@@ -1360,7 +1424,7 @@ const logout = () => router.post(route('logout'));
                             <div class="card gap-suggestions">
                                 <div class="ch"><div class="ct">ข้อเสนอแนะ</div></div>
                                 <div class="suggestion-block head">
-                                    <div class="bc fw8 fs13">• หัวหน้างาน</div>
+                                    <div class="bc fw8 fs13">• หัวหน้าหน่วย</div>
                                     <div class="suggestion-note">ยังไม่มีข้อเสนอแนะ</div>
                                 </div>
                                 <div class="suggestion-block dept">
@@ -1377,7 +1441,7 @@ const logout = () => router.post(route('logout'));
                         <div class="team-page-head mb20">
                             <div>
                                 <div class="sec-t">ตรวจประเมินลูกน้อง</div>
-                                <div class="sec-s">{{ approvalRoleLabel }}ตรวจผลแบบ read-only ก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</div>
+                                <div class="sec-s">{{ approvalRoleLabel }}ตรวจผลก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</div>
                             </div>
                             <div class="flex g8" style="flex-wrap: wrap">
                                 <button class="btn btn-s btn-sm" type="button">Export PDF</button>
@@ -1389,7 +1453,7 @@ const logout = () => router.post(route('logout'));
                             <div class="sc">
                                 <div class="sl">รอตรวจ</div>
                                 <div class="sv yc">{{ supervisorPendingRows.length }}</div>
-                                <div class="ss muted">Pending {{ approvalRoleLabel }}</div>
+                                <div class="ss muted">รอ{{ approvalRoleLabel }}ประเมิน</div>
                             </div>
                             <div class="sc">
                                 <div class="sl">{{ approvalForwardLabel }}</div>
@@ -1399,7 +1463,105 @@ const logout = () => router.post(route('logout'));
                             <div class="sc">
                                 <div class="sl">อนุมัติแล้ว</div>
                                 <div class="sv gcc">{{ supervisorApprovedRows.length }}</div>
-                                <div class="ss muted">ปิดรอบประเมินแล้ว</div>
+                                <div class="ss muted">คน</div>
+                            </div>
+                        </div>
+
+                        <div class="card supervisor-approval-card mb16">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">อนุมัติหัวข้อ FC</div>
+                                    <div class="cs">รายการที่ผู้ประเมินเลือก FC และส่งให้หัวหน้า 1 อนุมัติก่อนเปิดแบบประเมิน</div>
+                                </div>
+                                <span class="b by">{{ fcTopicApprovalRows.length }} รายการ</span>
+                            </div>
+                            <div class="team-table-wrap approval-table-wrap">
+                                <table class="team-table approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ชื่อ-นามสกุล</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>หัวข้อ FC ที่เลือก</th>
+                                            <th>ดำเนินการ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="person in fcTopicApprovalRows" :key="`fc-${person.sso}`">
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <small>{{ person.d || '-' }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ person.p || '-' }}</td>
+                                            <td>
+                                                <div class="fc-topic-list">
+                                                    <span
+                                                        v-for="topic in fcTopicNameList(person.fcTopicSelection)"
+                                                        :key="topic"
+                                                        class="fc-topic-chip"
+                                                    >
+                                                        {{ topic }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="flex g8">
+                                                    <button class="btn btn-t btn-sm" type="button" @click="openFcTopicDecision(person, 'approve')">อนุมัติ</button>
+                                                    <button class="btn btn-s btn-sm danger-text" type="button" @click="openFcTopicDecision(person, 'reject')">ส่งกลับ</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="fcTopicApprovalRows.length === 0">
+                                            <td colspan="4" class="muted ac py20">ไม่มีรายการรออนุมัติหัวข้อ FC</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedFcTopicApproval" class="approval-modal-backdrop" @click.self="closeFcTopicDecision">
+                            <div class="fc-topic-decision-modal">
+                                <div class="approval-modal-head">
+                                    <div>
+                                        <div class="sec-t">
+                                            {{ fcTopicDecision === 'approve' ? 'อนุมัติหัวข้อ FC' : 'ส่งหัวข้อ FC กลับให้เลือกใหม่' }}
+                                        </div>
+                                        <div class="sec-s">{{ selectedFcTopicApproval.p || '-' }} · {{ `${selectedFcTopicApproval.t || ''}${selectedFcTopicApproval.n}` }}</div>
+                                    </div>
+                                    <button class="btn btn-s btn-sm" type="button" @click="closeFcTopicDecision">ปิด</button>
+                                </div>
+                                <div class="fc-topic-decision-body">
+                                    <div class="fc-topic-review-list">
+                                        <span
+                                            v-for="topic in fcTopicNameList(selectedFcTopicApproval.fcTopicSelection)"
+                                            :key="topic"
+                                            class="fc-topic-chip"
+                                        >
+                                            {{ topic }}
+                                        </span>
+                                    </div>
+                                    <label class="lbl" for="fc-topic-comment">
+                                        {{ fcTopicDecision === 'reject' ? 'เหตุผลที่ส่งกลับ' : 'หมายเหตุ' }}
+                                    </label>
+                                    <textarea
+                                        id="fc-topic-comment"
+                                        v-model="fcTopicComment"
+                                        class="fc-topic-comment"
+                                        :placeholder="fcTopicDecision === 'reject' ? 'กรอกเหตุผลให้ผู้ประเมินเลือกใหม่' : 'หมายเหตุเพิ่มเติม (ไม่บังคับ)'"
+                                    />
+                                    <div class="flex end g8">
+                                        <button class="btn btn-s" type="button" @click="closeFcTopicDecision">ยกเลิก</button>
+                                        <button
+                                            class="btn btn-t"
+                                            type="button"
+                                            :disabled="isSubmittingFcTopicDecision || (fcTopicDecision === 'reject' && !fcTopicComment.trim())"
+                                            @click="submitFcTopicDecision"
+                                        >
+                                            {{ isSubmittingFcTopicDecision ? 'กำลังบันทึก...' : (fcTopicDecision === 'approve' ? 'ยืนยันอนุมัติ' : 'ยืนยันส่งกลับ') }}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1512,7 +1674,7 @@ const logout = () => router.post(route('logout'));
                                                 <div>{{ row.note || 'ไม่มี Note' }}</div>
                                             </div>
                                             <label class="approval-reviewer-comment">
-                                                <span>Comment จากผู้บังคับบัญชา</span>
+                                                <span>Comment จากหัวหน้างาน</span>
                                                 <textarea
                                                     :value="reviewerComments[approvalCommentKey(row)] ?? row.reviewerComment ?? ''"
                                                     rows="3"
@@ -1627,7 +1789,7 @@ const logout = () => router.post(route('logout'));
                                     <div class="muted fs12">{{ selectedAssessment.p }} · {{ selectedAssessment.d }}</div>
                                 </div>
                                 <span class="b" :class="activeDraft.submitted ? 'bt' : 'bgr'">
-                                    {{ activeDraft.submitted ? 'ส่งต่อผู้บังคับบัญชาแล้ว' : (assessmentSavedAt || 'ยังไม่มีการแก้ไขผลการประเมิน') }}
+                                    {{ activeDraft.submitted ? 'ส่งต่อหัวหน้างานแล้ว' : (assessmentSavedAt || 'ยังไม่มีการแก้ไขผลการประเมิน') }}
                                 </span>
                             </div>
 
@@ -1682,14 +1844,14 @@ const logout = () => router.post(route('logout'));
                                     </div>
 
                                     <div class="assessment-side reviewer">
-                                        <div class="bc fw8 fs12 mb10">1. หัวหน้างาน (คุณ) *</div>
+                                        <div class="bc fw8 fs12 mb10">1. หัวหน้าหน่วย (คุณ) *</div>
                                         <div class="muted fw7 fs11 mb6">พฤติกรรมบ่งชี้ (ใช้ประกอบการตัดสิน)</div>
                                         <ul class="behavior-list">
                                             <li v-for="behavior in comp.behaviors[getHeadScore(comp)]" :key="behavior">{{ behavior }}</li>
                                         </ul>
-                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้างานเลือก ระดับ {{ getHeadScore(comp) }}: {{ scoreLabels[getHeadScore(comp) - 1] }}</div>
+                                        <div class="hint-box">แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้าหน่วยเลือก ระดับ {{ getHeadScore(comp) }}: {{ scoreLabels[getHeadScore(comp) - 1] }}</div>
 
-                                        <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากรโดยหัวหน้างาน</div>
+                                        <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากรโดยหัวหน้าหน่วย</div>
                                         <div class="score-grid">
                                             <button
                                                 v-for="score in [1, 2, 3, 4, 5]"
@@ -1712,7 +1874,7 @@ const logout = () => router.post(route('logout'));
                                         />
 
                                         <div v-if="index === filteredComps.length - 1" class="approval-flow">
-                                            <div class="flow-step"><div class="av s24 flow-dot">2</div><div><div class="fw7 fs12">ผู้บังคับบัญชา</div><div class="muted fs11">รอดำเนินการ...</div></div></div>
+                                            <div class="flow-step"><div class="av s24 flow-dot">2</div><div><div class="fw7 fs12">หัวหน้างาน</div><div class="muted fs11">รอดำเนินการ...</div></div></div>
                                             <div class="flow-step"><div class="av s24 flow-dot">3</div><div><div class="fw7 fs12">คณบดี</div><div class="muted fs11">รอยืนยัน</div></div></div>
                                         </div>
                                     </div>
@@ -1724,7 +1886,7 @@ const logout = () => router.post(route('logout'));
                                     {{ assessmentSavedAt || 'ระบบจะบันทึกร่างอัตโนมัติ' }}
                                 </button>
                                 <button class="btn btn-t" type="button" style="flex: 2" :disabled="activeDraft.submitted" @click="submitAssessmentToManager">
-                                    {{ activeDraft.submitted ? 'ส่งผลการประเมินแล้ว' : 'ส่งผลการประเมินให้ผู้บังคับบัญชา' }}
+                                    {{ activeDraft.submitted ? 'ส่งผลการประเมินแล้ว' : 'ส่งผลการประเมินให้หัวหน้างาน' }}
                                 </button>
                             </div>
                         </div>
@@ -1733,7 +1895,7 @@ const logout = () => router.post(route('logout'));
                 </template>
 
                 <div v-else class="card empty-card">
-                    หน้านี้กำลังเชื่อมต่อข้อมูลสำหรับหัวหน้างาน
+                    หน้านี้กำลังเชื่อมต่อข้อมูลสำหรับหัวหน้าหน่วย
                 </div>
             </div>
         </div>
@@ -1910,6 +2072,18 @@ const logout = () => router.post(route('logout'));
     flex-direction: column;
 }
 
+.fc-topic-decision-modal {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 36px);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+    display: flex;
+    flex-direction: column;
+}
+
 .approval-modal-head {
     display: flex;
     align-items: flex-start;
@@ -1923,6 +2097,40 @@ const logout = () => router.post(route('logout'));
 .approval-modal-body {
     padding: 20px;
     overflow-y: auto;
+}
+
+.fc-topic-list,
+.fc-topic-review-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.fc-topic-chip {
+    display: inline-flex;
+    max-width: 100%;
+    border: 1px solid #fed7aa;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #9a3412;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.fc-topic-decision-body {
+    display: grid;
+    gap: 14px;
+    padding: 18px 20px 20px;
+}
+
+.fc-topic-comment {
+    min-height: 110px;
+    resize: vertical;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: inherit;
 }
 
 .approval-score-grid {

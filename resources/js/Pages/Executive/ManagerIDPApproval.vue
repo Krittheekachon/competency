@@ -84,8 +84,8 @@ const approve = (user: any) => {
           <thead>
             <tr>
               <th>บุคลากร</th>
+              <th>หัวหน้าหน่วย</th>
               <th>หัวหน้างาน</th>
-              <th>ผู้บังคับบัญชา</th>
               <th>ลำดับของคุณ</th>
               <th>หัวข้อ IDP</th>
               <th>สถานะ</th>

@@ -188,7 +188,7 @@ class MockSsoController extends Controller
         return match ($this->roleKeyForUser($user)) {
             'supervisor' => 'krittheekachon.s@kkumail.com',
             'dept_head', 'dean' => 'chin172755@gmail.com',
-            default => 'krittheekachoon.s@kkumail.com',
+            default => 'krittheekachon.s@kkumail.com',
         };
     }
 

@@ -120,16 +120,16 @@ const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const idpDeliveryTypeSettings = computed(() => page.props.idpDeliveryTypeSettings || []);
 const roleLabelsByKey = {
     admin: 'ผู้ดูแลระบบ',
-    supervisor: 'หัวหน้างาน',
-    dept_head: 'ผู้บังคับบัญชา',
+    supervisor: 'หัวหน้าหน่วย',
+    dept_head: 'หัวหน้างาน',
     employee: 'บุคลากร',
     hr: 'งานทรัพยากรบุคคล',
     dean: 'ผู้บริหารคณะ',
 };
 const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
-    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
-    { id: 2, key: 'dept_head', label: 'ผู้บังคับบัญชา' },
+    { id: 1, key: 'supervisor', label: 'หัวหน้าหน่วย' },
+    { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -199,25 +199,24 @@ const legacyLevelOption = computed(() => {
 });
 const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
+const visibleAdminPageIds = new Set([
+    'admin-users',
+    'admin-org',
+    'admin-org-structure',
+    'admin-dict',
+    'admin-idp-tools',
+]);
 const currentNavConfig = computed(() => {
     const sections = NAV_CONFIG[currentRole.value] || [];
 
     if (currentRole.value !== 'admin') return sections;
 
-    return sections.map((section) => {
-        const hasIdpDetail = section.items?.some((item) => item.id === 'emp-idp-detail');
-        const hasEmployeeIdp = section.items?.some((item) => item.id === 'emp-idp');
-
-        if (!hasEmployeeIdp || hasIdpDetail) return section;
-
-        return {
+    return sections
+        .map((section) => ({
             ...section,
-            items: [
-                ...section.items,
-                { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
-            ],
-        };
-    });
+            items: (section.items || []).filter((item) => visibleAdminPageIds.has(item.id)),
+        }))
+        .filter((section) => section.items.length > 0);
 });
 const implementedAdminPages = new Set([
     'emp-assess',
@@ -284,12 +283,12 @@ watchEffect(() => {
 });
 
 watchEffect(() => {
-    if (requestedPage.value && implementedAdminPages.has(requestedPage.value)) {
+    if (requestedPage.value && implementedAdminPages.has(requestedPage.value) && visibleAdminPageIds.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
         requestedPage.value = null;
     }
 
-    if (!implementedAdminPages.has(activePage.value)) {
+    if (!implementedAdminPages.has(activePage.value) || !visibleAdminPageIds.has(activePage.value)) {
         activePage.value = 'admin-users';
     }
 
@@ -1033,7 +1032,7 @@ const logout = () => router.post(route('logout'));
                         <div class="evaluator-card-head">
                             <div>
                                 <span class="evaluator-step">ลำดับที่ 1</span>
-                                <label class="lbl">เช่น หัวหน้างาน</label>
+                                <label class="lbl">เช่น หัวหน้าหน่วย</label>
                             </div>
                             <span class="evaluator-state">{{ canPickEvaluator1 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
@@ -1056,7 +1055,7 @@ const logout = () => router.post(route('logout'));
                             <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
                         <div v-if="!supervisorOptions.length" class="modal-help">
-                            ยังไม่มีผู้ใช้ role หัวหน้างาน
+                            ยังไม่มีผู้ใช้ role หัวหน้าหน่วย
                         </div>
                     </div>
 
@@ -1064,7 +1063,7 @@ const logout = () => router.post(route('logout'));
                         <div class="evaluator-card-head">
                             <div>
                                 <span class="evaluator-step">ลำดับที่ 2</span>
-                                <label class="lbl">เช่น หัวหน้าฝ่าย / ผู้บังคับบัญชา</label>
+                                <label class="lbl">เช่น หัวหน้าฝ่าย / หัวหน้างาน</label>
                             </div>
                             <span class="evaluator-state">{{ canPickEvaluator2 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
@@ -1087,7 +1086,7 @@ const logout = () => router.post(route('logout'));
                             <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
                         </select>
                         <div v-if="!deptHeadOptions.length" class="modal-help">
-                            ยังไม่มีผู้ใช้ role ผู้บังคับบัญชา
+                            ยังไม่มีผู้ใช้ role หัวหน้างาน
                         </div>
                     </div>
 

@@ -43,9 +43,9 @@ class DemoIdpGapSeeder extends Seeder
             ]);
 
             $deptHeadId = $this->upsertUser('idp_dept_head@test.com', [
-                'name' => 'นางผู้บังคับบัญชา ไอดีพี',
+                'name' => 'นางหัวหน้างาน ไอดีพี',
                 'title' => 'นาง',
-                'first_name_th' => 'ผู้บังคับบัญชา',
+                'first_name_th' => 'หัวหน้างาน',
                 'last_name_th' => 'ไอดีพี',
                 'role_id' => $deptHeadRoleId,
                 'workline' => 'สนับสนุน',
@@ -191,8 +191,8 @@ class DemoIdpGapSeeder extends Seeder
     {
         foreach ([
             ['key' => 'employee', 'name_th' => 'บุคลากร', 'name_en' => 'Employee'],
-            ['key' => 'supervisor', 'name_th' => 'หัวหน้างาน', 'name_en' => 'Supervisor'],
-            ['key' => 'dept_head', 'name_th' => 'ผู้บังคับบัญชา', 'name_en' => 'Department Head'],
+            ['key' => 'supervisor', 'name_th' => 'หัวหน้าหน่วย', 'name_en' => 'Supervisor'],
+            ['key' => 'dept_head', 'name_th' => 'หัวหน้างาน', 'name_en' => 'Department Head'],
             ['key' => 'dean', 'name_th' => 'ผู้บริหารคณะ', 'name_en' => 'Dean'],
         ] as $role) {
             DB::table('roles')->updateOrInsert(['key' => $role['key']], [

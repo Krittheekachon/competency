@@ -55,7 +55,8 @@ Use these tables as the primary data ownership boundaries:
 | Area | Tables | Purpose |
 | --- | --- | --- |
 | Organization | `users`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` | Store users, roles, reporting lines, and organization structure. |
-| Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `hr_expectations` | Define competencies, expected levels, behaviors, and position assignments. |
+| Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `position_fc_selection_rules`, `hr_expectations` | Define competencies, expected levels, behaviors, position assignments, and FC topic selection requirements. |
+| FC topic approval | `fc_topic_selections`, `fc_topic_selection_items` | Store employee-selected FC topics and first-supervisor approval before self-assessment opens. |
 | Assessment | `assessments`, `assessment_indicator_results`, `scores` | Store competency assessments, checked behaviors, reviewer scores, decisions, and comments. |
 | Gap | `competency_gaps` | Store the approved result, expected level, actual level, level gap, and `requires_idp`. |
 | IDP plan | `idps`, `idp_items`, `idp_item_reviews` | Store one user plan, one item for each negative competency gap, and append-only reviewer decisions. |
@@ -73,18 +74,69 @@ Preserve these core business rules:
 - Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
 - Support reviewer slots `supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`; skip empty slots and determine the current reviewer from the assigned user IDs.
 
+## Assessment Flow
+
+The competency assessment flow runs from HR setup through assessment approval, gap calculation, and IDP creation in this order:
+
+1. **Admin/HR prepares organization data**
+   - Admin configures users, roles, positions, job families, worklines, levels, and reporting lines.
+   - Each assessable user must have a reviewer chain through `users.supervisor_id_1`, `supervisor_id_2`, and/or `supervisor_id_3`.
+   - The system skips empty reviewer slots and uses the assigned user IDs as the source of truth for approval permission.
+
+2. **HR assigns competencies to positions**
+   - HR links competencies to positions in `position_competencies`.
+   - The assigned CC, MC, and FC competencies are the base assessment topics for users in that position.
+   - HR configures expected levels through `hr_expectations`; expected-level reads must go through `App\Services\ExpectedLevelResolver`.
+
+3. **HR configures the required FC selection count**
+   - For FC only, HR can define how many FC topics a user in each position must select through `position_fc_selection_rules.required_fc_count`.
+   - If `required_fc_count = 0` or the rule is missing, treat the position as not using the FC pre-selection flow.
+   - The required count must never exceed the number of FC competencies assigned to that position.
+
+4. **The user selects FC topics**
+   - If the user's position has `required_fc_count > 0`, the entire self-assessment screen must remain locked first.
+   - The user may select FC topics only from FC competencies already assigned to the position in `position_competencies`.
+   - The user must select exactly the HR-configured count, then submit the selection to first supervisor (`supervisor_id_1`) for approval.
+   - Store the request in `fc_topic_selections` and the selected competency rows in `fc_topic_selection_items`.
+
+5. **First supervisor approves FC topics**
+   - Only the first supervisor recorded in `submitted_to` may approve or return the FC topic selection.
+   - Approval writes `fc_topic_selections.status = approved`.
+   - Rejection requires a comment, writes `status = revision_required`, and allows the user to select and submit again.
+   - CC and MC do not require topic pre-selection, but if the position requires FC selection, the whole assessment remains locked until the FC selection is approved.
+
+6. **The user completes self-assessment**
+   - After FC topic selection is approved, the system opens assessment for CC, MC, and only the approved FC topics.
+   - Employees may edit only when the assessment status is `draft` or `revision_required`.
+   - Draft saves and final submit must go through `AssessmentController`.
+   - Checked behavior indicators must be stored in `assessment_indicator_results`.
+   - Never allow the user to assess an FC topic that was not included in the approved FC selection.
+
+7. **Assessment enters the reviewer chain**
+   - After the user submits, the system sends the assessment to the first configured reviewer slot.
+   - The canonical status path is `draft` / `revision_required` -> `self_submitted` -> `unit_evaluated` -> `dept_evaluated` -> `approved`.
+   - If a reviewer slot is empty, skip it and move to the next configured slot or complete the workflow as `approved`.
+   - Each reviewer may approve or reject only rows in that reviewer's pending status.
+   - Rejecting assessment results requires a comment and returns the assessment/gap to `revision_required`.
+
+8. **The system creates gaps and IDP work**
+   - After the assessment completes the approval workflow, calculate the gap with `actual_level - expected_level`.
+   - If the gap is negative, set `requires_idp = true`.
+   - Create or show IDP work only from approved competency gaps.
+   - Use one `idp_item` per competency gap that requires development, and allow multiple `idp_activities` under one item.
+
 ## Domain Model
 
 ### Roles
 
 Use these canonical role keys:
 
-- `employee`: บุคลากร
-- `supervisor`: หัวหน้างาน / first reviewer
-- `dept_head`: ผู้บังคับบัญชา / department reviewer
-- `dean`: ผู้บริหารคณะ / final executive reviewer
-- `hr`: งานทรัพยากรบุคคล
-- `admin`: ผู้ดูแลระบบ
+- `employee`: employee
+- `supervisor`: first supervisor / first reviewer
+- `dept_head`: department head / department reviewer
+- `dean`: faculty executive / final executive reviewer
+- `hr`: human resources
+- `admin`: system administrator
 
 Normalize legacy aliases consistently:
 
@@ -98,6 +150,9 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 - Store organization masters in `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, and `support_units`.
 - Store competency definitions in `competency_types`, `competencies`, `competency_levels`, and `comp_level_indicators`.
 - Store position assignments in `position_competencies`.
+- HR can require each position to select a configured number of FC competencies through `position_fc_selection_rules.required_fc_count`.
+- FC topic choices must come only from FC competencies already assigned to that position in `position_competencies`.
+- Treat `required_fc_count = 0` or a missing rule as "no FC pre-selection flow" for that position.
 - Resolve expected competency levels through `App\Services\ExpectedLevelResolver`; do not duplicate its precedence rules in a controller.
 - Treat `hr_expectations` as expectation configuration and keep workline/job-family scoping intact.
 
@@ -106,6 +161,8 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 Use `AssessmentController` as the authority for write behavior.
 
 The reviewer chain is configured by `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`. Missing steps are skipped. Do not require one specific evaluator slot merely because of the user's role. A non-admin user has a valid reporting line when at least one evaluator slot is assigned and every assigned evaluator has the correct role for that slot.
+
+For positions with `position_fc_selection_rules.required_fc_count > 0`, follow the FC pre-selection rules described in **Assessment Flow** before allowing any self-assessment save or submit.
 
 Status flow:
 
@@ -121,6 +178,8 @@ Rules:
 
 - Permit employee editing only in `draft` or `revision_required`.
 - Require an assigned evaluator before ordinary users can self-assess.
+- Require approved FC topic selection before any self-assessment save/draft when the user's position has a positive `required_fc_count`.
+- Permit assessment only for approved selected FC topics; never allow unselected FC topics to be assessed for that user/position.
 - Allow only the reviewer assigned to the current step to approve or reject.
 - Determine the active review step from the actual evaluator IDs, not from a hard-coded mapping between a reviewer role and one fixed step.
 - On rejection, return the assessment and gap to `revision_required` and require a comment.
@@ -131,6 +190,7 @@ Rules:
 
 Relevant tests:
 
+- `tests/Feature/FcTopicSelectionFlowTest.php`
 - `tests/Feature/AssessmentReviewerChainTest.php`
 - role dashboard tests under `tests/Feature/`
 
