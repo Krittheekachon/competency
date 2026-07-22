@@ -9,6 +9,7 @@ use App\Mail\RoleNotificationMail;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -20,6 +21,10 @@ class NotificationService
     private const REVIEWER_1_RECIPIENT = 'krittheekachon.s@kkumail.com';
     private const REVIEWER_2_3_RECIPIENT = 'chin172755@gmail.com';
     private const EMPLOYEE_REVISION_RECIPIENT = 'polysaccc1351@gmail.com';
+
+    public function __construct(private NotificationDigestService $digest)
+    {
+    }
 
     public function notifyFirstReviewerOnSubmit(User $employee, string $competencyName): void
     {
@@ -60,24 +65,27 @@ class NotificationService
 
     public function notifyAdminIncompleteUser(User $user): void
     {
-        $this->sendToUsers(
-            $this->usersWithRole('admin')->get(),
-            fn () => new RoleNotificationMail(
-                '[A-IDP] ผู้ใช้งานยังรอตรวจสอบข้อมูล',
-                'ผู้ใช้งานยังติดสถานะตรวจสอบข้อมูล',
-                "{$user->name} ยังมีข้อมูลโครงสร้างตำแหน่งหรือหน่วยงานไม่ครบ กรุณาตรวจสอบและปรับปรุงข้อมูลผู้ใช้งาน",
-                'ตรวจสอบข้อมูลผู้ใช้งาน',
-                $this->dashboardUrl(),
-            ),
-        );
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        $this->digest->queueIncompleteUser($user);
     }
 
     public function notifyAdminNewUser(User $user): void
     {
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        $this->digest->queueIncompleteUser($user);
+
+        return;
+
         $this->sendToUsers(
             $this->usersWithRole('admin')->get(),
             fn () => new RoleNotificationMail(
-                '[A-IDP] มีผู้ใช้งานใหม่ในระบบ',
+                'มีผู้ใช้งานใหม่ในระบบ',
                 'มีผู้ใช้งานใหม่',
                 "{$user->name} ถูกเพิ่มเข้าสู่ระบบแล้ว กรุณาตรวจสอบข้อมูลผู้ใช้งานและสิทธิ์การใช้งานให้ถูกต้อง",
                 'เปิดหน้าจัดการผู้ใช้งาน',
@@ -91,7 +99,7 @@ class NotificationService
         $this->sendToUsers(
             $this->usersWithRole('admin')->get(),
             fn () => new RoleNotificationMail(
-                '[A-IDP] มีกลุ่มงานที่ยังไม่ได้กำหนดค่าความคาดหวัง',
+                'มีกลุ่มงานที่ยังไม่ได้กำหนดค่าความคาดหวัง',
                 'กลุ่มงานยังไม่ได้กำหนดค่าความคาดหวัง',
                 "กลุ่มงาน {$groupName} ยังไม่มีการกำหนดค่าความคาดหวัง กรุณาตรวจสอบการตั้งค่าก่อนเปิดรอบการประเมิน",
                 'เปิดหน้าตั้งค่า',
@@ -102,16 +110,11 @@ class NotificationService
 
     public function notifyHrUnmappedPosition(string $positionName): void
     {
-        $this->sendToUsers(
-            $this->usersWithRole('hr')->get(),
-            fn () => new RoleNotificationMail(
-                '[A-IDP] มีกลุ่มงานที่ยังไม่ได้กำหนดสมรรถนะ',
-                'กลุ่มงานยังไม่ได้กำหนดสมรรถนะ',
-                "กลุ่มงาน {$positionName} ยังไม่มีการกำหนดสมรรถนะ กรุณาตรวจสอบและผูกสมรรถนะให้ครบถ้วน",
-                'เปิดหน้ากำหนดสมรรถนะ',
-                $this->dashboardUrl(),
-            ),
-        );
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        $this->digest->queueUnmappedPosition($positionName);
     }
 
     public function remindPendingEmployees(): void
@@ -138,6 +141,11 @@ class NotificationService
             new AssessmentStatusUpdateMail($employee, $status, $this->dashboardUrl(), $rejectComment),
             $this->recipientForEmployeeStatus($status),
         );
+    }
+
+    public function isNotificationEnabled(): bool
+    {
+        return ! app()->environment('local') || Cache::get('dev_notifications_enabled', true) !== false;
     }
 
     private function dashboardUrl(): string
@@ -189,6 +197,10 @@ class NotificationService
 
     private function sendToUsers(Collection $users, callable $mailableFactory): void
     {
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
         $users->each(function (User $user) use ($mailableFactory): void {
             $this->sendToUser($user, $mailableFactory($user));
         });
@@ -196,16 +208,20 @@ class NotificationService
 
     private function sendToUser(?User $user, $mailable, ?string $recipient = null): void
     {
-        if (! $user) {
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        if (! $user?->email) {
             return;
         }
 
         try {
-            Mail::to($recipient ?? self::DEFAULT_TEST_RECIPIENT)->send($mailable);
+            Mail::to($user)->send($mailable);
         } catch (Throwable $exception) {
             Log::warning('Unable to send notification email.', [
                 'user_id' => $user->id,
-                'recipient' => $recipient ?? self::DEFAULT_TEST_RECIPIENT,
+                'recipient' => $user->email,
                 'mail' => $mailable::class,
                 'message' => $exception->getMessage(),
             ]);

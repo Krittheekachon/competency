@@ -23,7 +23,7 @@ class AssessmentSubmittedMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '[A-IDP] มีผลการประเมินรอการอนุมัติ',
+            subject: 'มีผลการประเมินรอการอนุมัติ',
         );
     }
 
