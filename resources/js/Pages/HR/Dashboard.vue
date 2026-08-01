@@ -172,14 +172,21 @@ const pageTitles = {
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
 const currentPageTitle = computed(() => pageTitles[activePage.value] || props.pageTitle);
 const currentProfileUser = computed(() => props.currentUser || {});
+const reviewerStepsForUser = (user) => {
+    const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+        ? user.reviewerSteps
+        : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+    if (steps.length) return steps;
+
+    return [user?.supervisor_id_1, user?.supervisor_id_2, user?.supervisor_id_3]
+        .map((id, index) => ({ id, step: index + 1 }))
+        .filter((step) => Number(step.id) > 0);
+};
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value;
     const reasons = Array.isArray(user?.structureIssues) ? [...user.structureIssues] : [];
-    const hasAssignedEvaluator = [
-        user?.supervisor_id_1,
-        user?.supervisor_id_2,
-        user?.supervisor_id_3,
-    ].some((id) => Number(id) > 0);
+    const hasAssignedEvaluator = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedEvaluator) {
         reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');

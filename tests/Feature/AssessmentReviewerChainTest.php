@@ -115,6 +115,58 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
     }
 
+    public function test_dynamic_reviewer_chain_can_continue_past_three_steps(): void
+    {
+        $reviewers = collect(range(1, 4))
+            ->map(fn () => User::factory()->create([
+                'role_id' => $this->roleId('supervisor'),
+            ]));
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'supervisor_id_1' => $reviewers[0]->id,
+            'supervisor_id_2' => $reviewers[1]->id,
+            'supervisor_id_3' => $reviewers[2]->id,
+        ]);
+        $competencyId = $this->competencyId('CC-DYNAMIC');
+        $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
+
+        DB::table('user_reviewer_steps')->where('user_id', $employee->id)->delete();
+        DB::table('user_reviewer_steps')->insert($reviewers
+            ->values()
+            ->map(fn (User $reviewer, int $index): array => [
+                'user_id' => $employee->id,
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewer->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])
+            ->all());
+
+        foreach ([
+            0 => 'unit_evaluated',
+            1 => 'dept_evaluated',
+            2 => 'review_step_4',
+            3 => 'approved',
+        ] as $reviewerIndex => $expectedStatus) {
+            $this->actingAs($reviewers[$reviewerIndex])
+                ->post(route('assessments.approve'), [
+                    'user_id' => $employee->id,
+                    'competency_id' => $competencyId,
+                ])
+                ->assertSessionHasNoErrors();
+
+            $this->assertDatabaseHas('assessments', [
+                'id' => $assessment->id,
+                'status' => $expectedStatus,
+            ]);
+            $this->assertDatabaseHas('competency_gaps', [
+                'assessment_id' => $assessment->id,
+                'competency_id' => $competencyId,
+                'status' => $expectedStatus,
+            ]);
+        }
+    }
+
     public function test_reviewer_can_approve_only_one_competency_without_touching_the_others(): void
     {
         $reviewer = User::factory()->create([

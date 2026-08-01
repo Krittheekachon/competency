@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\ExpectedLevelResolver;
+use App\Services\ReviewerChainResolver;
+use App\Services\ReviewerTemplateResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,6 +20,13 @@ class DashboardController extends Controller
     private array $worklineIdCache = [];
 
     private array $jobFamilyNameCache = [];
+
+    public function __construct(
+        private ReviewerChainResolver $reviewerChainResolver,
+        private ReviewerTemplateResolver $reviewerTemplateResolver,
+    )
+    {
+    }
 
     /**
      * จัดการหน้า Dashboard ตาม Role ID
@@ -55,6 +64,7 @@ class DashboardController extends Controller
             'admin' => Inertia::render('Admin/Dashboard', [
                 'users' => $users,
                 'roles' => $this->rolesPayload(),
+                'reviewerChainTemplates' => $this->reviewerTemplateResolver->payload(),
                 'competencyTypes' => $competencyTypes,
                 'competencies' => $competencies,
                 ...$this->adminStructurePayload(),
@@ -183,6 +193,8 @@ class DashboardController extends Controller
         $assignedCompetencies = $this->assignedCompetenciesForUser($user);
         $competencyGaps = $this->competencyGapsForUser($user);
         $evalStatus = $this->evaluationStatusFromGaps($competencyGaps);
+        $reviewerSteps = $this->reviewerChainResolver->payloadForUser($user);
+        $idpReviewerSteps = $this->reviewerChainResolver->payloadForUser($user, 'idp');
         $structureIssues = $roleKey === 'admin'
             ? []
             : [
@@ -211,10 +223,14 @@ class DashboardController extends Controller
             'supervisor_id_1' => $user->supervisor_id_1,
             'supervisor_id_2' => $user->supervisor_id_2,
             'supervisor_id_3' => $user->supervisor_id_3,
+            'reviewer_template_id' => $user->reviewer_template_id,
+            'idp_reviewer_template_id' => $user->idp_reviewer_template_id ?? null,
             'sup' => $this->displayNameForUser($user->evaluatorLevel1),
             'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
             'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
-            'supervisorChain' => $this->supervisorChainForUser($user),
+            'reviewerSteps' => $reviewerSteps,
+            'idpReviewerSteps' => $idpReviewerSteps,
+            'supervisorChain' => $reviewerSteps,
             'assignedCompetencies' => $assignedCompetencies,
             'competencyGaps' => $competencyGaps,
             'fcTopicSelection' => $this->fcTopicSelectionPayloadForUser($user),
@@ -257,6 +273,14 @@ class DashboardController extends Controller
             return 'dept_evaluated';
         }
 
+        $dynamicReviewStatus = $statuses->first(
+            fn (string $status): bool => str_starts_with($status, 'review_step_')
+        );
+
+        if ($dynamicReviewStatus) {
+            return $dynamicReviewStatus;
+        }
+
         if ($statuses->contains('approved') || $statuses->contains('dean_approved')) {
             return 'approved';
         }
@@ -275,21 +299,7 @@ class DashboardController extends Controller
 
     private function supervisorChainForUser(User $user): array
     {
-        return collect([
-            ['step' => 1, 'label' => 'หัวหน้าหน่วย', 'user' => $user->evaluatorLevel1],
-            ['step' => 2, 'label' => 'หัวหน้างาน', 'user' => $user->evaluatorLevel2],
-            ['step' => 3, 'label' => 'ผู้บริหารคณะ', 'user' => $user->evaluatorLevel3],
-        ])
-            ->filter(fn (array $item): bool => (bool) $item['user'])
-            ->map(fn (array $item): array => [
-                'id' => (int) $item['user']->id,
-                'step' => $item['step'],
-                'label' => $item['label'],
-                'name' => $this->displayNameForUser($item['user']),
-                'position' => $item['user']->position ?: '',
-            ])
-            ->values()
-            ->all();
+        return $this->reviewerChainResolver->payloadForUser($user);
     }
 
     private function decodeJsonObject(mixed $value): array
@@ -445,33 +455,14 @@ class DashboardController extends Controller
             return [];
         }
 
-        $evaluatorRoleIssues = $this->evaluatorRoleIssuesForUser($user);
-        if ($evaluatorRoleIssues !== []) {
-            return $evaluatorRoleIssues;
-        }
-
-        $hasAnyEvaluator = collect([
-            $user->supervisor_id_1,
-            $user->supervisor_id_2,
-            $user->supervisor_id_3,
-        ])->contains(fn ($id) => filled($id));
+        $hasAnyEvaluator = $this->reviewerChainResolver->stepsForUser($user) !== [];
 
         return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย'];
     }
 
     private function evaluatorRoleIssuesForUser(User $user): array
     {
-        $expectedEvaluators = [
-            ['user' => $user->evaluatorLevel1, 'role' => 'supervisor', 'issue' => 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว'],
-            ['user' => $user->evaluatorLevel2, 'role' => 'dept_head', 'issue' => 'ผู้ประเมินลำดับที่ 2 ไม่ใช่หัวหน้างานแล้ว'],
-            ['user' => $user->evaluatorLevel3, 'role' => 'dean', 'issue' => 'ผู้ประเมินลำดับที่ 3 ไม่ใช่ผู้บริหารคณะแล้ว'],
-        ];
-
-        return collect($expectedEvaluators)
-            ->filter(fn (array $evaluator) => $evaluator['user'] && $this->roleKeyForUser($evaluator['user']) !== $evaluator['role'])
-            ->pluck('issue')
-            ->values()
-            ->all();
+        return [];
     }
 
     private function adminStructurePayload(): array
@@ -1312,8 +1303,34 @@ class DashboardController extends Controller
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
             ->where(function ($query) use ($reviewer): void {
+                if (Schema::hasTable('user_reviewer_steps')) {
+                    $query->whereExists(function ($subQuery) use ($reviewer): void {
+                        $subQuery->selectRaw('1')
+                            ->from('user_reviewer_steps')
+                            ->whereColumn('user_reviewer_steps.user_id', 'users.id')
+                            ->where('user_reviewer_steps.reviewer_id', $reviewer->id)
+                            ->whereColumn('idp_items.current_review_step', 'user_reviewer_steps.step_order')
+                            ->whereRaw("idp_items.status = CONCAT('review_step_', user_reviewer_steps.step_order)");
+
+                        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+                            $subQuery->where(function ($chainQuery): void {
+                                $chainQuery->where('user_reviewer_steps.chain_type', 'idp')
+                                    ->orWhere(function ($fallbackQuery): void {
+                                        $fallbackQuery->where('user_reviewer_steps.chain_type', 'assessment')
+                                            ->whereNotExists(function ($existsQuery): void {
+                                                $existsQuery->selectRaw('1')
+                                                    ->from('user_reviewer_steps as idp_steps')
+                                                    ->whereColumn('idp_steps.user_id', 'users.id')
+                                                    ->where('idp_steps.chain_type', 'idp');
+                                            });
+                                    });
+                            });
+                        }
+                    });
+                }
+
                 foreach ([1, 2, 3] as $step) {
-                    $method = $step === 1 ? 'where' : 'orWhere';
+                    $method = Schema::hasTable('user_reviewer_steps') || $step > 1 ? 'orWhere' : 'where';
                     $query->{$method}(function ($query) use ($reviewer, $step): void {
                         $query->where("users.supervisor_id_{$step}", $reviewer->id)
                             ->where('idp_items.current_review_step', $step)

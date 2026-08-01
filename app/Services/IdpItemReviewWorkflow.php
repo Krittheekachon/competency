@@ -8,10 +8,19 @@ use Illuminate\Validation\ValidationException;
 
 class IdpItemReviewWorkflow
 {
+    private ReviewerChainResolver $reviewerChainResolver;
+
+    public function __construct(?ReviewerChainResolver $reviewerChainResolver = null)
+    {
+        $this->reviewerChainResolver = $reviewerChainResolver ?? new ReviewerChainResolver();
+    }
+
     public function configuredSteps(object $owner): Collection
     {
-        return collect([1, 2, 3])
-            ->filter(fn (int $step): bool => filled($owner->{'supervisor_id_'.$step} ?? null))
+        return collect($this->reviewerChainResolver->stepsForUser($owner, 'idp'))
+            ->pluck('step')
+            ->map(fn ($step): int => (int) $step)
+            ->filter(fn (int $step): bool => $step > 0)
             ->values();
     }
 
@@ -38,9 +47,10 @@ class IdpItemReviewWorkflow
 
     public function reviewerIdForStep(object $owner, int $step): ?int
     {
-        $id = $owner->{'supervisor_id_'.$step} ?? null;
+        $match = collect($this->reviewerChainResolver->stepsForUser($owner, 'idp'))
+            ->first(fn (array $item): bool => (int) $item['step'] === $step);
 
-        return $id ? (int) $id : null;
+        return $match ? (int) $match['reviewer_id'] : null;
     }
 
     public function statusForStep(int $step): string
@@ -50,7 +60,7 @@ class IdpItemReviewWorkflow
 
     public function isUnderReview(string $status): bool
     {
-        return in_array($status, ['review_step_1', 'review_step_2', 'review_step_3'], true);
+        return (bool) preg_match('/^review_step_\d+$/', $status);
     }
 
     public function assertCurrentReviewer(object $item, int $reviewerId): void

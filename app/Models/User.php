@@ -20,6 +20,7 @@ use App\Models\Role;
     'level', 'password', 'role_id', 'role_key',
     'is_active', 'profile_photo',
     'position_id', 'level_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3',
+    'reviewer_template_id', 'idp_reviewer_template_id',
     'profile_affiliation', 'profile_saved',
 ])]
 #[Hidden(['password', 'remember_token'])]

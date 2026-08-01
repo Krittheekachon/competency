@@ -443,6 +443,8 @@ type User = {
   supervisor_id_1?: number | null;
   supervisor_id_2?: number | null;
   supervisor_id_3?: number | null;
+  reviewerSteps?: Array<{ id?: number | null; reviewer_id?: number | null; step?: number; name?: string }>;
+  supervisorChain?: Array<{ id?: number | null; reviewer_id?: number | null; step?: number; name?: string }>;
   act?: boolean;
 };
 
@@ -598,23 +600,19 @@ const chainScopedUsers = computed(() => {
 });
 
 const evaluationLines = computed(() => chainScopedUsers.value.map((user) => {
-  const level3 = findUserById(user.supervisor_id_3);
-  const level2 = findUserById(user.supervisor_id_2);
-  const level1 = findUserById(user.supervisor_id_1);
-  const missing = [
-    level3 ? '' : 'ลำดับ 3',
-    level2 ? '' : 'ลำดับ 2',
-    level1 ? '' : 'ลำดับ 1',
-  ].filter(Boolean);
+  const reviewerSteps = reviewerStepsForUser(user);
+  const missing = reviewerSteps.length ? [] : ['ยังไม่ได้กำหนดลำดับ'];
 
   return {
     user,
     missing,
     steps: [
       { key: 'subject', label: roleBadge(user.r).label, user },
-      { key: 'level1', label: 'หัวหน้าหน่วย', user: level1 },
-      { key: 'level2', label: 'หัวหน้างาน', user: level2 },
-      { key: 'level3', label: 'คณบดี', user: level3 },
+      ...reviewerSteps.map((step) => ({
+        key: `level${step.step}`,
+        label: `ผู้ประเมินลำดับ ${step.step}`,
+        user: findUserById(step.reviewer_id),
+      })),
     ],
   };
 }));
@@ -741,12 +739,27 @@ const roleBadge = (role?: string): RoleBadge => {
 };
 
 const displayNameForUser = (user: User) => `${user.t || ''}${user.n || ''}`.trim();
-const evaluatorName = (user: User, level: 1 | 2 | 3) => {
-  const id = level === 1
-    ? user.supervisor_id_1
-    : level === 2
-      ? user.supervisor_id_2
-      : user.supervisor_id_3;
+const reviewerStepsForUser = (user: User) => {
+  const dynamicSteps = Array.isArray(user.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user.supervisorChain) ? user.supervisorChain : []);
+
+  if (dynamicSteps.length) {
+    return dynamicSteps
+      .map((step, index) => ({
+        step: Number(step.step || index + 1),
+        reviewer_id: Number(step.id || step.reviewer_id || 0),
+      }))
+      .filter((step) => step.step > 0 && step.reviewer_id > 0)
+      .sort((left, right) => left.step - right.step);
+  }
+
+  return [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
+    .map((id, index) => ({ step: index + 1, reviewer_id: Number(id || 0) }))
+    .filter((step) => step.reviewer_id > 0);
+};
+const evaluatorName = (user: User, level: number) => {
+  const id = reviewerStepsForUser(user).find((step) => step.step === level)?.reviewer_id;
   const evaluator = findUserById(id);
 
   return evaluator ? displayNameForUser(evaluator) : '';
@@ -754,28 +767,28 @@ const evaluatorName = (user: User, level: 1 | 2 | 3) => {
 const isAssignedEvaluator = (subordinate: User, evaluator: User) => {
   if (!evaluator.db_id) return false;
 
-  return [subordinate.supervisor_id_1, subordinate.supervisor_id_2, subordinate.supervisor_id_3]
-    .some((id) => Number(id) === Number(evaluator.db_id));
+  return reviewerStepsForUser(subordinate)
+    .some((step) => Number(step.reviewer_id) === Number(evaluator.db_id));
 };
 const subordinatesFor = (user: User) => props.users
   .filter((subordinate) => subordinate !== user && isAssignedEvaluator(subordinate, user))
   .map((subordinate) => ({
     user: subordinate,
-    levels: [
-      Number(subordinate.supervisor_id_1) === Number(user.db_id)
-        ? 'ลำดับที่ 1'
-        : '',
-      Number(subordinate.supervisor_id_2) === Number(user.db_id)
-        ? 'ลำดับที่ 2'
-        : '',
-      Number(subordinate.supervisor_id_3) === Number(user.db_id)
-        ? 'ลำดับที่ 3'
-        : '',
-    ].filter(Boolean),
+    levels: reviewerStepsForUser(subordinate)
+      .filter((step) => Number(step.reviewer_id) === Number(user.db_id))
+      .map((step) => `ลำดับที่ ${step.step}`),
   }));
 const hasSubordinates = (user: User) => subordinatesFor(user).length > 0;
 const subordinateCount = (user: User) => subordinatesFor(user).length;
-const evaluatorLine = (user: User) => `คนที่ 1 (หัวหน้าหน่วย): ${evaluatorName(user, 1) || '—'} · คนที่ 2 (หัวหน้างาน): ${evaluatorName(user, 2) || '—'} · คนที่ 3 (คณบดี): ${evaluatorName(user, 3) || '—'}`;
+const evaluatorLine = (user: User) => {
+  const steps = reviewerStepsForUser(user);
+
+  if (!steps.length) return 'ยังไม่ได้กำหนดลำดับการประเมิน';
+
+  return steps
+    .map((step) => `คนที่ ${step.step}: ${evaluatorName(user, step.step) || '—'}`)
+    .join(' · ');
+};
 
 const popDrillPath = (index: number) => {
   drillPath.value = index === -1 ? [] : drillPath.value.slice(0, index + 1);

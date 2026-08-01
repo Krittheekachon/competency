@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -38,6 +39,11 @@ return new class extends Migration
 
             $table->unique(['fc_topic_selection_id', 'competency_id'], 'fc_selection_item_unique');
         });
+
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement("ALTER TABLE position_fc_selection_rules ADD CONSTRAINT position_fc_selection_required_count_nonnegative CHECK (required_fc_count >= 0)");
+            DB::statement("ALTER TABLE fc_topic_selections ADD CONSTRAINT fc_topic_selections_status_check CHECK (status IN ('draft', 'submitted', 'approved', 'revision_required'))");
+        }
     }
 
     public function down(): void

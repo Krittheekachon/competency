@@ -138,8 +138,7 @@ const currentUser = computed(() =>
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentUser.value || {};
     const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
-    const hasAssignedHeadOrSupervisor = [user.supervisor_id_1, user.supervisor_id_2]
-        .some((id) => Number(id) > 0);
+    const hasAssignedHeadOrSupervisor = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedHeadOrSupervisor) {
         reasons.push('ยังไม่ได้กำหนดหัวหน้าหน่วยหรือหัวหน้างาน');
@@ -270,30 +269,46 @@ const personNames = (user) => [
     `${user?.t || ''}${user?.n || ''}`,
 ].map((name) => String(name || '').trim()).filter(Boolean);
 const isSamePersonName = (storedName, user) => personNames(user).includes(String(storedName || '').trim());
+const reviewerStepsForUser = (user) => {
+    const dynamicSteps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+        ? user.reviewerSteps
+        : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+    if (dynamicSteps.length) {
+        return dynamicSteps
+            .map((step, index) => ({
+                step: Number(step.step || index + 1),
+                reviewer_id: Number(step.id || step.reviewer_id || step.value || 0),
+            }))
+            .filter((step) => step.step > 0 && step.reviewer_id > 0)
+            .sort((a, b) => a.step - b.step);
+    }
+
+    return [1, 2, 3]
+        .map((step) => ({
+            step,
+            reviewer_id: Number(user?.[`supervisor_id_${step}`] || 0),
+        }))
+        .filter((step) => step.reviewer_id > 0);
+};
 const reviewerStepForUser = (user, reviewer = currentUser.value) => {
     const reviewerId = Number(reviewer?.db_id);
 
     if (!reviewerId) return null;
 
-    for (const step of [1, 2, 3]) {
-        if (Number(user?.[`supervisor_id_${step}`]) === reviewerId) {
-            return step;
-        }
-    }
-
-    return null;
+    return reviewerStepsForUser(user)
+        .find((step) => step.reviewer_id === reviewerId)
+        ?.step || null;
 };
 const pendingStatusForReviewerStep = (step) => ({
     1: 'self_submitted',
     2: 'unit_evaluated',
     3: 'dept_evaluated',
-}[step] || null);
+}[step] || (step ? `review_step_${step}` : null));
 const nextStatusAfterReviewerStep = (user, step) => {
-    for (const nextStep of [step + 1, step + 2, step + 3].filter((item) => item <= 3)) {
-        if (Number(user?.[`supervisor_id_${nextStep}`])) {
-            return pendingStatusForReviewerStep(nextStep);
-        }
-    }
+    const nextStep = reviewerStepsForUser(user).find((item) => item.step > step);
+
+    if (nextStep) return pendingStatusForReviewerStep(nextStep.step);
 
     return 'approved';
 };
@@ -347,13 +362,20 @@ const assessCounts = computed(() => ({
     done: teamMembers.value.filter((user) => user.evalStatus === 'approved').length,
 }));
 const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
-const reviewerStepCountForUser = (user) => [1, 2, 3].filter((step) => Number(user?.[`supervisor_id_${step}`])).length;
+const reviewerStepCountForUser = (user) => reviewerStepsForUser(user).length;
 const reviewProgressLabel = (completed, total) => `ตรวจสอบแล้ว ${completed}/${total}`;
-const reviewedStatusesForStep = (step) => ({
-    1: ['revision_required', 'unit_evaluated', 'dept_evaluated', 'approved'],
-    2: ['revision_required', 'dept_evaluated', 'approved'],
-    3: ['revision_required', 'approved'],
-}[step] || ['approved']);
+const reviewedStatusesForStep = (step) => {
+    const statuses = ['revision_required', 'approved'];
+
+    if (step <= 1) statuses.push('unit_evaluated', 'dept_evaluated');
+    if (step === 2) statuses.push('dept_evaluated');
+
+    for (let nextStep = Math.max(4, step + 1); nextStep <= 12; nextStep += 1) {
+        statuses.push(`review_step_${nextStep}`);
+    }
+
+    return statuses;
+};
 const isReviewedByStep = (status, step) => reviewedStatusesForStep(step).includes(normalizeAssessmentStatus(status));
 const assessmentReviewProgress = (person, results = []) => {
     const rows = Array.isArray(results) ? results : [];

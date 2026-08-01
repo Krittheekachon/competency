@@ -105,6 +105,7 @@ class IdpApprovalController extends Controller
                 'idp_items.status',
                 'idp_items.submission_version',
                 'idp_items.current_review_step',
+                'users.id as user_id',
                 'users.supervisor_id_1',
                 'users.supervisor_id_2',
                 'users.supervisor_id_3'

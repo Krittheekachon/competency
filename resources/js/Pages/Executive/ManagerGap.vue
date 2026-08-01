@@ -98,12 +98,27 @@ const userById = (id: any) =>
 const displayName = (user: any) =>
   user ? `${user?.t || ''}${user?.n || ''}`.trim() : '';
 
+const reviewerStepsForUser = (user: any) => {
+  const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+  if (steps.length) {
+    return steps
+      .map((step: any, index: number) => ({
+        step: Number(step.step || index + 1),
+        reviewer_id: Number(step.id || step.reviewer_id || 0),
+      }))
+      .filter((step: any) => step.step > 0 && step.reviewer_id > 0);
+  }
+
+  return [user?.supervisor_id_1, user?.supervisor_id_2, user?.supervisor_id_3]
+    .map((id, index) => ({ step: index + 1, reviewer_id: Number(id || 0) }))
+    .filter((step) => step.reviewer_id > 0);
+};
+
 const evaluatorName = (user: any, level: 1 | 2 | 3) => {
-  const id = level === 1
-    ? user?.supervisor_id_1
-    : level === 2
-      ? user?.supervisor_id_2
-      : user?.supervisor_id_3;
+  const id = reviewerStepsForUser(user).find((step) => step.step === level)?.reviewer_id;
 
   return displayName(userById(id));
 };

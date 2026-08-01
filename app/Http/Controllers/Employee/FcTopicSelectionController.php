@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
+use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +11,10 @@ use Illuminate\Validation\ValidationException;
 
 class FcTopicSelectionController extends Controller
 {
+    public function __construct(private ReviewerChainResolver $reviewerChainResolver)
+    {
+    }
+
     public function submit(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -21,7 +26,9 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        if (! $user->supervisor_id_1) {
+        $firstReviewerId = $this->firstReviewerId($user);
+
+        if (! $firstReviewerId) {
             throw ValidationException::withMessages([
                 'supervisor' => 'ยังไม่ได้กำหนดหัวหน้า 1 จึงไม่สามารถส่งอนุมัติหัวข้อ FC ได้',
             ]);
@@ -60,7 +67,7 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($user, $positionId, $selectedIds): void {
+        DB::transaction(function () use ($user, $positionId, $selectedIds, $firstReviewerId): void {
             $now = now();
             $selectionId = DB::table('fc_topic_selections')->updateOrInsert(
                 [
@@ -69,7 +76,7 @@ class FcTopicSelectionController extends Controller
                 ],
                 [
                     'status' => 'submitted',
-                    'submitted_to' => $user->supervisor_id_1,
+                    'submitted_to' => $firstReviewerId,
                     'submitted_at' => $now,
                     'reviewed_by' => null,
                     'review_comment' => null,
@@ -104,6 +111,11 @@ class FcTopicSelectionController extends Controller
         return (int) DB::table('position_fc_selection_rules')
             ->where('position_id', $positionId)
             ->value('required_fc_count');
+    }
+
+    private function firstReviewerId($user): ?int
+    {
+        return $this->reviewerChainResolver->firstReviewerId($user);
     }
 
     private function availableFcCompetencyIds(int $positionId): \Illuminate\Support\Collection

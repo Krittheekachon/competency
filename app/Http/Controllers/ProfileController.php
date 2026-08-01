@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\ReviewerChainResolver;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,10 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    public function __construct(private ReviewerChainResolver $reviewerChainResolver)
+    {
+    }
+
     /**
      * Display the user's profile form.
      */
@@ -87,6 +92,8 @@ class ProfileController extends Controller
             'supervisor_id_1' => $user->supervisor_id_1,
             'supervisor_id_2' => $user->supervisor_id_2,
             'supervisor_id_3' => $user->supervisor_id_3,
+            'reviewerSteps' => $this->reviewerChainResolver->payloadForUser($user),
+            'supervisorChain' => $this->reviewerChainResolver->payloadForUser($user),
             'photo' => $user->profile_photo ?: '',
             'act' => (bool) $user->is_active,
         ];

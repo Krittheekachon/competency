@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeCo
 use App\Http\Controllers\Admin\IdpDeliveryTypeSettingController as AdminIdpDeliveryTypeSettingController;
 use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMethodController;
 use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
+use App\Http\Controllers\Admin\ReviewerChainTemplateController as AdminReviewerChainTemplateController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
@@ -56,6 +57,10 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
     Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
     Route::delete('/admin/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
+    Route::post('/admin/reviewer-chain-templates', [AdminReviewerChainTemplateController::class, 'store'])->name('admin.reviewer-chain-templates.store');
+    Route::delete('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'destroy'])->name('admin.reviewer-chain-templates.destroy');
+    Route::post('/admin/reviewer-chain-templates/{template}/users', [AdminReviewerChainTemplateController::class, 'addUsers'])->name('admin.reviewer-chain-templates.users.store');
+    Route::delete('/admin/reviewer-chain-templates/{template}/users/{user}', [AdminReviewerChainTemplateController::class, 'removeUser'])->name('admin.reviewer-chain-templates.users.destroy');
     Route::post('/admin/competency-types', [AdminCompetencyTypeController::class, 'store'])->name('admin.competency-types.store');
     Route::put('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'update'])->name('admin.competency-types.update');
     Route::delete('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'destroy'])->name('admin.competency-types.destroy');

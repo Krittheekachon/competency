@@ -216,7 +216,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             );
     }
 
-    public function test_dashboard_marks_employee_when_assigned_supervisor_is_no_longer_supervisor(): void
+    public function test_dashboard_accepts_any_active_user_as_configured_reviewer(): void
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
@@ -249,12 +249,12 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
                 ->where('users.2.n', 'ZZ Staff With Former Supervisor')
-                ->where('users.2.structureStatus', 'invalid')
-                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว')
+                ->where('users.2.structureStatus', 'ok')
+                ->where('users.2.structureIssues', [])
             );
     }
 
-    public function test_dashboard_marks_employee_when_assigned_supervisor_moves_to_department_head(): void
+    public function test_dashboard_accepts_reviewer_role_without_fixed_step_mapping(): void
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
@@ -287,8 +287,8 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
                 ->where('users.2.n', 'ZZ Staff With Moved Supervisor')
-                ->where('users.2.structureStatus', 'invalid')
-                ->where('users.2.structureIssues.0', 'ผู้ประเมินลำดับที่ 1 ไม่ใช่หัวหน้าหน่วยแล้ว')
+                ->where('users.2.structureStatus', 'ok')
+                ->where('users.2.structureIssues', [])
             );
     }
 

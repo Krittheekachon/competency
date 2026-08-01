@@ -13,33 +13,49 @@ const processingUserId = ref<number | null>(null);
 const rejectDecision = ref<{ user: any; row: any } | null>(null);
 const rejectNote = ref('');
 
+const reviewerStepsForUser = (user: any) => {
+  const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+  if (steps.length) {
+    return steps
+      .map((step: any, index: number) => ({
+        step: Number(step.step || index + 1),
+        reviewer_id: Number(step.id || step.reviewer_id || 0),
+      }))
+      .filter((step: any) => step.step > 0 && step.reviewer_id > 0);
+  }
+
+  return [user?.supervisor_id_1, user?.supervisor_id_2, user?.supervisor_id_3]
+    .map((id, index) => ({ step: index + 1, reviewer_id: Number(id || 0) }))
+    .filter((step) => step.reviewer_id > 0);
+};
+
 const evaluatorLevel = (user: any) => {
   const currentUserId = Number(props.currentUserId || 0);
   if (!currentUserId) return 0;
-  if (Number(user?.supervisor_id_1) === currentUserId) return 1;
-  if (Number(user?.supervisor_id_2) === currentUserId) return 2;
-  if (Number(user?.supervisor_id_3) === currentUserId) return 3;
-  return 0;
+  return reviewerStepsForUser(user)
+    .find((step) => step.reviewer_id === currentUserId)
+    ?.step || 0;
+};
+
+const statusForReviewerStep = (step: number) => {
+  if (step === 1) return 'self_submitted';
+  if (step === 2) return 'unit_evaluated';
+  if (step === 3) return 'dept_evaluated';
+  return step > 3 ? `review_step_${step}` : '';
 };
 
 const expectedStatus = (user: any) => {
   const level = evaluatorLevel(user);
-  if (level === 1) return 'self_submitted';
-  if (level === 2) return user?.supervisor_id_1 ? 'unit_evaluated' : 'self_submitted';
-  if (level === 3) {
-    if (user?.supervisor_id_2) return 'dept_evaluated';
-    if (user?.supervisor_id_1) return 'unit_evaluated';
-    return 'self_submitted';
-  }
-  return '';
+  return statusForReviewerStep(level);
 };
 
 const nextStatus = (user: any) => {
   const level = evaluatorLevel(user);
-  if (level === 1) return 'unit_evaluated';
-  if (level === 2) return 'dept_evaluated';
-  if (level === 3) return 'dean_approved';
-  return '';
+  const nextStep = reviewerStepsForUser(user).find((step) => step.step > level);
+  return nextStep ? statusForReviewerStep(nextStep.step) : 'approved';
 };
 
 const rows = computed(() =>

@@ -54,7 +54,7 @@ Use these tables as the primary data ownership boundaries:
 
 | Area | Tables | Purpose |
 | --- | --- | --- |
-| Organization | `users`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` | Store users, roles, reporting lines, and organization structure. |
+| Organization | `users`, `user_reviewer_steps`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` | Store users, flexible reviewer chains, roles, reporting lines, and organization structure. |
 | Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `position_fc_selection_rules`, `hr_expectations` | Define competencies, expected levels, behaviors, position assignments, and FC topic selection requirements. |
 | FC topic approval | `fc_topic_selections`, `fc_topic_selection_items` | Store employee-selected FC topics and first-supervisor approval before self-assessment opens. |
 | Assessment | `assessments`, `assessment_indicator_results`, `scores` | Store competency assessments, checked behaviors, reviewer scores, decisions, and comments. |
@@ -72,7 +72,7 @@ Preserve these core business rules:
 - Submit, approve, or reject each competency item separately. Other items may remain draft.
 - Require a rejection comment and return only that item to `revision_required`.
 - Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
-- Support reviewer slots `supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`; skip empty slots and determine the current reviewer from the assigned user IDs.
+- Support a flexible reviewer chain through `user_reviewer_steps`; keep `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` as legacy compatibility mirrors for the first three steps.
 
 ## Assessment Flow
 
@@ -80,8 +80,8 @@ The competency assessment flow runs from HR setup through assessment approval, g
 
 1. **Admin/HR prepares organization data**
    - Admin configures users, roles, positions, job families, worklines, levels, and reporting lines.
-   - Each assessable user must have a reviewer chain through `users.supervisor_id_1`, `supervisor_id_2`, and/or `supervisor_id_3`.
-   - The system skips empty reviewer slots and uses the assigned user IDs as the source of truth for approval permission.
+   - Each assessable user must have a reviewer chain in `user_reviewer_steps`.
+   - The system uses the ordered reviewer user IDs as the source of truth for approval permission.
 
 2. **HR assigns competencies to positions**
    - HR links competencies to positions in `position_competencies`.
@@ -96,7 +96,7 @@ The competency assessment flow runs from HR setup through assessment approval, g
 4. **The user selects FC topics**
    - If the user's position has `required_fc_count > 0`, the entire self-assessment screen must remain locked first.
    - The user may select FC topics only from FC competencies already assigned to the position in `position_competencies`.
-   - The user must select exactly the HR-configured count, then submit the selection to first supervisor (`supervisor_id_1`) for approval.
+   - The user must select exactly the HR-configured count, then submit the selection to the first configured reviewer for approval.
    - Store the request in `fc_topic_selections` and the selected competency rows in `fc_topic_selection_items`.
 
 5. **First supervisor approves FC topics**
@@ -114,8 +114,8 @@ The competency assessment flow runs from HR setup through assessment approval, g
 
 7. **Assessment enters the reviewer chain**
    - After the user submits, the system sends the assessment to the first configured reviewer slot.
-   - The canonical status path is `draft` / `revision_required` -> `self_submitted` -> `unit_evaluated` -> `dept_evaluated` -> `approved`.
-   - If a reviewer slot is empty, skip it and move to the next configured slot or complete the workflow as `approved`.
+   - The canonical status path is `draft` / `revision_required` -> `self_submitted` -> `unit_evaluated` -> `dept_evaluated` -> `review_step_N` for step 4 and later -> `approved`.
+   - Move through the configured ordered reviewer steps and complete the workflow as `approved` after the final reviewer.
    - Each reviewer may approve or reject only rows in that reviewer's pending status.
    - Rejecting assessment results requires a comment and returns the assessment/gap to `revision_required`.
 
@@ -160,7 +160,7 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 
 Use `AssessmentController` as the authority for write behavior.
 
-The reviewer chain is configured by `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`. Missing steps are skipped. Do not require one specific evaluator slot merely because of the user's role. A non-admin user has a valid reporting line when at least one evaluator slot is assigned and every assigned evaluator has the correct role for that slot.
+The reviewer chain is configured by ordered rows in `user_reviewer_steps`. The first three steps are mirrored to `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` only for legacy screens and data compatibility. Do not require one specific evaluator role for one fixed step. A non-admin user has a valid reporting line when at least one active reviewer is assigned.
 
 For positions with `position_fc_selection_rules.required_fc_count > 0`, follow the FC pre-selection rules described in **Assessment Flow** before allowing any self-assessment save or submit.
 
@@ -171,6 +171,7 @@ draft / revision_required
   -> self_submitted      pending reviewer 1
   -> unit_evaluated      pending reviewer 2
   -> dept_evaluated      pending reviewer 3
+  -> review_step_N       pending reviewer N for step 4 and later
   -> approved            all configured reviewers approved
 ```
 
@@ -193,6 +194,20 @@ Relevant tests:
 - `tests/Feature/FcTopicSelectionFlowTest.php`
 - `tests/Feature/AssessmentReviewerChainTest.php`
 - role dashboard tests under `tests/Feature/`
+
+### Reviewer Chain Templates
+
+Admin can create reusable reviewer chain templates through `reviewer_chain_templates`.
+Templates are configuration helpers for quickly filling reviewer chains; they are not the final runtime authority for approval permissions.
+
+Reviewer templates are separated by `chain_type`:
+
+- `assessment`: used to fill the competency assessment reviewer chain.
+- `idp`: used to fill the IDP item reviewer chain.
+
+The actual reviewer workflow for each user must be stored in `user_reviewer_steps`.
+When an admin applies a template to a user, resolve or copy the selected template steps into that user's active reviewer steps.
+Runtime approval checks must read the user's active reviewer steps, not the template directly.
 
 ### Competency Gaps And IDP
 
@@ -240,7 +255,7 @@ idp_items.status
 ```
 
 - Permit an employee to submit one complete `idp_item` while other competency items remain draft.
-- Resolve review steps from `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3`, and skip slots that are not configured.
+- Resolve review steps from `user_reviewer_steps`, falling back to the legacy `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` columns only for old data.
 - Lock every `review_step_N` and approved item against employee editing and background auto-save.
 - Continue auto-saving only editable draft or revision-required items.
 - Let only the reviewer assigned to the current step approve or reject the item.

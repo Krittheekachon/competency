@@ -72,6 +72,21 @@ const orgEditMode = ref(false);
 const modalReturnPage = ref('admin-users');
 const supervisorSearch = ref('');
 const evaluator2Search = ref('');
+const showReviewerModal = ref(false);
+const activeReviewerTemplateModal = ref('');
+const showAssessmentTemplateCreate = ref(false);
+const activeAssessmentTemplateId = ref(null);
+const assessmentTemplateMemberPick = ref('');
+const reviewerSearchTerms = ref({});
+const activeReviewerDropdown = ref(null);
+const assessmentTemplateForm = ref({
+    name: '',
+    description: '',
+    reviewer_ids: [],
+    assignment_user_ids: [],
+    reviewer_pick: '',
+    user_pick: '',
+});
 const userForm = ref({
     db_id: null,
     sso: '',
@@ -94,6 +109,10 @@ const userForm = ref({
     supervisor_id_1: '',
     supervisor_id_2: '',
     supervisor_id_3: '',
+    reviewer_template_id: '',
+    idp_reviewer_template_id: '',
+    reviewer_ids: [],
+    idp_reviewer_ids: [],
     act: true,
     structureStatus: 'ok',
     structureIssues: [],
@@ -104,6 +123,35 @@ const jobFamiliesByWorkline = ref(clone(page.props.jobFamiliesByWorkline || {}))
 const academicPositions = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายวิชาการ'] || {})));
 const adminDepts = ref(clone(Object.keys(jobFamiliesByWorkline.value['สายงานบริหาร'] || {})));
 const competencyTypes = ref(clone(page.props.competencyTypes || []));
+const reviewerChainTemplates = computed(() => page.props.reviewerChainTemplates || []);
+const assessmentReviewerTemplates = computed(() =>
+    reviewerChainTemplates.value.filter((template) => (template.chainType || 'assessment') === 'assessment'),
+);
+const idpReviewerTemplates = computed(() =>
+    reviewerChainTemplates.value.filter((template) => template.chainType === 'idp'),
+);
+const activeReviewerTemplateType = computed(() =>
+    activeReviewerTemplateModal.value === 'idp' ? 'idp' : 'assessment',
+);
+const activeReviewerTemplateList = computed(() =>
+    activeReviewerTemplateType.value === 'idp'
+        ? idpReviewerTemplates.value
+        : assessmentReviewerTemplates.value,
+);
+const selectedAssessmentTemplate = computed(() =>
+    assessmentReviewerTemplates.value.find((template) => Number(template.id) === selectedEvaluatorId(activeAssessmentTemplateId.value))
+    || null,
+);
+const activeReviewerTemplateTitle = computed(() =>
+    activeReviewerTemplateType.value === 'idp'
+        ? 'ลำดับการทำ IDP'
+        : 'ลำดับในการประเมิน',
+);
+const activeReviewerTemplateSubtitle = computed(() =>
+    activeReviewerTemplateType.value === 'idp'
+        ? 'กำหนดลำดับสำหรับตอนส่งแผน IDP'
+        : 'กำหนดลำดับสำหรับ workflow การประเมินสมรรถนะ',
+);
 const supportPositionGroups = ref(clone(jobFamiliesByWorkline.value['สายสนับสนุน'] || page.props.supportPositionGroups || {}));
 const supportOrg = ref(clone(page.props.supportOrg || supportOrgFromGroups(supportPositionGroups.value)));
 const supportPositions = ref([]);
@@ -337,6 +385,10 @@ const evaluatorOptions = computed(() =>
             value: Number(user.db_id),
             name: user.n,
             displayName: `${user.t || ''}${user.n}`,
+            p: user.p || '',
+            w: user.w || '',
+            d: user.d || '',
+            r: normalizeUserRoleKey(user.r || ''),
             label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
             searchText: [
                 user.db_id,
@@ -354,6 +406,458 @@ const selectedEvaluatorId = (value) => {
     const id = Number(value);
 
     return Number.isFinite(id) && id > 0 ? id : '';
+};
+const selectedReviewerIds = computed(() =>
+    (userForm.value.reviewer_ids || [])
+        .map((id) => selectedEvaluatorId(id))
+        .filter(Boolean),
+);
+const selectedIdpReviewerIds = computed(() =>
+    (userForm.value.idp_reviewer_ids || [])
+        .map((id) => selectedEvaluatorId(id))
+        .filter(Boolean),
+);
+const selectedTemplateReviewerIds = computed(() =>
+    (assessmentTemplateForm.value.reviewer_ids || [])
+        .map((id) => selectedEvaluatorId(id))
+        .filter(Boolean),
+);
+const selectedTemplateUserIds = computed(() =>
+    (assessmentTemplateForm.value.assignment_user_ids || [])
+        .map((id) => selectedEvaluatorId(id))
+        .filter(Boolean),
+);
+const selectedReviewerTemplate = computed(() =>
+    assessmentReviewerTemplates.value.find((template) => Number(template.id) === selectedEvaluatorId(userForm.value.reviewer_template_id))
+    || null,
+);
+const selectedIdpReviewerTemplate = computed(() =>
+    idpReviewerTemplates.value.find((template) => Number(template.id) === selectedEvaluatorId(userForm.value.idp_reviewer_template_id))
+    || null,
+);
+const jobFamilyFromDepartment = (department = '') => department.split(' > ')[0]?.trim() || '';
+const templateAssignmentLabel = (assignment) => {
+    const scopeLabels = {
+        default: 'ค่าเริ่มต้น',
+        workline: 'สายงาน',
+        job_family: 'กลุ่มงาน',
+        position: 'ตำแหน่ง',
+        user: 'รายคน',
+    };
+
+    return assignment.scopeType === 'default'
+        ? scopeLabels.default
+        : `${scopeLabels[assignment.scopeType] || assignment.scopeType}: ${assignment.scopeValue || assignment.userId || '-'}`;
+};
+const templateStepLabel = (step) => {
+    if (step.reviewerId) {
+        return evaluatorFromId(step.reviewerId)?.label || `ผู้ใช้ #${step.reviewerId}`;
+    }
+
+    return step.label || 'ผู้ประเมิน';
+};
+const templateChainSummary = (template) => {
+    const steps = template.steps || [];
+    if (!steps.length) return 'ยังไม่ได้กำหนดผู้ประเมิน';
+
+    return steps.map(templateStepLabel).join(' -> ');
+};
+const templateAssignmentSummary = (template) => {
+    const assignments = (template.assignments || [])
+        .filter((assignment) => assignment.scopeType === 'user' && assignment.userId);
+    if (!assignments.length) return 'ยังไม่ได้ผูกผู้ใช้';
+
+    return assignments.map((assignment) => {
+        return evaluatorFromId(assignment.userId)?.label || `ผู้ใช้ #${assignment.userId}`;
+    }).join(' · ');
+};
+const templateAssignedUserIds = (template) =>
+    (template?.assignments || [])
+        .filter((assignment) => assignment.scopeType === 'user' && assignment.userId)
+        .map((assignment) => Number(assignment.userId))
+        .filter(Boolean);
+const templateAssignedUsers = (template) => {
+    const ids = new Set(templateAssignedUserIds(template));
+
+    return users.value
+        .filter((user) => ids.has(Number(user.db_id)))
+        .map((user) => ({
+            id: Number(user.db_id),
+            name: `${user.t || ''}${user.n}`,
+            position: user.p || 'ไม่ระบุตำแหน่ง',
+            department: primaryJobFamily(user.d || ''),
+        }));
+};
+const selectedAssessmentTemplateUserOptions = computed(() => {
+    const template = selectedAssessmentTemplate.value;
+    if (!template) return [];
+
+    const blocked = new Set([
+        ...templateAssignedUserIds(template),
+        ...(template.steps || [])
+            .map((step) => selectedEvaluatorId(step.reviewerId))
+            .filter(Boolean),
+    ]);
+
+    return evaluatorOptions.value.filter((person) => !blocked.has(person.value));
+});
+const reviewerChainTypeLabel = (chainType = 'assessment') => ({
+    assessment: 'ลำดับในการประเมิน',
+    idp: 'ลำดับการทำ IDP',
+}[chainType] || chainType);
+const reviewerTemplateDescription = computed(() => {
+    if (!selectedReviewerTemplate.value) return 'ยังไม่ได้เลือก template';
+
+    const stepText = (selectedReviewerTemplate.value.steps || [])
+        .map((step) => `${step.step}. ${step.label}`)
+        .join(' -> ');
+    const assignmentText = (selectedReviewerTemplate.value.assignments || [])
+        .map(templateAssignmentLabel)
+        .join(' · ');
+
+    return [stepText, assignmentText ? `ผูกกับ ${assignmentText}` : ''].filter(Boolean).join(' · ');
+});
+const reviewerSummary = computed(() => {
+    if (!selectedReviewerIds.value.length) return 'ยังไม่ได้กำหนดลำดับการประเมิน';
+
+    return selectedReviewerIds.value
+        .map((id, index) => {
+            const person = evaluatorFromId(id);
+            return `${index + 1}. ${person?.displayName || person?.label || id}`;
+        })
+        .join(' · ');
+});
+const idpReviewerSummary = computed(() => {
+    if (!selectedIdpReviewerIds.value.length) return 'ยังไม่ได้กำหนดลำดับการทำ IDP';
+
+    return selectedIdpReviewerIds.value
+        .map((id, index) => {
+            const person = evaluatorFromId(id);
+            return `${index + 1}. ${person?.displayName || person?.label || id}`;
+        })
+        .join(' · ');
+});
+const templatePersonLabel = (id) => evaluatorFromId(id)?.label || id;
+const templateReviewerOptions = computed(() => {
+    const blocked = new Set(selectedTemplateReviewerIds.value);
+
+    return evaluatorOptions.value.filter((person) => !blocked.has(person.value));
+});
+const templateAssignmentUserOptions = computed(() => {
+    const blocked = new Set([
+        ...selectedTemplateUserIds.value,
+        ...selectedTemplateReviewerIds.value,
+    ]);
+
+    return evaluatorOptions.value.filter((person) => !blocked.has(person.value));
+});
+const addTemplateReviewer = () => {
+    const reviewerId = selectedEvaluatorId(assessmentTemplateForm.value.reviewer_pick);
+    if (!reviewerId || selectedTemplateReviewerIds.value.includes(reviewerId)) return;
+
+    assessmentTemplateForm.value.reviewer_ids = [...selectedTemplateReviewerIds.value, reviewerId];
+    assessmentTemplateForm.value.reviewer_pick = '';
+};
+const removeTemplateReviewer = (index) => {
+    assessmentTemplateForm.value.reviewer_ids = selectedTemplateReviewerIds.value.filter((_, itemIndex) => itemIndex !== index);
+};
+const addTemplateAssignmentUser = () => {
+    const userId = selectedEvaluatorId(assessmentTemplateForm.value.user_pick);
+    if (
+        !userId
+        || selectedTemplateUserIds.value.includes(userId)
+        || selectedTemplateReviewerIds.value.includes(userId)
+    ) return;
+
+    assessmentTemplateForm.value.assignment_user_ids = [...selectedTemplateUserIds.value, userId];
+    assessmentTemplateForm.value.user_pick = '';
+};
+const removeTemplateAssignmentUser = (index) => {
+    assessmentTemplateForm.value.assignment_user_ids = selectedTemplateUserIds.value.filter((_, itemIndex) => itemIndex !== index);
+};
+const openAssessmentTemplateDetail = (template) => {
+    activeAssessmentTemplateId.value = template.id;
+    assessmentTemplateMemberPick.value = '';
+};
+const closeAssessmentTemplateDetail = () => {
+    activeAssessmentTemplateId.value = null;
+    assessmentTemplateMemberPick.value = '';
+};
+const returnToAssessmentTemplateList = () => {
+    showAssessmentTemplateCreate.value = false;
+    closeAssessmentTemplateDetail();
+    resetAssessmentTemplateForm();
+};
+const resetAssessmentTemplateForm = () => {
+    assessmentTemplateForm.value = {
+        name: '',
+        description: '',
+        reviewer_ids: [],
+        assignment_user_ids: [],
+        reviewer_pick: '',
+        user_pick: '',
+    };
+};
+const addAssessmentTemplateMember = () => {
+    const template = selectedAssessmentTemplate.value;
+    const userId = selectedEvaluatorId(assessmentTemplateMemberPick.value);
+    if (!template || !userId) return;
+
+    router.post(route('admin.reviewer-chain-templates.users.store', template.id), {
+        user_ids: [userId],
+    }, {
+        preserveScroll: true,
+        onSuccess: (responsePage) => {
+            if (Array.isArray(responsePage.props.users)) {
+                users.value = clone(responsePage.props.users);
+            }
+            assessmentTemplateMemberPick.value = '';
+        },
+    });
+};
+const removeAssessmentTemplateMember = (member) => {
+    const template = selectedAssessmentTemplate.value;
+    if (!template || !member?.id) return;
+
+    if (!confirm(`ลบ ${member.name} ออกจากลำดับการประเมินนี้?`)) return;
+
+    router.delete(route('admin.reviewer-chain-templates.users.destroy', [template.id, member.id]), {
+        preserveScroll: true,
+        onSuccess: (responsePage) => {
+            if (Array.isArray(responsePage.props.users)) {
+                users.value = clone(responsePage.props.users);
+            }
+        },
+    });
+};
+const deleteAssessmentTemplate = (template) => {
+    if (!template?.id) return;
+
+    if (!confirm(`ลบลำดับการประเมิน "${template.name}"? ผู้ใช้ที่ผูกกับลำดับนี้จะถูกถอดออกด้วย`)) return;
+
+    router.delete(route('admin.reviewer-chain-templates.destroy', template.id), {
+        preserveScroll: true,
+        onSuccess: (responsePage) => {
+            if (Array.isArray(responsePage.props.users)) {
+                users.value = clone(responsePage.props.users);
+            }
+            if (selectedAssessmentTemplate.value?.id === template.id) {
+                closeAssessmentTemplateDetail();
+            }
+        },
+    });
+};
+const saveAssessmentTemplate = () => {
+    const form = assessmentTemplateForm.value;
+
+    if (!form.name.trim()) {
+        alert('กรุณากรอกชื่อลำดับในการประเมิน');
+        return;
+    }
+
+    if (!selectedTemplateReviewerIds.value.length) {
+        alert('กรุณาเพิ่มผู้ประเมินอย่างน้อย 1 คน');
+        return;
+    }
+
+    router.post(route('admin.reviewer-chain-templates.store'), {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        chain_type: 'assessment',
+        reviewer_ids: selectedTemplateReviewerIds.value,
+        assignment_user_ids: selectedTemplateUserIds.value,
+    }, {
+        preserveScroll: true,
+        onSuccess: (responsePage) => {
+            if (Array.isArray(responsePage.props.users)) {
+                users.value = clone(responsePage.props.users);
+            }
+            resetAssessmentTemplateForm();
+            showAssessmentTemplateCreate.value = false;
+        },
+    });
+};
+const templateCandidateQuery = (roleKey, blockedIds = []) => {
+    const blocked = new Set(blockedIds.map((id) => Number(id)));
+    const currentUserId = Number(userForm.value.db_id || 0);
+
+    return evaluatorOptions.value
+        .filter((person) => Number(person.value) !== currentUserId)
+        .filter((person) => !blocked.has(Number(person.value)))
+        .filter((person) => person.r === normalizeUserRoleKey(roleKey))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+};
+const resolveReviewerForTemplateStep = (step, blockedIds = []) => {
+    if (step.resolverType === 'fixed_user') {
+        return selectedEvaluatorId(step.reviewerId);
+    }
+
+    const userJobFamily = jobFamilyFromDepartment(userForm.value.d);
+    const sameDepartment = templateCandidateQuery(step.roleKey, blockedIds)
+        .find((person) => userJobFamily && jobFamilyFromDepartment(person.d) === userJobFamily);
+
+    if (step.resolverType === 'role_same_department' && sameDepartment) {
+        return selectedEvaluatorId(sameDepartment.value);
+    }
+
+    const sameWorkline = templateCandidateQuery(step.roleKey, blockedIds)
+        .find((person) => userForm.value.w && person.w === userForm.value.w);
+
+    if (['role_same_department', 'role_same_workline'].includes(step.resolverType) && sameWorkline) {
+        return selectedEvaluatorId(sameWorkline.value);
+    }
+
+    return selectedEvaluatorId(templateCandidateQuery(step.roleKey, blockedIds)[0]?.value);
+};
+const applyReviewerTemplate = () => {
+    const template = selectedReviewerTemplate.value;
+
+    if (!template) return;
+
+    syncOrgPath();
+    const ids = [];
+    (template.steps || []).forEach((step) => {
+        const reviewerId = resolveReviewerForTemplateStep(step, ids);
+
+        if (reviewerId && !ids.includes(reviewerId)) {
+            ids.push(reviewerId);
+        }
+    });
+
+    userForm.value.reviewer_ids = ids.length ? ids : [''];
+    clearReviewerSearch();
+    syncLegacyReviewerFields();
+};
+const applyIdpReviewerTemplate = () => {
+    const template = selectedIdpReviewerTemplate.value;
+
+    if (!template) return;
+
+    syncOrgPath();
+    const ids = [];
+    (template.steps || []).forEach((step) => {
+        const reviewerId = resolveReviewerForTemplateStep(step, ids);
+
+        if (reviewerId && !ids.includes(reviewerId)) {
+            ids.push(reviewerId);
+        }
+    });
+
+    userForm.value.idp_reviewer_ids = ids;
+};
+const reviewerChoicesForStep = (stepIndex) => {
+    const selectedInOtherSteps = new Set(
+        (userForm.value.reviewer_ids || [])
+            .map((id, index) => index === stepIndex ? '' : selectedEvaluatorId(id))
+            .filter(Boolean),
+    );
+
+    return evaluatorOptions.value.filter((person) =>
+        person.value !== Number(userForm.value.db_id || 0)
+        && !selectedInOtherSteps.has(person.value),
+    );
+};
+const syncLegacyReviewerFields = () => {
+    const ids = selectedReviewerIds.value;
+    userForm.value.supervisor_id_1 = ids[0] || '';
+    userForm.value.supervisor_id_2 = ids[1] || '';
+    userForm.value.supervisor_id_3 = ids[2] || '';
+};
+const normalizeReviewerList = () => {
+    userForm.value.reviewer_ids = selectedReviewerIds.value;
+    reviewerSearchTerms.value = {};
+    activeReviewerDropdown.value = null;
+    syncLegacyReviewerFields();
+};
+const addReviewerStep = () => {
+    userForm.value.reviewer_ids = [...(userForm.value.reviewer_ids || []), ''];
+};
+const removeReviewerStep = (index) => {
+    userForm.value.reviewer_ids = (userForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
+    reviewerSearchTerms.value = {};
+    activeReviewerDropdown.value = null;
+    syncLegacyReviewerFields();
+};
+const updateReviewerStep = (index, value) => {
+    const next = [...(userForm.value.reviewer_ids || [])];
+    next[index] = selectedEvaluatorId(value);
+    userForm.value.reviewer_ids = next;
+    reviewerSearchTerms.value = {};
+    activeReviewerDropdown.value = null;
+    syncLegacyReviewerFields();
+};
+const reviewerInputValue = (index, reviewerId) => {
+    if (Object.prototype.hasOwnProperty.call(reviewerSearchTerms.value, index)) {
+        return reviewerSearchTerms.value[index];
+    }
+
+    return evaluatorFromId(reviewerId)?.label || '';
+};
+const updateReviewerSearch = (index, value) => {
+    activeReviewerDropdown.value = index;
+    reviewerSearchTerms.value = {
+        ...reviewerSearchTerms.value,
+        [index]: value,
+    };
+
+    const exactMatch = reviewerChoicesForStep(index).find((person) =>
+        person.label === value
+        || person.displayName === value
+        || person.name === value,
+    );
+
+    if (exactMatch) {
+        updateReviewerStep(index, exactMatch.value);
+    }
+};
+const filteredReviewerChoicesForStep = (index) => {
+    const term = String(reviewerSearchTerms.value[index] || '').trim().toLowerCase();
+    const choices = reviewerChoicesForStep(index);
+
+    if (!term) return choices;
+
+    return choices.filter((person) => person.searchText.includes(term));
+};
+const openReviewerDropdown = (index, reviewerId) => {
+    activeReviewerDropdown.value = index;
+    reviewerSearchTerms.value = {
+        ...reviewerSearchTerms.value,
+        [index]: Object.prototype.hasOwnProperty.call(reviewerSearchTerms.value, index)
+            ? reviewerSearchTerms.value[index]
+            : reviewerInputValue(index, reviewerId),
+    };
+};
+const isReviewerDropdownOpen = (index) => activeReviewerDropdown.value === index;
+const chooseReviewerStep = (index, value) => {
+    updateReviewerStep(index, value);
+};
+const clearReviewerSearch = () => {
+    reviewerSearchTerms.value = {};
+    activeReviewerDropdown.value = null;
+};
+const closeReviewerDropdown = () => {
+    activeReviewerDropdown.value = null;
+};
+const openReviewerModal = () => {
+    showReviewerModal.value = true;
+    if (!selectedReviewerIds.value.length) {
+        userForm.value.reviewer_ids = [''];
+    }
+};
+const closeReviewerModal = () => {
+    normalizeReviewerList();
+    showReviewerModal.value = false;
+};
+const openReviewerTemplateModal = (chainType = 'assessment') => {
+    activeReviewerTemplateModal.value = chainType === 'idp' ? 'idp' : 'assessment';
+    showAssessmentTemplateCreate.value = false;
+    closeAssessmentTemplateDetail();
+};
+const closeReviewerTemplateModal = () => {
+    activeReviewerTemplateModal.value = '';
+    showAssessmentTemplateCreate.value = false;
+    closeAssessmentTemplateDetail();
+    resetAssessmentTemplateForm();
 };
 const supervisorIdFromUser = (user, idKey, nameKey) => {
     const explicitId = selectedEvaluatorId(user?.[idKey]);
@@ -450,6 +954,10 @@ const syncOrgSupervisors = () => {
     form.supervisor_id_1 = '';
     form.supervisor_id_2 = '';
     form.supervisor_id_3 = '';
+    form.reviewer_template_id = '';
+    form.idp_reviewer_template_id = '';
+    form.reviewer_ids = [];
+    form.idp_reviewer_ids = [];
 };
 
 const resetOrgSelection = () => {
@@ -462,6 +970,10 @@ const resetOrgSelection = () => {
     userForm.value.supervisor_id_1 = '';
     userForm.value.supervisor_id_2 = '';
     userForm.value.supervisor_id_3 = '';
+    userForm.value.reviewer_template_id = '';
+    userForm.value.idp_reviewer_template_id = '';
+    userForm.value.reviewer_ids = [];
+    userForm.value.idp_reviewer_ids = [];
 };
 
 const handleWorklineChange = () => {
@@ -491,8 +1003,9 @@ const handleUnitChange = () => {
 
 const handlePositionChange = () => {
     userForm.value.l = '';
+    const scopedLevels = levelsByJobFamily.value[userForm.value.w]?.[userForm.value.job] || [];
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    if (!directLevels.length && userForm.value.p) {
+    if (!scopedLevels.length && !directLevels.length && userForm.value.p) {
         userForm.value.l = userForm.value.p;
     }
 };
@@ -502,9 +1015,7 @@ const handleRoleChange = () => {
         userForm.value.p = userForm.value.job;
     }
 
-    if (!canPickEvaluator1.value) userForm.value.supervisor_id_1 = '';
-    if (!canPickEvaluator2.value) userForm.value.supervisor_id_2 = '';
-    if (!canPickEvaluator3.value) userForm.value.supervisor_id_3 = '';
+    normalizeReviewerList();
 };
 
 const resetUserForm = (data = null) => {
@@ -536,11 +1047,26 @@ const resetUserForm = (data = null) => {
         supervisor_id_1: data?.supervisor_id_1 || '',
         supervisor_id_2: data?.supervisor_id_2 || '',
         supervisor_id_3: data?.supervisor_id_3 || '',
+        reviewer_template_id: data?.reviewer_template_id || '',
+        idp_reviewer_template_id: data?.idp_reviewer_template_id || '',
+        reviewer_ids: (data?.reviewerSteps || data?.supervisorChain || [])
+            .map((step) => selectedEvaluatorId(step?.id))
+            .filter(Boolean),
+        idp_reviewer_ids: (data?.idpReviewerSteps || [])
+            .map((step) => selectedEvaluatorId(step?.id))
+            .filter(Boolean),
         act: data?.act !== false,
         structureStatus: data?.structureStatus || 'ok',
         structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
     };
-    handleRoleChange();
+    if (!userForm.value.reviewer_ids.length) {
+        userForm.value.reviewer_ids = [
+            userForm.value.supervisor_id_1,
+            userForm.value.supervisor_id_2,
+            userForm.value.supervisor_id_3,
+        ].map(selectedEvaluatorId).filter(Boolean);
+    }
+    normalizeReviewerList();
 };
 
 const handleSupervisorChange = () => {
@@ -639,6 +1165,10 @@ const saveUser = () => {
         supervisor_id_1: form.supervisor_id_1 || null,
         supervisor_id_2: form.supervisor_id_2 || null,
         supervisor_id_3: form.supervisor_id_3 || null,
+        reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
+        idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
+        reviewer_ids: selectedReviewerIds.value,
+        idp_reviewer_ids: selectedIdpReviewerIds.value,
         act: Boolean(form.act),
     };
 
@@ -770,6 +1300,7 @@ const logout = () => router.post(route('logout'));
                 <AdminUsers
                     v-else-if="activePage === 'admin-users'"
                     :open-modal="openModal"
+                    :open-reviewer-template-modal="openReviewerTemplateModal"
                     :users="users"
                     :set-users="setRef(users)"
                     :academic-depts="academicPositions"
@@ -875,6 +1406,21 @@ const logout = () => router.post(route('logout'));
                         <li v-for="issue in userForm.structureIssues" :key="issue">{{ issue }}</li>
                     </ul>
                 </div>
+
+                <section class="workflow-role-panel user-role-top-panel">
+                    <div class="fg evaluator-role-field">
+                        <label class="lbl req">บทบาทในระบบ</label>
+                        <select v-model="userForm.r" class="sel modal-input" @change="handleRoleChange">
+                            <option
+                                v-for="role in roleOptions"
+                                :key="`role-${role.key}`"
+                                :value="role.key"
+                            >
+                                {{ role.label }}
+                            </option>
+                        </select>
+                    </div>
+                </section>
 
                 <div v-if="!orgEditMode" class="fg">
                     <label class="lbl req">ID</label>
@@ -1014,111 +1560,154 @@ const logout = () => router.post(route('logout'));
                 <div class="modal-divider"></div>
 
                 <div class="evaluator-section">
-                    <div class="fg evaluator-role-field">
-                        <label class="lbl req">บทบาทในระบบ</label>
-                        <select v-model="userForm.r" class="sel modal-input" @change="handleRoleChange">
-                            <option
-                                v-for="role in roleOptions"
-                                :key="`role-${role.key}`"
-                                :value="role.key"
-                            >
-                                {{ role.label }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div class="evaluator-grid">
-                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator1 }">
-                        <div class="evaluator-card-head">
-                            <div>
-                                <span class="evaluator-step">ลำดับที่ 1</span>
-                                <label class="lbl">เช่น หัวหน้าหน่วย</label>
+                    <section class="workflow-group">
+                        <div class="workflow-group-head">
+                            <div class="workflow-title-row">
+                                <span class="workflow-number">1</span>
+                                <div class="workflow-copy">
+                                    <h4>ลำดับในการประเมิน</h4>
+                                    <p>{{ reviewerSummary }}</p>
+                                </div>
                             </div>
-                            <span class="evaluator-state">{{ canPickEvaluator1 ? 'ข้ามได้' : 'ปิด' }}</span>
+                            <button class="btn btn-s reviewer-config-btn" type="button" @click="openReviewerModal">
+                                จัดการลำดับ
+                            </button>
                         </div>
-                        <select
-                            v-model="userForm.supervisor_id_1"
-                            class="sel modal-input"
-                            :disabled="!canPickEvaluator1"
-                            @change="handleSupervisorChange"
-                        >
-                            <option value="">
-                                {{ canPickEvaluator1 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
-                            </option>
-                            <option
-                                v-for="person in supervisorOptions"
-                                :key="`sup-${person.key}`"
-                                :value="person.value"
-                            >
-                                {{ person.label }}
-                            </option>
-                            <option v-if="supervisorOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
-                        </select>
-                        <div v-if="!supervisorOptions.length" class="modal-help">
-                            ยังไม่มีผู้ใช้ role หัวหน้าหน่วย
-                        </div>
-                    </div>
 
-                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator2 }">
-                        <div class="evaluator-card-head">
-                            <div>
-                                <span class="evaluator-step">ลำดับที่ 2</span>
-                                <label class="lbl">เช่น หัวหน้าฝ่าย / หัวหน้างาน</label>
+                        <div v-if="assessmentReviewerTemplates.length" class="workflow-template-row">
+                            <div class="fg">
+                                <label class="lbl">Template ลำดับในการประเมิน</label>
+                                <select v-model="userForm.reviewer_template_id" class="sel modal-input">
+                                    <option value="">— ไม่ใช้ template —</option>
+                                    <option
+                                        v-for="template in assessmentReviewerTemplates"
+                                        :key="`reviewer-template-${template.id}`"
+                                        :value="template.id"
+                                    >
+                                        {{ template.name }}
+                                    </option>
+                                </select>
                             </div>
-                            <span class="evaluator-state">{{ canPickEvaluator2 ? 'ข้ามได้' : 'ปิด' }}</span>
-                        </div>
-                        <select
-                            v-model="userForm.supervisor_id_2"
-                            class="sel modal-input"
-                            :disabled="!canPickEvaluator2"
-                            @change="handleEvaluator2Change"
-                        >
-                            <option value="">
-                                {{ canPickEvaluator2 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
-                            </option>
-                            <option
-                                v-for="person in deptHeadOptions"
-                                :key="`evaluator2-${person.key}`"
-                                :value="person.value"
+                            <button
+                                class="btn btn-s workflow-template-btn"
+                                type="button"
+                                :disabled="!selectedReviewerTemplate"
+                                @click="applyReviewerTemplate"
                             >
-                                {{ person.label }}
-                            </option>
-                            <option v-if="deptHeadOptions.length === 0" disabled value="">ไม่พบรายชื่อ</option>
-                        </select>
-                        <div v-if="!deptHeadOptions.length" class="modal-help">
-                            ยังไม่มีผู้ใช้ role หัวหน้างาน
+                                ใช้ template นี้
+                            </button>
+                            <div class="modal-help workflow-template-help">
+                                {{ reviewerTemplateDescription }}
+                            </div>
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="fg evaluator-card" :class="{ disabled: !canPickEvaluator3 }">
-                        <div class="evaluator-card-head">
-                            <div>
-                                <span class="evaluator-step">ลำดับที่ 3</span>
-                                <label class="lbl">เช่น คณบดี</label>
+                    <section class="workflow-group">
+                        <div class="workflow-group-head">
+                            <div class="workflow-title-row">
+                                <span class="workflow-number">2</span>
+                                <div class="workflow-copy">
+                                    <h4>ลำดับการทำ IDP</h4>
+                                    <p>{{ idpReviewerSummary }}</p>
+                                </div>
                             </div>
-                            <span class="evaluator-state">{{ canPickEvaluator3 ? 'ข้ามได้' : 'ปิด' }}</span>
                         </div>
-                        <select
-                            v-model="userForm.supervisor_id_3"
-                            class="sel modal-input"
-                            :disabled="!canPickEvaluator3"
-                            @change="handleEvaluator3Change"
-                        >
-                            <option value="">
-                                {{ canPickEvaluator3 ? '— ไม่ผ่านผู้ประเมินลำดับนี้ —' : 'ไม่ต้องเลือกสำหรับบทบาทนี้' }}
-                            </option>
-                            <option
-                                v-for="person in deanOptions"
-                                :key="`dean-${person.key}`"
-                                :value="person.value"
+
+                        <div v-if="idpReviewerTemplates.length" class="workflow-template-row">
+                            <div class="fg">
+                                <label class="lbl">Template ลำดับการทำ IDP</label>
+                                <select v-model="userForm.idp_reviewer_template_id" class="sel modal-input">
+                                    <option value="">— ใช้ลำดับประเมินเป็น fallback —</option>
+                                    <option
+                                        v-for="template in idpReviewerTemplates"
+                                        :key="`idp-reviewer-template-${template.id}`"
+                                        :value="template.id"
+                                    >
+                                        {{ template.name }}
+                                    </option>
+                                </select>
+                            </div>
+                            <button
+                                class="btn btn-s workflow-template-btn"
+                                type="button"
+                                :disabled="!selectedIdpReviewerTemplate"
+                                @click="applyIdpReviewerTemplate"
                             >
-                                {{ person.label }}
-                            </option>
-                        </select>
-                        <div v-if="!deanOptions.length" class="modal-help">
-                            ยังไม่มีผู้ใช้ role คณบดี
+                                ใช้ template IDP
+                            </button>
+                            <div class="modal-help workflow-template-help">
+                                ถ้ายังไม่กำหนดลำดับ IDP ระบบจะใช้ลำดับในการประเมินเป็นค่า fallback
+                            </div>
                         </div>
-                    </div>
+                    </section>
+                </div>
+
+                <div v-if="showReviewerModal" class="reviewer-modal-backdrop" @click.self="closeReviewerModal">
+                    <div class="reviewer-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-modal-title" @click="closeReviewerDropdown">
+                        <div class="reviewer-modal-head">
+                            <div>
+                                <h3 id="reviewer-modal-title">จัดการลำดับการประเมิน</h3>
+                                <p>เพิ่มหรือลดผู้ประเมินได้อิสระ ระบบจะส่งงานตามลำดับที่กำหนด</p>
+                            </div>
+                            <button class="modal-close-btn" type="button" aria-label="ปิดหน้าต่าง" @click="closeReviewerModal">
+                                ×
+                            </button>
+                        </div>
+
+                        <div class="reviewer-step-list">
+                            <div
+                                v-for="(reviewerId, index) in userForm.reviewer_ids"
+                                :key="`reviewer-step-${index}`"
+                                class="reviewer-step-row"
+                            >
+                                <div class="reviewer-step-badge">{{ index + 1 }}</div>
+                                <div class="reviewer-step-main">
+                                    <label class="lbl">ลำดับที่ {{ index + 1 }}</label>
+                                    <input
+                                        class="inp modal-input reviewer-search-input"
+                                        type="text"
+                                        placeholder="พิมพ์ชื่อ / ตำแหน่ง / หน่วยงาน"
+                                        :value="reviewerInputValue(index, reviewerId)"
+                                        @click.stop="openReviewerDropdown(index, reviewerId)"
+                                        @focus="openReviewerDropdown(index, reviewerId)"
+                                        @input="updateReviewerSearch(index, $event.target.value)"
+                                        @keydown.escape="clearReviewerSearch"
+                                    />
+                                    <div v-if="isReviewerDropdownOpen(index)" class="reviewer-choice-list" @click.stop>
+                                        <button
+                                            v-for="person in filteredReviewerChoicesForStep(index)"
+                                            :key="`reviewer-choice-${index}-${person.key}`"
+                                            class="reviewer-choice-item"
+                                            type="button"
+                                            @mousedown.prevent="chooseReviewerStep(index, person.value)"
+                                        >
+                                            <span>{{ person.displayName }}</span>
+                                            <small>{{ person.p || '-' }}</small>
+                                        </button>
+                                        <div v-if="filteredReviewerChoicesForStep(index).length === 0" class="reviewer-choice-empty">
+                                            ไม่พบรายชื่อที่ค้นหา
+                                        </div>
+                                    </div>
+                                </div>
+                                <button
+                                    class="btn btn-s reviewer-remove-btn"
+                                    type="button"
+                                    :disabled="(userForm.reviewer_ids || []).length <= 1"
+                                    @click="removeReviewerStep(index)"
+                                >
+                                    ลบ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="reviewer-modal-actions">
+                            <button class="btn btn-s" type="button" @click="addReviewerStep">
+                                + เพิ่มผู้ประเมิน
+                            </button>
+                            <button class="btn btn-p reviewer-done-btn" type="button" @click="closeReviewerModal">
+                                เสร็จสิ้น
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1134,6 +1723,335 @@ const logout = () => router.post(route('logout'));
                          บันทึก
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="activeReviewerTemplateModal" class="reviewer-modal-backdrop" @click.self="closeReviewerTemplateModal">
+        <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title">
+            <div class="reviewer-modal-head">
+                <div>
+                    <h3 id="reviewer-template-modal-title">{{ activeReviewerTemplateTitle }}</h3>
+                    <p>{{ activeReviewerTemplateSubtitle }}</p>
+                </div>
+                <button class="modal-close-btn" type="button" aria-label="ปิดหน้าต่าง" @click="closeReviewerTemplateModal">
+                    ×
+                </button>
+            </div>
+
+            <div class="reviewer-template-modal-body">
+                <div v-if="activeReviewerTemplateType === 'assessment' && !showAssessmentTemplateCreate && !selectedAssessmentTemplate" class="assessment-template-list-view">
+                    <div class="assessment-template-list-head">
+                        <div>
+                            <h4>ลำดับการประเมินทั้งหมด</h4>
+                            <p>รายการ workflow การประเมินที่บันทึกไว้ในระบบ</p>
+                        </div>
+                        <button class="btn btn-p" type="button" @click="showAssessmentTemplateCreate = true">
+                            + เพิ่มลำดับการประเมิน
+                        </button>
+                    </div>
+
+                    <div v-if="!assessmentReviewerTemplates.length" class="reviewer-template-empty">
+                        ยังไม่มีลำดับการประเมิน
+                    </div>
+
+                    <div v-else class="assessment-template-list">
+                        <div
+                            v-for="template in assessmentReviewerTemplates"
+                            :key="`assessment-template-${template.id}`"
+                            class="assessment-template-row"
+                            role="button"
+                            tabindex="0"
+                            @click="openAssessmentTemplateDetail(template)"
+                            @keydown.enter.prevent="openAssessmentTemplateDetail(template)"
+                        >
+                            <div class="assessment-template-row-main">
+                                <div class="assessment-template-title-line">
+                                    <div>
+                                        <div class="reviewer-template-name">{{ template.name }}</div>
+                                        <div class="reviewer-template-desc">{{ template.description || 'ไม่มีคำอธิบาย' }}</div>
+                                    </div>
+                                </div>
+
+                                <div v-if="(template.steps || []).length" class="assessment-step-track">
+                                    <template
+                                        v-for="(step, stepIndex) in template.steps"
+                                        :key="`assessment-template-${template.id}-step-${step.step}`"
+                                    >
+                                        <div class="assessment-step-pill">
+                                            <span>{{ stepIndex + 1 }}</span>
+                                            <strong>{{ templateStepLabel(step) }}</strong>
+                                        </div>
+                                        <div
+                                            v-if="stepIndex < (template.steps || []).length - 1"
+                                            class="assessment-step-arrow"
+                                        >
+                                            ->
+                                        </div>
+                                    </template>
+                                </div>
+                                <div v-else class="assessment-template-chain-text">
+                                    ยังไม่ได้กำหนดผู้ประเมิน
+                                </div>
+                            </div>
+                            <div class="assessment-template-row-meta">
+                                <div class="assessment-template-stat wide">
+                                    <b>{{ templateAssignedUserIds(template).length }}</b>
+                                    <span>ผู้ใช้</span>
+                                </div>
+                                <button class="assessment-template-detail-btn" type="button" @click.stop="openAssessmentTemplateDetail(template)">
+                                    ดูผู้ใช้
+                                </button>
+                                <button class="assessment-template-delete-btn" type="button" @click.stop="deleteAssessmentTemplate(template)">
+                                    ลบลำดับ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else-if="activeReviewerTemplateType === 'assessment' && !showAssessmentTemplateCreate && selectedAssessmentTemplate" class="assessment-template-detail-view">
+                    <div class="assessment-template-detail-head">
+                        <div>
+                            <h4>{{ selectedAssessmentTemplate.name }}</h4>
+                            <p>{{ selectedAssessmentTemplate.description || 'ไม่มีคำอธิบาย' }}</p>
+                        </div>
+                        <div v-if="(selectedAssessmentTemplate.steps || []).length" class="assessment-step-track detail">
+                            <template
+                                v-for="(step, stepIndex) in selectedAssessmentTemplate.steps"
+                                :key="`selected-assessment-template-step-${step.step}`"
+                            >
+                                <div class="assessment-step-pill">
+                                    <span>{{ stepIndex + 1 }}</span>
+                                    <strong>{{ templateStepLabel(step) }}</strong>
+                                </div>
+                                <div
+                                    v-if="stepIndex < (selectedAssessmentTemplate.steps || []).length - 1"
+                                    class="assessment-step-arrow"
+                                >
+                                    ->
+                                </div>
+                            </template>
+                        </div>
+                        <div v-else class="assessment-template-chain-text">
+                            ยังไม่ได้กำหนดผู้ประเมิน
+                        </div>
+                    </div>
+
+                    <div class="assessment-template-member-panel">
+                        <div class="template-builder-head">
+                            <div>
+                                <h4>ผู้ใช้ที่ใช้ลำดับนี้ {{ templateAssignedUsers(selectedAssessmentTemplate).length }} คน</h4>
+                            </div>
+                        </div>
+
+                        <div class="template-picker-row">
+                            <select v-model="assessmentTemplateMemberPick" class="sel modal-input">
+                                <option value="">เพิ่มผู้ใช้ลำดับการประเมิน</option>
+                                <option
+                                    v-for="person in selectedAssessmentTemplateUserOptions"
+                                    :key="`assessment-template-member-${person.value}`"
+                                    :value="person.value"
+                                >
+                                    {{ person.label }}
+                                </option>
+                            </select>
+                            <button class="btn btn-p" type="button" @click="addAssessmentTemplateMember">
+                                + เพิ่มสมาชิก
+                            </button>
+                        </div>
+
+                        <div v-if="templateAssignedUsers(selectedAssessmentTemplate).length" class="assessment-template-member-list">
+                            <div
+                                v-for="member in templateAssignedUsers(selectedAssessmentTemplate)"
+                                :key="`assessment-template-member-row-${member.id}`"
+                                class="assessment-template-member-row"
+                            >
+                                <div class="assessment-template-member-avatar">
+                                    {{ member.name.slice(0, 1) }}
+                                </div>
+                                <div>
+                                    <strong>{{ member.name }}</strong>
+                                    <span>{{ member.position }} · {{ member.department }}</span>
+                                </div>
+                                <button class="assessment-template-member-remove" type="button" @click="removeAssessmentTemplateMember(member)">
+                                    ลบ
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="reviewer-template-empty compact">
+                            ยังไม่มีผู้ใช้ในลำดับนี้
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else-if="activeReviewerTemplateType === 'assessment'" class="assessment-template-builder">
+                    <div class="template-builder-grid">
+                        <div class="fg">
+                            <label class="lbl req">ชื่อลำดับในการประเมิน</label>
+                            <input
+                                v-model="assessmentTemplateForm.name"
+                                class="inp modal-input"
+                                placeholder="เช่น ลำดับประเมินสายสนับสนุน"
+                            />
+                        </div>
+                        <div class="fg">
+                            <label class="lbl">คำอธิบาย</label>
+                            <input
+                                v-model="assessmentTemplateForm.description"
+                                class="inp modal-input"
+                                placeholder="อธิบายว่าใช้กับกลุ่มไหน"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="template-builder-section">
+                        <div class="template-builder-head">
+                            <div>
+                                <h4>ลำดับผู้ประเมิน</h4>
+                                <p>เลือกเป็นชื่อคนจริงตามลำดับ เช่น นาย A -> นาย B -> นาย C</p>
+                            </div>
+                        </div>
+
+                        <div class="template-picker-row">
+                            <select v-model="assessmentTemplateForm.reviewer_pick" class="sel modal-input">
+                                <option value="">เลือกผู้ประเมิน</option>
+                                <option
+                                    v-for="person in templateReviewerOptions"
+                                    :key="`template-reviewer-${person.value}`"
+                                    :value="person.value"
+                                >
+                                    {{ person.label }}
+                                </option>
+                            </select>
+                            <button class="btn btn-s" type="button" @click="addTemplateReviewer">+ เพิ่มลำดับ</button>
+                        </div>
+
+                        <div v-if="selectedTemplateReviewerIds.length" class="template-chain-list">
+                            <div
+                                v-for="(reviewerId, index) in selectedTemplateReviewerIds"
+                                :key="`template-selected-reviewer-${reviewerId}`"
+                                class="template-chain-item"
+                            >
+                                <span class="template-chain-no">{{ index + 1 }}</span>
+                                <span>{{ templatePersonLabel(reviewerId) }}</span>
+                                <button class="btn btn-s" type="button" @click="removeTemplateReviewer(index)">ลบ</button>
+                            </div>
+                        </div>
+                        <div v-else class="reviewer-template-empty compact">
+                            ยังไม่ได้เพิ่มผู้ประเมิน
+                        </div>
+                    </div>
+
+                    <div class="template-builder-section">
+                        <div class="template-builder-head">
+                            <div>
+                                <h4>ผู้ใช้ที่จะใช้ลำดับนี้</h4>
+                                <p>เลือกได้ภายหลัง หากต้องการสร้างลำดับเก็บไว้ก่อน</p>
+                            </div>
+                        </div>
+
+                        <div class="template-picker-row">
+                            <select v-model="assessmentTemplateForm.user_pick" class="sel modal-input">
+                                <option value="">เลือกผู้ใช้</option>
+                                <option
+                                    v-for="person in templateAssignmentUserOptions"
+                                    :key="`template-user-${person.value}`"
+                                    :value="person.value"
+                                >
+                                    {{ person.label }}
+                                </option>
+                            </select>
+                            <button class="btn btn-s" type="button" @click="addTemplateAssignmentUser">+ เพิ่มผู้ใช้</button>
+                        </div>
+
+                        <div v-if="selectedTemplateUserIds.length" class="template-user-list">
+                            <div
+                                v-for="(userId, index) in selectedTemplateUserIds"
+                                :key="`template-selected-user-${userId}`"
+                                class="template-user-chip"
+                            >
+                                <span>{{ templatePersonLabel(userId) }}</span>
+                                <button type="button" @click="removeTemplateAssignmentUser(index)">×</button>
+                            </div>
+                        </div>
+                        <div v-else class="reviewer-template-empty compact">
+                            ยังไม่ได้เพิ่มผู้ใช้
+                        </div>
+                    </div>
+                </div>
+
+                <template v-else>
+                    <div v-if="!activeReviewerTemplateList.length" class="reviewer-template-empty">
+                        ยังไม่มี template {{ activeReviewerTemplateTitle }}
+                    </div>
+
+                    <div
+                        v-for="template in activeReviewerTemplateList"
+                        :key="`template-card-${template.id}`"
+                        class="reviewer-template-overview-card"
+                    >
+                        <div class="reviewer-template-overview-head">
+                            <div>
+                                <div class="reviewer-template-name">
+                                    {{ template.name }}
+                                    <span class="reviewer-template-chain-badge">{{ reviewerChainTypeLabel(template.chainType) }}</span>
+                                    <span v-if="template.isDefault" class="reviewer-template-default-badge">ค่าเริ่มต้น</span>
+                                </div>
+                                <div class="reviewer-template-desc">{{ template.description || 'ไม่มีคำอธิบาย' }}</div>
+                            </div>
+                        </div>
+
+                        <div class="reviewer-template-step-grid">
+                            <div
+                                v-for="step in template.steps"
+                                :key="`template-${template.id}-step-${step.step}`"
+                                class="reviewer-template-step-card"
+                            >
+                                <div class="reviewer-template-step-no">{{ step.step }}</div>
+                                <div>
+                                    <div class="reviewer-template-step-title">{{ step.label }}</div>
+                                    <div class="reviewer-template-step-meta">
+                                        {{ step.resolverType }} · {{ roleLabel(step.roleKey) }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="reviewer-template-scope-row">
+                            <span
+                                v-for="assignment in template.assignments"
+                                :key="`template-${template.id}-scope-${assignment.scopeType}-${assignment.scopeValue || assignment.userId || 'default'}`"
+                                class="reviewer-template-scope-pill"
+                            >
+                                {{ templateAssignmentLabel(assignment) }}
+                            </span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="reviewer-template-modal-actions">
+                <button
+                    v-if="activeReviewerTemplateType === 'assessment' && (showAssessmentTemplateCreate || selectedAssessmentTemplate)"
+                    class="btn btn-s"
+                    type="button"
+                    @click="returnToAssessmentTemplateList"
+                >
+                    กลับไปหน้ารายการ
+                </button>
+                <button class="btn btn-s" type="button" @click="closeReviewerTemplateModal">ปิด</button>
+                <button
+                    v-if="activeReviewerTemplateType === 'assessment' && showAssessmentTemplateCreate"
+                    class="btn btn-p"
+                    type="button"
+                    @click="saveAssessmentTemplate"
+                >
+                    บันทึกลำดับในการประเมิน
+                </button>
+                <button v-else-if="activeReviewerTemplateType === 'idp'" class="btn btn-p" type="button" @click="openModal('modal-user'); closeReviewerTemplateModal();">
+                    + เพิ่มผู้ใช้แล้วใช้ {{ activeReviewerTemplateTitle }}
+                </button>
             </div>
         </div>
     </div>
@@ -1244,15 +2162,34 @@ const logout = () => router.post(route('logout'));
 
 .evaluator-section {
     margin: 4px 0 16px;
-    padding: 18px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: #fbfdff;
+    display: grid;
+    gap: 12px;
+}
+
+.workflow-role-panel,
+.workflow-group {
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.workflow-role-panel {
+    padding: 16px;
+}
+
+.user-role-top-panel {
+    margin-bottom: 14px;
+}
+
+.workflow-group {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
 }
 
 .evaluator-role-field {
-    margin-bottom: 18px;
-    max-width: 400px;
+    max-width: 420px;
 }
 
 .evaluator-role-field .lbl {
@@ -1271,81 +2208,873 @@ const logout = () => router.post(route('logout'));
     font-weight: 500;
 }
 
-.evaluator-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 13px;
+.workflow-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
 }
 
-.evaluator-card {
+.workflow-title-row {
     min-width: 0;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #fff;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
 }
 
-.evaluator-card.disabled {
+.workflow-number {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    background: #fff2ea;
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.workflow-copy {
+    min-width: 0;
+}
+
+.workflow-copy h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 900;
+}
+
+.workflow-copy p {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.workflow-template-row {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+    padding: 14px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
     background: #f8fafc;
 }
 
-.evaluator-card-head {
+.workflow-template-help {
+    grid-column: 1 / -1;
+    margin-top: 0;
+}
+
+.workflow-template-btn {
+    min-height: 44px;
+}
+
+.reviewer-config-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.reviewer-template-card {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.reviewer-template-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.reviewer-template-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.reviewer-config-copy {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.reviewer-config-title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.reviewer-config-summary {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.reviewer-config-btn {
+    flex: 0 0 auto;
+}
+
+.reviewer-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.reviewer-modal {
+    width: min(680px, 100%);
+    max-height: min(82vh, 720px);
+    overflow-y: auto;
+    border: 1px solid #dbe3ef;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.reviewer-template-modal {
+    width: min(900px, 100%);
+    max-height: min(84vh, 760px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #dbe3ef;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.reviewer-modal-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 11px;
-    min-height: 56px;
-    margin-bottom: 13px;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid #e2e8f0;
 }
 
-.evaluator-step {
-    display: block;
-    margin-bottom: 4px;
-    color: #64748b;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.evaluator-card .lbl {
-    margin-bottom: 0;
+.reviewer-modal-head h3 {
+    margin: 0 0 4px;
     color: var(--text);
-    font-size: 14px;
+    font-size: 20px;
+    font-weight: 900;
+}
+
+.reviewer-modal-head p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
     font-weight: 600;
+    line-height: 1.5;
+}
+
+.reviewer-template-modal-body {
+    display: grid;
+    gap: 14px;
+    overflow-y: auto;
+    padding: 18px 20px;
+    background: #f8fafc;
+}
+
+.reviewer-template-empty {
+    padding: 28px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    color: #64748b;
+    text-align: center;
+    font-weight: 700;
+}
+
+.reviewer-template-overview-card {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.reviewer-template-overview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.reviewer-template-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 900;
+}
+
+.reviewer-template-chain-badge,
+.reviewer-template-default-badge,
+.reviewer-template-scope-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #c2410c;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.reviewer-template-chain-badge {
+    background: #e0f2fe;
+    color: #0369a1;
+}
+
+.reviewer-template-desc {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.reviewer-template-step-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.reviewer-template-step-card {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.reviewer-template-step-no {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #fff3ec;
+    color: #cf3c23;
+    font-weight: 900;
+}
+
+.reviewer-template-step-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 900;
     line-height: 1.35;
 }
 
-.evaluator-state {
-    flex: 0 0 auto;
-    border-radius: 999px;
-    background: #eff6ff;
-    color: #2563eb;
+.reviewer-template-step-meta {
+    margin-top: 3px;
+    color: #94a3b8;
     font-size: 11px;
-    font-weight: 600;
-    line-height: 1;
-    padding: 5px 9px;
+    font-weight: 700;
 }
 
-.evaluator-card > .modal-input {
-    width: 100%;
-    min-height: 47px;
-    padding-left: 13px;
-    padding-right: 34px;
-    border-radius: 10px;
+.reviewer-template-scope-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.reviewer-template-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
+}
+
+.assessment-template-builder {
+    display: grid;
+    gap: 14px;
+}
+
+.assessment-template-list-view {
+    display: grid;
+    gap: 18px;
+}
+
+.assessment-template-list-head,
+.assessment-template-builder-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.assessment-template-list-head h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 900;
+}
+
+.assessment-template-list-head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.assessment-template-list {
+    display: grid;
+    gap: 12px;
+}
+
+.assessment-template-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 190px;
+    gap: 18px;
+    padding: 18px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.assessment-template-row:hover {
+    border-color: #f2b7a3;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
+}
+
+.assessment-template-row-main {
+    min-width: 0;
+}
+
+.assessment-template-title-line {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.assessment-template-chain-text {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.5;
+}
+
+.assessment-step-track {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.assessment-step-track.detail {
+    margin-top: 12px;
+}
+
+.assessment-step-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    max-width: 100%;
+    gap: 8px;
+    padding: 7px 10px 7px 7px;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #fff;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.assessment-step-pill span {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #fff3ec;
+    color: #cf3c23;
     font-size: 12px;
-    font-weight: 500;
+}
+
+.assessment-step-pill strong {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.evaluator-card.disabled .evaluator-state {
-    background: #e2e8f0;
-    color: #64748b;
+.assessment-step-arrow {
+    color: #cbd5e1;
+    font-weight: 900;
 }
 
-.evaluator-card.disabled .lbl,
-.evaluator-card.disabled .evaluator-step {
+.assessment-template-row-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-content: stretch;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #fff7ed;
+}
+
+.assessment-template-stat {
+    display: grid;
+    gap: 2px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #fed7aa;
+}
+
+.assessment-template-stat.wide {
+    min-height: 86px;
+}
+
+.assessment-template-stat b {
+    color: #cf3c23;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.assessment-template-stat span {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.assessment-template-users {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.45;
+}
+
+.assessment-template-detail-btn {
+    min-height: 36px;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff;
+    color: #cf3c23;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.assessment-template-delete-btn {
+    min-height: 36px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff;
+    color: #dc2626;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.assessment-template-delete-btn:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+.assessment-template-detail-view {
+    display: grid;
+    gap: 14px;
+}
+
+.assessment-template-detail-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.assessment-template-detail-head h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 900;
+}
+
+.assessment-template-detail-head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.assessment-template-member-panel {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.assessment-template-member-list {
+    display: grid;
+    gap: 10px;
+}
+
+.assessment-template-member-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.assessment-template-member-avatar {
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #fff3ec;
+    color: #cf3c23;
+    font-weight: 900;
+}
+
+.assessment-template-member-row strong,
+.assessment-template-member-row span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.assessment-template-member-row strong {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 900;
+}
+
+.assessment-template-member-row span {
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.assessment-template-member-remove {
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff;
+    color: #dc2626;
+    font-size: 13px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.assessment-template-member-remove:hover {
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+.template-builder-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 12px;
+}
+
+.template-builder-section {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.template-builder-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.template-builder-head h4 {
+    margin: 0;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.template-builder-head p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.template-picker-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+}
+
+.template-chain-list {
+    display: grid;
+    gap: 8px;
+}
+
+.template-chain-item {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fbfdff;
+}
+
+.template-chain-no {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #fff3ec;
+    color: #cf3c23;
+    font-weight: 900;
+}
+
+.template-user-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.template-user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #dbe4ef;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.template-user-chip button {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #64748b;
+    cursor: pointer;
+}
+
+.reviewer-template-empty.compact {
+    padding: 16px;
+    text-align: left;
+}
+
+.modal-close-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #fff;
+    color: #64748b;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.reviewer-step-list {
+    display: grid;
+    gap: 10px;
+    padding: 18px 20px;
+}
+
+.reviewer-step-row {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.reviewer-step-badge {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    background: #fff1e8;
+    color: #c93616;
+    font-size: 15px;
+    font-weight: 900;
+}
+
+.reviewer-step-main {
+    position: relative;
+    min-width: 0;
+}
+
+.reviewer-step-main .lbl {
+    margin-bottom: 7px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.reviewer-step-main .modal-input {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 8px;
+}
+
+.reviewer-search-input {
+    padding: 0 13px;
+    background: #fff;
+}
+
+.reviewer-choice-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 3;
+    display: grid;
+    gap: 6px;
+    max-height: 220px;
+    padding: 8px;
+    overflow-y: auto;
+    border: 1px solid #dbe3ef;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.16);
+}
+
+.reviewer-choice-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.reviewer-choice-item:hover {
+    border-color: #c93616;
+    background: #fff7ed;
+}
+
+.reviewer-choice-item span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.reviewer-choice-item small {
+    flex: 0 1 auto;
+    min-width: 120px;
+    overflow: hidden;
+    color: #64748b;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.reviewer-choice-empty {
+    padding: 10px 12px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
     color: #94a3b8;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.reviewer-remove-btn {
+    min-height: 38px;
+}
+
+.reviewer-remove-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.reviewer-modal-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 20px 20px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.reviewer-done-btn {
+    min-width: 96px;
+    justify-content: center;
 }
 
 .req::after {
@@ -1403,12 +3132,82 @@ const logout = () => router.post(route('logout'));
         grid-template-columns: 1fr;
     }
 
-    .evaluator-grid {
+    .evaluator-role-field {
+        max-width: none;
+    }
+
+    .workflow-group-head,
+    .reviewer-config-card,
+    .reviewer-modal-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .workflow-template-row,
+    .reviewer-template-grid {
         grid-template-columns: 1fr;
     }
 
-    .evaluator-role-field {
-        max-width: none;
+    .workflow-title-row {
+        grid-template-columns: 34px minmax(0, 1fr);
+    }
+
+    .workflow-number {
+        width: 34px;
+        height: 34px;
+        font-size: 16px;
+    }
+
+    .reviewer-template-actions {
+        justify-content: flex-start;
+    }
+
+    .reviewer-template-step-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .reviewer-template-modal-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .assessment-template-list-head,
+    .assessment-template-builder-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .assessment-template-row,
+    .template-builder-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .assessment-template-row-meta {
+        grid-template-columns: 1fr;
+    }
+
+    .assessment-template-detail-head,
+    .template-picker-row {
+        grid-template-columns: 1fr;
+    }
+
+    .reviewer-step-row {
+        grid-template-columns: 34px minmax(0, 1fr);
+    }
+
+    .reviewer-remove-btn {
+        grid-column: 2;
+        justify-self: start;
+    }
+
+    .reviewer-choice-item {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .reviewer-choice-item small {
+        min-width: 0;
+        text-align: left;
     }
 }
 </style>

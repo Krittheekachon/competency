@@ -3,12 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\ReviewerChainResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class HierarchyController extends Controller
 {
+    public function __construct(private ReviewerChainResolver $reviewerChainResolver)
+    {
+    }
+
     // ดึงสายการบังคับบัญชาทั้งหมด
     public function index()
     {
@@ -26,6 +31,8 @@ class HierarchyController extends Controller
                 'supervisor_id_1' => $user->supervisor_id_1,
                 'supervisor_id_2' => $user->supervisor_id_2,
                 'supervisor_id_3' => $user->supervisor_id_3,
+                'reviewerSteps' => $this->reviewerChainResolver->payloadForUser($user),
+                'supervisorChain' => $this->reviewerChainResolver->payloadForUser($user),
                 'evaluator1_name' => $this->displayNameForUser($user->evaluatorLevel1),
                 'evaluator2_name' => $this->displayNameForUser($user->evaluatorLevel2),
                 'evaluator3_name' => $this->displayNameForUser($user->evaluatorLevel3),
@@ -63,15 +70,38 @@ class HierarchyController extends Controller
             'supervisor_id_1' => 'nullable|integer|exists:users,id',
             'supervisor_id_2' => 'nullable|integer|exists:users,id',
             'supervisor_id_3' => 'nullable|integer|exists:users,id',
+            'reviewer_ids' => 'nullable|array',
+            'reviewer_ids.*' => 'nullable|integer|exists:users,id',
         ]);
 
         $user = User::where('sso', $sso)->firstOrFail();
+        $rawReviewerIds = $request->has('reviewer_ids')
+            ? ($request->input('reviewer_ids') ?? [])
+            : [
+                $request->supervisor_id_1,
+                $request->supervisor_id_2,
+                $request->supervisor_id_3,
+            ];
+
+        $reviewerIds = collect($rawReviewerIds)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (in_array((int) $user->id, $reviewerIds, true)) {
+            return response()->json([
+                'message' => 'ไม่สามารถเลือกผู้ใช้นี้เป็นผู้ประเมินของตัวเองได้',
+            ], 422);
+        }
 
         $user->update([
-            'supervisor_id_1' => $request->supervisor_id_1,
-            'supervisor_id_2' => $request->supervisor_id_2,
-            'supervisor_id_3' => $request->supervisor_id_3,
+            'supervisor_id_1' => $reviewerIds[0] ?? null,
+            'supervisor_id_2' => $reviewerIds[1] ?? null,
+            'supervisor_id_3' => $reviewerIds[2] ?? null,
         ]);
+        $this->syncReviewerSteps($user, $reviewerIds);
 
         return response()->json([
             'message' => 'Hierarchy updated',
@@ -93,12 +123,18 @@ class HierarchyController extends Controller
 
         if (count($parts) === 1) {
             // อัพเดทระดับ dept → เปลี่ยน evaluator2
-            User::where('department', 'LIKE', $parts[0] . '%')
-                ->update(['supervisor_id_2' => $request->supervisor_id]);
+            $this->setReviewerStepForQuery(
+                User::where('department', 'LIKE', $parts[0] . '%'),
+                2,
+                (int) $request->supervisor_id
+            );
         } elseif (count($parts) === 2) {
             // อัพเดทระดับ work → เปลี่ยน supervisor
-            User::where('department', 'LIKE', $parts[0] . ' > ' . $parts[1] . '%')
-                ->update(['supervisor_id_1' => $request->supervisor_id]);
+            $this->setReviewerStepForQuery(
+                User::where('department', 'LIKE', $parts[0] . ' > ' . $parts[1] . '%'),
+                1,
+                (int) $request->supervisor_id
+            );
         }
 
         return response()->json(['message' => 'OrgSup updated']);
@@ -111,5 +147,88 @@ class HierarchyController extends Controller
         }
 
         return trim(($user->title ?: '').$user->name);
+    }
+
+    private function setReviewerStepForQuery($query, int $step, int $reviewerId): void
+    {
+        $userIds = (clone $query)->pluck('id');
+
+        $query->update([
+            'supervisor_id_'.$step => $reviewerId,
+        ]);
+
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return;
+        }
+
+        $now = now();
+        foreach ($userIds as $userId) {
+            if ((int) $userId === $reviewerId) {
+                continue;
+            }
+
+            DB::table('user_reviewer_steps')
+                ->where('user_id', (int) $userId)
+                ->where('reviewer_id', $reviewerId)
+                ->where('step_order', '!=', $step)
+                ->when(Schema::hasColumn('user_reviewer_steps', 'chain_type'), fn ($query) => $query->where('chain_type', 'assessment'))
+                ->delete();
+
+            $keys = [
+                'user_id' => (int) $userId,
+                'step_order' => $step,
+            ];
+            $values = [
+                'reviewer_id' => $reviewerId,
+                'updated_at' => $now,
+                'created_at' => $now,
+            ];
+            if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+                $keys['chain_type'] = 'assessment';
+            }
+
+            DB::table('user_reviewer_steps')->updateOrInsert(
+                $keys,
+                $values
+            );
+        }
+    }
+
+    private function syncReviewerSteps(User $user, array $reviewerIds): void
+    {
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return;
+        }
+
+        $deleteQuery = DB::table('user_reviewer_steps')->where('user_id', $user->id);
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $deleteQuery->where('chain_type', 'assessment');
+        }
+        $deleteQuery->delete();
+
+        $now = now();
+        $rows = collect($reviewerIds)
+            ->reject(fn (int $reviewerId): bool => $reviewerId === (int) $user->id)
+            ->values()
+            ->map(function (int $reviewerId, int $index) use ($user, $now): array {
+                $row = [
+                    'user_id' => $user->id,
+                    'step_order' => $index + 1,
+                    'reviewer_id' => $reviewerId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+
+                if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+                    $row['chain_type'] = 'assessment';
+                }
+
+                return $row;
+            })
+            ->all();
+
+        if ($rows !== []) {
+            DB::table('user_reviewer_steps')->insert($rows);
+        }
     }
 }
