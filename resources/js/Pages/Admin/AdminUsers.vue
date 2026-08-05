@@ -344,7 +344,7 @@ const filteredUsers = computed(() => {
       || (statusFilter.value === 'ปกติ / ใช้งาน' ? isActive(user) : !isActive(user));
 
     return matchesSearch && matchesWorkline && matchesDepartment && matchesPosition && matchesRole && matchesStatus;
-  });
+  }).sort((a, b) => Number(b.db_id || 0) - Number(a.db_id || 0));
 });
 
 const toggleStatus = (user: User) => {

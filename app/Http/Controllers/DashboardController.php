@@ -43,7 +43,7 @@ class DashboardController extends Controller
         ]);
         $competencies = $this->competencyPayload();
         $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3'])
-            ->orderBy('name')
+            ->orderByDesc('id')
             ->get()
             ->map(fn (User $user) => $this->dashboardUserPayload($user));
         $activeCycleName = 'รอบประเมินปัจจุบัน';

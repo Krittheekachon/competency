@@ -58,6 +58,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
     Route::delete('/admin/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
     Route::post('/admin/reviewer-chain-templates', [AdminReviewerChainTemplateController::class, 'store'])->name('admin.reviewer-chain-templates.store');
+    Route::patch('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'update'])->name('admin.reviewer-chain-templates.update');
     Route::delete('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'destroy'])->name('admin.reviewer-chain-templates.destroy');
     Route::post('/admin/reviewer-chain-templates/{template}/users', [AdminReviewerChainTemplateController::class, 'addUsers'])->name('admin.reviewer-chain-templates.users.store');
     Route::delete('/admin/reviewer-chain-templates/{template}/users/{user}', [AdminReviewerChainTemplateController::class, 'removeUser'])->name('admin.reviewer-chain-templates.users.destroy');

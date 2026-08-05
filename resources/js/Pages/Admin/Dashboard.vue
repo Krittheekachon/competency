@@ -76,6 +76,7 @@ const showReviewerModal = ref(false);
 const activeReviewerTemplateModal = ref('');
 const showAssessmentTemplateCreate = ref(false);
 const activeAssessmentTemplateId = ref(null);
+const editingAssessmentTemplateId = ref(null);
 const assessmentTemplateMemberPick = ref('');
 const reviewerSearchTerms = ref({});
 const activeReviewerDropdown = ref(null);
@@ -139,8 +140,17 @@ const activeReviewerTemplateList = computed(() =>
         : assessmentReviewerTemplates.value,
 );
 const selectedAssessmentTemplate = computed(() =>
-    assessmentReviewerTemplates.value.find((template) => Number(template.id) === selectedEvaluatorId(activeAssessmentTemplateId.value))
+    activeReviewerTemplateList.value.find((template) => Number(template.id) === selectedEvaluatorId(activeAssessmentTemplateId.value))
     || null,
+);
+const editingAssessmentTemplate = computed(() =>
+    activeReviewerTemplateList.value.find((template) => Number(template.id) === selectedEvaluatorId(editingAssessmentTemplateId.value))
+    || null,
+);
+const isEditingAssessmentTemplate = computed(() => Boolean(editingAssessmentTemplate.value));
+const isEditingSelectedAssessmentTemplate = computed(() =>
+    Boolean(selectedAssessmentTemplate.value)
+    && Number(selectedAssessmentTemplate.value.id) === selectedEvaluatorId(editingAssessmentTemplateId.value),
 );
 const activeReviewerTemplateTitle = computed(() =>
     activeReviewerTemplateType.value === 'idp'
@@ -509,13 +519,10 @@ const reviewerTemplateDescription = computed(() => {
     if (!selectedReviewerTemplate.value) return 'ยังไม่ได้เลือก template';
 
     const stepText = (selectedReviewerTemplate.value.steps || [])
-        .map((step) => `${step.step}. ${step.label}`)
+        .map((step) => `${step.step}. ${templateStepLabel(step)}`)
         .join(' -> ');
-    const assignmentText = (selectedReviewerTemplate.value.assignments || [])
-        .map(templateAssignmentLabel)
-        .join(' · ');
 
-    return [stepText, assignmentText ? `ผูกกับ ${assignmentText}` : ''].filter(Boolean).join(' · ');
+    return stepText || 'ยังไม่ได้กำหนดผู้ประเมิน';
 });
 const reviewerSummary = computed(() => {
     if (!selectedReviewerIds.value.length) return 'ยังไม่ได้กำหนดลำดับการประเมิน';
@@ -537,6 +544,19 @@ const idpReviewerSummary = computed(() => {
         })
         .join(' · ');
 });
+const userWorkflowIssues = computed(() => {
+    if (normalizeUserRoleKey(userForm.value.r) === 'admin') return [];
+
+    const issues = [];
+    if (!selectedReviewerIds.value.length) {
+        issues.push('ยังไม่ได้กำหนดลำดับการประเมิน');
+    }
+    if (!selectedIdpReviewerIds.value.length) {
+        issues.push('ยังไม่ได้กำหนดลำดับ IDP');
+    }
+
+    return issues;
+});
 const templatePersonLabel = (id) => evaluatorFromId(id)?.label || id;
 const templateReviewerOptions = computed(() => {
     const blocked = new Set(selectedTemplateReviewerIds.value);
@@ -555,11 +575,11 @@ const addTemplateReviewer = () => {
     const reviewerId = selectedEvaluatorId(assessmentTemplateForm.value.reviewer_pick);
     if (!reviewerId || selectedTemplateReviewerIds.value.includes(reviewerId)) return;
 
-    assessmentTemplateForm.value.reviewer_ids = [...selectedTemplateReviewerIds.value, reviewerId];
+    assessmentTemplateForm.value.reviewer_ids = [...(assessmentTemplateForm.value.reviewer_ids || []), reviewerId];
     assessmentTemplateForm.value.reviewer_pick = '';
 };
 const removeTemplateReviewer = (index) => {
-    assessmentTemplateForm.value.reviewer_ids = selectedTemplateReviewerIds.value.filter((_, itemIndex) => itemIndex !== index);
+    assessmentTemplateForm.value.reviewer_ids = (assessmentTemplateForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
 };
 const addTemplateAssignmentUser = () => {
     const userId = selectedEvaluatorId(assessmentTemplateForm.value.user_pick);
@@ -575,7 +595,73 @@ const addTemplateAssignmentUser = () => {
 const removeTemplateAssignmentUser = (index) => {
     assessmentTemplateForm.value.assignment_user_ids = selectedTemplateUserIds.value.filter((_, itemIndex) => itemIndex !== index);
 };
+const userForTemplateEditContext = (template) => {
+    const assignedIds = new Set(templateAssignedUserIds(template));
+    const templateColumn = (template?.chainType || 'assessment') === 'idp'
+        ? 'idp_reviewer_template_id'
+        : 'reviewer_template_id';
+
+    return users.value.find((user) =>
+        Number(user[templateColumn] || 0) === Number(template?.id || 0)
+        || assignedIds.has(Number(user.db_id || 0))
+    ) || null;
+};
+const reviewerIdsFromAssignedTemplateUser = (template) => {
+    const user = userForTemplateEditContext(template);
+    if (!user) return [];
+
+    const steps = (template?.chainType || 'assessment') === 'idp'
+        ? (user.idpReviewerSteps || [])
+        : (user.reviewerSteps || user.supervisorChain || []);
+
+    return steps
+        .map((step) => selectedEvaluatorId(step.id || step.reviewerId || step.reviewer_id))
+        .filter(Boolean);
+};
+const reviewerIdsFromTemplateSteps = (template) => {
+    const ids = [];
+    const contextUser = userForTemplateEditContext(template);
+
+    (template.steps || []).forEach((step) => {
+        const reviewerId = resolveReviewerForTemplateStep(step, ids, contextUser);
+
+        if (reviewerId && !ids.includes(reviewerId)) {
+            ids.push(reviewerId);
+        }
+    });
+
+    return ids;
+};
+const editableReviewerIdsForTemplate = (template) => {
+    const assignedUserReviewerIds = reviewerIdsFromAssignedTemplateUser(template);
+    if (assignedUserReviewerIds.length) return assignedUserReviewerIds;
+
+    return reviewerIdsFromTemplateSteps(template);
+};
+const startCreateAssessmentTemplate = () => {
+    closeAssessmentTemplateDetail();
+    resetAssessmentTemplateForm();
+    showAssessmentTemplateCreate.value = true;
+};
+const startEditAssessmentTemplate = (template) => {
+    if (!template?.id) return;
+
+    const editableReviewerIds = editableReviewerIdsForTemplate(template);
+    editingAssessmentTemplateId.value = template.id;
+    assessmentTemplateForm.value = {
+        name: template.name || '',
+        description: template.description || '',
+        reviewer_ids: editableReviewerIds.length
+            ? editableReviewerIds
+            : (template.steps || []).map((step) => selectedEvaluatorId(step.reviewerId) || ''),
+        assignment_user_ids: [],
+        reviewer_pick: '',
+        user_pick: '',
+    };
+    showAssessmentTemplateCreate.value = false;
+};
 const openAssessmentTemplateDetail = (template) => {
+    resetAssessmentTemplateForm();
     activeAssessmentTemplateId.value = template.id;
     assessmentTemplateMemberPick.value = '';
 };
@@ -583,12 +669,16 @@ const closeAssessmentTemplateDetail = () => {
     activeAssessmentTemplateId.value = null;
     assessmentTemplateMemberPick.value = '';
 };
+const cancelAssessmentTemplateEdit = () => {
+    resetAssessmentTemplateForm();
+};
 const returnToAssessmentTemplateList = () => {
     showAssessmentTemplateCreate.value = false;
     closeAssessmentTemplateDetail();
     resetAssessmentTemplateForm();
 };
 const resetAssessmentTemplateForm = () => {
+    editingAssessmentTemplateId.value = null;
     assessmentTemplateForm.value = {
         name: '',
         description: '',
@@ -651,7 +741,7 @@ const saveAssessmentTemplate = () => {
     const form = assessmentTemplateForm.value;
 
     if (!form.name.trim()) {
-        alert('กรุณากรอกชื่อลำดับในการประเมิน');
+        alert(`กรุณากรอกชื่อ${activeReviewerTemplateTitle.value}`);
         return;
     }
 
@@ -660,13 +750,21 @@ const saveAssessmentTemplate = () => {
         return;
     }
 
-    router.post(route('admin.reviewer-chain-templates.store'), {
+    const payload = {
         name: form.name.trim(),
         description: form.description.trim(),
-        chain_type: 'assessment',
         reviewer_ids: selectedTemplateReviewerIds.value,
-        assignment_user_ids: selectedTemplateUserIds.value,
-    }, {
+    };
+    const endpoint = isEditingAssessmentTemplate.value
+        ? route('admin.reviewer-chain-templates.update', editingAssessmentTemplateId.value)
+        : route('admin.reviewer-chain-templates.store');
+
+    if (!isEditingAssessmentTemplate.value) {
+        payload.chain_type = activeReviewerTemplateType.value;
+        payload.assignment_user_ids = selectedTemplateUserIds.value;
+    }
+
+    const submitOptions = {
         preserveScroll: true,
         onSuccess: (responsePage) => {
             if (Array.isArray(responsePage.props.users)) {
@@ -675,11 +773,17 @@ const saveAssessmentTemplate = () => {
             resetAssessmentTemplateForm();
             showAssessmentTemplateCreate.value = false;
         },
-    });
+    };
+
+    if (isEditingAssessmentTemplate.value) {
+        router.patch(endpoint, payload, submitOptions);
+    } else {
+        router.post(endpoint, payload, submitOptions);
+    }
 };
-const templateCandidateQuery = (roleKey, blockedIds = []) => {
+const templateCandidateQuery = (roleKey, blockedIds = [], contextUser = null) => {
     const blocked = new Set(blockedIds.map((id) => Number(id)));
-    const currentUserId = Number(userForm.value.db_id || 0);
+    const currentUserId = Number(contextUser?.db_id || userForm.value.db_id || 0);
 
     return evaluatorOptions.value
         .filter((person) => Number(person.value) !== currentUserId)
@@ -687,27 +791,29 @@ const templateCandidateQuery = (roleKey, blockedIds = []) => {
         .filter((person) => person.r === normalizeUserRoleKey(roleKey))
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
 };
-const resolveReviewerForTemplateStep = (step, blockedIds = []) => {
+const resolveReviewerForTemplateStep = (step, blockedIds = [], contextUser = null) => {
     if (step.resolverType === 'fixed_user') {
         return selectedEvaluatorId(step.reviewerId);
     }
 
-    const userJobFamily = jobFamilyFromDepartment(userForm.value.d);
-    const sameDepartment = templateCandidateQuery(step.roleKey, blockedIds)
+    const contextDepartment = contextUser?.d || userForm.value.d;
+    const contextWorkline = contextUser?.w || userForm.value.w;
+    const userJobFamily = jobFamilyFromDepartment(contextDepartment);
+    const sameDepartment = templateCandidateQuery(step.roleKey, blockedIds, contextUser)
         .find((person) => userJobFamily && jobFamilyFromDepartment(person.d) === userJobFamily);
 
     if (step.resolverType === 'role_same_department' && sameDepartment) {
         return selectedEvaluatorId(sameDepartment.value);
     }
 
-    const sameWorkline = templateCandidateQuery(step.roleKey, blockedIds)
-        .find((person) => userForm.value.w && person.w === userForm.value.w);
+    const sameWorkline = templateCandidateQuery(step.roleKey, blockedIds, contextUser)
+        .find((person) => contextWorkline && person.w === contextWorkline);
 
     if (['role_same_department', 'role_same_workline'].includes(step.resolverType) && sameWorkline) {
         return selectedEvaluatorId(sameWorkline.value);
     }
 
-    return selectedEvaluatorId(templateCandidateQuery(step.roleKey, blockedIds)[0]?.value);
+    return selectedEvaluatorId(templateCandidateQuery(step.roleKey, blockedIds, contextUser)[0]?.value);
 };
 const applyReviewerTemplate = () => {
     const template = selectedReviewerTemplate.value;
@@ -852,6 +958,7 @@ const openReviewerTemplateModal = (chainType = 'assessment') => {
     activeReviewerTemplateModal.value = chainType === 'idp' ? 'idp' : 'assessment';
     showAssessmentTemplateCreate.value = false;
     closeAssessmentTemplateDetail();
+    resetAssessmentTemplateForm();
 };
 const closeReviewerTemplateModal = () => {
     activeReviewerTemplateModal.value = '';
@@ -1400,10 +1507,10 @@ const logout = () => router.post(route('logout'));
                      ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
 
-                <div v-if="userForm.structureStatus === 'invalid' && userForm.structureIssues.length" class="admin-user-warning">
+                <div v-if="userWorkflowIssues.length" class="admin-user-warning">
                     <div class="admin-user-warning-title">ต้องตรวจสอบข้อมูลผู้ใช้นี้</div>
                     <ul>
-                        <li v-for="issue in userForm.structureIssues" :key="issue">{{ issue }}</li>
+                        <li v-for="issue in userWorkflowIssues" :key="issue">{{ issue }}</li>
                     </ul>
                 </div>
 
@@ -1740,25 +1847,25 @@ const logout = () => router.post(route('logout'));
             </div>
 
             <div class="reviewer-template-modal-body">
-                <div v-if="activeReviewerTemplateType === 'assessment' && !showAssessmentTemplateCreate && !selectedAssessmentTemplate" class="assessment-template-list-view">
+                <div v-if="!showAssessmentTemplateCreate && !selectedAssessmentTemplate" class="assessment-template-list-view">
                     <div class="assessment-template-list-head">
                         <div>
-                            <h4>ลำดับการประเมินทั้งหมด</h4>
-                            <p>รายการ workflow การประเมินที่บันทึกไว้ในระบบ</p>
+                            <h4>{{ activeReviewerTemplateTitle }} ทั้งหมด</h4>
+                            <p>รายการ workflow ที่บันทึกไว้ในระบบ</p>
                         </div>
-                        <button class="btn btn-p" type="button" @click="showAssessmentTemplateCreate = true">
-                            + เพิ่มลำดับการประเมิน
+                        <button class="btn btn-p" type="button" @click="startCreateAssessmentTemplate">
+                            + เพิ่ม{{ activeReviewerTemplateTitle }}
                         </button>
                     </div>
 
-                    <div v-if="!assessmentReviewerTemplates.length" class="reviewer-template-empty">
-                        ยังไม่มีลำดับการประเมิน
+                    <div v-if="!activeReviewerTemplateList.length" class="reviewer-template-empty">
+                        ยังไม่มี{{ activeReviewerTemplateTitle }}
                     </div>
 
                     <div v-else class="assessment-template-list">
                         <div
-                            v-for="template in assessmentReviewerTemplates"
-                            :key="`assessment-template-${template.id}`"
+                            v-for="template in activeReviewerTemplateList"
+                            :key="`${activeReviewerTemplateType}-template-${template.id}`"
                             class="assessment-template-row"
                             role="button"
                             tabindex="0"
@@ -1776,7 +1883,7 @@ const logout = () => router.post(route('logout'));
                                 <div v-if="(template.steps || []).length" class="assessment-step-track">
                                     <template
                                         v-for="(step, stepIndex) in template.steps"
-                                        :key="`assessment-template-${template.id}-step-${step.step}`"
+                                        :key="`${activeReviewerTemplateType}-template-${template.id}-step-${step.step}`"
                                     >
                                         <div class="assessment-step-pill">
                                             <span>{{ stepIndex + 1 }}</span>
@@ -1800,23 +1907,114 @@ const logout = () => router.post(route('logout'));
                                     <span>ผู้ใช้</span>
                                 </div>
                                 <button class="assessment-template-detail-btn" type="button" @click.stop="openAssessmentTemplateDetail(template)">
-                                    ดูผู้ใช้
-                                </button>
-                                <button class="assessment-template-delete-btn" type="button" @click.stop="deleteAssessmentTemplate(template)">
-                                    ลบลำดับ
+                                    ดู
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div v-else-if="activeReviewerTemplateType === 'assessment' && !showAssessmentTemplateCreate && selectedAssessmentTemplate" class="assessment-template-detail-view">
+                <div v-else-if="!showAssessmentTemplateCreate && selectedAssessmentTemplate" class="assessment-template-detail-view">
                     <div class="assessment-template-detail-head">
                         <div>
-                            <h4>{{ selectedAssessmentTemplate.name }}</h4>
-                            <p>{{ selectedAssessmentTemplate.description || 'ไม่มีคำอธิบาย' }}</p>
+                            <template v-if="isEditingSelectedAssessmentTemplate">
+                                <input
+                                    v-model="assessmentTemplateForm.name"
+                                    class="assessment-template-inline-name"
+                                    :placeholder="`ชื่อ${activeReviewerTemplateTitle}`"
+                                />
+                                <textarea
+                                    v-model="assessmentTemplateForm.description"
+                                    class="assessment-template-inline-desc"
+                                    placeholder="คำอธิบาย"
+                                    rows="1"
+                                ></textarea>
+                            </template>
+                            <template v-else>
+                                <h4>{{ selectedAssessmentTemplate.name }}</h4>
+                                <p>{{ selectedAssessmentTemplate.description || 'ไม่มีคำอธิบาย' }}</p>
+                            </template>
                         </div>
-                        <div v-if="(selectedAssessmentTemplate.steps || []).length" class="assessment-step-track detail">
+                        <div class="assessment-template-detail-actions">
+                            <button
+                                v-if="!isEditingSelectedAssessmentTemplate"
+                                class="assessment-template-detail-btn"
+                                type="button"
+                                @click="startEditAssessmentTemplate(selectedAssessmentTemplate)"
+                            >
+                                แก้ไข
+                            </button>
+                            <button
+                                v-if="isEditingSelectedAssessmentTemplate"
+                                class="assessment-template-detail-btn"
+                                type="button"
+                                @click="cancelAssessmentTemplateEdit"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                v-if="isEditingSelectedAssessmentTemplate"
+                                class="btn btn-p"
+                                type="button"
+                                @click="saveAssessmentTemplate"
+                            >
+                                ยืนยัน
+                            </button>
+                            <button
+                                v-if="!isEditingSelectedAssessmentTemplate"
+                                class="assessment-template-delete-btn"
+                                type="button"
+                                @click="deleteAssessmentTemplate(selectedAssessmentTemplate)"
+                            >
+                                ลบลำดับ
+                            </button>
+                        </div>
+                        <div v-if="isEditingSelectedAssessmentTemplate" class="assessment-step-track detail editable">
+                            <template
+                                v-for="(reviewerId, index) in assessmentTemplateForm.reviewer_ids"
+                                :key="`detail-template-selected-reviewer-${reviewerId}-${index}`"
+                            >
+                                <div class="assessment-step-pill editable">
+                                    <span>{{ index + 1 }}</span>
+                                    <select
+                                        :value="reviewerId"
+                                        class="assessment-step-inline-select"
+                                        @change="assessmentTemplateForm.reviewer_ids = assessmentTemplateForm.reviewer_ids.map((id, itemIndex) => itemIndex === index ? selectedEvaluatorId($event.target.value) : id)"
+                                    >
+                                        <option value="">เลือกผู้ประเมิน</option>
+                                        <option
+                                            v-for="person in evaluatorOptions"
+                                            :key="`detail-template-reviewer-option-${index}-${person.value}`"
+                                            :value="person.value"
+                                            :disabled="selectedTemplateReviewerIds.includes(selectedEvaluatorId(person.value)) && selectedEvaluatorId(person.value) !== reviewerId"
+                                        >
+                                            {{ person.label }}
+                                        </option>
+                                    </select>
+                                    <button class="assessment-step-inline-remove" type="button" @click="removeTemplateReviewer(index)">×</button>
+                                </div>
+                                <div
+                                    v-if="index < assessmentTemplateForm.reviewer_ids.length - 1"
+                                    class="assessment-step-arrow"
+                                >
+                                    ->
+                                </div>
+                            </template>
+                            <div class="assessment-step-pill add">
+                                <span>+</span>
+                                <select v-model="assessmentTemplateForm.reviewer_pick" class="assessment-step-inline-select" @change="addTemplateReviewer">
+                                    <option value="">เพิ่มผู้ประเมิน</option>
+                                    <option
+                                        v-for="person in templateReviewerOptions"
+                                        :key="`detail-template-reviewer-add-${person.value}`"
+                                        :value="person.value"
+                                    >
+                                        {{ person.label }}
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                        <div v-else-if="(selectedAssessmentTemplate.steps || []).length" class="assessment-step-track detail">
                             <template
                                 v-for="(step, stepIndex) in selectedAssessmentTemplate.steps"
                                 :key="`selected-assessment-template-step-${step.step}`"
@@ -1847,7 +2045,7 @@ const logout = () => router.post(route('logout'));
 
                         <div class="template-picker-row">
                             <select v-model="assessmentTemplateMemberPick" class="sel modal-input">
-                                <option value="">เพิ่มผู้ใช้ลำดับการประเมิน</option>
+                                <option value="">เพิ่มผู้ใช้{{ activeReviewerTemplateTitle }}</option>
                                 <option
                                     v-for="person in selectedAssessmentTemplateUserOptions"
                                     :key="`assessment-template-member-${person.value}`"
@@ -1885,14 +2083,14 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-else-if="activeReviewerTemplateType === 'assessment'" class="assessment-template-builder">
+                <div v-else class="assessment-template-builder">
                     <div class="template-builder-grid">
                         <div class="fg">
-                            <label class="lbl req">ชื่อลำดับในการประเมิน</label>
+                            <label class="lbl req">ชื่อ{{ activeReviewerTemplateTitle }}</label>
                             <input
                                 v-model="assessmentTemplateForm.name"
                                 class="inp modal-input"
-                                placeholder="เช่น ลำดับประเมินสายสนับสนุน"
+                                :placeholder="activeReviewerTemplateType === 'idp' ? 'เช่น ลำดับ IDP สายสนับสนุน' : 'เช่น ลำดับประเมินสายสนับสนุน'"
                             />
                         </div>
                         <div class="fg">
@@ -1943,7 +2141,7 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
 
-                    <div class="template-builder-section">
+                    <div v-if="!isEditingAssessmentTemplate" class="template-builder-section">
                         <div class="template-builder-head">
                             <div>
                                 <h4>ผู้ใช้ที่จะใช้ลำดับนี้</h4>
@@ -1981,59 +2179,11 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <template v-else>
-                    <div v-if="!activeReviewerTemplateList.length" class="reviewer-template-empty">
-                        ยังไม่มี template {{ activeReviewerTemplateTitle }}
-                    </div>
-
-                    <div
-                        v-for="template in activeReviewerTemplateList"
-                        :key="`template-card-${template.id}`"
-                        class="reviewer-template-overview-card"
-                    >
-                        <div class="reviewer-template-overview-head">
-                            <div>
-                                <div class="reviewer-template-name">
-                                    {{ template.name }}
-                                    <span class="reviewer-template-chain-badge">{{ reviewerChainTypeLabel(template.chainType) }}</span>
-                                    <span v-if="template.isDefault" class="reviewer-template-default-badge">ค่าเริ่มต้น</span>
-                                </div>
-                                <div class="reviewer-template-desc">{{ template.description || 'ไม่มีคำอธิบาย' }}</div>
-                            </div>
-                        </div>
-
-                        <div class="reviewer-template-step-grid">
-                            <div
-                                v-for="step in template.steps"
-                                :key="`template-${template.id}-step-${step.step}`"
-                                class="reviewer-template-step-card"
-                            >
-                                <div class="reviewer-template-step-no">{{ step.step }}</div>
-                                <div>
-                                    <div class="reviewer-template-step-title">{{ step.label }}</div>
-                                    <div class="reviewer-template-step-meta">
-                                        {{ step.resolverType }} · {{ roleLabel(step.roleKey) }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="reviewer-template-scope-row">
-                            <span
-                                v-for="assignment in template.assignments"
-                                :key="`template-${template.id}-scope-${assignment.scopeType}-${assignment.scopeValue || assignment.userId || 'default'}`"
-                                class="reviewer-template-scope-pill"
-                            >
-                                {{ templateAssignmentLabel(assignment) }}
-                            </span>
-                        </div>
-                    </div>
-                </template>
             </div>
 
             <div class="reviewer-template-modal-actions">
                 <button
-                    v-if="activeReviewerTemplateType === 'assessment' && (showAssessmentTemplateCreate || selectedAssessmentTemplate)"
+                    v-if="showAssessmentTemplateCreate || selectedAssessmentTemplate"
                     class="btn btn-s"
                     type="button"
                     @click="returnToAssessmentTemplateList"
@@ -2042,15 +2192,12 @@ const logout = () => router.post(route('logout'));
                 </button>
                 <button class="btn btn-s" type="button" @click="closeReviewerTemplateModal">ปิด</button>
                 <button
-                    v-if="activeReviewerTemplateType === 'assessment' && showAssessmentTemplateCreate"
+                    v-if="showAssessmentTemplateCreate"
                     class="btn btn-p"
                     type="button"
                     @click="saveAssessmentTemplate"
                 >
-                    บันทึกลำดับในการประเมิน
-                </button>
-                <button v-else-if="activeReviewerTemplateType === 'idp'" class="btn btn-p" type="button" @click="openModal('modal-user'); closeReviewerTemplateModal();">
-                    + เพิ่มผู้ใช้แล้วใช้ {{ activeReviewerTemplateTitle }}
+                    {{ isEditingAssessmentTemplate ? 'ยืนยัน' : `บันทึก${activeReviewerTemplateTitle}` }}
                 </button>
             </div>
         </div>
@@ -2721,9 +2868,9 @@ const logout = () => router.post(route('logout'));
 
 .assessment-template-detail-head {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    gap: 8px;
+    gap: 12px;
     padding: 16px;
     border: 1px solid #dbe4ef;
     border-radius: 8px;
@@ -2742,6 +2889,105 @@ const logout = () => router.post(route('logout'));
     color: #64748b;
     font-size: 13px;
     font-weight: 700;
+}
+
+.assessment-template-inline-name {
+    display: block;
+    width: min(100%, 560px);
+    max-width: 560px;
+    padding: 0 2px 4px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.25;
+}
+
+.assessment-template-inline-desc {
+    display: block;
+    width: min(100%, 760px);
+    max-width: 760px;
+    min-height: 30px;
+    margin-top: 4px;
+    padding: 0 2px 4px;
+    resize: none;
+    overflow: hidden;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    outline: 0;
+    background: transparent;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.5;
+    font-family: inherit;
+}
+
+.assessment-template-inline-name:hover,
+.assessment-template-inline-desc:hover {
+    border-bottom-color: #e2e8f0;
+}
+
+.assessment-template-inline-name:focus,
+.assessment-template-inline-desc:focus {
+    border-bottom-color: #cf3c23;
+}
+
+.assessment-template-detail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.assessment-template-detail-head .assessment-step-track,
+.assessment-template-detail-head .assessment-template-chain-text {
+    grid-column: 1 / -1;
+}
+
+.assessment-step-track.editable {
+    align-items: center;
+    border: 1px dashed #dbe4ef;
+}
+
+.assessment-step-pill.editable,
+.assessment-step-pill.add {
+    padding-right: 8px;
+}
+
+.assessment-step-pill.add {
+    border-style: dashed;
+    color: #64748b;
+}
+
+.assessment-step-inline-select {
+    min-width: 160px;
+    max-width: 320px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #334155;
+    font: inherit;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.assessment-step-inline-remove {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff1f2;
+    color: #dc2626;
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
 }
 
 .assessment-template-member-panel {
