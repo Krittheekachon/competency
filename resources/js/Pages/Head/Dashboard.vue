@@ -274,22 +274,13 @@ const reviewerStepsForUser = (user) => {
         ? user.reviewerSteps
         : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
 
-    if (dynamicSteps.length) {
-        return dynamicSteps
-            .map((step, index) => ({
-                step: Number(step.step || index + 1),
-                reviewer_id: Number(step.id || step.reviewer_id || step.value || 0),
-            }))
-            .filter((step) => step.step > 0 && step.reviewer_id > 0)
-            .sort((a, b) => a.step - b.step);
-    }
-
-    return [1, 2, 3]
-        .map((step) => ({
-            step,
-            reviewer_id: Number(user?.[`supervisor_id_${step}`] || 0),
+    return dynamicSteps
+        .map((step, index) => ({
+            step: Number(step.step || index + 1),
+            reviewer_id: Number(step.id || step.reviewer_id || step.value || 0),
         }))
-        .filter((step) => step.reviewer_id > 0);
+        .filter((step) => step.step > 0 && step.reviewer_id > 0)
+        .sort((a, b) => a.step - b.step);
 };
 const reviewerStepForUser = (user, reviewer = currentUser.value) => {
     const reviewerId = Number(reviewer?.db_id);

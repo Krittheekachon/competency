@@ -22,45 +22,54 @@ class NotificationService
     private const REVIEWER_2_3_RECIPIENT = 'chin172755@gmail.com';
     private const EMPLOYEE_REVISION_RECIPIENT = 'polysaccc1351@gmail.com';
 
-    public function __construct(private NotificationDigestService $digest)
+    public function __construct(
+        private NotificationDigestService $digest,
+        private ReviewerChainResolver $reviewerChainResolver,
+    )
     {
     }
 
     public function notifyFirstReviewerOnSubmit(User $employee, string $competencyName): void
     {
-        $employee->loadMissing('evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3');
-
-        $this->sendToUser(
-            collect([
-                $employee->evaluatorLevel1,
-                $employee->evaluatorLevel2,
-                $employee->evaluatorLevel3,
-            ])->first(),
-            new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
-            $this->recipientForReviewer(collect([
-                $employee->evaluatorLevel1,
-                $employee->evaluatorLevel2,
-                $employee->evaluatorLevel3,
-            ])->first()),
-        );
-    }
-
-    public function notifyNextReviewerForAssessment(User $employee, string $competencyName, string $pendingStatus): void
-    {
-        $employee->loadMissing('evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3');
-
-        $reviewer = match ($pendingStatus) {
-            'self_submitted' => $employee->evaluatorLevel1,
-            'unit_evaluated' => $employee->evaluatorLevel2,
-            'dept_evaluated' => $employee->evaluatorLevel3,
-            default => null,
-        };
+        $reviewer = $this->reviewerForAssessmentStep($employee, 1);
 
         $this->sendToUser(
             $reviewer,
             new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
             $this->recipientForReviewer($reviewer),
         );
+    }
+
+    public function notifyNextReviewerForAssessment(User $employee, string $competencyName, string $pendingStatus): void
+    {
+        $reviewer = $this->reviewerForAssessmentStatus($employee, $pendingStatus);
+
+        $this->sendToUser(
+            $reviewer,
+            new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
+            $this->recipientForReviewer($reviewer),
+        );
+    }
+
+    private function reviewerForAssessmentStatus(User $employee, string $pendingStatus): ?User
+    {
+        $step = match (true) {
+            $pendingStatus === 'self_submitted' => 1,
+            $pendingStatus === 'unit_evaluated' => 2,
+            $pendingStatus === 'dept_evaluated' => 3,
+            (bool) preg_match('/^review_step_(\d+)$/', $pendingStatus, $matches) => (int) $matches[1],
+            default => null,
+        };
+
+        return $step ? $this->reviewerForAssessmentStep($employee, $step) : null;
+    }
+
+    private function reviewerForAssessmentStep(User $employee, int $step): ?User
+    {
+        $reviewerId = collect($this->reviewerChainResolver->stepsForUser($employee))
+            ->first(fn (array $item): bool => (int) $item['step'] === $step)['reviewer_id'] ?? null;
+
+        return $reviewerId ? User::find((int) $reviewerId) : null;
     }
 
     public function notifyAdminIncompleteUser(User $user): void

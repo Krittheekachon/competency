@@ -138,7 +138,7 @@ class IdpController extends Controller
         );
         $owner = DB::table('users')
             ->where('id', auth()->id())
-            ->first(['id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3']);
+            ->first(['id']);
 
         DB::transaction(function () use ($items, $status, $methodIdsByKey, $owner): void {
             $idpId = $this->currentUserIdpId();

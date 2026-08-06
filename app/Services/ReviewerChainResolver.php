@@ -15,10 +15,6 @@ class ReviewerChainResolver
         if ($userId > 0 && Schema::hasTable('user_reviewer_steps')) {
             $rows = $this->rowsForUser($userId, $chainType);
 
-            if ($rows->isEmpty() && $chainType === 'idp') {
-                $rows = $this->rowsForUser($userId, 'assessment');
-            }
-
             if ($rows->isNotEmpty()) {
                 return $rows
                     ->map(fn (object $row): array => [
@@ -31,7 +27,7 @@ class ReviewerChainResolver
             }
         }
 
-        return $this->legacyStepsForUser($user);
+        return [];
     }
 
     public function payloadForUser(User $user, string $chainType = 'assessment'): array
@@ -118,18 +114,6 @@ class ReviewerChainResolver
             3 => 'dean_approved_at',
             default => 'updated_at',
         };
-    }
-
-    private function legacyStepsForUser(object $user): array
-    {
-        return collect([1, 2, 3])
-            ->map(fn (int $step): array => [
-                'step' => $step,
-                'reviewer_id' => (int) ($user->{'supervisor_id_'.$step} ?? 0),
-            ])
-            ->filter(fn (array $step): bool => $step['reviewer_id'] > 0)
-            ->values()
-            ->all();
     }
 
     private function rowsForUser(int $userId, string $chainType)

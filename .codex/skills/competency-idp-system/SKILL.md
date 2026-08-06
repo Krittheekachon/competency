@@ -72,7 +72,7 @@ Preserve these core business rules:
 - Submit, approve, or reject each competency item separately. Other items may remain draft.
 - Require a rejection comment and return only that item to `revision_required`.
 - Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
-- Support a flexible reviewer chain through `user_reviewer_steps`; keep `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` as legacy compatibility mirrors for the first three steps.
+- Support a flexible reviewer chain through `user_reviewer_steps`; treat `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` as old schema fields only, not active runtime data.
 
 ## Assessment Flow
 
@@ -160,7 +160,7 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 
 Use `AssessmentController` as the authority for write behavior.
 
-The reviewer chain is configured by ordered rows in `user_reviewer_steps`. The first three steps are mirrored to `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` only for legacy screens and data compatibility. Do not require one specific evaluator role for one fixed step. A non-admin user has a valid reporting line when at least one active reviewer is assigned.
+The reviewer chain is configured by ordered rows in `user_reviewer_steps`. Do not require one specific evaluator role for one fixed step. A non-admin user has a valid reporting line when at least one active reviewer is assigned.
 
 For positions with `position_fc_selection_rules.required_fc_count > 0`, follow the FC pre-selection rules described in **Assessment Flow** before allowing any self-assessment save or submit.
 
@@ -208,6 +208,28 @@ Reviewer templates are separated by `chain_type`:
 The actual reviewer workflow for each user must be stored in `user_reviewer_steps`.
 When an admin applies a template to a user, resolve or copy the selected template steps into that user's active reviewer steps.
 Runtime approval checks must read the user's active reviewer steps, not the template directly.
+`ReviewerChainResolver` returns active rows from `user_reviewer_steps`; missing rows mean the user has no configured chain. Do not fall back to `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3` for runtime permissions.
+
+Implementation notes for future maintainers:
+
+- Treat assessment reviewer chains and IDP reviewer chains as two parallel workflows that share the same template UI and backend CRUD.
+- Create, edit, delete, apply, add members, and remove members through `Admin\ReviewerChainTemplateController`.
+- Store assessment templates with `reviewer_chain_templates.chain_type = assessment`.
+- Store IDP templates with `reviewer_chain_templates.chain_type = idp`.
+- Applying an assessment template must update:
+  - `users.reviewer_template_id`;
+  - `user_reviewer_steps` rows where `chain_type = assessment`;
+- Applying an IDP template must update:
+  - `users.idp_reviewer_template_id`;
+  - `user_reviewer_steps` rows where `chain_type = idp`.
+- Templates must not update `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3`.
+- When replacing a user's template, remove old template assignments only for the same `chain_type`. Do not remove the user's assessment assignment when changing IDP, and do not remove the user's IDP assignment when changing assessment.
+- The admin user form can still edit reviewer IDs directly. Direct edits should also write the resolved chain into `user_reviewer_steps` with the correct `chain_type`.
+- The template selected in the user form is a shortcut for filling reviewer IDs. After save, the copied reviewer rows in `user_reviewer_steps` are the runtime source of truth.
+- The reviewer template list/detail modal in `resources/js/Pages/Admin/Dashboard.vue` is shared by assessment and IDP. Use `activeReviewerTemplateType` to switch labels, template lists, payload `chain_type`, assigned users, and selected reviewer steps.
+- In the user management table, warnings should be based on missing active assessment reviewer steps and missing active IDP reviewer steps, not on legacy supervisor columns.
+- Use `App\Services\ReviewerTemplateResolver` when resolving template steps for a specific user. This keeps future resolver types, role-based steps, and fixed-user steps in one place.
+- Keep feature coverage for both flows. At minimum, test that assessment templates write `reviewer_template_id` plus assessment steps and that IDP templates write `idp_reviewer_template_id` plus IDP steps without touching supervisor mirrors.
 
 ### Competency Gaps And IDP
 
@@ -255,7 +277,7 @@ idp_items.status
 ```
 
 - Permit an employee to submit one complete `idp_item` while other competency items remain draft.
-- Resolve review steps from `user_reviewer_steps`, falling back to the legacy `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` columns only for old data.
+- Resolve review steps from `user_reviewer_steps`; missing rows mean the user has no configured IDP approval chain.
 - Lock every `review_step_N` and approved item against employee editing and background auto-save.
 - Continue auto-saving only editable draft or revision-required items.
 - Let only the reviewer assigned to the current step approve or reject the item.

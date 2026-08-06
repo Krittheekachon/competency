@@ -226,9 +226,26 @@ class IdpItemApprovalTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
-            ...$ownerOverrides,
         ]);
+        $reviewerIds = [
+            1 => (int) ($ownerOverrides['supervisor_id_1'] ?? $supervisor->id),
+            2 => (int) ($ownerOverrides['supervisor_id_2'] ?? 0),
+            3 => (int) ($ownerOverrides['supervisor_id_3'] ?? 0),
+        ];
+        foreach ($reviewerIds as $step => $reviewerId) {
+            if ($reviewerId <= 0) {
+                continue;
+            }
+
+            DB::table('user_reviewer_steps')->insert([
+                'user_id' => $employee->id,
+                'reviewer_id' => $reviewerId,
+                'step_order' => $step,
+                'chain_type' => 'idp',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
         $idpId = DB::table('idps')->insertGetId([
             'user_id' => $employee->id,
             'year' => 2569,

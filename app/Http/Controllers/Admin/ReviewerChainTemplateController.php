@@ -421,12 +421,6 @@ class ReviewerChainTemplateController extends Controller
             'updated_at' => now(),
         ];
 
-        if ($chainType === 'assessment') {
-            $updates['supervisor_id_1'] = null;
-            $updates['supervisor_id_2'] = null;
-            $updates['supervisor_id_3'] = null;
-        }
-
         DB::table('users')
             ->where('id', $userId)
             ->where($templateColumn, $templateId)
@@ -464,12 +458,6 @@ class ReviewerChainTemplateController extends Controller
             $this->templateColumnForChainType($chainType) => $templateId,
             'updated_at' => $now,
         ];
-
-        if ($chainType === 'assessment') {
-            $updates['supervisor_id_1'] = $reviewerIds[0] ?? null;
-            $updates['supervisor_id_2'] = $reviewerIds[1] ?? null;
-            $updates['supervisor_id_3'] = $reviewerIds[2] ?? null;
-        }
 
         DB::table('users')
             ->where('id', $user->id)

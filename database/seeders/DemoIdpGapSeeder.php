@@ -84,12 +84,11 @@ class DemoIdpGapSeeder extends Seeder
                 'level' => 'ปฏิบัติการ',
                 'position_id' => $positionId,
                 'level_id' => $levelId,
-                'supervisor_id_1' => $supervisorId,
-                'supervisor_id_2' => $deptHeadId,
-                'supervisor_id_3' => $deanId,
                 'is_active' => true,
                 'updated_at' => $now,
             ]);
+            $this->syncReviewerChain($employeeId, [$supervisorId, $deptHeadId, $deanId], 'assessment', $now);
+            $this->syncReviewerChain($employeeId, [$supervisorId, $deptHeadId, $deanId], 'idp', $now);
 
             $competencyTypeId = $this->upsertAndGetId('competency_types', ['code' => 'CC'], [
                 'full_name' => 'Core Competency',
@@ -316,6 +315,43 @@ class DemoIdpGapSeeder extends Seeder
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
+        }
+    }
+
+    private function syncReviewerChain(int $userId, array $reviewerIds, string $chainType, $now): void
+    {
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return;
+        }
+
+        $delete = DB::table('user_reviewer_steps')->where('user_id', $userId);
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $delete->where('chain_type', $chainType);
+        }
+        $delete->delete();
+
+        $rows = collect($reviewerIds)
+            ->values()
+            ->filter(fn ($reviewerId): bool => (int) $reviewerId > 0)
+            ->map(function ($reviewerId, int $index) use ($userId, $chainType, $now): array {
+                $row = [
+                    'user_id' => $userId,
+                    'step_order' => $index + 1,
+                    'reviewer_id' => (int) $reviewerId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+
+                if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+                    $row['chain_type'] = $chainType;
+                }
+
+                return $row;
+            })
+            ->all();
+
+        if ($rows !== []) {
+            DB::table('user_reviewer_steps')->insert($rows);
         }
     }
 }

@@ -22,9 +22,9 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => $dean->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            3 => $dean->id,
         ]);
         $competencyId = $this->competencyId();
 
@@ -58,9 +58,10 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $firstReviewer->id,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => $thirdReviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $firstReviewer->id,
+            3 => $thirdReviewer->id,
         ]);
         $competencyId = $this->competencyId();
         $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
@@ -90,9 +91,9 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => $thirdReviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            3 => $thirdReviewer->id,
         ]);
         $competencyId = $this->competencyId();
         $assessment = $this->assessment($employee, $competencyId, 'dept_evaluated');
@@ -123,23 +124,13 @@ class AssessmentReviewerChainTest extends TestCase
             ]));
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $reviewers[0]->id,
-            'supervisor_id_2' => $reviewers[1]->id,
-            'supervisor_id_3' => $reviewers[2]->id,
         ]);
         $competencyId = $this->competencyId('CC-DYNAMIC');
         $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
 
-        DB::table('user_reviewer_steps')->where('user_id', $employee->id)->delete();
-        DB::table('user_reviewer_steps')->insert($reviewers
+        $this->assignAssessmentReviewers($employee, $reviewers
             ->values()
-            ->map(fn (User $reviewer, int $index): array => [
-                'user_id' => $employee->id,
-                'step_order' => $index + 1,
-                'reviewer_id' => $reviewer->id,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ])
+            ->mapWithKeys(fn (User $reviewer, int $index): array => [$index + 1 => $reviewer->id])
             ->all());
 
         foreach ([
@@ -174,7 +165,9 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $reviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $reviewer->id,
         ]);
         $firstCompetencyId = $this->competencyId('CC-ONE');
         $secondCompetencyId = $this->competencyId('CC-TWO');
@@ -218,8 +211,10 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $reviewer->id,
-            'supervisor_id_2' => $nextReviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $reviewer->id,
+            2 => $nextReviewer->id,
         ]);
         $firstCompetencyId = $this->competencyId('CC-REJECT');
         $secondCompetencyId = $this->competencyId('CC-STAY');
@@ -281,8 +276,10 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $reviewer->id,
-            'supervisor_id_2' => $nextReviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $reviewer->id,
+            2 => $nextReviewer->id,
         ]);
         $competencyId = $this->competencyId('CC-MAIL');
         $this->assessment($employee, $competencyId, 'self_submitted');
@@ -316,7 +313,9 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $reviewer->id,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $reviewer->id,
         ]);
         $competencyId = $this->competencyId('CC-CHECKED');
         $checkedKey = $competencyId.':1:0';
@@ -407,6 +406,28 @@ class AssessmentReviewerChainTest extends TestCase
     private function roleId(string $key): int
     {
         return (int) DB::table('roles')->where('key', $key)->value('id');
+    }
+
+    private function assignAssessmentReviewers(User $user, array $reviewerIdsByStep): void
+    {
+        DB::table('user_reviewer_steps')->where('user_id', $user->id)->where('chain_type', 'assessment')->delete();
+
+        $rows = collect($reviewerIdsByStep)
+            ->map(fn (int $reviewerId, int|string $step): array => [
+                'user_id' => $user->id,
+                'step_order' => (int) $step,
+                'reviewer_id' => $reviewerId,
+                'chain_type' => 'assessment',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])
+            ->filter(fn (array $row): bool => $row['step_order'] > 0 && $row['reviewer_id'] > 0)
+            ->values()
+            ->all();
+
+        if ($rows !== []) {
+            DB::table('user_reviewer_steps')->insert($rows);
+        }
     }
 
     private function assessmentRoundId(): int

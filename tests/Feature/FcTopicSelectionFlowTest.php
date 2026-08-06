@@ -31,8 +31,15 @@ class FcTopicSelectionFlowTest extends TestCase
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'position_id' => $positionId,
-            'supervisor_id_1' => $supervisor->id,
             'is_active' => true,
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'assessment',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $this->actingAs($employee)

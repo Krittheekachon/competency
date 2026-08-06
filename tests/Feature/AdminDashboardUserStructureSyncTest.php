@@ -51,8 +51,8 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.1.n', 'ZZ Existing User')
-                ->where('users.1.d', 'กลุ่มงานใหม่ > หน่วยเดิม')
+                ->where('users', fn ($users): bool => collect($users)
+                    ->firstWhere('n', 'ZZ Existing User')['d'] === 'กลุ่มงานใหม่ > หน่วยเดิม')
             );
     }
 
@@ -85,11 +85,15 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.1.n', 'ZZ Orphaned User')
-                ->where('users.1.structureStatus', 'invalid')
-                ->where('users.1.structureIssues.0', 'กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน')
-                ->where('users.1.structureIssues.1', 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน')
-                ->where('users.1.structureIssues.2', 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน')
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Orphaned User');
+
+                    return $user
+                        && $user['structureStatus'] === 'invalid'
+                        && ($user['structureIssues'][0] ?? null) === 'กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน'
+                        && ($user['structureIssues'][1] ?? null) === 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน'
+                        && ($user['structureIssues'][2] ?? null) === 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน';
+                })
             );
     }
 
@@ -132,9 +136,6 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => null,
         ]);
 
         $this->actingAs($admin)
@@ -142,9 +143,13 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.1.n', 'ZZ No Evaluator User')
-                ->where('users.1.structureStatus', 'invalid')
-                ->where('users.1.structureIssues.0', 'ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย')
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ No Evaluator User');
+
+                    return $user
+                        && $user['structureStatus'] === 'invalid'
+                        && ($user['structureIssues'][0] ?? null) === 'ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย';
+                })
             );
     }
 
@@ -160,25 +165,28 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'role_id' => $this->roleId('dean'),
         ]);
 
-        User::factory()->create([
+        $user = User::factory()->create([
             'name' => 'ZZ Supervisor Missing Evaluator',
             'role_id' => $this->roleId('supervisor'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => $dean->id,
         ]);
+        $this->assignReviewer($user, $dean, 3);
 
         $this->actingAs($admin)
             ->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.2.structureStatus', 'ok')
-                ->where('users.2.structureIssues', [])
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Supervisor Missing Evaluator');
+
+                    return $user
+                        && $user['structureStatus'] === 'ok'
+                        && $user['structureIssues'] === [];
+                })
             );
     }
 
@@ -194,25 +202,28 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'role_id' => $this->roleId('dean'),
         ]);
 
-        User::factory()->create([
+        $user = User::factory()->create([
             'name' => 'ZZ Manager Dept Missing Evaluator',
             'role_id' => $this->roleId('dept_head'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => $dean->id,
         ]);
+        $this->assignReviewer($user, $dean, 3);
 
         $this->actingAs($admin)
             ->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.2.structureStatus', 'ok')
-                ->where('users.2.structureIssues', [])
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Manager Dept Missing Evaluator');
+
+                    return $user
+                        && $user['structureStatus'] === 'ok'
+                        && $user['structureIssues'] === [];
+                })
             );
     }
 
@@ -233,24 +244,28 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'level' => 'ปฏิบัติการ',
         ]);
 
-        User::factory()->create([
+        $user = User::factory()->create([
             'name' => 'ZZ Staff With Former Supervisor',
             'role_id' => $this->roleId('employee'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor_id_1' => $formerSupervisor->id,
         ]);
+        $this->assignReviewer($user, $formerSupervisor);
 
         $this->actingAs($admin)
             ->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.2.n', 'ZZ Staff With Former Supervisor')
-                ->where('users.2.structureStatus', 'ok')
-                ->where('users.2.structureIssues', [])
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Staff With Former Supervisor');
+
+                    return $user
+                        && $user['structureStatus'] === 'ok'
+                        && $user['structureIssues'] === [];
+                })
             );
     }
 
@@ -271,24 +286,28 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'level' => 'ปฏิบัติการ',
         ]);
 
-        User::factory()->create([
+        $user = User::factory()->create([
             'name' => 'ZZ Staff With Moved Supervisor',
             'role_id' => $this->roleId('employee'),
             'workline' => 'สายสนับสนุน',
             'department' => 'HR',
             'position' => 'นักทรัพยากรบุคคล',
             'level' => 'ปฏิบัติการ',
-            'supervisor_id_1' => $movedSupervisor->id,
         ]);
+        $this->assignReviewer($user, $movedSupervisor);
 
         $this->actingAs($admin)
             ->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Dashboard')
-                ->where('users.2.n', 'ZZ Staff With Moved Supervisor')
-                ->where('users.2.structureStatus', 'ok')
-                ->where('users.2.structureIssues', [])
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Staff With Moved Supervisor');
+
+                    return $user
+                        && $user['structureStatus'] === 'ok'
+                        && $user['structureIssues'] === [];
+                })
             );
     }
 
@@ -315,6 +334,18 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             'workline_id' => $worklineId,
             'job_family_id' => null,
             'name' => 'ปฏิบัติการ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function assignReviewer(User $user, User $reviewer, int $step = 1): void
+    {
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $user->id,
+            'reviewer_id' => $reviewer->id,
+            'step_order' => $step,
+            'chain_type' => 'assessment',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

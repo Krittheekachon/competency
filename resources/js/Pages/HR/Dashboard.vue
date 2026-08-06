@@ -177,11 +177,7 @@ const reviewerStepsForUser = (user) => {
         ? user.reviewerSteps
         : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
 
-    if (steps.length) return steps;
-
-    return [user?.supervisor_id_1, user?.supervisor_id_2, user?.supervisor_id_3]
-        .map((id, index) => ({ id, step: index + 1 }))
-        .filter((step) => Number(step.id) > 0);
+    return steps;
 };
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value;

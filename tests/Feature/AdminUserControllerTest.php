@@ -11,7 +11,7 @@ class AdminUserControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_create_user_and_keep_supervisor_names_with_ids(): void
+    public function test_admin_can_create_user_with_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
@@ -41,8 +41,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $evaluator->id,
+                'reviewer_ids' => [$supervisor->id, $evaluator->id],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -51,9 +50,20 @@ class AdminUserControllerTest extends TestCase
             'sso' => 'staff-001',
             'name' => 'บุคลากร ใหม่',
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $evaluator->id,
             'is_active' => true,
+        ]);
+        $userId = (int) DB::table('users')->where('sso', 'staff-001')->value('id');
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $evaluator->id,
         ]);
     }
 
@@ -81,8 +91,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'อาจารย์',
                 'l' => 'อาจารย์',
                 'r' => 'supervisor',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
+                'reviewer_ids' => [],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -96,7 +105,7 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_update_three_evaluator_levels(): void
+    public function test_admin_can_update_three_assessment_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
@@ -135,19 +144,19 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $managerDept->id,
-                'supervisor_id_3' => $dean->id,
+                'reviewer_ids' => [$supervisor->id, $managerDept->id, $dean->id],
                 'act' => true,
             ])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('users', [
-            'id' => $user->id,
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $managerDept->id,
-            'supervisor_id_3' => $dean->id,
-        ]);
+        foreach ([$supervisor, $managerDept, $dean] as $index => $reviewer) {
+            $this->assertDatabaseHas('user_reviewer_steps', [
+                'user_id' => $user->id,
+                'chain_type' => 'assessment',
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewer->id,
+            ]);
+        }
     }
 
     public function test_admin_normalizes_manager_dept_alias_to_role_table_key(): void
@@ -174,8 +183,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'manager_dept',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
+                'reviewer_ids' => [],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -186,7 +194,7 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_update_reporting_line_with_linked_user_ids(): void
+    public function test_admin_can_update_assessment_reviewer_steps_with_linked_user_ids(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
@@ -222,8 +230,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $evaluator->id,
+                'reviewer_ids' => [$supervisor->id, $evaluator->id],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -231,8 +238,18 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'department' => 'ฝ่ายบริหาร > งานคลังและพัสดุ',
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $evaluator->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $user->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $user->id,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $evaluator->id,
         ]);
     }
 
@@ -257,8 +274,6 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'รองคณบดีฝ่ายบริหาร',
                 'l' => 'บริหาร',
                 'r' => 'employee',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
                 'act' => true,
             ])
             ->assertRedirect('/dashboard')
@@ -386,9 +401,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $userId,
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $deptHead->id,
-            'supervisor_id_3' => $dean->id,
         ]);
         $this->assertDatabaseHas('user_reviewer_steps', [
             'user_id' => $userId,
@@ -473,9 +485,6 @@ class AdminUserControllerTest extends TestCase
             $this->assertDatabaseHas('users', [
                 'id' => $user->id,
                 'reviewer_template_id' => $templateId,
-                'supervisor_id_1' => $reviewerA->id,
-                'supervisor_id_2' => $reviewerB->id,
-                'supervisor_id_3' => $reviewerC->id,
             ]);
 
             foreach ([$reviewerA, $reviewerB, $reviewerC] as $index => $reviewer) {
@@ -576,9 +585,6 @@ class AdminUserControllerTest extends TestCase
             'id' => $assignedUser->id,
             'idp_reviewer_template_id' => $templateId,
             'reviewer_template_id' => null,
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => null,
         ]);
 
         foreach ([$reviewerA, $reviewerB] as $index => $reviewer) {
@@ -671,9 +677,6 @@ class AdminUserControllerTest extends TestCase
         ]);
         $assignedUser->forceFill([
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $reviewerA->id,
-            'supervisor_id_2' => $reviewerB->id,
-            'supervisor_id_3' => null,
         ])->save();
 
         $this->actingAs($admin)
@@ -707,9 +710,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $assignedUser->id,
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $reviewerC->id,
-            'supervisor_id_2' => $reviewerA->id,
-            'supervisor_id_3' => null,
         ]);
         $this->assertDatabaseHas('user_reviewer_steps', [
             'user_id' => $assignedUser->id,
@@ -793,8 +793,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $assignedUser->id,
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $reviewerA->id,
-            'supervisor_id_2' => $reviewerB->id,
         ]);
         $this->assertDatabaseHas('user_reviewer_steps', [
             'user_id' => $assignedUser->id,
@@ -849,7 +847,6 @@ class AdminUserControllerTest extends TestCase
         ]);
         $assignedUser->forceFill([
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $reviewerA->id,
         ])->save();
 
         $this->actingAs($admin)
@@ -864,9 +861,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $assignedUser->id,
             'reviewer_template_id' => null,
-            'supervisor_id_1' => null,
-            'supervisor_id_2' => null,
-            'supervisor_id_3' => null,
         ]);
         $this->assertDatabaseMissing('user_reviewer_steps', [
             'user_id' => $assignedUser->id,
@@ -922,7 +916,6 @@ class AdminUserControllerTest extends TestCase
         ]);
         $assignedUser->forceFill([
             'reviewer_template_id' => $templateId,
-            'supervisor_id_1' => $reviewerA->id,
         ])->save();
 
         $this->actingAs($admin)
@@ -941,7 +934,6 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $assignedUser->id,
             'reviewer_template_id' => null,
-            'supervisor_id_1' => null,
         ]);
         $this->assertDatabaseMissing('user_reviewer_steps', [
             'user_id' => $assignedUser->id,

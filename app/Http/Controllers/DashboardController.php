@@ -33,7 +33,7 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        $currentUser = auth()->user()->loadMissing(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3']);
+        $currentUser = auth()->user()->loadMissing('role');
         $role = $this->roleKeyForUser($currentUser);
         $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
             'id' => $type->id,
@@ -42,7 +42,7 @@ class DashboardController extends Controller
             'desc' => $type->description,
         ]);
         $competencies = $this->competencyPayload();
-        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3'])
+        $users = User::with('role')
             ->orderByDesc('id')
             ->get()
             ->map(fn (User $user) => $this->dashboardUserPayload($user));
@@ -220,14 +220,11 @@ class DashboardController extends Controller
             'position_id' => $user->position_id,
             'level_id' => $user->level_id,
             'r' => $roleKey,
-            'supervisor_id_1' => $user->supervisor_id_1,
-            'supervisor_id_2' => $user->supervisor_id_2,
-            'supervisor_id_3' => $user->supervisor_id_3,
             'reviewer_template_id' => $user->reviewer_template_id,
             'idp_reviewer_template_id' => $user->idp_reviewer_template_id ?? null,
-            'sup' => $this->displayNameForUser($user->evaluatorLevel1),
-            'evaluator2' => $this->displayNameForUser($user->evaluatorLevel2),
-            'evaluator3' => $this->displayNameForUser($user->evaluatorLevel3),
+            'sup' => $reviewerSteps[0]['name'] ?? '',
+            'evaluator2' => $reviewerSteps[1]['name'] ?? '',
+            'evaluator3' => $reviewerSteps[2]['name'] ?? '',
             'reviewerSteps' => $reviewerSteps,
             'idpReviewerSteps' => $idpReviewerSteps,
             'supervisorChain' => $reviewerSteps,
@@ -1326,15 +1323,6 @@ class DashboardController extends Controller
                                     });
                             });
                         }
-                    });
-                }
-
-                foreach ([1, 2, 3] as $step) {
-                    $method = Schema::hasTable('user_reviewer_steps') || $step > 1 ? 'orWhere' : 'where';
-                    $query->{$method}(function ($query) use ($reviewer, $step): void {
-                        $query->where("users.supervisor_id_{$step}", $reviewer->id)
-                            ->where('idp_items.current_review_step', $step)
-                            ->where('idp_items.status', "review_step_{$step}");
                     });
                 }
             })

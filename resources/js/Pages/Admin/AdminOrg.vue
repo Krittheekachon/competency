@@ -440,9 +440,6 @@ type User = {
   p?: string;
   l?: string;
   r?: string;
-  supervisor_id_1?: number | null;
-  supervisor_id_2?: number | null;
-  supervisor_id_3?: number | null;
   reviewerSteps?: Array<{ id?: number | null; reviewer_id?: number | null; step?: number; name?: string }>;
   supervisorChain?: Array<{ id?: number | null; reviewer_id?: number | null; step?: number; name?: string }>;
   act?: boolean;
@@ -740,9 +737,7 @@ const roleBadge = (role?: string): RoleBadge => {
 
 const displayNameForUser = (user: User) => `${user.t || ''}${user.n || ''}`.trim();
 const reviewerStepsForUser = (user: User) => {
-  const dynamicSteps = Array.isArray(user.reviewerSteps) && user.reviewerSteps.length
-    ? user.reviewerSteps
-    : (Array.isArray(user.supervisorChain) ? user.supervisorChain : []);
+  const dynamicSteps = Array.isArray(user.reviewerSteps) ? user.reviewerSteps : [];
 
   if (dynamicSteps.length) {
     return dynamicSteps
@@ -754,9 +749,7 @@ const reviewerStepsForUser = (user: User) => {
       .sort((left, right) => left.step - right.step);
   }
 
-  return [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3]
-    .map((id, index) => ({ step: index + 1, reviewer_id: Number(id || 0) }))
-    .filter((step) => step.reviewer_id > 0);
+  return [];
 };
 const evaluatorName = (user: User, level: number) => {
   const id = reviewerStepsForUser(user).find((step) => step.step === level)?.reviewer_id;

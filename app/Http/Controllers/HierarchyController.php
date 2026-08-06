@@ -17,28 +17,29 @@ class HierarchyController extends Controller
     // ดึงสายการบังคับบัญชาทั้งหมด
     public function index()
     {
-        $users = User::with(['role', 'evaluatorLevel1', 'evaluatorLevel2', 'evaluatorLevel3'])
-            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3', 'department', 'position')
+        $users = User::with(['role'])
+            ->select('id', 'sso', 'name', 'first_name_th', 'last_name_th', 'role_id', 'department', 'position')
             ->where('is_active', true)
             ->get()
-            ->map(fn (User $user) => [
-                'id' => $user->id,
-                'sso' => $user->sso,
-                'name' => $user->name,
-                'first_name_th' => $user->first_name_th,
-                'last_name_th' => $user->last_name_th,
-                'role_key' => $user->role?->key,
-                'supervisor_id_1' => $user->supervisor_id_1,
-                'supervisor_id_2' => $user->supervisor_id_2,
-                'supervisor_id_3' => $user->supervisor_id_3,
-                'reviewerSteps' => $this->reviewerChainResolver->payloadForUser($user),
-                'supervisorChain' => $this->reviewerChainResolver->payloadForUser($user),
-                'evaluator1_name' => $this->displayNameForUser($user->evaluatorLevel1),
-                'evaluator2_name' => $this->displayNameForUser($user->evaluatorLevel2),
-                'evaluator3_name' => $this->displayNameForUser($user->evaluatorLevel3),
-                'department' => $user->department,
-                'position' => $user->position,
-            ]);
+            ->map(function (User $user) {
+                $reviewerSteps = $this->reviewerChainResolver->payloadForUser($user);
+
+                return [
+                    'id' => $user->id,
+                    'sso' => $user->sso,
+                    'name' => $user->name,
+                    'first_name_th' => $user->first_name_th,
+                    'last_name_th' => $user->last_name_th,
+                    'role_key' => $user->role?->key,
+                    'reviewerSteps' => $reviewerSteps,
+                    'supervisorChain' => $reviewerSteps,
+                    'evaluator1_name' => $reviewerSteps[0]['name'] ?? '',
+                    'evaluator2_name' => $reviewerSteps[1]['name'] ?? '',
+                    'evaluator3_name' => $reviewerSteps[2]['name'] ?? '',
+                    'department' => $user->department,
+                    'position' => $user->position,
+                ];
+            });
 
         return response()->json($users);
     }
@@ -67,21 +68,12 @@ class HierarchyController extends Controller
     public function update(Request $request, string $sso)
     {
         $request->validate([
-            'supervisor_id_1' => 'nullable|integer|exists:users,id',
-            'supervisor_id_2' => 'nullable|integer|exists:users,id',
-            'supervisor_id_3' => 'nullable|integer|exists:users,id',
             'reviewer_ids' => 'nullable|array',
             'reviewer_ids.*' => 'nullable|integer|exists:users,id',
         ]);
 
         $user = User::where('sso', $sso)->firstOrFail();
-        $rawReviewerIds = $request->has('reviewer_ids')
-            ? ($request->input('reviewer_ids') ?? [])
-            : [
-                $request->supervisor_id_1,
-                $request->supervisor_id_2,
-                $request->supervisor_id_3,
-            ];
+        $rawReviewerIds = $request->input('reviewer_ids') ?? [];
 
         $reviewerIds = collect($rawReviewerIds)
             ->filter()
@@ -96,11 +88,6 @@ class HierarchyController extends Controller
             ], 422);
         }
 
-        $user->update([
-            'supervisor_id_1' => $reviewerIds[0] ?? null,
-            'supervisor_id_2' => $reviewerIds[1] ?? null,
-            'supervisor_id_3' => $reviewerIds[2] ?? null,
-        ]);
         $this->syncReviewerSteps($user, $reviewerIds);
 
         return response()->json([
@@ -152,10 +139,6 @@ class HierarchyController extends Controller
     private function setReviewerStepForQuery($query, int $step, int $reviewerId): void
     {
         $userIds = (clone $query)->pluck('id');
-
-        $query->update([
-            'supervisor_id_'.$step => $reviewerId,
-        ]);
 
         if (! Schema::hasTable('user_reviewer_steps')) {
             return;

@@ -115,9 +115,6 @@ class UserController extends Controller
             'p' => [Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
             'l' => ['required', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
-            'supervisor_id_1' => ['nullable', 'integer', 'exists:users,id'],
-            'supervisor_id_2' => ['nullable', 'integer', 'exists:users,id'],
-            'supervisor_id_3' => ['nullable', 'integer', 'exists:users,id'],
             'reviewer_ids' => ['nullable', 'array'],
             'reviewer_ids.*' => ['nullable', 'integer', 'exists:users,id'],
             'reviewer_template_id' => ['nullable', 'integer'],
@@ -196,9 +193,6 @@ class UserController extends Controller
             'position_id' => $data['_position_id'],
             'level_id' => $data['_level_id'],
             'role_id' => $role->id,
-            'supervisor_id_1' => $data['reviewer_ids'][0] ?? null,
-            'supervisor_id_2' => $data['reviewer_ids'][1] ?? null,
-            'supervisor_id_3' => $data['reviewer_ids'][2] ?? null,
             'reviewer_template_id' => $data['reviewer_template_id'] ?? null,
             'is_active' => $data['act'] ?? true,
         ];
@@ -278,13 +272,7 @@ class UserController extends Controller
 
     private function normalizeReviewerIds(array $data, ?User $user, string $idsKey, string $templateKey, string $chainType): array
     {
-        $rawReviewerIds = array_key_exists($idsKey, $data)
-            ? ($data[$idsKey] ?? [])
-            : [
-                $data['supervisor_id_1'] ?? null,
-                $data['supervisor_id_2'] ?? null,
-                $data['supervisor_id_3'] ?? null,
-            ];
+        $rawReviewerIds = $data[$idsKey] ?? [];
 
         $reviewerIds = collect($rawReviewerIds)
             ->filter()

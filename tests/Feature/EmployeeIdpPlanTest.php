@@ -267,7 +267,14 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'idp',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         $firstCompetencyId = $this->competencyId('CC-FIRST');
         $secondCompetencyId = $this->competencyId('CC-SECOND');
@@ -324,7 +331,6 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
         ]);
         $competencyId = $this->competencyId('CC-LOCKED');
         $gapId = $this->approvedGap($employee, $competencyId);

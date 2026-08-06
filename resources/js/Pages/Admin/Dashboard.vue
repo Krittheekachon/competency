@@ -107,9 +107,6 @@ const userForm = ref({
     p: '',
     l: '',
     r: 'employee',
-    supervisor_id_1: '',
-    supervisor_id_2: '',
-    supervisor_id_3: '',
     reviewer_template_id: '',
     idp_reviewer_template_id: '',
     reviewer_ids: [],
@@ -832,7 +829,6 @@ const applyReviewerTemplate = () => {
 
     userForm.value.reviewer_ids = ids.length ? ids : [''];
     clearReviewerSearch();
-    syncLegacyReviewerFields();
 };
 const applyIdpReviewerTemplate = () => {
     const template = selectedIdpReviewerTemplate.value;
@@ -863,17 +859,10 @@ const reviewerChoicesForStep = (stepIndex) => {
         && !selectedInOtherSteps.has(person.value),
     );
 };
-const syncLegacyReviewerFields = () => {
-    const ids = selectedReviewerIds.value;
-    userForm.value.supervisor_id_1 = ids[0] || '';
-    userForm.value.supervisor_id_2 = ids[1] || '';
-    userForm.value.supervisor_id_3 = ids[2] || '';
-};
 const normalizeReviewerList = () => {
     userForm.value.reviewer_ids = selectedReviewerIds.value;
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
-    syncLegacyReviewerFields();
 };
 const addReviewerStep = () => {
     userForm.value.reviewer_ids = [...(userForm.value.reviewer_ids || []), ''];
@@ -882,7 +871,6 @@ const removeReviewerStep = (index) => {
     userForm.value.reviewer_ids = (userForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
-    syncLegacyReviewerFields();
 };
 const updateReviewerStep = (index, value) => {
     const next = [...(userForm.value.reviewer_ids || [])];
@@ -890,7 +878,6 @@ const updateReviewerStep = (index, value) => {
     userForm.value.reviewer_ids = next;
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
-    syncLegacyReviewerFields();
 };
 const reviewerInputValue = (index, reviewerId) => {
     if (Object.prototype.hasOwnProperty.call(reviewerSearchTerms.value, index)) {
@@ -1058,9 +1045,6 @@ const findUserName = (predicate) => {
 
 const syncOrgSupervisors = () => {
     const form = userForm.value;
-    form.supervisor_id_1 = '';
-    form.supervisor_id_2 = '';
-    form.supervisor_id_3 = '';
     form.reviewer_template_id = '';
     form.idp_reviewer_template_id = '';
     form.reviewer_ids = [];
@@ -1074,9 +1058,6 @@ const resetOrgSelection = () => {
     userForm.value.d = '';
     userForm.value.p = '';
     userForm.value.l = '';
-    userForm.value.supervisor_id_1 = '';
-    userForm.value.supervisor_id_2 = '';
-    userForm.value.supervisor_id_3 = '';
     userForm.value.reviewer_template_id = '';
     userForm.value.idp_reviewer_template_id = '';
     userForm.value.reviewer_ids = [];
@@ -1151,12 +1132,9 @@ const resetUserForm = (data = null) => {
         p: data?.p || '',
         l: data?.l || '',
         r: normalizeUserRoleKey(data?.r || 'employee'),
-        supervisor_id_1: data?.supervisor_id_1 || '',
-        supervisor_id_2: data?.supervisor_id_2 || '',
-        supervisor_id_3: data?.supervisor_id_3 || '',
         reviewer_template_id: data?.reviewer_template_id || '',
         idp_reviewer_template_id: data?.idp_reviewer_template_id || '',
-        reviewer_ids: (data?.reviewerSteps || data?.supervisorChain || [])
+        reviewer_ids: (data?.reviewerSteps || [])
             .map((step) => selectedEvaluatorId(step?.id))
             .filter(Boolean),
         idp_reviewer_ids: (data?.idpReviewerSteps || [])
@@ -1166,32 +1144,7 @@ const resetUserForm = (data = null) => {
         structureStatus: data?.structureStatus || 'ok',
         structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
     };
-    if (!userForm.value.reviewer_ids.length) {
-        userForm.value.reviewer_ids = [
-            userForm.value.supervisor_id_1,
-            userForm.value.supervisor_id_2,
-            userForm.value.supervisor_id_3,
-        ].map(selectedEvaluatorId).filter(Boolean);
-    }
     normalizeReviewerList();
-};
-
-const handleSupervisorChange = () => {
-    userForm.value.supervisor_id_1 = selectedEvaluatorId(userForm.value.supervisor_id_1);
-    if (userForm.value.supervisor_id_1 && userForm.value.supervisor_id_1 === selectedEvaluatorId(userForm.value.supervisor_id_2)) {
-        userForm.value.supervisor_id_2 = '';
-    }
-};
-
-const handleEvaluator2Change = () => {
-    userForm.value.supervisor_id_2 = selectedEvaluatorId(userForm.value.supervisor_id_2);
-    if (userForm.value.supervisor_id_2 && userForm.value.supervisor_id_2 === selectedEvaluatorId(userForm.value.supervisor_id_1)) {
-        userForm.value.supervisor_id_1 = '';
-    }
-};
-
-const handleEvaluator3Change = () => {
-    userForm.value.supervisor_id_3 = selectedEvaluatorId(userForm.value.supervisor_id_3);
 };
 
 const openModal = (type, data = null) => {
@@ -1269,9 +1222,6 @@ const saveUser = () => {
         unit: form.unit.trim(),
         p: (isDeanRole.value ? form.job : form.p).trim(),
         l: form.l.trim(),
-        supervisor_id_1: form.supervisor_id_1 || null,
-        supervisor_id_2: form.supervisor_id_2 || null,
-        supervisor_id_3: form.supervisor_id_3 || null,
         reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
         idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
         reviewer_ids: selectedReviewerIds.value,
