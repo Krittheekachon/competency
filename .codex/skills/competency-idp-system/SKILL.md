@@ -56,7 +56,7 @@ Use these tables as the primary data ownership boundaries:
 | --- | --- | --- |
 | Organization | `users`, `user_reviewer_steps`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` | Store users, flexible reviewer chains, roles, reporting lines, and organization structure. |
 | Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `position_fc_selection_rules`, `hr_expectations` | Define competencies, expected levels, behaviors, position assignments, and FC topic selection requirements. |
-| FC topic approval | `fc_topic_selections`, `fc_topic_selection_items` | Store employee-selected FC topics and first-supervisor approval before self-assessment opens. |
+| FC topic approval | `fc_topic_selections`, `fc_topic_selection_items` | Store employee-selected FC topics and first configured reviewer approval before self-assessment opens. |
 | Assessment | `assessments`, `assessment_indicator_results`, `scores` | Store competency assessments, checked behaviors, reviewer scores, decisions, and comments. |
 | Gap | `competency_gaps` | Store the approved result, expected level, actual level, level gap, and `requires_idp`. |
 | IDP plan | `idps`, `idp_items`, `idp_item_reviews` | Store one user plan, one item for each negative competency gap, and append-only reviewer decisions. |
@@ -72,7 +72,7 @@ Preserve these core business rules:
 - Submit, approve, or reject each competency item separately. Other items may remain draft.
 - Require a rejection comment and return only that item to `revision_required`.
 - Filter Formal Learning through `learning_catalog_competency` so the employee sees only catalogs related to the failed competency.
-- Support a flexible reviewer chain through `user_reviewer_steps`; treat `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` as old schema fields only, not active runtime data.
+- Support flexible reviewer chains through `user_reviewer_steps`; the old `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` columns have been removed and must not be read, written, or reintroduced.
 
 ## Assessment Flow
 
@@ -99,8 +99,8 @@ The competency assessment flow runs from HR setup through assessment approval, g
    - The user must select exactly the HR-configured count, then submit the selection to the first configured reviewer for approval.
    - Store the request in `fc_topic_selections` and the selected competency rows in `fc_topic_selection_items`.
 
-5. **First supervisor approves FC topics**
-   - Only the first supervisor recorded in `submitted_to` may approve or return the FC topic selection.
+5. **First reviewer approves FC topics**
+   - Only the first configured reviewer recorded in `submitted_to` may approve or return the FC topic selection.
    - Approval writes `fc_topic_selections.status = approved`.
    - Rejection requires a comment, writes `status = revision_required`, and allows the user to select and submit again.
    - CC and MC do not require topic pre-selection, but if the position requires FC selection, the whole assessment remains locked until the FC selection is approved.
@@ -132,7 +132,7 @@ The competency assessment flow runs from HR setup through assessment approval, g
 Use these canonical role keys:
 
 - `employee`: employee
-- `supervisor`: first supervisor / first reviewer
+- `supervisor`: first reviewer / unit-head role
 - `dept_head`: department head / department reviewer
 - `dean`: faculty executive / final executive reviewer
 - `hr`: human resources
@@ -160,7 +160,7 @@ Do not add a new role alias in only one controller. Search all `normalizeRoleKey
 
 Use `AssessmentController` as the authority for write behavior.
 
-The reviewer chain is configured by ordered rows in `user_reviewer_steps`. Do not require one specific evaluator role for one fixed step. A non-admin user has a valid reporting line when at least one active reviewer is assigned.
+The assessment reviewer chain is configured by ordered rows in `user_reviewer_steps` where `chain_type = assessment`. Do not require one specific evaluator role for one fixed step. A non-admin user has a valid reporting line when at least one active assessment reviewer is assigned.
 
 For positions with `position_fc_selection_rules.required_fc_count > 0`, follow the FC pre-selection rules described in **Assessment Flow** before allowing any self-assessment save or submit.
 
@@ -178,7 +178,7 @@ draft / revision_required
 Rules:
 
 - Permit employee editing only in `draft` or `revision_required`.
-- Require an assigned evaluator before ordinary users can self-assess.
+- Require an assigned assessment reviewer before ordinary users can self-assess.
 - Require approved FC topic selection before any self-assessment save/draft when the user's position has a positive `required_fc_count`.
 - Permit assessment only for approved selected FC topics; never allow unselected FC topics to be assessed for that user/position.
 - Allow only the reviewer assigned to the current step to approve or reject.
@@ -208,7 +208,7 @@ Reviewer templates are separated by `chain_type`:
 The actual reviewer workflow for each user must be stored in `user_reviewer_steps`.
 When an admin applies a template to a user, resolve or copy the selected template steps into that user's active reviewer steps.
 Runtime approval checks must read the user's active reviewer steps, not the template directly.
-`ReviewerChainResolver` returns active rows from `user_reviewer_steps`; missing rows mean the user has no configured chain. Do not fall back to `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3` for runtime permissions.
+`ReviewerChainResolver` returns active rows from `user_reviewer_steps`; missing rows mean the user has no configured chain. Do not fall back to the removed `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3` columns for runtime permissions.
 
 Implementation notes for future maintainers:
 
@@ -218,18 +218,30 @@ Implementation notes for future maintainers:
 - Store IDP templates with `reviewer_chain_templates.chain_type = idp`.
 - Applying an assessment template must update:
   - `users.reviewer_template_id`;
-  - `user_reviewer_steps` rows where `chain_type = assessment`;
+  - `user_reviewer_steps` rows where `chain_type = assessment`.
 - Applying an IDP template must update:
   - `users.idp_reviewer_template_id`;
   - `user_reviewer_steps` rows where `chain_type = idp`.
-- Templates must not update `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3`.
+- Templates must not update, query, or recreate `users.supervisor_id_1`, `supervisor_id_2`, or `supervisor_id_3`.
 - When replacing a user's template, remove old template assignments only for the same `chain_type`. Do not remove the user's assessment assignment when changing IDP, and do not remove the user's IDP assignment when changing assessment.
 - The admin user form can still edit reviewer IDs directly. Direct edits should also write the resolved chain into `user_reviewer_steps` with the correct `chain_type`.
 - The template selected in the user form is a shortcut for filling reviewer IDs. After save, the copied reviewer rows in `user_reviewer_steps` are the runtime source of truth.
 - The reviewer template list/detail modal in `resources/js/Pages/Admin/Dashboard.vue` is shared by assessment and IDP. Use `activeReviewerTemplateType` to switch labels, template lists, payload `chain_type`, assigned users, and selected reviewer steps.
-- In the user management table, warnings should be based on missing active assessment reviewer steps and missing active IDP reviewer steps, not on legacy supervisor columns.
+- In the user management table, warnings must be based on missing active assessment reviewer steps and missing active IDP reviewer steps.
 - Use `App\Services\ReviewerTemplateResolver` when resolving template steps for a specific user. This keeps future resolver types, role-based steps, and fixed-user steps in one place.
-- Keep feature coverage for both flows. At minimum, test that assessment templates write `reviewer_template_id` plus assessment steps and that IDP templates write `idp_reviewer_template_id` plus IDP steps without touching supervisor mirrors.
+- Keep feature coverage for both flows. At minimum, test that assessment templates write `reviewer_template_id` plus assessment steps and that IDP templates write `idp_reviewer_template_id` plus IDP steps.
+
+### Reviewer Chain Runtime
+
+Use `App\Services\ReviewerChainResolver` as the central read path for reviewer chains.
+
+- `chain_type = assessment` controls competency assessment approval, FC topic approval routing, role dashboard reviewer permissions, and assessment notifications.
+- `chain_type = idp` controls IDP item submission, IDP item approval, IDP approval dashboard rows, and IDP reviewer permission checks.
+- `DashboardController` should expose reviewer chains from `ReviewerChainResolver::payloadForUser()`.
+- `NotificationService` should resolve recipients from reviewer chains, not user relationship aliases.
+- The `users` table stores template references and organization profile data, but not reviewer step IDs.
+- If a user has no active assessment reviewer steps, block self-assessment and show an admin-facing warning.
+- If a user has no active IDP reviewer steps, block IDP submission and show the configured IDP approval-chain error.
 
 ### Competency Gaps And IDP
 
@@ -277,7 +289,7 @@ idp_items.status
 ```
 
 - Permit an employee to submit one complete `idp_item` while other competency items remain draft.
-- Resolve review steps from `user_reviewer_steps`; missing rows mean the user has no configured IDP approval chain.
+- Resolve IDP review steps from `user_reviewer_steps` where `chain_type = idp`; missing rows mean the user has no configured IDP approval chain.
 - Lock every `review_step_N` and approved item against employee editing and background auto-save.
 - Continue auto-saving only editable draft or revision-required items.
 - Let only the reviewer assigned to the current step approve or reject the item.
@@ -357,6 +369,8 @@ When changing delivery codes, update `learning_catalog_delivery_types` through `
 - Keep Thai labels exact unless the task explicitly requests copy changes.
 
 ## Database Changes
+
+The legacy `users.supervisor_id_1`, `supervisor_id_2`, and `supervisor_id_3` columns were dropped by `2026_07_01_000000_drop_legacy_supervisor_columns_from_users_table.php`. Do not add application logic, seeders, factories, or tests that depend on those columns.
 
 1. Check existing migrations and `php artisan migrate:status`.
 2. Create a new forward migration for a database that teammates may already have migrated.
