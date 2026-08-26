@@ -218,6 +218,13 @@ class UserController extends Controller
             ]);
         }
 
+        if (
+            in_array($data['w'], ['สายสนับสนุน', 'สายงานสนับสนุน'], true)
+            && count(array_filter(array_map('trim', explode(' > ', $data['d'])))) === 3
+        ) {
+            return $this->validatedSupportStructureData($data, (int) $worklineId);
+        }
+
         $jobFamilyName = $this->jobFamilyNameFromDepartment($data['d']);
         $jobFamily = $jobFamilyName
             ? DB::table('job_families')
@@ -252,16 +259,56 @@ class UserController extends Controller
         $levelId = DB::table('levels')
             ->where('workline_id', $worklineId)
             ->where('name', $data['l'])
-            ->where(function ($query) use ($jobFamily) {
-                $query->whereNull('job_family_id')
-                    ->orWhere('job_family_id', $jobFamily->id);
-            })
+            ->whereNull('job_family_id')
             ->value('id');
 
         if (!$levelId) {
             throw ValidationException::withMessages([
-                'l' => 'กรุณาเลือกระดับตำแหน่งที่กำหนดไว้ในสายงานหรือกลุ่มงานนี้',
+                'l' => 'กรุณาเลือกระดับตำแหน่งที่กำหนดไว้ในสายงานนี้',
             ]);
+        }
+
+        $data['_position_id'] = $positionId;
+        $data['_level_id'] = $levelId;
+
+        return $data;
+    }
+
+    private function validatedSupportStructureData(array $data, int $worklineId): array
+    {
+        $path = array_values(array_filter(array_map('trim', explode(' > ', $data['d']))));
+        if (count($path) !== 3) {
+            throw ValidationException::withMessages(['d' => 'กรุณาเลือกฝ่าย งาน และหน่วยให้ครบถ้วน']);
+        }
+
+        [$divisionName, $workName, $unitName] = $path;
+        $unitId = DB::table('support_units')
+            ->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+            ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
+            ->where('support_departments.name', $divisionName)
+            ->where('support_works.name', $workName)
+            ->where('support_units.name', $unitName)
+            ->value('support_units.id');
+
+        if (! $unitId) {
+            throw ValidationException::withMessages(['d' => 'กรุณาเลือกหน่วยที่กำหนดไว้ในฝ่ายและงานนี้']);
+        }
+
+        $positionId = DB::table('positions')
+            ->where('support_unit_id', $unitId)
+            ->where('name', $data['p'] ?? '')
+            ->value('id');
+        if (! $positionId) {
+            throw ValidationException::withMessages(['p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในหน่วยนี้']);
+        }
+
+        $levelId = DB::table('levels')
+            ->where('workline_id', $worklineId)
+            ->whereNull('job_family_id')
+            ->where('name', $data['l'])
+            ->value('id');
+        if (! $levelId) {
+            throw ValidationException::withMessages(['l' => 'กรุณาเลือกระดับตำแหน่งที่กำหนดไว้ในสายงานสนับสนุน']);
         }
 
         $data['_position_id'] = $positionId;

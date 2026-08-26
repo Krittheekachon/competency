@@ -11,6 +11,28 @@ class AdminStructureControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_admin_can_create_position_under_support_unit(): void
+    {
+        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $worklineId = DB::table('worklines')->insertGetId(['name' => 'สายสนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('job_families')->insert(['workline_id' => $worklineId, 'name' => 'ตำแหน่งสายสนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
+        $departmentId = DB::table('support_departments')->insertGetId(['name' => 'ฝ่ายบริหาร', 'created_at' => now(), 'updated_at' => now()]);
+        $workId = DB::table('support_works')->insertGetId(['support_department_id' => $departmentId, 'name' => 'งานบุคคล', 'created_at' => now(), 'updated_at' => now()]);
+        $unitId = DB::table('support_units')->insertGetId(['support_work_id' => $workId, 'name' => 'หน่วยพัฒนา', 'created_at' => now(), 'updated_at' => now()]);
+
+        $this->actingAs($admin)->post(route('admin.structure.positions.store'), [
+            'division_name' => 'ฝ่ายบริหาร',
+            'work_name' => 'งานบุคคล',
+            'unit_name' => 'หน่วยพัฒนา',
+            'name' => 'นักทรัพยากรบุคคล',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('positions', [
+            'support_unit_id' => $unitId,
+            'name' => 'นักทรัพยากรบุคคล',
+        ]);
+    }
+
     public function test_admin_can_create_update_and_delete_workline(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
@@ -252,7 +274,7 @@ class AdminStructureControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_scope_levels_to_a_job_family(): void
+    public function test_admin_cannot_scope_levels_to_a_job_family(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
         $worklineId = DB::table('worklines')->insertGetId([
@@ -266,13 +288,6 @@ class AdminStructureControllerTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $researcherFamilyId = DB::table('job_families')->insertGetId([
-            'workline_id' => $worklineId,
-            'name' => 'นักวิจัย',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $this->actingAs($admin)
             ->post(route('admin.structure.levels.store'), [
                 'workline_name' => 'สายวิชาการ',
@@ -280,45 +295,9 @@ class AdminStructureControllerTest extends TestCase
                 'name' => 'ผศ',
                 'expected_level' => 3,
             ])
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasErrors(['job_family_name']);
 
-        $this->actingAs($admin)
-            ->post(route('admin.structure.levels.store'), [
-                'workline_name' => 'สายวิชาการ',
-                'job_family_name' => 'นักวิจัย',
-                'name' => 'นักวิจัยระดับ 1',
-                'expected_level' => 2,
-            ])
-            ->assertRedirect();
-
-        $this->assertDatabaseHas('levels', [
-            'workline_id' => $worklineId,
-            'job_family_id' => $teacherFamilyId,
-            'name' => 'ผศ',
-            'expected_level' => 3,
-        ]);
-        $this->assertDatabaseHas('levels', [
-            'workline_id' => $worklineId,
-            'job_family_id' => $researcherFamilyId,
-            'name' => 'นักวิจัยระดับ 1',
-            'expected_level' => 2,
-        ]);
-
-        $this->actingAs($admin)
-            ->put(route('admin.structure.levels.update'), [
-                'workline_name' => 'สายวิชาการ',
-                'job_family_name' => 'อาจารย์',
-                'old_name' => 'ผศ',
-                'name' => 'ผู้ช่วยศาสตราจารย์',
-                'expected_level' => 3,
-            ])
-            ->assertRedirect();
-
-        $this->assertDatabaseHas('levels', [
-            'workline_id' => $worklineId,
-            'job_family_id' => $teacherFamilyId,
-            'name' => 'ผู้ช่วยศาสตราจารย์',
-        ]);
         $this->assertDatabaseMissing('levels', [
             'workline_id' => $worklineId,
             'job_family_id' => $teacherFamilyId,
@@ -402,7 +381,7 @@ class AdminStructureControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_cannot_reuse_level_name_in_same_scope_but_can_reuse_it_in_different_job_family(): void
+    public function test_admin_cannot_reuse_level_name_in_same_workline_but_can_reuse_it_in_another_workline(): void
     {
         $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
         $worklineId = DB::table('worklines')->insertGetId([
@@ -410,25 +389,15 @@ class AdminStructureControllerTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('job_families')->insert([
-            [
-                'workline_id' => $worklineId,
-                'name' => 'อาจารย์',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-            [
-                'workline_id' => $worklineId,
-                'name' => 'นักวิจัย',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
+        DB::table('worklines')->insert([
+            'name' => 'สายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $this->actingAs($admin)
             ->post(route('admin.structure.levels.store'), [
                 'workline_name' => 'สายวิชาการ',
-                'job_family_name' => 'อาจารย์',
                 'name' => 'ระดับ 1',
                 'expected_level' => 1,
             ])
@@ -437,8 +406,7 @@ class AdminStructureControllerTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('admin.structure.levels.store'), [
-                'workline_name' => 'สายวิชาการ',
-                'job_family_name' => 'นักวิจัย',
+                'workline_name' => 'สายสนับสนุน',
                 'name' => 'ระดับ 1',
                 'expected_level' => 2,
             ])
@@ -448,7 +416,6 @@ class AdminStructureControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.structure.levels.store'), [
                 'workline_name' => 'สายวิชาการ',
-                'job_family_name' => 'อาจารย์',
                 'name' => 'ระดับ 1',
                 'expected_level' => 3,
             ])

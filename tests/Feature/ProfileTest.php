@@ -61,6 +61,35 @@ class ProfileTest extends TestCase
         $this->assertNotNull($user->refresh()->email_verified_at);
     }
 
+    public function test_profile_update_cannot_change_admin_owned_organization_fields(): void
+    {
+        $user = User::factory()->create([
+            'workline' => 'สายวิชาการ',
+            'department' => 'ภาควิชาคอมพิวเตอร์',
+            'position' => 'อาจารย์',
+            'level' => 'ระดับ 1',
+        ]);
+
+        $this->actingAs($user)
+            ->patch('/profile', [
+                'name' => $user->name,
+                'email' => $user->email,
+                'workline' => 'สายสนับสนุน',
+                'department' => 'ฝ่ายปลอม',
+                'position' => 'ตำแหน่งปลอม',
+                'level' => 'ระดับเฉพาะปลอม',
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect('/profile');
+
+        $user->refresh();
+
+        $this->assertSame('สายวิชาการ', $user->workline);
+        $this->assertSame('ภาควิชาคอมพิวเตอร์', $user->department);
+        $this->assertSame('อาจารย์', $user->position);
+        $this->assertSame('ระดับ 1', $user->level);
+    }
+
     public function test_user_can_delete_their_account(): void
     {
         $user = User::factory()->create();

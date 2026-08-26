@@ -55,10 +55,6 @@ class ProfileController extends Controller
             'last_name_en' => $data['last_name_en'] ?? '',
             'email' => $data['email'] ?: $user->email,
             'phone' => $data['phone'] ?? '',
-            'workline' => $data['workline'] ?? '',
-            'department' => $data['department'] ?? '',
-            'position' => $data['position'] ?? '',
-            'level' => $data['level'] ?? '',
             'profile_photo' => $data['profile_photo'] ?? null,
         ]);
 

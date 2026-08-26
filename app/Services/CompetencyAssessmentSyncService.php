@@ -168,21 +168,28 @@ class CompetencyAssessmentSyncService
     private function levelIdsForUser(User $user): Collection
     {
         $levelIds = collect();
+        $worklineId = $user->workline
+            ? DB::table('worklines')->where('name', $user->workline)->value('id')
+            : null;
 
-        if ($user->level_id) {
-            $levelIds->push($user->level_id);
+        if (! $worklineId) {
+            return $levelIds;
         }
 
-        foreach ([$user->level, $user->position] as $levelName) {
-            if (! $levelName) {
-                continue;
-            }
+        if ($user->level_id) {
+            $levelIds = $levelIds->merge(DB::table('levels')
+                ->where('id', $user->level_id)
+                ->where('workline_id', $worklineId)
+                ->whereNull('job_family_id')
+                ->pluck('id'));
+        }
 
-            $levelIds = $levelIds->merge(
-                DB::table('levels')
-                    ->where('name', $levelName)
-                    ->pluck('id')
-            );
+        if ($user->level) {
+            $levelIds = $levelIds->merge(DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->whereNull('job_family_id')
+                ->where('name', $user->level)
+                ->pluck('id'));
         }
 
         return $levelIds->filter()->unique()->values();

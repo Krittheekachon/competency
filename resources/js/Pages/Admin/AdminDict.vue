@@ -309,7 +309,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       <div class="flex ic jb mb20">
         <div>
           <div class="sec-t">{view.value === 'list' ? 'พจนานุกรมสมรรถนะ ' : view.value === 'add' ? 'เพิ่มสมรรถนะการประเมิน ' : 'แก้ไขสมรรถนะการประเมิน '}</div>
-          <div class="sec-s">{view.value === 'list' ? 'CC (Core) · MC (Managerial) · FC1/FC2 (Functional) · ระดับ 1–5 · พฤติกรรมบ่งชี้' : 'กรอกข้อมูลสมรรถนะและรายละเอียดระดับพฤติกรรม'}</div>
+          <div class="sec-s">{view.value === 'list' ? 'กำหนดสมรรถนะรายข้อ ' : 'กรอกข้อมูลสมรรถนะและรายละเอียดระดับพฤติกรรม'}</div>
         </div>
         <div class="flex" style={{ gap: "8px" }}>
           {view.value === 'list' ?

@@ -120,7 +120,6 @@ class DashboardController extends Controller
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'competencies' => $competencies,
-                'assignedCompetenciesByScope' => $this->assignedCompetenciesByScope(),
                 'learningMethods' => $learningMethods,
                 'activeCycleName' => $activeCycleName,
                 'hrCatalogItems' => $this->learningCatalogItems(),
@@ -421,12 +420,7 @@ class DashboardController extends Controller
             $levelExists = DB::table('levels')
                 ->where('workline_id', $worklineId)
                 ->where('name', $user->level)
-                ->when($jobFamilyId, function ($query) use ($jobFamilyId) {
-                    $query->where(function ($query) use ($jobFamilyId) {
-                        $query->whereNull('job_family_id')
-                            ->orWhere('job_family_id', $jobFamilyId);
-                    });
-                })
+                ->whereNull('job_family_id')
                 ->exists();
 
             if (!$levelExists) {
@@ -472,7 +466,7 @@ class DashboardController extends Controller
             ->get();
 
         $positionsByFamily = DB::table('positions')
-            ->select('id', 'job_family_id', 'name')
+            ->select('id', 'job_family_id', 'support_unit_id', 'name')
             ->orderBy('name')
             ->get()
             ->groupBy('job_family_id');
@@ -489,10 +483,28 @@ class DashboardController extends Controller
             ->groupBy('support_department_id');
 
         $supportUnitsByWork = DB::table('support_units')
-            ->select('support_work_id', 'name')
+            ->select('id', 'support_work_id', 'name')
             ->orderBy('name')
             ->get()
             ->groupBy('support_work_id');
+
+        $positionsBySupportUnit = DB::table('positions')
+            ->whereNotNull('support_unit_id')
+            ->select('support_unit_id', 'name')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('support_unit_id');
+
+        $supportUnitContextById = $supportDepartments
+            ->flatMap(fn (object $department) => ($supportWorksByDepartment[$department->id] ?? collect())
+                ->flatMap(fn (object $work) => ($supportUnitsByWork[$work->id] ?? collect())
+                    ->mapWithKeys(fn (object $unit) => [
+                        'unit:'.$unit->id => [
+                            'key' => implode('|||', [$department->name, $work->name, $unit->name]),
+                            'name' => $unit->name,
+                        ],
+                    ])))
+            ->all();
 
         $supportOrg = $supportDepartments
             ->mapWithKeys(fn (object $department) => [
@@ -500,8 +512,11 @@ class DashboardController extends Controller
                     ->map(fn (object $work) => [
                         'work' => $work->name,
                         'units' => ($supportUnitsByWork[$work->id] ?? collect())
-                            ->pluck('name')
-                            ->values(),
+                            ->map(fn (object $unit) => [
+                                'key' => $supportUnitContextById['unit:'.$unit->id]['key'],
+                                'name' => $unit->name,
+                                'positions' => ($positionsBySupportUnit[$unit->id] ?? collect())->pluck('name')->values(),
+                            ])->values(),
                     ])
                     ->values(),
             ])
@@ -517,7 +532,7 @@ class DashboardController extends Controller
         ]);
 
         return [
-            'worklines' => DB::table('worklines')->orderByDesc('id')->pluck('name'),
+            'worklines' => collect(['สายวิชาการ', 'สายสนับสนุน']),
             'jobFamiliesByWorkline' => $jobFamiliesWithPositions
                 ->groupBy('worklineName')
                 ->map(fn ($families) => $families->mapWithKeys(fn (array $family) => [
@@ -548,6 +563,12 @@ class DashboardController extends Controller
                         'name' => $position->name,
                         'jobFamilyName' => $family->name,
                         'worklineName' => $family->workline_name,
+                        'supportUnitKey' => $position->support_unit_id
+                            ? ($supportUnitContextById['unit:'.$position->support_unit_id]['key'] ?? null)
+                            : null,
+                        'supportUnitName' => $position->support_unit_id
+                            ? ($supportUnitContextById['unit:'.$position->support_unit_id]['name'] ?? null)
+                            : null,
                     ]))
                 ->values(),
             'levels' => DB::table('levels')->orderBy('name')->pluck('name'),
@@ -561,19 +582,6 @@ class DashboardController extends Controller
                 ->groupBy('workline_name')
                 ->map(fn ($levels) => $levels->pluck('name')->values())
                 ->all(),
-            'levelsByJobFamily' => DB::table('levels')
-                ->join('job_families', 'levels.job_family_id', '=', 'job_families.id')
-                ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
-                ->select('levels.name', 'job_families.name as job_family_name', 'worklines.name as workline_name')
-                ->orderBy('levels.name')
-                ->get()
-                ->filter(fn (object $level) => $level->workline_name !== null)
-                ->groupBy('workline_name')
-                ->map(fn ($levelsByWorkline) => $levelsByWorkline
-                    ->groupBy('job_family_name')
-                    ->map(fn ($levels) => $levels->pluck('name')->values())
-                    ->all())
-                ->all(),
             'levelExpectationsByWorkline' => DB::table('levels')
                 ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
                 ->select('levels.name', 'levels.expected_level', 'worklines.name as workline_name')
@@ -586,21 +594,6 @@ class DashboardController extends Controller
                     $level->name => $level->expected_level,
                 ]))
                 ->all(),
-            'levelExpectationsByJobFamily' => DB::table('levels')
-                ->join('job_families', 'levels.job_family_id', '=', 'job_families.id')
-                ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
-                ->select('levels.name', 'levels.expected_level', 'job_families.name as job_family_name', 'worklines.name as workline_name')
-                ->orderBy('levels.name')
-                ->get()
-                ->filter(fn (object $level) => $level->workline_name !== null)
-                ->groupBy('workline_name')
-                ->map(fn ($levelsByWorkline) => $levelsByWorkline
-                    ->groupBy('job_family_name')
-                    ->map(fn ($levels) => $levels->mapWithKeys(fn (object $level) => [
-                        $level->name => $level->expected_level,
-                    ])->all())
-                    ->all())
-                ->all(),
         ];
     }
 
@@ -610,8 +603,6 @@ class DashboardController extends Controller
 
         unset($structure['levelsByWorkline']);
         unset($structure['levelExpectationsByWorkline']);
-        unset($structure['levelsByJobFamily']);
-        unset($structure['levelExpectationsByJobFamily']);
 
         $structure['positionCompetencies'] = DB::table('position_competencies')
             ->select('position_id', 'competency_id')
@@ -666,44 +657,6 @@ class DashboardController extends Controller
                     'levels' => $levels,
                 ];
             });
-    }
-
-    private function assignedCompetenciesByScope(): array
-    {
-        $roundId = $this->activeRoundId();
-
-        if (! $roundId) {
-            return [];
-        }
-
-        return DB::table('hr_expectations')
-            ->join('competencies', 'hr_expectations.competency_id', '=', 'competencies.id')
-            ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->leftJoin('job_families', 'hr_expectations.job_family_id', '=', 'job_families.id')
-            ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
-            ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-            ->where('hr_expectations.assessment_round_id', $roundId)
-            ->select(
-                'worklines.name as workline_name',
-                'job_families.name as job_family_name',
-                'levels.name as level_name',
-                'competencies.id',
-                'competencies.competency_type_id',
-                'competencies.code',
-                'competencies.name',
-                'competencies.detail',
-                'competency_types.code as type_code',
-                DB::raw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
-            )
-            ->orderBy('competencies.code')
-            ->get()
-            ->groupBy(fn (object $item): string => implode('|', [
-                $item->workline_name ?: '-',
-                $item->job_family_name ?: '-',
-                $item->level_name ?: '-',
-            ]))
-            ->map(fn ($items) => $items->map(fn (object $item): array => $this->compactCompetencyPayload($item))->values()->all())
-            ->all();
     }
 
     private function assignedCompetenciesForUser(User $user): array

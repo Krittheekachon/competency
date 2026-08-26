@@ -44,6 +44,10 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    supportOrg: {
+        type: Object,
+        default: () => ({}),
+    },
     positionLookup: {
         type: Array,
         default: () => [],
@@ -63,10 +67,6 @@ const props = defineProps({
     competencies: {
         type: Array,
         default: () => [],
-    },
-    assignedCompetenciesByScope: {
-        type: Object,
-        default: () => ({}),
     },
     learningMethods: {
         type: Array,
@@ -93,12 +93,10 @@ const isSidebarOpen = ref(true);
 const activePage = ref('hr-position-competencies');
 const activeModal = ref('');
 const selectedWorkline = ref('');
-const selectedJobFamily = ref('');
+const selectedOrgScope = ref('');
 const selectedPosition = ref('');
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
-const assignedByScope = ref(props.assignedCompetenciesByScope || {});
-const savingAssignment = ref(false);
 const selectedDetailCompetency = ref(null);
 const expandedDetailLevels = ref({});
 const catalogCompetencySearch = ref('');
@@ -198,32 +196,40 @@ const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.
 const updateUsers = () => {};
 const worklineOptions = computed(() => props.worklines || []);
 
-const familiesForSelectedWorkline = computed(() => {
-    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
-    return Object.keys(groups);
-});
+const isSupportWorkline = computed(() => selectedWorkline.value === 'สายสนับสนุน');
+const supportUnitScopes = computed(() => Object.entries(props.supportOrg || {}).flatMap(([division, works]) =>
+    (works || []).flatMap((work) => (work.units || []).map((unit) => ({
+        key: unit.key || [division, work.work, unit.name].join('|||'),
+        label: unit.name,
+        positions: unit.positions || [],
+    }))),
+));
+const organizationScopes = computed(() => {
+    if (isSupportWorkline.value) return supportUnitScopes.value;
 
-const rawPositionsForSelectedFamily = computed(() => {
-    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
-    return groups[selectedJobFamily.value] || [];
+    const departments = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return Object.keys(departments).map((name) => ({ key: name, label: name, positions: departments[name] || [] }));
 });
+const selectedScope = computed(() => organizationScopes.value.find((scope) => scope.key === selectedOrgScope.value) || null);
 
 const levelsForSelectedWorkline = computed(() => {
     return props.levelsByWorkline?.[selectedWorkline.value] || [];
 });
 
 const positionOptions = computed(() => {
-    if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
-    return [];
+    return selectedScope.value?.positions || [];
 });
-const needsPositionBeforeMapping = computed(() => Boolean(selectedJobFamily.value && !positionOptions.value.length));
+const needsPositionBeforeMapping = computed(() => Boolean(selectedOrgScope.value && !positionOptions.value.length));
 
 const allPositionCount = computed(() => {
     return worklineOptions.value.reduce((total, workline) => {
-        const families = props.jobFamiliesByWorkline?.[workline] || {};
-        return total + Object.entries(families || {}).reduce((sum, [familyName, positions]) => {
+        if (workline === 'สายสนับสนุน') {
+            return total + supportUnitScopes.value.reduce((sum, unit) => sum + unit.positions.length, 0);
+        }
+        const departments = props.jobFamiliesByWorkline?.[workline] || {};
+        return total + Object.entries(departments || {}).reduce((sum, [departmentName, positions]) => {
             const count = Array.isArray(positions) ? positions.length : 0;
-            return sum + (familyName ? count : 0);
+            return sum + (departmentName ? count : 0);
         }, 0);
     }, 0);
 });
@@ -231,12 +237,13 @@ const allPositionCount = computed(() => {
 const configuredPositionCount = computed(() => Object.values(props.positionCompetencies || {}).filter((items) => items.length).length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
-const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
+const organizationScopeLabel = computed(() => selectedScope.value?.label || (isSupportWorkline.value ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา'));
 const currentPosition = computed(() => {
     return (props.positionLookup || []).find((position) => {
-        return position.worklineName === selectedWorkline.value
-            && position.jobFamilyName === selectedJobFamily.value
-            && position.name === selectedPosition.value;
+        if (position.worklineName !== selectedWorkline.value || position.name !== selectedPosition.value) return false;
+        return isSupportWorkline.value
+            ? position.supportUnitKey === selectedOrgScope.value
+            : position.jobFamilyName === selectedOrgScope.value;
     }) || null;
 });
 const currentPositionId = computed(() => currentPosition.value?.id || null);
@@ -313,8 +320,8 @@ watch(worklineOptions, (next) => {
     if (!selectedWorkline.value && next.length) selectedWorkline.value = next[0];
 }, { immediate: true });
 
-watch(familiesForSelectedWorkline, (next) => {
-    if (!next.includes(selectedJobFamily.value)) selectedJobFamily.value = next[0] || '';
+watch(organizationScopes, (next) => {
+    if (!next.some((scope) => scope.key === selectedOrgScope.value)) selectedOrgScope.value = next[0]?.key || '';
 }, { immediate: true });
 
 watch(positionOptions, (next) => {
@@ -379,26 +386,6 @@ const openCatalogEdit = (item) => {
         isActive: Boolean(item.isActive),
     };
 
-    saveAssignedForCurrentScope(items);
-};
-
-const saveAssignedForCurrentScope = (items) => {
-    if (!selectedWorkline.value || !selectedJobFamily.value || !selectedPosition.value) return;
-
-    savingAssignment.value = true;
-
-    router.post(route('hr.competency-assignments.store'), {
-        workline_name: selectedWorkline.value,
-        job_family_name: selectedJobFamily.value,
-        level_name: selectedPosition.value,
-        competency_ids: items.map((item) => item.id),
-    }, {
-        preserveScroll: true,
-        preserveState: true,
-        onFinish: () => {
-            savingAssignment.value = false;
-        },
-    });
 };
 
 const catalogPayload = () => ({
@@ -635,18 +622,18 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-picker">
                             <div class="fg mb0">
-                                <label class="lbl">กลุ่มงาน / Job Family</label>
-                                <select v-model="selectedJobFamily" class="sel">
-                                    <option value="">ยังไม่มีข้อมูลกลุ่มงาน</option>
-                                    <option v-for="family in familiesForSelectedWorkline" :key="family" :value="family">
-                                        {{ family }}
+                                <label class="lbl">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</label>
+                                <select v-model="selectedOrgScope" class="sel">
+                                    <option value="">{{ isSupportWorkline ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา' }}</option>
+                                    <option v-for="scope in organizationScopes" :key="scope.key" :value="scope.key">
+                                        {{ scope.label }}
                                     </option>
                                 </select>
                             </div>
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
                                 <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
-                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งในกลุ่มงาน</option>
+                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
                                         {{ position }}
                                     </option>
@@ -662,12 +649,12 @@ const formatWeight = (weight) => {
                         <div class="position-card selected">
                             <div class="position-card-label">ตำแหน่งที่กำลังกำหนด</div>
                             <div class="position-card-title">{{ positionLabel }}</div>
-                            <div class="position-card-sub">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ jobFamilyLabel }}</div>
+                            <div class="position-card-sub">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ organizationScopeLabel }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
-                            <div class="position-card-sub">{{ savingAssignment ? 'กำลังบันทึก' : (assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ') }}</div>
+                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
                         </div>
                         <div class="position-card type-breakdown-card">
                             <div class="position-card-label">แยกตามประเภทที่กำหนด</div>
@@ -749,7 +736,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <div class="assigned-actions">
                                         <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
-                                        <button class="btn btn-s btn-sm danger-text" :disabled="savingAssignment" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
                                     </div>
                                 </div>
                             </div>
@@ -786,7 +773,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <button
                                         class="btn btn-p btn-sm"
-                                        :disabled="savingAssignment || !selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        :disabled="!selectedPosition || assignedCompetencyIds.has(item.id)"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >

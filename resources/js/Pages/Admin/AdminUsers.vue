@@ -2,7 +2,7 @@
   <div class="admin-users-head mb20">
     <div>
       <div class="sec-t">จัดการผู้ใช้งาน </div>
-      <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
+      <div class="sec-s">รายชื่อบุคลากรทั้งหมด , กำหนดบทบาทในระบบ และลำดับการประเมิน</div>
     </div>
     <div class="action-row">
       <!-- <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button> -->

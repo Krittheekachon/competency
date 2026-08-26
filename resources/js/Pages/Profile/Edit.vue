@@ -67,7 +67,7 @@ const fieldGroups = computed(() => [
     { key: 'last_name_en', label: 'Last Name', required: true },
     { key: 'email', label: 'อีเมล', type: 'email' },
     { key: 'phone', label: 'เบอร์โทรศัพท์' },
-    { key: 'department', label: 'สังกัด/หน่วยงาน' },
+    { key: 'department', label: 'สังกัด/หน่วยงาน', readonly: true },
 ]);
 
 const displayValue = (field) => field.value ?? form[field.key] ?? '';

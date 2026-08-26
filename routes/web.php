@@ -18,7 +18,6 @@ use App\Http\Controllers\Employee\IdpController as EmployeeIdpController;
 use App\Http\Controllers\Employee\IdpActivityUpdateController;
 use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
 use App\Http\Controllers\FcTopicSelectionApprovalController;
-use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 use App\Http\Controllers\IdpApprovalController;
@@ -93,7 +92,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
-    Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
     Route::post('/assessments/draft', [AssessmentController::class, 'draft'])->name('assessments.draft');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');

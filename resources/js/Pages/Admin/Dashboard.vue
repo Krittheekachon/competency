@@ -10,7 +10,6 @@ import {
 } from '../../data';
 import AdminDict from './AdminDict.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
-import AdminOrg from './AdminOrg.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
@@ -68,8 +67,6 @@ const users = ref(clone(page.props.users || []));
 const activeModal = ref(null);
 const editingUserKey = ref(null);
 const isSavingUser = ref(false);
-const orgEditMode = ref(false);
-const modalReturnPage = ref('admin-users');
 const supervisorSearch = ref('');
 const evaluator2Search = ref('');
 const showReviewerModal = ref(false);
@@ -78,6 +75,8 @@ const showAssessmentTemplateCreate = ref(false);
 const activeAssessmentTemplateId = ref(null);
 const editingAssessmentTemplateId = ref(null);
 const assessmentTemplateMemberPick = ref('');
+const assessmentTemplateError = ref('');
+const isSavingAssessmentTemplate = ref(false);
 const reviewerSearchTerms = ref({});
 const activeReviewerDropdown = ref(null);
 const assessmentTemplateForm = ref({
@@ -165,8 +164,6 @@ const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
 const levelExpectationsByWorkline = ref(clone(page.props.levelExpectationsByWorkline || {}));
-const levelsByJobFamily = ref(clone(page.props.levelsByJobFamily || {}));
-const levelExpectationsByJobFamily = ref(clone(page.props.levelExpectationsByJobFamily || {}));
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
@@ -193,7 +190,6 @@ const roleOptions = computed(() => (page.props.roles || [
     key: normalizeUserRoleKey(role.key),
     label: roleLabelsByKey[normalizeUserRoleKey(role.key)] || role.label,
 })));
-const orgSups = ref({});
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
 const supportJobFamilies = computed(() => Object.keys(supportPositionGroups.value));
@@ -201,13 +197,7 @@ const normalizeWorklineName = (name = '') => name.replace(/^สายงาน\s
 const selectedWorklineKind = computed(() => normalizeWorklineName(userForm.value.w));
 const selectedWorklineGroups = computed(() => jobFamiliesByWorkline.value[userForm.value.w] || {});
 const levelOptionsFromDatabase = computed(() => {
-    const scopedLevels = levelsByJobFamily.value[userForm.value.w]?.[userForm.value.job] || [];
-    if (scopedLevels.length) return scopedLevels;
-
-    const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    if (directLevels.length) return directLevels;
-
-    return [];
+    return levelsByWorkline.value[userForm.value.w] || [];
 });
 const isAcademicWorkline = computed(() => selectedWorklineKind.value === 'วิชาการ');
 const isSupportWorkline = computed(() => selectedWorklineKind.value === 'สนับสนุน');
@@ -215,6 +205,7 @@ const isAdminWorkline = computed(() => selectedWorklineKind.value === 'บริ
 const selectedDeptWorks = computed(() => supportOrg.value[userForm.value.dept] || []);
 const jobOptions = computed(() => {
     if (!userForm.value.w) return [];
+    if (isSupportWorkline.value) return selectedDeptWorks.value.map((item) => item.work);
 
     return Object.keys(selectedWorklineGroups.value);
 });
@@ -227,11 +218,18 @@ const selectedSupportWork = computed(() =>
     selectedDeptWorks.value.find((item) => item.work === userForm.value.job),
 );
 const unitOptions = computed(() => {
-    if (isSupportWorkline.value) return selectedSupportWork.value?.units || [];
+    if (isSupportWorkline.value) return (selectedSupportWork.value?.units || []).map((unit) => typeof unit === 'string' ? unit : unit.name);
 
     return [];
 });
 const positionOptions = computed(() => {
+    if (isSupportWorkline.value) {
+        const unit = (selectedSupportWork.value?.units || []).find((item) =>
+            (typeof item === 'string' ? item : item.name) === userForm.value.unit,
+        );
+        return typeof unit === 'object' ? unit.positions || [] : [];
+    }
+
     if (!userForm.value.job) return [];
 
     const positions = selectedWorklineGroups.value[userForm.value.job] || [];
@@ -256,7 +254,6 @@ const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.p
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const visibleAdminPageIds = new Set([
     'admin-users',
-    'admin-org',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -280,7 +277,6 @@ const implementedAdminPages = new Set([
     'emp-progress',
     'emp-idp-detail',
     'admin-users',
-    'admin-org',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -328,13 +324,6 @@ watchEffect(() => {
         levelExpectationsByWorkline.value = clone(page.props.levelExpectationsByWorkline);
     }
 
-    if (page.props.levelsByJobFamily && typeof page.props.levelsByJobFamily === 'object') {
-        levelsByJobFamily.value = clone(page.props.levelsByJobFamily);
-    }
-
-    if (page.props.levelExpectationsByJobFamily && typeof page.props.levelExpectationsByJobFamily === 'object') {
-        levelExpectationsByJobFamily.value = clone(page.props.levelExpectationsByJobFamily);
-    }
 });
 
 watchEffect(() => {
@@ -556,7 +545,10 @@ const userWorkflowIssues = computed(() => {
 });
 const templatePersonLabel = (id) => evaluatorFromId(id)?.label || id;
 const templateReviewerOptions = computed(() => {
-    const blocked = new Set(selectedTemplateReviewerIds.value);
+    const blocked = new Set([
+        ...selectedTemplateReviewerIds.value,
+        ...selectedTemplateUserIds.value,
+    ]);
 
     return evaluatorOptions.value.filter((person) => !blocked.has(person.value));
 });
@@ -570,8 +562,13 @@ const templateAssignmentUserOptions = computed(() => {
 });
 const addTemplateReviewer = () => {
     const reviewerId = selectedEvaluatorId(assessmentTemplateForm.value.reviewer_pick);
-    if (!reviewerId || selectedTemplateReviewerIds.value.includes(reviewerId)) return;
+    if (
+        !reviewerId
+        || selectedTemplateReviewerIds.value.includes(reviewerId)
+        || selectedTemplateUserIds.value.includes(reviewerId)
+    ) return;
 
+    assessmentTemplateError.value = '';
     assessmentTemplateForm.value.reviewer_ids = [...(assessmentTemplateForm.value.reviewer_ids || []), reviewerId];
     assessmentTemplateForm.value.reviewer_pick = '';
 };
@@ -586,6 +583,7 @@ const addTemplateAssignmentUser = () => {
         || selectedTemplateReviewerIds.value.includes(userId)
     ) return;
 
+    assessmentTemplateError.value = '';
     assessmentTemplateForm.value.assignment_user_ids = [...selectedTemplateUserIds.value, userId];
     assessmentTemplateForm.value.user_pick = '';
 };
@@ -675,6 +673,8 @@ const returnToAssessmentTemplateList = () => {
     resetAssessmentTemplateForm();
 };
 const resetAssessmentTemplateForm = () => {
+    assessmentTemplateError.value = '';
+    isSavingAssessmentTemplate.value = false;
     editingAssessmentTemplateId.value = null;
     assessmentTemplateForm.value = {
         name: '',
@@ -736,14 +736,20 @@ const deleteAssessmentTemplate = (template) => {
 };
 const saveAssessmentTemplate = () => {
     const form = assessmentTemplateForm.value;
+    assessmentTemplateError.value = '';
 
     if (!form.name.trim()) {
-        alert(`กรุณากรอกชื่อ${activeReviewerTemplateTitle.value}`);
+        assessmentTemplateError.value = `กรุณากรอกชื่อ${activeReviewerTemplateTitle.value}`;
         return;
     }
 
     if (!selectedTemplateReviewerIds.value.length) {
-        alert('กรุณาเพิ่มผู้ประเมินอย่างน้อย 1 คน');
+        assessmentTemplateError.value = 'กรุณาเพิ่มผู้ประเมินอย่างน้อย 1 คน';
+        return;
+    }
+
+    if (selectedTemplateReviewerIds.value.some((id) => selectedTemplateUserIds.value.includes(id))) {
+        assessmentTemplateError.value = 'ผู้ใช้ที่ถูกประเมินต้องไม่อยู่ในลำดับผู้ประเมินของตัวเอง';
         return;
     }
 
@@ -763,6 +769,16 @@ const saveAssessmentTemplate = () => {
 
     const submitOptions = {
         preserveScroll: true,
+        onStart: () => {
+            isSavingAssessmentTemplate.value = true;
+        },
+        onError: (errors) => {
+            assessmentTemplateError.value = Object.values(errors || {})[0]
+                || `ไม่สามารถบันทึก${activeReviewerTemplateTitle.value}ได้`;
+        },
+        onFinish: () => {
+            isSavingAssessmentTemplate.value = false;
+        },
         onSuccess: (responsePage) => {
             if (Array.isArray(responsePage.props.users)) {
                 users.value = clone(responsePage.props.users);
@@ -846,6 +862,23 @@ const applyIdpReviewerTemplate = () => {
     });
 
     userForm.value.idp_reviewer_ids = ids;
+};
+const selectReviewerTemplate = (templateId) => {
+    userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
+
+    if (userForm.value.reviewer_template_id) {
+        applyReviewerTemplate();
+    }
+};
+const selectIdpReviewerTemplate = (templateId) => {
+    userForm.value.idp_reviewer_template_id = selectedEvaluatorId(templateId);
+
+    if (userForm.value.idp_reviewer_template_id) {
+        applyIdpReviewerTemplate();
+        return;
+    }
+
+    userForm.value.idp_reviewer_ids = [];
 };
 const reviewerChoicesForStep = (stepIndex) => {
     const selectedInOtherSteps = new Set(
@@ -1035,7 +1068,9 @@ const parseOrgPath = (path = '') => {
 const syncOrgPath = () => {
     const form = userForm.value;
 
-    form.d = [form.job, form.unit].filter(Boolean).join(' > ');
+    form.d = isSupportWorkline.value
+        ? [form.dept, form.job, form.unit].filter(Boolean).join(' > ')
+        : form.job;
 };
 
 const findUserName = (predicate) => {
@@ -1091,9 +1126,8 @@ const handleUnitChange = () => {
 
 const handlePositionChange = () => {
     userForm.value.l = '';
-    const scopedLevels = levelsByJobFamily.value[userForm.value.w]?.[userForm.value.job] || [];
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    if (!scopedLevels.length && !directLevels.length && userForm.value.p) {
+    if (!directLevels.length && userForm.value.p) {
         userForm.value.l = userForm.value.p;
     }
 };
@@ -1148,10 +1182,8 @@ const resetUserForm = (data = null) => {
 };
 
 const openModal = (type, data = null) => {
-    if (!['modal-user', 'modal-org'].includes(type)) return;
+    if (type !== 'modal-user') return;
 
-    orgEditMode.value = type === 'modal-org';
-    modalReturnPage.value = orgEditMode.value ? 'admin-org' : 'admin-users';
     resetUserForm(data);
     activeModal.value = 'modal-user';
 };
@@ -1159,16 +1191,14 @@ const openModal = (type, data = null) => {
 const closeModal = () => {
     activeModal.value = null;
     editingUserKey.value = null;
-    orgEditMode.value = false;
-    modalReturnPage.value = 'admin-users';
 };
 
 const saveUser = () => {
     if (isSavingUser.value) return;
 
-    activePage.value = modalReturnPage.value;
+    activePage.value = 'admin-users';
     if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(adminPageStorageKey, modalReturnPage.value);
+        window.sessionStorage.setItem(adminPageStorageKey, 'admin-users');
     }
     const form = userForm.value;
     syncOrgPath();
@@ -1182,18 +1212,25 @@ const saveUser = () => {
         return;
     }
 
-    if (!form.w || !form.job || (!isDeanRole.value && !form.p) || !form.l) {
-        alert('กรุณาเลือกสายงาน กลุ่มงาน ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
+    const missingOrganization = !form.w
+        || !form.job
+        || (isSupportWorkline.value && (!form.dept || !form.unit));
+    if (missingOrganization || (!isDeanRole.value && !form.p) || !form.l) {
+        alert(isSupportWorkline.value
+            ? 'กรุณาเลือกสายงาน ฝ่าย งาน หน่วย ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน'
+            : 'กรุณาเลือกสายงาน ภาควิชา ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
         return;
     }
 
     if (!isDeanRole.value && !positionOptions.value.includes(form.p)) {
-        alert('กรุณาให้ Admin เพิ่มตำแหน่งงานในกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
+        alert(isSupportWorkline.value
+            ? 'กรุณาให้ Admin เพิ่มตำแหน่งในหน่วยนี้ก่อนบันทึกผู้ใช้'
+            : 'กรุณาให้ Admin เพิ่มตำแหน่งสำหรับภาควิชานี้ก่อนบันทึกผู้ใช้');
         return;
     }
 
     if (!levelOptions.value.includes(form.l)) {
-        alert('กรุณาให้ Admin เพิ่มระดับตำแหน่งในสายงานหรือกลุ่มงานนี้ก่อนบันทึกผู้ใช้');
+        alert('กรุณาให้ Admin เพิ่มระดับตำแหน่งในสายงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
 
@@ -1230,9 +1267,9 @@ const saveUser = () => {
     };
 
     const onSuccess = (responsePage) => {
-        activePage.value = modalReturnPage.value;
+        activePage.value = 'admin-users';
         if (typeof window !== 'undefined') {
-            window.sessionStorage.setItem(adminPageStorageKey, modalReturnPage.value);
+            window.sessionStorage.setItem(adminPageStorageKey, 'admin-users');
         }
 
         if (Array.isArray(responsePage.props.users)) {
@@ -1366,16 +1403,6 @@ const logout = () => router.post(route('logout'));
                     :worklines="worklines"
                 />
 
-                <AdminOrg
-                    v-else-if="activePage === 'admin-org'"
-                    :open-modal="openModal"
-                    :users="users"
-                    :set-users="setRef(users)"
-                    :academic-depts="academicPositions"
-                    :support-depts="supportJobFamilies"
-                    :worklines="worklines"
-                />
-
                 <AdminOrgStructure
                     v-else-if="activePage === 'admin-org-structure'"
                     :academic-depts="academicPositions"
@@ -1388,8 +1415,6 @@ const logout = () => router.post(route('logout'));
                     :support-org="supportOrg"
                     :set-support-org="setRef(supportOrg)"
                     :users="users"
-                    :org-sups="orgSups"
-                    :set-org-sups="setRef(orgSups)"
                     :academic-pos="academicPositions"
                     :set-academic-pos="setRef(academicPositions)"
                     :support-pos="supportPositions"
@@ -1402,10 +1427,6 @@ const logout = () => router.post(route('logout'));
                     :set-levels-by-workline="setRef(levelsByWorkline)"
                     :level-expectations-by-workline="levelExpectationsByWorkline"
                     :set-level-expectations-by-workline="setRef(levelExpectationsByWorkline)"
-                    :levels-by-job-family="levelsByJobFamily"
-                    :set-levels-by-job-family="setRef(levelsByJobFamily)"
-                    :level-expectations-by-job-family="levelExpectationsByJobFamily"
-                    :set-level-expectations-by-job-family="setRef(levelExpectationsByJobFamily)"
                     :academic-rank="academicRanks"
                     :set-academic-rank="setRef(academicRanks)"
                     :support-rank="supportRanks"
@@ -1443,17 +1464,17 @@ const logout = () => router.post(route('logout'));
             <div class="mo-h admin-user-modal-head">
                 <div>
                     <div class="fw8 fs18">
-                        {{ orgEditMode ? 'แก้ไขการบังคับบัญชา' : 'จัดการผู้ใช้งาน' }}
+                        จัดการผู้ใช้งาน
                     </div>
                     <div class="muted fs12">
-                        {{ orgEditMode ? 'ปรับสายงาน หน่วยงาน บทบาท และผู้ประเมิน' : 'กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล' }}
+                        กรอกข้อมูลให้ครบตามตาราง users ในฐานข้อมูล
                     </div>
                 </div>
                 <button class="btn btn-s btn-sm" type="button" @click="closeModal">× ปิด</button>
             </div>
 
             <div class="mo-b admin-user-modal-body">
-                <div v-if="!orgEditMode" class="admin-user-note">
+                <div class="admin-user-note">
                      ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
                 </div>
 
@@ -1479,12 +1500,12 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </section>
 
-                <div v-if="!orgEditMode" class="fg">
+                <div class="fg">
                     <label class="lbl req">ID</label>
                     <input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" />
                 </div>
 
-                <div v-if="!orgEditMode" class="modal-grid">
+                <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">คำนำหน้า</label>
                         <select v-model="userForm.t" class="sel modal-input">
@@ -1499,7 +1520,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-if="!orgEditMode" class="modal-grid">
+                <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">ชื่อ (ภาษาไทย)</label>
                         <input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" />
@@ -1510,7 +1531,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-if="!orgEditMode" class="modal-grid">
+                <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">First Name (English)</label>
                         <input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" />
@@ -1521,18 +1542,14 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-if="!orgEditMode" class="modal-grid">
+                <div class="modal-grid">
                     <div class="fg">
                         <label class="lbl req">Email</label>
                         <input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" />
                     </div>
                 </div>
 
-                <div v-if="orgEditMode" class="org-edit-summary">
-                    <div class="fw8">{{ userForm.t }}{{ userForm.n || `${userForm.fn} ${userForm.ln}` }}</div>
-                    <div class="muted fs12">{{ userForm.sso || '—' }}</div>
-                </div>
-
+                <div class="modal-section-label">โครงสร้างสังกัด</div>
                 <div class="modal-grid" :class="{ 'single-col': !userForm.w }">
                     <div class="fg">
                         <label class="lbl req">สายงาน</label>
@@ -1544,10 +1561,18 @@ const logout = () => router.post(route('logout'));
                         </select>
                     </div>
 
-                    <div v-if="userForm.w" class="fg">
-                        <label class="lbl req">กลุ่มงาน</label>
+                    <div v-if="isSupportWorkline" class="fg">
+                        <label class="lbl req">ฝ่าย</label>
+                        <select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange">
+                            <option value="">— เลือกฝ่าย —</option>
+                            <option v-for="department in supportDeptsList" :key="department" :value="department">{{ department }}</option>
+                        </select>
+                    </div>
+
+                    <div v-if="userForm.w && (!isSupportWorkline || userForm.dept)" class="fg">
+                        <label class="lbl req">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
-                            <option value="">— เลือกกลุ่มงาน —</option>
+                            <option value="">— เลือก{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }} —</option>
                             <option v-if="legacyJobOption" :value="legacyJobOption">
                                 {{ legacyJobOption }} (ข้อมูลเดิม)
                             </option>
@@ -1556,12 +1581,23 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                         <div v-if="legacyJobOption" class="modal-help warning">
-                            กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกกลุ่มงานใหม่ก่อนบันทึก
+                            {{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}นี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกใหม่ก่อนบันทึก
                         </div>
                     </div>
                 </div>
 
-                <div v-if="!orgEditMode && userForm.job" class="modal-grid">
+                <div v-if="isSupportWorkline && userForm.job" class="modal-grid single-col">
+                    <div class="fg">
+                        <label class="lbl req">หน่วย</label>
+                        <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
+                            <option value="">— เลือกหน่วย —</option>
+                            <option v-for="unit in unitOptions" :key="unit" :value="unit">{{ unit }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div v-if="userForm.job && (!isSupportWorkline || userForm.unit)" class="modal-section-label">ข้อมูลตำแหน่ง</div>
+                <div v-if="userForm.job && (!isSupportWorkline || userForm.unit)" class="modal-grid">
                     <div v-if="!isDeanRole" class="fg">
                         <label class="lbl req">ตำแหน่ง</label>
                         <select
@@ -1571,7 +1607,7 @@ const logout = () => router.post(route('logout'));
                             @change="handlePositionChange"
                         >
                             <option v-if="positionOptions.length" value="">— เลือกตำแหน่ง —</option>
-                            <option v-else value="">ยังไม่มีตำแหน่งในกลุ่มงาน</option>
+                            <option v-else value="">{{ isSupportWorkline ? 'ยังไม่มีตำแหน่งในหน่วย' : 'ยังไม่มีตำแหน่งสำหรับภาควิชา' }}</option>
                             <option v-if="legacyPositionOption" :value="legacyPositionOption">
                                 {{ legacyPositionOption }} (ข้อมูลเดิม)
                             </option>
@@ -1580,17 +1616,17 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                         <div v-if="legacyPositionOption" class="modal-help warning">
-                            ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน กรุณาเลือกตำแหน่งใหม่ก่อนบันทึก
+                            ตำแหน่งนี้ไม่มีใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}ปัจจุบัน กรุณาเลือกตำแหน่งใหม่ก่อนบันทึก
                         </div>
                         <div v-if="!positionOptions.length" class="modal-help">
-                            กรุณาให้ Admin เพิ่มตำแหน่งงานก่อนกำหนดผู้ใช้
+                            กรุณาให้ Admin เพิ่มตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}ก่อนกำหนดผู้ใช้
                         </div>
                     </div>
                     <div v-else class="fg">
                         <label class="lbl">ตำแหน่ง</label>
                         <input :value="userForm.job" class="inp modal-input" disabled />
                         <div class="modal-help">
-                            บทบาทคณบดีใช้กลุ่มงานเป็นตำแหน่งโดยอัตโนมัติ
+                            บทบาทคณบดีใช้ภาควิชาเป็นตำแหน่งโดยอัตโนมัติ
                         </div>
                     </div>
                     <div v-if="userForm.p || isDeanRole" class="fg">
@@ -1634,7 +1670,11 @@ const logout = () => router.post(route('logout'));
                         <div v-if="assessmentReviewerTemplates.length" class="workflow-template-row">
                             <div class="fg">
                                 <label class="lbl">Template ลำดับในการประเมิน</label>
-                                <select v-model="userForm.reviewer_template_id" class="sel modal-input">
+                                <select
+                                    :value="userForm.reviewer_template_id"
+                                    class="sel modal-input"
+                                    @change="selectReviewerTemplate($event.target.value)"
+                                >
                                     <option value="">— ไม่ใช้ template —</option>
                                     <option
                                         v-for="template in assessmentReviewerTemplates"
@@ -1645,14 +1685,6 @@ const logout = () => router.post(route('logout'));
                                     </option>
                                 </select>
                             </div>
-                            <button
-                                class="btn btn-s workflow-template-btn"
-                                type="button"
-                                :disabled="!selectedReviewerTemplate"
-                                @click="applyReviewerTemplate"
-                            >
-                                ใช้ template นี้
-                            </button>
                             <div class="modal-help workflow-template-help">
                                 {{ reviewerTemplateDescription }}
                             </div>
@@ -1673,7 +1705,11 @@ const logout = () => router.post(route('logout'));
                         <div v-if="idpReviewerTemplates.length" class="workflow-template-row">
                             <div class="fg">
                                 <label class="lbl">Template ลำดับการทำ IDP</label>
-                                <select v-model="userForm.idp_reviewer_template_id" class="sel modal-input">
+                                <select
+                                    :value="userForm.idp_reviewer_template_id"
+                                    class="sel modal-input"
+                                    @change="selectIdpReviewerTemplate($event.target.value)"
+                                >
                                     <option value="">— ใช้ลำดับประเมินเป็น fallback —</option>
                                     <option
                                         v-for="template in idpReviewerTemplates"
@@ -1684,16 +1720,8 @@ const logout = () => router.post(route('logout'));
                                     </option>
                                 </select>
                             </div>
-                            <button
-                                class="btn btn-s workflow-template-btn"
-                                type="button"
-                                :disabled="!selectedIdpReviewerTemplate"
-                                @click="applyIdpReviewerTemplate"
-                            >
-                                ใช้ template IDP
-                            </button>
                             <div class="modal-help workflow-template-help">
-                                ถ้ายังไม่กำหนดลำดับ IDP ระบบจะใช้ลำดับในการประเมินเป็นค่า fallback
+                                {{ selectedIdpReviewerTemplate ? templateChainSummary(selectedIdpReviewerTemplate) : 'ระบบจะใช้ลำดับในการประเมินเป็นค่า fallback' }}
                             </div>
                         </div>
                     </section>
@@ -1768,7 +1796,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <label v-if="!orgEditMode" class="modal-checkbox">
+                <label class="modal-checkbox">
                     <span>สถานะบัญชี</span>
                     <input v-model="userForm.act" type="checkbox" />
                     <span>ใช้งานได้</span>
@@ -2127,11 +2155,16 @@ const logout = () => router.post(route('logout'));
                             ยังไม่ได้เพิ่มผู้ใช้
                         </div>
                     </div>
+
+                    <p v-if="assessmentTemplateError" class="reviewer-template-form-error" role="alert">
+                        {{ assessmentTemplateError }}
+                    </p>
                 </div>
 
             </div>
 
             <div class="reviewer-template-modal-actions">
+                <button class="btn btn-s" type="button" @click="closeReviewerTemplateModal">ปิด</button>
                 <button
                     v-if="showAssessmentTemplateCreate || selectedAssessmentTemplate"
                     class="btn btn-s"
@@ -2140,14 +2173,14 @@ const logout = () => router.post(route('logout'));
                 >
                     กลับไปหน้ารายการ
                 </button>
-                <button class="btn btn-s" type="button" @click="closeReviewerTemplateModal">ปิด</button>
                 <button
                     v-if="showAssessmentTemplateCreate"
                     class="btn btn-p"
                     type="button"
+                    :disabled="isSavingAssessmentTemplate"
                     @click="saveAssessmentTemplate"
                 >
-                    {{ isEditingAssessmentTemplate ? 'ยืนยัน' : `บันทึก${activeReviewerTemplateTitle}` }}
+                    {{ isSavingAssessmentTemplate ? 'กำลังบันทึก...' : (isEditingAssessmentTemplate ? 'ยืนยัน' : `บันทึก${activeReviewerTemplateTitle}`) }}
                 </button>
             </div>
         </div>
@@ -2155,6 +2188,13 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.reviewer-template-form-error {
+    margin: 14px 0 0;
+    color: #b42318;
+    font-size: 14px;
+    font-weight: 600;
+}
+
 .admin-user-modal {
     align-items: center;
     overflow-y: auto;
@@ -2225,6 +2265,17 @@ const logout = () => router.post(route('logout'));
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 20px;
     row-gap: 20px;
+}
+
+.modal-section-label {
+    margin: 4px 0 10px;
+    color: var(--navy);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.modal-grid + .modal-section-label {
+    margin-top: 18px;
 }
 
 .modal-grid.single-col {
@@ -2353,7 +2404,7 @@ const logout = () => router.post(route('logout'));
 
 .workflow-template-row {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) auto;
+    grid-template-columns: minmax(260px, 1fr);
     gap: 12px;
     align-items: end;
     padding: 14px;
@@ -2365,10 +2416,6 @@ const logout = () => router.post(route('logout'));
 .workflow-template-help {
     grid-column: 1 / -1;
     margin-top: 0;
-}
-
-.workflow-template-btn {
-    min-height: 44px;
 }
 
 .reviewer-config-card {

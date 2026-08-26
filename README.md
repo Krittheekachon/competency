@@ -1,8 +1,17 @@
 # Competency
 
-ENKKU Competency & IDP System built with Laravel, Inertia, Vue, Vite, and PostgreSQL.
+ENKKU Competency & IDP System is a Laravel/Inertia/Vue application for competency assessment, reviewer approval, competency gap analysis, and Individual Development Plan (IDP) workflows.
 
-## Requirements
+## Stack
+
+- PHP 8.3+
+- Laravel 13
+- Inertia Laravel 2
+- Vue 3
+- Vite 8
+- PostgreSQL
+
+## Prerequisites
 
 - PHP 8.3+
 - Composer
@@ -11,7 +20,7 @@ ENKKU Competency & IDP System built with Laravel, Inertia, Vue, Vite, and Postgr
 
 ## Local Setup
 
-Install PHP and JavaScript dependencies:
+Install dependencies:
 
 ```bash
 composer install
@@ -31,23 +40,37 @@ Start PostgreSQL:
 docker compose up -d
 ```
 
-Run database migrations:
+Run migrations:
 
 ```bash
 php artisan migrate
 ```
 
-Start the Laravel and Vite development servers in separate terminals:
+To rebuild the local database from scratch:
 
 ```bash
-php artisan serve
-npm run dev
+php artisan migrate:fresh --seed
 ```
 
-Open the app at:
+## Development
+
+Start Laravel and Vite in separate terminals:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8000
+npm run dev -- --host 127.0.0.1
+```
+
+Open:
 
 ```text
 http://127.0.0.1:8000
+```
+
+Local mock SSO is available at:
+
+```text
+http://127.0.0.1:8000/mock-sso
 ```
 
 ## Database
@@ -62,14 +85,47 @@ DB_USERNAME=sail
 DB_PASSWORD=password
 ```
 
-When database structure changes, commit the migration files and have teammates run:
+Check migration state with:
 
 ```bash
-php artisan migrate
+php artisan migrate:status
 ```
 
-To rebuild the local database from scratch:
+## Test And Build
+
+Run the PHP test suite:
 
 ```bash
-php artisan migrate:fresh --seed
+php artisan test
 ```
+
+Run a focused test file:
+
+```bash
+php artisan test tests/Feature/AdminUserControllerTest.php
+```
+
+Build frontend assets:
+
+```bash
+npm run build
+```
+
+## Project Structure
+
+- `routes/web.php`: web routes and named route entry points.
+- `app/Http/Controllers`: dashboard, admin, HR, employee, assessment, and approval controllers.
+- `app/Services`: reviewer chain, expected-level, IDP workflow, notification, and sync services.
+- `database/migrations`: PostgreSQL schema history.
+- `resources/js/Pages`: Inertia Vue screens by role.
+- `resources/js/data.ts`: role navigation and page titles.
+- `tests`: feature and unit tests.
+- `docs`: project documentation.
+
+## Documentation
+
+- `AGENTS.md`: AI coding-agent working rules.
+- `docs/project/architecture.md`: current implementation architecture.
+- `docs/project/requirements.md`: canonical business/domain rules.
+- `docs/project/current-state.md`: implemented features, gaps, and discrepancies.
+- `docs/project/decisions.md`: important architecture decisions.

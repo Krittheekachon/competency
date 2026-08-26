@@ -82,27 +82,24 @@ class ExpectedLevelResolver
         $levelIds = collect();
         $worklineId = $this->worklineIdFromUser($user);
 
-        if ($user->level_id) {
-            $levelIds->push($user->level_id);
+        if (! $worklineId) {
+            return $this->levelIdsCache[$cacheKey] = $levelIds;
         }
 
-        foreach ([$user->level, $user->position] as $levelName) {
-            if (! $levelName) {
-                continue;
-            }
+        if ($user->level_id) {
+            $levelIds = $levelIds->merge(DB::table('levels')
+                ->where('id', $user->level_id)
+                ->where('workline_id', $worklineId)
+                ->whereNull('job_family_id')
+                ->pluck('id'));
+        }
 
-            $matchingLevels = DB::table('levels')
-                ->where('name', $levelName)
-                ->where(function ($query) use ($worklineId) {
-                    $query->whereNull('workline_id');
-
-                    if ($worklineId) {
-                        $query->orWhere('workline_id', $worklineId);
-                    }
-                })
-                ->pluck('id');
-
-            $levelIds = $levelIds->merge($matchingLevels);
+        if ($user->level) {
+            $levelIds = $levelIds->merge(DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->whereNull('job_family_id')
+                ->where('name', $user->level)
+                ->pluck('id'));
         }
 
         return $this->levelIdsCache[$cacheKey] = $levelIds->filter()->unique()->values();
