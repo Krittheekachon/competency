@@ -1474,7 +1474,7 @@ class DashboardController extends Controller
             ->map(fn ($items) => $items->pluck('competency_id')->values());
         $formCodesByDeliveryType = Schema::hasColumn('learning_catalog_delivery_types', 'form_code')
             ? DB::table('learning_catalog_delivery_types')->pluck('form_code', 'key')
-            : collect(['e_learning' => 'form_9_field_trip', 'in_class' => 'form_10_training']);
+            : collect(['e_learning' => 'form_10_training', 'in_class' => 'form_10_training']);
 
         $columns = [
             'learning_catalogs.id',
@@ -1597,7 +1597,7 @@ class DashboardController extends Controller
                     'label' => $row
                         ? trim($row->name_th.' '.($row->name_en ? "({$row->name_en})" : ''))
                         : $item['label'],
-                    'formCode' => $row->form_code ?? ($deliveryType === 'e_learning' ? 'form_9_field_trip' : 'form_10_training'),
+                    'formCode' => $row->form_code ?? 'form_10_training',
                     'isActive' => $row ? (bool) $row->is_active : true,
                 ];
             })

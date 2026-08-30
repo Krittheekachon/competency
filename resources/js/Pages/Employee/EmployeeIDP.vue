@@ -8,6 +8,7 @@ import {
   rowSubHeaderFields,
   type RowField,
 } from '../../idpFormDefinitions';
+import { coachingApproachDescriptions as fullCoachingApproachDescriptions } from '../../coachingApproachDescriptions';
 
 type Gap = {
   id: number;
@@ -38,6 +39,8 @@ type Catalog = {
   formCode?: string;
   competencyIds?: number[];
   description?: string;
+  hours?: number | string | null;
+  cost?: number | string | null;
   isActive?: boolean;
 };
 type SupervisorChainOption = {
@@ -101,6 +104,9 @@ const methods = computed(() => props.learningMethods || []);
 const activeTools = computed(() => (props.idpLearningMethods || []).filter((tool) => tool.isActive !== false));
 const activeCatalogs = computed(() => (props.learningCatalogs || []).filter((catalog) => catalog.isActive !== false));
 const supervisorChainOptions = computed<SupervisorChainOption[]>(() => props.user?.supervisorChain || []);
+const idpApprovalSteps = computed<SupervisorChainOption[]>(() =>
+  Array.isArray(props.user?.idpReviewerSteps) ? props.user.idpReviewerSteps : [],
+);
 const selectedGap = computed(() => idpGaps.value.find((gap) => gap.id === selectedGapId.value) || null);
 const selectedPlan = computed(() => plans.value.find((plan) => plan.competencyGapId === selectedGapId.value) || null);
 const isReviewStatus = (status: string) => /^review_step_[123]$/.test(status);
@@ -112,26 +118,28 @@ const coachingApproachDescriptions = [
   {
     code: 'A',
     title: 'ส่งเสริม',
-    summary: 'เน้นเสริมจุดแข็งและพฤติกรรมที่ดีให้ชัดขึ้น',
+    summary: 'แนวทางที่เน้นการส่งเสริมคุณลักษณะและพฤติกรรมที่เหมาะสม',
     items: [
       'ความรับผิดชอบ: รับผิดชอบต่อหน้าที่และการกระทำของตนเอง',
       'ความซื่อสัตย์และจริยธรรม: ยึดมั่นในจริยธรรมในการทำงาน',
       'ความขยันหมั่นเพียร: มีความพยายามและมุ่งมั่นในการทำงานเพื่อบรรลุเป้าหมาย',
+      'ความอดทนและการแก้ไขปัญหา: อดทนและมีทักษะในการแก้ไขปัญหาเมื่อพบความท้าทาย',
       'การทำงานเป็นทีม: ทำงานร่วมกับผู้อื่นได้อย่างมีประสิทธิภาพ',
       'ความคิดสร้างสรรค์และนวัตกรรม: คิดค้นวิธีการใหม่ ๆ ในการทำงาน',
       'การพัฒนาตนเอง: เรียนรู้และพัฒนาทักษะใหม่อย่างต่อเนื่อง',
       'การสื่อสารที่มีประสิทธิภาพ: สื่อสารได้อย่างชัดเจน',
+      'ความมั่นใจในตนเอง: มั่นใจในความสามารถของตนเองและไม่กลัวที่จะเผชิญความท้าทาย',
       'การคิดเชิงวิพากษ์: วิเคราะห์และประเมินสถานการณ์ได้รอบคอบ',
       'ความยืดหยุ่นและการปรับตัว: ปรับตัวได้ดีในสถานการณ์ที่เปลี่ยนแปลง',
       'การให้และรับข้อเสนอแนะ: รับข้อเสนอแนะเพื่อการพัฒนาอย่างสร้างสรรค์',
       'ความเป็นผู้นำ: นำทีมและมีอิทธิพลเชิงบวกต่อผู้อื่น',
-      'การตัดสินใจที่ดี: ตัดสินใจรวดเร็วและแม่นยำในแนวทางที่เหมาะสม',
+      'ความสามารถในการตัดสินใจ: ตัดสินใจอย่างรอบคอบและรวดเร็วในสถานการณ์ที่ต้องการ',
     ],
   },
   {
     code: 'B',
     title: 'สร้างสรรค์',
-    summary: 'เน้นการคิดนอกกรอบและสร้างแนวทางใหม่',
+    summary: 'แนวทางที่เน้นความคิดสร้างสรรค์และการสร้างแนวทางใหม่',
     items: [
       'ความคิดนอกกรอบ: คิดต่างจากคนทั่วไปและหาแนวทางใหม่ในการแก้ปัญหา',
       'การมีจินตนาการสูง: สร้างภาพในจินตนาการและสร้างสรรค์สิ่งใหม่',
@@ -144,13 +152,14 @@ const coachingApproachDescriptions = [
       'การทำงานร่วมกับผู้อื่น: รับฟังและแลกเปลี่ยนความคิดเห็นได้ดี',
       'ความอดทนและความพยายาม: มุ่งมั่นแม้เจออุปสรรค',
       'ความมั่นใจในตนเอง: เชื่อมั่นในความคิดและความสามารถของตนเอง',
+      'การสื่อสารที่มีประสิทธิภาพ: สื่อสารแนวคิดสร้างสรรค์ให้ผู้อื่นเข้าใจได้อย่างชัดเจน',
       'การรับข้อเสนอแนะ: รับฟังข้อเสนอแนะเพื่อปรับปรุงผลงาน',
     ],
   },
   {
     code: 'C',
     title: 'กระตุ้น',
-    summary: 'เน้นกระตุ้นให้เกิดความมั่นใจ แรงจูงใจ และการลงมือทำ',
+    summary: 'แนวทางที่เน้นการกระตุ้นความมั่นใจ แรงจูงใจ และการลงมือทำ',
     items: [
       'ความรับผิดชอบ: กระตุ้นให้รับผิดชอบต่อหน้าที่และการกระทำของตนเอง',
       'ความคิดสร้างสรรค์: ส่งเสริมให้คิดนอกกรอบและเสนอแนวคิดใหม่',
@@ -169,7 +178,7 @@ const coachingApproachDescriptions = [
   {
     code: 'D',
     title: 'แก้ไขปัญหา',
-    summary: 'เน้นวิเคราะห์ปัญหา เลือกวิธีแก้ และตัดสินใจอย่างมีข้อมูล',
+    summary: 'แนวทางที่เน้นการวิเคราะห์ปัญหา เลือกวิธีแก้ และตัดสินใจอย่างมีข้อมูล',
     items: [
       'การคิดเชิงวิพากษ์: วิเคราะห์ข้อมูลและสถานการณ์อย่างรอบคอบ',
       'ความคิดสร้างสรรค์: คิดนอกกรอบและเสนอวิธีใหม่ในการแก้ปัญหา',
@@ -238,6 +247,11 @@ const formatNumber = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(Number.isInteger(number) ? 0 : 2) : '-';
 };
+const formatCurrency = (value: unknown) => {
+  if (value === '' || value === null || value === undefined) return 'ไม่ระบุ';
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท` : 'ไม่ระบุ';
+};
 const focusType = (methodKey: string) => {
   const normalized = methodKey.toLowerCase();
   if (normalized.includes('experiential') || normalized.includes('experience')) return 'experiential';
@@ -283,6 +297,24 @@ const effectiveFormCode = (activity: Activity) => {
   return activity.formCode || formCodeForActivity(activity);
 };
 const formDefinitionFor = (activity: Activity) => formDefinitions[effectiveFormCode(activity)] || null;
+const isProjectAssignmentForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_3_project_assignment');
+const isOjtForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_4_ojt');
+const isCoachingForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_5_coaching');
+const isMentoringForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_6_mentoring');
+const isGroupActivityForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_7_group_activity');
+const isFeedbackForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_8_feedback');
+const isFieldTripForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_9_field_trip');
+const isTrainingForm = (activity: Activity | null) =>
+  Boolean(activity && effectiveFormCode(activity) === 'form_10_training');
+const isReworkedActivityForm = (activity: Activity | null) =>
+  isProjectAssignmentForm(activity) || isOjtForm(activity) || isCoachingForm(activity) || isMentoringForm(activity) || isGroupActivityForm(activity) || isFeedbackForm(activity) || isFieldTripForm(activity) || isTrainingForm(activity);
 const hasActivityForm = (activity: Activity) => Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
 const isFormSaved = (activity: Activity) => Boolean(activity.formDetails?._saved);
 const shouldShowDetailField = (field: { showWhen?: { key: string; value: string } }, detail: Record<string, any>) =>
@@ -302,28 +334,10 @@ const toggleMultiChoice = (row: Record<string, any>, key: string, choice: string
 };
 const fixedTopicLabel = (activity: Activity | null, row: Record<string, any>, rowIndex: number) => {
   const formCode = activity ? effectiveFormCode(activity) : '';
-  if (formCode === 'form_7_group_activity') {
-    return row.fixedTopicLabel ||
-      (rowIndex === 0
-        ? '1) หัวข้อการเรียนรู้ฯ'
-        : rowIndex === 1
-          ? '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้'
-          : '');
-  }
-  if (formCode === 'form_9_field_trip') {
-    return row.fixedTopicLabel ||
-      (rowIndex === 0
-        ? '1) ประเด็นที่ต้องการพัฒนา'
-        : rowIndex === 1
-          ? '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการศึกษาดูงาน'
-          : '');
-  }
   return row.fixedTopicLabel || '';
 };
-const hasFixedFormRows = (activity: Activity | null) =>
-  activity ? ['form_7_group_activity', 'form_9_field_trip'].includes(effectiveFormCode(activity)) : false;
-const hasLockedFormRows = (activity: Activity | null) =>
-  activity ? ['form_7_group_activity', 'form_9_field_trip', 'form_10_training'].includes(effectiveFormCode(activity)) : false;
+const hasFixedFormRows = (_activity: Activity | null) => false;
+const hasLockedFormRows = (activity: Activity | null) => isTrainingForm(activity);
 const hasDetailFields = (activity: Activity | null) =>
   activity ? Boolean(formDefinitionFor(activity)?.detailFields.length) : false;
 const shouldPlaceDetailAtBottom = (activity: Activity | null) =>
@@ -384,27 +398,13 @@ const chooseCatalog = (activity: Activity) => {
       trainingType: catalog?.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning',
       courseCode: catalog?.code || '',
       courseName: catalog?.name || '',
-      cost: '',
+      courseDescription: catalog?.description || '',
+      hours: catalog?.hours ?? '',
+      cost: catalog?.cost ?? '',
     } : row),
   };
 };
 const defaultPlanRows = (formCode: string) => {
-  if (formCode === 'form_7_group_activity') {
-    return [
-      { fixedTopicLabel: '1) หัวข้อการเรียนรู้ฯ', learningTopic: '' },
-      { fixedTopicLabel: '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้', learningTopic: '' },
-    ];
-  }
-  if (formCode === 'form_9_field_trip') {
-    return [
-      { fixedTopicLabel: '1) ประเด็นที่ต้องการพัฒนา', skillTopic: '' },
-      { fixedTopicLabel: '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการศึกษาดูงาน', skillTopic: '' },
-    ];
-  }
-  if (formCode === 'form_10_training') {
-    return Array.from({ length: 6 }, () => ({}));
-  }
-
   return [{}];
 };
 const defaultFormDetails = (formCode: string): FormDetails => ({
@@ -421,25 +421,14 @@ const normalizeFormDetails = (formCode: string, details?: FormDetails): FormDeta
   const rows = Array.isArray(source.planRows) && source.planRows.length
     ? source.planRows
     : defaultPlanRows(formCode);
-  const rowsWithFormDefaults = formCode === 'form_10_training'
-    ? defaultPlanRows(formCode).map((defaultRow, index) => ({
-      ...defaultRow,
-      ...(rows[index] || {}),
-      trainingHours: rows[index]?.trainingHours || rows[index]?.trainingDays || defaultRow.trainingHours,
-    }))
-    : ['form_7_group_activity', 'form_9_field_trip'].includes(formCode) && !rows.some((row: Record<string, any>) => row?.fixedTopicLabel)
-    ? defaultPlanRows(formCode).map((defaultRow, index) => ({
-      ...(rows[index] || {}),
-      ...defaultRow,
-      learningTopic: rows[index]?.learningTopic || defaultRow.learningTopic,
-      skillTopic: rows[index]?.skillTopic || defaultRow.skillTopic,
-    }))
-    : rows;
+  const rowsWithFormDefaults = rows;
   const normalizedRows = rowsWithFormDefaults.map((row: Record<string, any>) => {
     const cloned = { ...(row || {}) };
     const legacyApproaches = ['A', 'B', 'C', 'D'].filter((code) => cloned[`approach${code}`]);
     if (!Array.isArray(cloned.coachingApproaches) && legacyApproaches.length) {
       cloned.coachingApproaches = legacyApproaches;
+    } else if (!Array.isArray(cloned.coachingApproaches) && ['A', 'B', 'C', 'D'].includes(cloned.approach)) {
+      cloned.coachingApproaches = [cloned.approach];
     }
     return cloned;
   });
@@ -470,6 +459,13 @@ const activeFormActivity = computed(() =>
   selectedPlan.value?.activities.find((activity) => activity.clientKey === activeFormActivityKey.value) || null);
 const saveActivityForm = () => {
   if (activeFormActivity.value) {
+    if (isReworkedActivityForm(activeFormActivity.value)) {
+      const rows = activeFormActivity.value.formDetails.planRows || [];
+      const starts = rows.map((row: Record<string, any>) => row.developmentStart).filter(Boolean).sort();
+      const ends = rows.map((row: Record<string, any>) => row.developmentEnd).filter(Boolean).sort();
+      activeFormActivity.value.startDate = starts[0] || '';
+      activeFormActivity.value.endDate = ends[ends.length - 1] || '';
+    }
     activeFormActivity.value.formDetails = {
       ...activeFormActivity.value.formDetails,
       _saved: true,
@@ -563,11 +559,143 @@ const planIssue = (plan: Plan): string => {
   if (Math.round(weightTotal(plan) * 100) / 100 !== 100) return 'น้ำหนักกิจกรรมต้องรวม 100%';
 
   for (const activity of plan.activities) {
-    if (!activity.methodKey || !activity.activityName || activity.weightPercent === '' || !activity.startDate || !activity.endDate) {
+    if (!activity.methodKey || !activity.activityName || activity.weightPercent === '' || (!isGroupActivityForm(activity) && (!activity.startDate || !activity.endDate))) {
       return 'ข้อมูลกิจกรรมยังไม่ครบ';
     }
     if (hasActivityForm(activity) && !isFormSaved(activity)) {
       return 'ยังไม่ได้กรอกรายละเอียดฟอร์มกิจกรรม';
+    }
+    if (isProjectAssignmentForm(activity)) {
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['assignmentTopic', 'developmentGoal', 'developmentApproach', 'developmentStart', 'developmentEnd']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการมอบหมายงานโครงการ/งานพิเศษให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+    }
+    if (isOjtForm(activity)) {
+      const detail = activity.formDetails?.detail || {};
+      if (!detail.trainerType
+        || (detail.trainerType === 'ผู้บังคับบัญชา' && !detail.trainerSupervisorUserId)
+        || (detail.trainerType === 'ผู้เชี่ยวชาญ' && !String(detail.trainerExpertName || '').trim())) {
+        return 'กรุณาระบุผู้สอนงานให้ครบ';
+      }
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['skillTopic', 'developmentStart', 'developmentEnd', 'hours', 'developmentGoal', 'developmentApproach']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการเรียนรู้จากการปฏิบัติงานจริงให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+    }
+    if (isCoachingForm(activity)) {
+      const detail = activity.formDetails?.detail || {};
+      if (!detail.coachType
+        || (detail.coachType === 'ผู้บังคับบัญชา' && !detail.coachSupervisorUserId)
+        || (detail.coachType === 'ผู้เชี่ยวชาญ' && !String(detail.coachExpertName || '').trim())) {
+        return 'กรุณาระบุผู้สอนงานให้ครบ';
+      }
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['topic', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration', 'developmentGoal', 'developmentApproach']
+          .every((key) => String(row[key] || '').trim())
+        || !Array.isArray(row.coachingApproaches)
+        || row.coachingApproaches.length === 0)) {
+        return 'กรุณากรอกแบบฟอร์มการสอนงานให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+      if (rows.some((row: Record<string, any>) => Number(row.sessionCount) < 1)) {
+        return 'จำนวนครั้งต้องไม่น้อยกว่า 1';
+      }
+    }
+    if (isMentoringForm(activity)) {
+      const detail = activity.formDetails?.detail || {};
+      if (!detail.mentorType
+        || (detail.mentorType === 'ผู้บังคับบัญชา' && !detail.mentorSupervisorUserId)
+        || (detail.mentorType === 'ผู้เชี่ยวชาญ' && !String(detail.mentorExpertName || '').trim())) {
+        return 'กรุณาระบุผู้สอนงานให้ครบ';
+      }
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['skillTopic', 'technique', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration', 'developmentGoal']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการเป็นพี่เลี้ยงให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+      if (rows.some((row: Record<string, any>) => Number(row.sessionCount) < 1)) {
+        return 'จำนวนครั้งต้องไม่น้อยกว่า 1';
+      }
+    }
+    if (isGroupActivityForm(activity)) {
+      const detail = activity.formDetails?.detail || {};
+      if (!detail.facilitatorType
+        || (detail.facilitatorType === 'ผู้บังคับบัญชา' && !detail.facilitatorSupervisorUserId)
+        || (detail.facilitatorType === 'ผู้เชี่ยวชาญ' && !String(detail.facilitatorExpertName || '').trim())) {
+        return 'กรุณาระบุผู้อำนวยการ/ผู้นำกิจกรรมให้ครบ';
+      }
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['learningTopic', 'technique', 'developmentStart', 'developmentEnd', 'assessmentTools', 'developmentGoal']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการเรียนรู้แบบกระบวนการกลุ่มให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+    }
+    if (isFeedbackForm(activity)) {
+      const detail = activity.formDetails?.detail || {};
+      if (!detail.feedbackProviderType
+        || (detail.feedbackProviderType === 'ผู้บังคับบัญชา' && !detail.feedbackSupervisorUserId)
+        || (detail.feedbackProviderType === 'ผู้เชี่ยวชาญ' && !String(detail.feedbackExpertName || '').trim())) {
+        return 'กรุณาระบุผู้ให้ข้อมูลให้ครบ';
+      }
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['skillTopic', 'feedbackSource', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration', 'developmentGoal']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการให้ข้อมูลป้อนกลับให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+      if (rows.some((row: Record<string, any>) => Number(row.sessionCount) < 1)) {
+        return 'จำนวนครั้งต้องไม่น้อยกว่า 1';
+      }
+    }
+    if (isFieldTripForm(activity)) {
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['skillTopic', 'learningPlace', 'developmentStart', 'developmentEnd', 'assessmentTools', 'developmentGoal']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการเรียนรู้นอกสถานที่ให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+    }
+    if (isTrainingForm(activity)) {
+      const rows = activity.formDetails?.planRows || [];
+      if (!rows.length || rows.some((row: Record<string, any>) =>
+        !['trainingType', 'courseName', 'developmentStart', 'developmentEnd', 'hours', 'developmentGoal']
+          .every((key) => String(row[key] || '').trim()))) {
+        return 'กรุณากรอกแบบฟอร์มการฝึกอบรมให้ครบ';
+      }
+      if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
+        return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+      }
+      if (rows.some((row: Record<string, any>) => Number(row.hours) <= 0)) {
+        return 'จำนวนชั่วโมงต้องมากกว่า 0';
+      }
     }
     if (['experiential', 'social'].includes(focusType(activity.methodKey)) && !activity.developmentToolId) {
       return 'ยังไม่ได้เลือกเครื่องมือพัฒนา';
@@ -786,9 +914,9 @@ const submitSelectedPlan = () => {
 
                 <label class="wide">
                   <span>ชื่อกิจกรรม</span>
-                  <input v-model="activity.activityName" :disabled="selectedPlanLocked" placeholder="ชื่อกิจกรรมที่ต้องดำเนินการ" />
+                  <input v-model="activity.activityName" :disabled="selectedPlanLocked || focusType(activity.methodKey) === 'formal'" placeholder="ชื่อกิจกรรมที่ต้องดำเนินการ" />
                 </label>
-                <label class="document-reference-field">
+                <label v-if="!isReworkedActivityForm(activity)" class="document-reference-field">
                   <span>เอกสารประกอบหมายเลข</span>
                   <input
                     v-model="activity.documentReferenceNumber"
@@ -808,11 +936,11 @@ const submitSelectedPlan = () => {
                     placeholder="เช่น 30"
                   />
                 </label>
-                <label>
+                <label v-if="!isGroupActivityForm(activity)">
                   <span>วันที่เริ่ม</span>
                   <input v-model="activity.startDate" :disabled="selectedPlanLocked" type="date" />
                 </label>
-                <label>
+                <label v-if="!isGroupActivityForm(activity)">
                   <span>วันที่สิ้นสุด</span>
                   <input v-model="activity.endDate" :disabled="selectedPlanLocked" type="date" />
                 </label>
@@ -861,12 +989,7 @@ const submitSelectedPlan = () => {
           <section class="form-title-band">
             <div>
               <h3>แบบฟอร์มที่ {{ formDefinitionFor(activeFormActivity)?.number }} {{ formDefinitionFor(activeFormActivity)?.title }}</h3>
-              <p>{{ formDefinitionFor(activeFormActivity)?.focus }}</p>
             </div>
-            <label>
-              <span>เอกสารประกอบหมายเลข</span>
-              <input v-model="activeFormActivity.documentReferenceNumber" />
-            </label>
           </section>
 
           <section class="form-block readonly-block">
@@ -886,10 +1009,6 @@ const submitSelectedPlan = () => {
               <label>
                 <span>ตำแหน่ง</span>
                 <input :value="props.user?.p || '-'" disabled />
-              </label>
-              <label class="wide">
-                <span>สังกัด</span>
-                <input :value="props.user?.d || '-'" disabled />
               </label>
             </div>
           </section>
@@ -915,6 +1034,27 @@ const submitSelectedPlan = () => {
             </div>
           </section>
 
+          <section class="form-block readonly-block approval-route-block">
+            <header>
+              <h4>ลำดับการส่งแผน IDP</h4>
+              <span>ดึงจากระบบ</span>
+            </header>
+            <div v-if="idpApprovalSteps.length" class="approval-route-list">
+              <template v-for="(step, index) in idpApprovalSteps" :key="step.id">
+                <div class="approval-route-step">
+                  <span>{{ index + 1 }}</span>
+                  <div>
+                    <strong>{{ step.name }}</strong>
+                    <small>{{ step.position || step.label }}</small>
+                  </div>
+                </div>
+                <span v-if="index < idpApprovalSteps.length - 1" class="approval-route-arrow">→</span>
+              </template>
+            </div>
+            <div v-else class="approval-route-empty">ยังไม่ได้กำหนดลำดับผู้อนุมัติ IDP</div>
+            <p class="approval-route-notice">หากข้อมูลลำดับการส่งไม่ถูกต้อง กรุณาติดต่อ Admin</p>
+          </section>
+
           <section v-if="hasDetailFields(activeFormActivity) && !shouldPlaceDetailAtBottom(activeFormActivity)" class="form-block">
             <header>
               <h4>{{ formDefinitionFor(activeFormActivity)?.detailTitle }}</h4>
@@ -933,6 +1073,11 @@ const submitSelectedPlan = () => {
                   v-model="activeFormActivity.formDetails.detail[field.key]"
                   rows="3"
                 />
+                <input
+                  v-else-if="field.type === 'date'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  type="date"
+                />
                 <select
                   v-else-if="field.type === 'choice'"
                   v-model="activeFormActivity.formDetails.detail[field.key]"
@@ -947,7 +1092,7 @@ const submitSelectedPlan = () => {
                   :disabled="supervisorChainOptions.length === 0"
                 >
                   <option value="">
-                    {{ supervisorChainOptions.length ? 'เลือกจากรายการ: สายการบังคับบัญชา' : 'ยังไม่ได้กำหนดสายการบังคับบัญชา' }}
+                    {{ supervisorChainOptions.length ? 'เลือกผู้บังคับบัญชา' : 'ยังไม่ได้กำหนดผู้บังคับบัญชา' }}
                   </option>
                   <option v-for="person in supervisorChainOptions" :key="person.id" :value="person.id">
                     {{ person.label }} · {{ person.name }}{{ person.position ? ` (${person.position})` : '' }}
@@ -963,12 +1108,233 @@ const submitSelectedPlan = () => {
             </div>
           </section>
 
-          <section class="form-block">
+          <section v-if="formDefinitionFor(activeFormActivity)?.rowFields.length" class="form-block">
             <header>
               <h4>{{ formDefinitionFor(activeFormActivity)?.rowTitle }}</h4>
-              <button v-if="!hasLockedFormRows(activeFormActivity)" type="button" @click="addFormRow(activeFormActivity)">+ เพิ่มแถว</button>
+              <button v-if="!hasLockedFormRows(activeFormActivity)" type="button" @click="addFormRow(activeFormActivity)">
+                {{ isProjectAssignmentForm(activeFormActivity) ? '+ เพิ่มงานที่ได้รับมอบหมาย' : isOjtForm(activeFormActivity) ? '+ เพิ่มหัวข้อฝึกปฏิบัติ' : isCoachingForm(activeFormActivity) ? '+ เพิ่มหัวข้อการสอนงาน' : isMentoringForm(activeFormActivity) ? '+ เพิ่มหัวข้อที่ต้องการพัฒนา' : isGroupActivityForm(activeFormActivity) ? '+ เพิ่มกิจกรรม' : isFeedbackForm(activeFormActivity) ? '+ เพิ่มหัวข้อการพัฒนา' : isFieldTripForm(activeFormActivity) ? '+ เพิ่มรายการศึกษาดูงาน' : isTrainingForm(activeFormActivity) ? '+ เพิ่มหลักสูตรอบรม' : '+ เพิ่มแถว' }}
+              </button>
             </header>
-            <div class="form-table-wrap">
+            <div v-if="isProjectAssignmentForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>งานที่ได้รับมอบหมาย {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้องานโครงการ/งานพิเศษที่ได้รับมอบหมาย</span><input v-model="row.assignmentTopic" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><input v-model="row.developmentGoal" /></label>
+                  <label class="wide"><span>รายละเอียด</span><textarea v-model="row.developmentApproach" rows="2" /></label>
+                  <div class="coaching-timeline group-activity-timeline wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>ระยะเวลาดำเนินการ</strong>
+                      <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isOjtForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>หัวข้อฝึกปฏิบัติ {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นการฝึกปฏิบัติงาน</span><textarea v-model="row.skillTopic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label class="wide"><span>วิธีการ</span><textarea v-model="row.developmentApproach" rows="2" /></label>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>ระยะเวลาการฝึกปฏิบัติงาน</strong>
+                      <span>กำหนดช่วงเวลาและจำนวนชั่วโมงรวม</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>จำนวนชั่วโมง</span><input v-model="row.hours" min="0" step="0.5" type="number" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isCoachingForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>หัวข้อการสอนงาน {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นการสอนงาน</span><textarea v-model="row.topic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label class="wide"><span>วิธีการ</span><textarea v-model="row.developmentApproach" rows="2" /></label>
+                  <div class="coaching-approach-field wide">
+                    <div class="coaching-approach-label">
+                      <div>
+                        <span>แนวทางการสอนงาน</span>
+                        <small>เลือกได้มากกว่า 1 แนวทาง</small>
+                      </div>
+                      <button type="button" @click="showCoachingApproachHelp = true">อ่านเพิ่มเติม</button>
+                    </div>
+                    <div class="coaching-approach-options">
+                      <button
+                        v-for="approach in fullCoachingApproachDescriptions"
+                        :key="approach.code"
+                        type="button"
+                        :class="{ selected: multiChoices(row, 'coachingApproaches').includes(approach.code) }"
+                        @click="toggleMultiChoice(row, 'coachingApproaches', approach.code, !multiChoices(row, 'coachingApproaches').includes(approach.code))"
+                      >
+                        <strong>{{ approach.code }}</strong>
+                        <span>{{ approach.title }}</span>
+                        <i aria-hidden="true">✓</i>
+                      </button>
+                    </div>
+                  </div>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline coaching-timeline-four wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>ระยะเวลาการพัฒนา</strong>
+                      <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
+                    <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isMentoringForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>หัวข้อที่ต้องการพัฒนา {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea v-model="row.skillTopic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label class="wide"><span>เทคนิค</span><textarea v-model="row.technique" rows="2" /></label>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline coaching-timeline-four wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>ระยะเวลาการพัฒนา</strong>
+                      <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
+                    <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isGroupActivityForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>กิจกรรม {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea v-model="row.learningTopic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label><span>เทคนิค</span><textarea v-model="row.technique" rows="3" /></label>
+                  <label><span>เครื่องมือและเงื่อนไขการประเมิน</span><textarea v-model="row.assessmentTools" rows="3" /></label>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline group-activity-timeline wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>กำหนดการจัดกิจกรรม</strong>
+                      <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isFeedbackForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>หัวข้อการพัฒนา {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea v-model="row.skillTopic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label class="wide"><span>แหล่งข้อมูลป้อนกลับ</span><textarea v-model="row.feedbackSource" rows="2" /></label>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline coaching-timeline-four wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>ระยะการพัฒนา</strong>
+                      <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
+                    <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isFieldTripForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>รายการศึกษาดูงาน {{ rowIndex + 1 }}</strong>
+                  <button type="button" :disabled="formRows(activeFormActivity).length === 1" @click="removeFormRow(activeFormActivity, rowIndex)">ลบ</button>
+                </div>
+                <div class="project-assignment-grid">
+                  <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea v-model="row.skillTopic" rows="3" /></label>
+                  <label><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label><span>สถานที่/แหล่งศึกษาดูงาน</span><textarea v-model="row.learningPlace" rows="3" /></label>
+                  <label><span>เครื่องมือและเงื่อนไขการประเมิน</span><textarea v-model="row.assessmentTools" rows="3" /></label>
+                  <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline group-activity-timeline wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>กำหนดการจัดกิจกรรม</strong>
+                      <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="isTrainingForm(activeFormActivity)" class="project-assignment-list">
+              <article v-for="(row, rowIndex) in formRows(activeFormActivity)" :key="rowIndex" class="project-assignment-item">
+                <div class="project-assignment-item-head">
+                  <strong>ข้อมูลหลักสูตรที่เลือก</strong>
+                  <span class="catalog-snapshot-note">ดึงจาก Learning Catalog</span>
+                </div>
+                <div class="project-assignment-grid training-form-grid">
+                  <section class="training-catalog-summary training-wide">
+                    <div class="training-course-heading">
+                      <div>
+                        <span>{{ row.courseCode || 'ไม่มีรหัสหลักสูตร' }}</span>
+                        <strong>{{ row.courseName || 'ยังไม่ได้เลือกหลักสูตร' }}</strong>
+                      </div>
+                      <em>{{ row.trainingType || '-' }}</em>
+                    </div>
+                    <p>{{ row.courseDescription || 'ไม่มีคำอธิบายหลักสูตร' }}</p>
+                    <dl>
+                      <div><dt>รูปแบบการอบรม</dt><dd>{{ row.trainingType || '-' }}</dd></div>
+                      <div><dt>จำนวนชั่วโมง</dt><dd>{{ row.hours !== '' && row.hours != null ? `${formatNumber(row.hours)} ชั่วโมง` : 'ไม่ระบุ' }}</dd></div>
+                      <div><dt>ค่าใช้จ่าย</dt><dd>{{ formatCurrency(row.cost) }}</dd></div>
+                    </dl>
+                  </section>
+                  <label class="training-wide"><span>เป้าหมายในการพัฒนา</span><textarea v-model="row.developmentGoal" rows="3" /></label>
+                  <label class="training-wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea v-model="row.additionalDetails" rows="2" /></label>
+                  <div class="coaching-timeline training-summary training-wide">
+                    <div class="coaching-timeline-heading">
+                      <strong>กำหนดการอบรม</strong>
+                      <span>ระบุวันที่ที่ต้องการเข้าร่วมหลักสูตร</span>
+                    </div>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="form-table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -1067,7 +1433,7 @@ const submitSelectedPlan = () => {
             </div>
           </section>
 
-          <section class="form-block result-block">
+          <section v-if="!isReworkedActivityForm(activeFormActivity)" class="form-block result-block">
             <header>
               <h4>ผลการดำเนินการ</h4>
               <span>ใช้หลังแผนอนุมัติแล้ว</span>
@@ -1088,7 +1454,7 @@ const submitSelectedPlan = () => {
             </div>
           </section>
 
-          <section class="form-block assessment-block">
+          <section v-if="!isReworkedActivityForm(activeFormActivity)" class="form-block assessment-block">
             <header>
               <h4>การติดตามประเมินผล / คำรับรอง</h4>
               <span>หัวหน้าใช้ตอนติดตามผล</span>
@@ -1135,6 +1501,11 @@ const submitSelectedPlan = () => {
                   v-model="activeFormActivity.formDetails.detail[field.key]"
                   rows="3"
                 />
+                <input
+                  v-else-if="field.type === 'date'"
+                  v-model="activeFormActivity.formDetails.detail[field.key]"
+                  type="date"
+                />
                 <select
                   v-else-if="field.type === 'choice'"
                   v-model="activeFormActivity.formDetails.detail[field.key]"
@@ -1149,7 +1520,7 @@ const submitSelectedPlan = () => {
                   :disabled="supervisorChainOptions.length === 0"
                 >
                   <option value="">
-                    {{ supervisorChainOptions.length ? 'เลือกจากรายการ: สายการบังคับบัญชา' : 'ยังไม่ได้กำหนดสายการบังคับบัญชา' }}
+                    {{ supervisorChainOptions.length ? 'เลือกผู้บังคับบัญชา' : 'ยังไม่ได้กำหนดผู้บังคับบัญชา' }}
                   </option>
                   <option v-for="person in supervisorChainOptions" :key="person.id" :value="person.id">
                     {{ person.label }} · {{ person.name }}{{ person.position ? ` (${person.position})` : '' }}
@@ -1189,7 +1560,7 @@ const submitSelectedPlan = () => {
         </div>
         <div class="approach-modal-body">
           <article
-            v-for="approach in coachingApproachDescriptions"
+            v-for="approach in fullCoachingApproachDescriptions"
             :key="approach.code"
             class="approach-help-card"
             :class="`approach-${approach.code.toLowerCase()}`"
@@ -1202,7 +1573,7 @@ const submitSelectedPlan = () => {
               </div>
             </header>
             <ul>
-              <li v-for="item in approach.items" :key="item">{{ item }}</li>
+              <li v-for="item in approach.items" :key="item">{{ item.replace(/^[-▪]\s*/, '') }}</li>
             </ul>
           </article>
         </div>
@@ -1360,6 +1731,15 @@ select:disabled { cursor: not-allowed; }
 .form-block > header span { color: #667085; font-size: 11px; font-weight: 900; }
 .form-block > header button { border: 1px solid #98c9b7; border-radius: 6px; background: #edf8f4; color: #247260; padding: 7px 10px; font-size: 11px; font-weight: 900; cursor: pointer; }
 .readonly-block > header { background: #edf8f4; }
+.approval-route-list { display: flex; align-items: center; gap: 10px; overflow-x: auto; padding: 14px; }
+.approval-route-step { display: flex; align-items: center; gap: 10px; min-width: 220px; border: 1px solid #cfe3dc; border-radius: 8px; background: #f8fcfa; padding: 10px 12px; }
+.approval-route-step > span { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%; background: #247260; color: #fff; font-size: 12px; font-weight: 900; }
+.approval-route-step div, .approval-route-step strong, .approval-route-step small { display: block; min-width: 0; }
+.approval-route-step strong { overflow: hidden; color: #172033; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.approval-route-step small { margin-top: 3px; overflow: hidden; color: #667085; font-size: 10px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.approval-route-arrow { flex: 0 0 auto; color: #8090a3; font-size: 18px; font-weight: 900; }
+.approval-route-empty { margin: 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; padding: 14px; color: #667085; font-size: 12px; font-weight: 800; text-align: center; }
+.approval-route-notice { margin: 0; border-top: 1px solid #e3e9f0; background: #fffaf0; padding: 9px 14px; color: #9a4d00; font-size: 11px; font-weight: 900; }
 .result-block > header { background: #fff0fb; }
 .assessment-block > header { background: #eef6ff; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
@@ -1372,6 +1752,56 @@ select:disabled { cursor: not-allowed; }
 .form-table-wrap th small { display: block; margin-top: 3px; color: #9a4d00; font-size: 10px; }
 .form-table-wrap input, .form-table-wrap select { min-width: 120px; }
 .form-table-wrap .table-textarea { min-width: 240px; min-height: 72px; }
+.project-assignment-list { display: grid; gap: 12px; padding: 14px; }
+.project-assignment-item { overflow: hidden; border: 1px solid #d8e0e9; border-radius: 8px; background: #fbfdff; }
+.project-assignment-item-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e3e9f0; background: #f8fafc; padding: 10px 12px; }
+.project-assignment-item-head strong { color: #172033; font-size: 13px; }
+.project-assignment-item-head button { border: 1px solid #fecaca; border-radius: 6px; background: #fff; color: #b42318; padding: 6px 9px; font-size: 11px; font-weight: 900; cursor: pointer; }
+.project-assignment-item-head button:disabled { opacity: .4; cursor: not-allowed; }
+.project-assignment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+.project-assignment-grid.training-form-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: start; }
+.training-form-grid > .training-meta { grid-column: span 2; }
+.training-form-grid > .training-wide { grid-column: 1 / -1; }
+.coaching-timeline.training-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.catalog-snapshot-note { color: #667085; font-size: 11px; font-weight: 800; }
+.training-catalog-summary { display: grid; gap: 12px; border: 1px solid #d8e3ef; border-radius: 9px; background: #f8fafc; padding: 14px; }
+.training-course-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.training-course-heading > div { display: grid; gap: 3px; min-width: 0; }
+.training-course-heading span { color: #667085; font-size: 11px; font-weight: 900; }
+.training-course-heading strong { color: #172033; font-size: 15px; line-height: 1.45; }
+.training-course-heading em { flex: 0 0 auto; border: 1px solid #cfe0f5; border-radius: 999px; background: #eff6ff; color: #2563eb; padding: 5px 10px; font-size: 11px; font-style: normal; font-weight: 900; }
+.training-catalog-summary > p { max-width: 72ch; margin: 0; color: #475467; font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.training-catalog-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 0; border: 1px solid #e1e8f0; border-radius: 8px; background: #e1e8f0; }
+.training-catalog-summary dl > div { display: grid; gap: 3px; background: #fff; padding: 10px 12px; }
+.training-catalog-summary dt { color: #7a8798; font-size: 10px; font-weight: 800; }
+.training-catalog-summary dd { margin: 0; color: #273142; font-size: 12px; font-weight: 900; }
+.project-assignment-grid label { display: grid; gap: 6px; color: #475467; font-size: 11px; font-weight: 900; }
+.project-assignment-grid > .wide { grid-column: 1 / -1; }
+.project-assignment-grid input, .project-assignment-grid textarea, .project-assignment-grid select { width: 100%; border: 1px solid #cfd8e3; border-radius: 7px; background-color: #fff; padding: 9px 10px; font: inherit; color: #1f2937; transition: border-color .16s ease, box-shadow .16s ease; }
+.project-assignment-grid select { min-height: 42px; appearance: none; cursor: pointer; padding-right: 38px; background-image: linear-gradient(45deg, transparent 50%, #7a8798 50%), linear-gradient(135deg, #7a8798 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-repeat: no-repeat; background-size: 6px 6px, 6px 6px; }
+.project-assignment-grid input:focus, .project-assignment-grid textarea:focus, .project-assignment-grid select:focus { outline: none; border-color: #e26b50; box-shadow: 0 0 0 3px rgba(226, 107, 80, .12); }
+.project-assignment-grid textarea { min-height: 80px; resize: vertical; }
+.coaching-approach-field { display: grid; gap: 12px; border: 1px solid #dce9e5; border-radius: 9px; background: #f8fcfb; padding: 12px; }
+.coaching-approach-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #344054; font-size: 12px; font-weight: 900; }
+.coaching-approach-label > div { display: grid; gap: 2px; }
+.coaching-approach-label small { color: #7a8798; font-size: 10px; font-weight: 700; }
+.coaching-approach-label button { border: 1px solid #9fd0c4; border-radius: 999px; background: #fff; color: #1d6b59; padding: 6px 11px; font-size: 10px; font-weight: 900; cursor: pointer; }
+.coaching-approach-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.coaching-approach-options button { position: relative; display: flex; align-items: center; gap: 9px; min-height: 48px; border: 1px solid #ccd8e0; border-radius: 8px; background: #fff; color: #4b5565; padding: 9px 30px 9px 10px; cursor: pointer; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.coaching-approach-options button:hover { border-color: #76bbaa; box-shadow: 0 3px 10px rgba(36, 114, 96, .08); }
+.coaching-approach-options button strong { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: #edf1f5; color: #344054; }
+.coaching-approach-options button span { font-size: 11px; font-weight: 900; }
+.coaching-approach-options button i { position: absolute; right: 10px; display: none; color: #247260; font-style: normal; font-weight: 900; }
+.coaching-approach-options button.selected { border-color: #72b9a7; background: #edf8f4; color: #185f50; }
+.coaching-approach-options button.selected strong { background: #247260; color: #fff; }
+.coaching-approach-options button.selected i { display: block; }
+.coaching-timeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; border: 1px solid #d8e2e8; border-radius: 9px; background: #fff; padding: 12px; }
+.coaching-timeline.coaching-timeline-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.coaching-timeline.group-activity-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); align-self: stretch; }
+.coaching-timeline-heading { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e8edf1; padding: 0 2px 10px; }
+.coaching-timeline-heading strong { color: #344054; font-size: 12px; }
+.coaching-timeline-heading span { color: #7a8798; font-size: 10px; font-weight: 700; }
+.coaching-timeline input { min-height: 42px; background: #fbfcfd; }
 .fixed-topic-cell { display: grid; gap: 10px; min-width: 280px; color: #172033; font-size: 12px; font-weight: 900; }
 .fixed-topic-cell label { display: grid; gap: 6px; color: #475467; font-size: 11px; font-weight: 900; }
 .fixed-topic-cell .table-textarea { min-width: 260px; min-height: 56px; }
@@ -1397,14 +1827,14 @@ select:disabled { cursor: not-allowed; }
 .approach-modal-header button { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #efb8b8; border-radius: 7px; background: #fff; color: #b42318; font-size: 26px; font-weight: 600; line-height: 1; cursor: pointer; }
 .approach-modal-guide { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d8e0e9; background: #f7fbfa; padding: 10px 18px; color: #46576b; font-size: 14px; font-weight: 800; }
 .approach-modal-guide strong { color: #247260; }
-.approach-modal-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; background: #eef3f6; padding: 14px 18px 18px; }
+.approach-modal-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-x: hidden; overflow-y: scroll; overscroll-behavior: contain; background: #eef3f6; padding: 14px 18px 18px; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
 .approach-help-card { display: block; flex: 0 0 auto; border: 1px solid #d8e0e9; border-radius: 10px; background: #fff; overflow: visible; }
 .approach-help-card header { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #dfe6ee; background: #f8fafc; padding: 14px 16px; }
 .approach-help-card header b { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: #247260; color: #fff; font-size: 15px; flex: 0 0 auto; box-shadow: 0 8px 18px rgba(36, 114, 96, .18); }
 .approach-help-card header strong, .approach-help-card header span { display: block; }
 .approach-help-card header strong { color: #172033; font-size: 17px; font-weight: 900; }
 .approach-help-card header span { margin-top: 5px; color: #667085; font-size: 14px; font-weight: 800; line-height: 1.4; }
-.approach-help-card ul { display: grid; gap: 8px; margin: 0; padding: 16px 28px 18px 46px; color: #344054; font-size: 15px; line-height: 1.55; list-style: none; }
+.approach-help-card ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 30px; margin: 0; padding: 18px 32px 22px 46px; color: #344054; font-size: 14px; line-height: 1.6; list-style: none; }
 .approach-help-card li { position: relative; margin: 0; padding-left: 18px; }
 .approach-help-card li::before { content: ''; position: absolute; top: .68em; left: 0; width: 7px; height: 7px; border-radius: 50%; background: #247260; transform: translateY(-50%); }
 .approach-help-card.approach-b header b { background: #315f9f; box-shadow: 0 8px 18px rgba(49, 95, 159, .18); }
@@ -1426,10 +1856,16 @@ select:disabled { cursor: not-allowed; }
   .page-header, .competency-header, .submit-bar { align-items: stretch; flex-direction: column; }
   .workspace { grid-template-columns: 1fr; }
   .plan-nav { border-right: 0; border-bottom: 1px solid #dfe5ed; }
-  .goal-grid, .activity-form, .form-grid, .form-grid.three { grid-template-columns: 1fr; }
+  .goal-grid, .activity-form, .form-grid, .form-grid.three, .project-assignment-grid, .project-assignment-grid.training-form-grid, .coaching-timeline, .coaching-timeline.group-activity-timeline, .coaching-timeline.training-summary { grid-template-columns: 1fr; }
+  .training-course-heading { display: grid; }
+  .training-course-heading em { justify-self: start; }
+  .training-catalog-summary dl { grid-template-columns: 1fr; }
+  .training-form-grid > .training-meta, .training-form-grid > .training-wide { grid-column: 1; }
   .approach-modal-header { grid-template-columns: minmax(0, 1fr) auto; }
   .approach-modal-badge { display: none; }
   .approach-modal-guide { align-items: flex-start; flex-direction: column; }
+  .coaching-timeline-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .approach-help-card ul { grid-template-columns: 1fr; }
   .activity-form .wide { grid-column: span 1; }
   .activity-detail-action, .form-title-band { align-items: stretch; flex-direction: column; }
   .form-title-band label { width: 100%; }

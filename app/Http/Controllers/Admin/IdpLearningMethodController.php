@@ -15,22 +15,29 @@ class IdpLearningMethodController extends Controller
     {
         $data = $this->validatedData($request);
 
-        $values = [
-            'focus_type' => $data['focus_type'],
-            'code' => $data['code'],
-            'title' => $data['title'],
-            'sort_order' => DB::table('idp_learning_methods')
-                ->where('focus_type', $data['focus_type'])
-                ->max('sort_order') + 1,
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ];
-        if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
-            $values['form_code'] = $data['form_code'] ?? null;
-        }
+        DB::transaction(function () use ($data): void {
+            $values = [
+                'focus_type' => $data['focus_type'],
+                'code' => null,
+                'title' => $data['title'],
+                'sort_order' => (int) DB::table('idp_learning_methods')
+                    ->where('focus_type', $data['focus_type'])
+                    ->max('sort_order') + 1,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+            if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
+                $values['form_code'] = $data['form_code'] ?? null;
+            }
 
-        DB::table('idp_learning_methods')->insert($values);
+            $methodId = DB::table('idp_learning_methods')->insertGetId($values);
+            $prefix = $data['focus_type'] === 'experiential' ? 'EXP' : 'SOC';
+
+            DB::table('idp_learning_methods')
+                ->where('id', $methodId)
+                ->update(['code' => sprintf('%s-%04d', $prefix, $methodId)]);
+        });
 
         return back()->with('success', 'เพิ่มหัวข้อแนวทาง IDP เรียบร้อยแล้ว');
     }
@@ -41,7 +48,6 @@ class IdpLearningMethodController extends Controller
 
         $values = [
             'focus_type' => $data['focus_type'],
-            'code' => $data['code'],
             'title' => $data['title'],
             'updated_at' => now(),
         ];
@@ -67,7 +73,6 @@ class IdpLearningMethodController extends Controller
     {
         return $request->validate([
             'focus_type' => ['required', Rule::in(['experiential', 'social'])],
-            'code' => ['required', 'string', 'max:50'],
             'title' => ['required', 'string', 'max:255'],
             'form_code' => ['nullable', 'string', 'max:80', Rule::in([
                 'form_3_project_assignment',

@@ -41,7 +41,7 @@ class AdminLearningCatalogTest extends TestCase
             'method_type_id' => $methodId,
             'delivery_type' => 'e_learning',
             'source_type' => 'internal',
-            'provider' => 'หน่วยงานทดสอบ',
+            'provider' => null,
             'cost' => 1200,
             'hours' => 6,
             'description' => 'รายละเอียดหลักสูตร',
@@ -66,7 +66,7 @@ class AdminLearningCatalogTest extends TestCase
                 'cost' => null,
                 'hours' => '3.5',
                 'expected_levels' => [4],
-                'competency_ids' => [],
+                'competency_ids' => [$competencyId],
                 'description' => 'รายละเอียดใหม่',
                 'is_active' => false,
             ])
@@ -77,14 +77,14 @@ class AdminLearningCatalogTest extends TestCase
             'code' => 'KKU-LC-002',
             'name' => 'หลักสูตรแก้ไข',
             'delivery_type' => 'in_class',
-            'source_type' => 'external',
-            'provider' => 'หน่วยงานใหม่',
+            'source_type' => 'internal',
+            'provider' => null,
             'cost' => null,
             'hours' => 3.5,
             'description' => 'รายละเอียดใหม่',
             'is_active' => false,
         ]);
-        $this->assertDatabaseMissing('learning_catalog_competency', [
+        $this->assertDatabaseHas('learning_catalog_competency', [
             'learning_catalog_id' => $catalogId,
             'competency_id' => $competencyId,
         ]);
@@ -94,6 +94,42 @@ class AdminLearningCatalogTest extends TestCase
             ->assertRedirect();
 
         $this->assertDatabaseMissing('learning_catalogs', ['id' => $catalogId]);
+    }
+
+    public function test_catalog_fields_are_required_by_delivery_type(): void
+    {
+        $adminUser = $this->adminUser();
+        $this->createLearningMethod('formal', 'Formal Learning');
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => null,
+                'name' => 'หลักสูตรในห้องเรียน',
+                'method_key' => 'formal',
+                'delivery_type' => 'in_class',
+                'source_type' => 'internal',
+                'provider' => null,
+                'expected_levels' => [],
+                'competency_ids' => [],
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors(['code', 'competency_ids']);
+
+        $competencyId = $this->createCompetency('CC-030', 'Digital Literacy');
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => null,
+                'name' => 'บทเรียนออนไลน์',
+                'method_key' => 'formal',
+                'delivery_type' => 'e_learning',
+                'source_type' => 'internal',
+                'provider' => null,
+                'expected_levels' => [],
+                'competency_ids' => [$competencyId],
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors(['expected_levels']);
     }
 
     public function test_admin_dashboard_loads_learning_catalog_and_idp_tool_items(): void
@@ -162,6 +198,10 @@ class AdminLearningCatalogTest extends TestCase
                     'e_learning' => '09',
                     'in_class' => '10',
                 ],
+                'delivery_forms' => [
+                    'e_learning' => 'form_10_training',
+                    'in_class' => 'form_10_training',
+                ],
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors();
@@ -201,6 +241,10 @@ class AdminLearningCatalogTest extends TestCase
                 'delivery_types' => [
                     'e_learning' => 'EL',
                     'in_class' => '10',
+                ],
+                'delivery_forms' => [
+                    'e_learning' => 'form_10_training',
+                    'in_class' => 'form_10_training',
                 ],
             ])
             ->assertRedirect('/dashboard')
@@ -314,10 +358,11 @@ class AdminLearningCatalogTest extends TestCase
         ]);
     }
 
-    public function test_learning_catalog_expected_levels_are_nullable_and_normalized(): void
+    public function test_e_learning_expected_levels_are_required_and_normalized(): void
     {
         $adminUser = $this->adminUser();
         $this->createLearningMethod('formal', 'Formal Learning');
+        $competencyId = $this->createCompetency('CC-012', 'Systems Thinking');
 
         $this->actingAs($adminUser)
             ->post(route('admin.learning-catalogs.store'), [
@@ -326,11 +371,31 @@ class AdminLearningCatalogTest extends TestCase
                 'method_key' => 'formal',
                 'delivery_type' => 'e_learning',
                 'source_type' => 'internal',
-                'provider' => null,
+                'provider' => 'ศูนย์นวัตกรรมการเรียนการสอน',
                 'cost' => 0,
                 'hours' => 1,
                 'expected_levels' => [],
-                'competency_ids' => [],
+                'competency_ids' => [$competencyId],
+                'description' => null,
+                'is_active' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['expected_levels']);
+
+        $this->assertDatabaseMissing('learning_catalogs', ['code' => 'LV-001']);
+
+        $this->actingAs($adminUser)
+            ->post(route('admin.learning-catalogs.store'), [
+                'code' => 'LV-001',
+                'name' => 'หลักสูตรไม่ระบุระดับ',
+                'method_key' => 'formal',
+                'delivery_type' => 'e_learning',
+                'source_type' => 'internal',
+                'provider' => 'ศูนย์นวัตกรรมการเรียนการสอน',
+                'cost' => 0,
+                'hours' => 1,
+                'expected_levels' => [4, 2, 2],
+                'competency_ids' => [$competencyId],
                 'description' => null,
                 'is_active' => true,
             ])
@@ -338,26 +403,6 @@ class AdminLearningCatalogTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $catalogId = DB::table('learning_catalogs')->where('code', 'LV-001')->value('id');
-
-        $this->assertNull(DB::table('learning_catalogs')->where('id', $catalogId)->value('expected_levels'));
-
-        $this->actingAs($adminUser)
-            ->put(route('admin.learning-catalogs.update', $catalogId), [
-                'code' => 'LV-001',
-                'name' => 'หลักสูตรไม่ระบุระดับ',
-                'method_key' => 'formal',
-                'delivery_type' => 'e_learning',
-                'source_type' => 'internal',
-                'provider' => null,
-                'cost' => 0,
-                'hours' => 1,
-                'expected_levels' => [4, 2, 2],
-                'competency_ids' => [],
-                'description' => null,
-                'is_active' => true,
-            ])
-            ->assertRedirect()
-            ->assertSessionHasNoErrors();
 
         $this->assertSame([2, 4], json_decode(DB::table('learning_catalogs')->where('id', $catalogId)->value('expected_levels'), true));
     }

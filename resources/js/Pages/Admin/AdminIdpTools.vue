@@ -7,6 +7,7 @@ import {
   rowHeaderCells,
   rowSubHeaderFields,
 } from '../../idpFormDefinitions';
+import { coachingApproachDescriptions } from '../../coachingApproachDescriptions';
 
 const props = defineProps({
   competencies: { type: Array, default: () => [] },
@@ -23,24 +24,25 @@ const focusTabs = [
 ];
 const activityFormOptions = [
   { value: '', label: 'ไม่มีแบบฟอร์มรายละเอียด' },
-  { value: 'form_3_project_assignment', label: 'แบบฟอร์มที่ 3 · Project Assignment' },
-  { value: 'form_4_ojt', label: 'แบบฟอร์มที่ 4 · OJT' },
-  { value: 'form_5_coaching', label: 'แบบฟอร์มที่ 5 · Coaching' },
-  { value: 'form_6_mentoring', label: 'แบบฟอร์มที่ 6 · Mentoring' },
-  { value: 'form_7_group_activity', label: 'แบบฟอร์มที่ 7 · Group Activity' },
-  { value: 'form_8_feedback', label: 'แบบฟอร์มที่ 8 · Feedback' },
-  { value: 'form_9_field_trip', label: 'แบบฟอร์มที่ 9 · Field Trip' },
+  { value: 'form_3_project_assignment', label: 'Project Assignment' },
+  { value: 'form_4_ojt', label: 'OJT' },
+  { value: 'form_5_coaching', label: 'Coaching' },
+  { value: 'form_6_mentoring', label: 'Mentoring' },
+  { value: 'form_7_group_activity', label: 'Group Activity' },
+  { value: 'form_8_feedback', label: 'แบบฟอร์มการเรียนรู้ผ่านการให้ข้อมูลป้อนกลับ (Feedback)' },
+  { value: 'form_9_field_trip', label: 'Field Trip' },
 ];
 const previewFormOptions = Object.entries(formDefinitions)
   .filter(([, form]) => Number(form.number) >= 3 && Number(form.number) <= 10)
   .map(([value, form]) => ({
     value,
-    label: `แบบฟอร์มที่ ${form.number} · ${form.title}`,
+    label: form.title,
   }));
 const deliveryTypeBaseOptions = [
   { value: 'e_learning', label: 'การฝึกอบรมออนไลน์ (e-Learning)' },
   { value: 'in_class', label: 'การฝึกอบรมในห้องเรียน (In Class Training)' },
 ];
+const formalTrainingFormCode = 'form_10_training';
 const levelOptions = [
   { value: 1, label: 'Level 1' },
   { value: 2, label: 'Level 2' },
@@ -61,7 +63,7 @@ const initialDeliveryTypeCodes = () => {
   return codes;
 };
 const initialDeliveryTypeForms = () => {
-  const forms = { e_learning: 'form_9_field_trip', in_class: 'form_10_training' };
+  const forms = { e_learning: 'form_10_training', in_class: 'form_10_training' };
   props.deliveryTypeSettings.forEach((setting) => {
     const value = setting.value || setting.delivery_type;
     if (value && forms[value] !== undefined) forms[value] = String(setting.formCode || setting.form_code || forms[value]);
@@ -70,8 +72,10 @@ const initialDeliveryTypeForms = () => {
 };
 const toolModalOpen = ref(false);
 const toolMode = ref('create');
-const toolForm = ref({ id: null, focusType: 'experiential', code: '', title: '', formCode: '' });
+const toolForm = ref({ id: null, focusType: 'experiential', title: '', formCode: '' });
 const previewFormCode = ref('');
+const previewCoachType = ref('');
+const previewCoachingHelpOpen = ref(false);
 const previewPickerOpen = ref(false);
 const deliveryTypeCodes = ref(initialDeliveryTypeCodes());
 const deliveryTypeForms = ref(initialDeliveryTypeForms());
@@ -80,6 +84,8 @@ const deliveryCodeSaving = ref(false);
 const deliveryEditing = ref(false);
 const catalogModalOpen = ref(false);
 const catalogMode = ref('create');
+const catalogView = ref('in_class');
+const expandedCatalogId = ref(null);
 const catalogSearch = ref('');
 const catalogCompetencySearch = ref('');
 const catalogMethodFilter = ref('all');
@@ -93,7 +99,6 @@ const catalogForm = ref({
   methodKey: '',
   deliveryType: 'e_learning',
   sourceType: 'internal',
-  provider: '',
   cost: '',
   hours: '',
   competencyIds: [],
@@ -114,6 +119,10 @@ const deliveryTypeOptions = computed(() => deliveryTypeBaseOptions.map((item) =>
   label: deliveryTypeSettingsByValue.value[item.value]?.label || item.label,
 })));
 const isCatalogELearning = computed(() => catalogForm.value.deliveryType === 'e_learning');
+const catalogCounts = computed(() => ({
+  in_class: props.learningCatalogs.filter((item) => item.deliveryType === 'in_class').length,
+  e_learning: props.learningCatalogs.filter((item) => item.deliveryType === 'e_learning').length,
+}));
 const catalogPrimaryError = computed(() => Object.values(catalogErrors.value)[0] || '');
 const formalMethodKey = computed(() => {
   const formal = props.learningMethods.find((method) => {
@@ -129,7 +138,7 @@ const filteredCatalogs = computed(() => {
     const haystack = `${item.code || ''} ${item.name || ''} ${item.description || ''}`.toLowerCase();
     const matchesSearch = !keyword || haystack.includes(keyword);
     const matchesMethod = catalogMethodFilter.value === 'all' || item.methodKey === catalogMethodFilter.value;
-    const matchesDelivery = catalogDeliveryFilter.value === 'all' || item.deliveryType === catalogDeliveryFilter.value;
+    const matchesDelivery = item.deliveryType === catalogView.value;
     const matchesStatus = catalogStatusFilter.value === 'all'
       || (catalogStatusFilter.value === 'active' ? item.isActive : !item.isActive);
 
@@ -166,7 +175,6 @@ const resetCatalogFilters = () => {
 
 const toolPayload = () => ({
   focus_type: toolForm.value.focusType,
-  code: toolForm.value.code,
   title: toolForm.value.title,
   form_code: toolForm.value.formCode || null,
 });
@@ -176,21 +184,13 @@ const activePreviewOptions = computed(() => previewFormOptions);
 const previewForm = computed(() => formDefinitions[previewFormCode.value] || null);
 const previewRows = computed(() => {
   if (!previewForm.value) return [];
-  if (previewForm.value.number === '7') {
-    return ['1) หัวข้อการเรียนรู้ฯ', '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้'];
-  }
-  if (previewForm.value.number === '9') {
-    return ['1) ประเด็นที่ต้องการพัฒนา', '2) ผู้รับการพัฒนาจัดทำรายงานสรุปผลการศึกษาดูงาน'];
-  }
-  if (previewForm.value.number === '10') {
-    return Array.from({ length: 6 }, (_, index) => `${index + 1}`);
-  }
   return ['1'];
 });
 const openFormPreview = (formCode) => {
   const form = formDefinitions[formCode];
   if (!form || Number(form.number) < 3 || Number(form.number) > 10) return;
   previewPickerOpen.value = false;
+  previewCoachType.value = '';
   previewFormCode.value = formCode;
 };
 const openPreviewPicker = () => {
@@ -198,12 +198,12 @@ const openPreviewPicker = () => {
 };
 const openToolCreate = () => {
   toolMode.value = 'create';
-  toolForm.value = { id: null, focusType: activeFocus.value, code: '', title: '', formCode: '' };
+  toolForm.value = { id: null, focusType: activeFocus.value, title: '', formCode: '' };
   toolModalOpen.value = true;
 };
 const openToolEdit = (tool) => {
   toolMode.value = 'edit';
-  toolForm.value = { id: tool.id, focusType: tool.focusType, code: tool.code || '', title: tool.title, formCode: tool.formCode || '' };
+  toolForm.value = { id: tool.id, focusType: tool.focusType, title: tool.title, formCode: tool.formCode || '' };
   toolModalOpen.value = true;
 };
 const submitTool = () => {
@@ -230,7 +230,6 @@ const catalogPayload = () => ({
   method_key: formalMethodKey.value || catalogForm.value.methodKey || null,
   delivery_type: catalogForm.value.deliveryType,
   source_type: isCatalogELearning.value ? catalogForm.value.sourceType : 'internal',
-  provider: null,
   cost: isCatalogELearning.value && catalogForm.value.cost !== '' ? catalogForm.value.cost : null,
   hours: catalogForm.value.hours === '' ? null : catalogForm.value.hours,
   competency_ids: catalogForm.value.competencyIds,
@@ -244,7 +243,6 @@ const setCatalogDeliveryType = (value) => {
   if (value === 'in_class') {
     catalogForm.value.expectedLevels = [];
     catalogForm.value.cost = '';
-    catalogForm.value.provider = '';
     catalogForm.value.sourceType = 'internal';
   }
 };
@@ -257,7 +255,7 @@ const clearCatalogError = (field) => {
   delete nextErrors[field];
   catalogErrors.value = nextErrors;
 };
-const openCatalogCreate = () => {
+const openCatalogCreate = (deliveryType = catalogView.value) => {
   catalogMode.value = 'create';
   catalogCompetencySearch.value = '';
   clearCatalogErrors();
@@ -266,9 +264,8 @@ const openCatalogCreate = () => {
     code: '',
     name: '',
     methodKey: formalMethodKey.value,
-    deliveryType: 'e_learning',
+    deliveryType,
     sourceType: 'internal',
-    provider: '',
     cost: '',
     hours: '',
     competencyIds: [],
@@ -289,7 +286,6 @@ const openCatalogEdit = (item) => {
     methodKey: item.methodKey || formalMethodKey.value,
     deliveryType: item.deliveryType || 'e_learning',
     sourceType: item.sourceType || 'internal',
-    provider: item.provider || '',
     cost: item.cost ?? '',
     hours: item.hours ?? '',
     competencyIds: [...(item.competencyIds || [])].slice(0, 1),
@@ -332,6 +328,11 @@ const toggleExpectedLevel = (level) => {
   const current = new Set(catalogForm.value.expectedLevels);
   current.has(level) ? current.delete(level) : current.add(level);
   catalogForm.value.expectedLevels = [...current].sort((a, b) => a - b);
+  clearCatalogError('expected_levels');
+};
+const selectAllExpectedLevels = () => {
+  catalogForm.value.expectedLevels = levelOptions.map((level) => level.value);
+  clearCatalogError('expected_levels');
 };
 const competencyLabel = (item) => {
   const competencyId = item.competencyIds?.[0];
@@ -339,6 +340,28 @@ const competencyLabel = (item) => {
 
   if (!competency) return '-';
   return competency.cd || competency.n || '-';
+};
+const formatExpectedLevels = (levels = []) => {
+  const normalized = [...new Set(levels.map(Number).filter((level) => level >= 1 && level <= 5))].sort((a, b) => a - b);
+  if (!normalized.length) return '-';
+
+  const ranges = [];
+  let start = normalized[0];
+  let end = normalized[0];
+
+  normalized.slice(1).forEach((level) => {
+    if (level === end + 1) {
+      end = level;
+      return;
+    }
+
+    ranges.push(start === end ? `${start}` : `${start}-${end}`);
+    start = level;
+    end = level;
+  });
+  ranges.push(start === end ? `${start}` : `${start}-${end}`);
+
+  return ranges.join(', ');
 };
 const updateDeliveryTypeCode = (value, code) => {
   deliveryTypeCodes.value = {
@@ -379,7 +402,7 @@ const saveDeliveryTypeCodes = () => {
 const deliveryTypeOption = (value) => deliveryTypeOptions.value.find((item) => item.value === value);
 const deliveryTypeCode = (value) => deliveryTypeOption(value)?.code || '-';
 const deliveryTypeLabel = (value) => deliveryTypeOption(value)?.label || '-';
-const deliveryTypeSelectLabel = (option) => (option.code ? `${option.code} ${option.label}` : option.label);
+const deliveryTypeSelectLabel = (option) => option.label;
 const deliveryTypeFormCode = (value) => deliveryTypeOption(value)?.formCode || 'form_10_training';
 const deliveryTypeFormLabel = (value) => activityFormLabel(deliveryTypeFormCode(value));
 const deliveryTypeDisplay = (value) => {
@@ -428,7 +451,6 @@ const deliveryTypeDisplay = (value) => {
         <div v-for="(tool, index) in simpleTools" v-else :key="tool.id" class="tool-row">
           <div class="tool-no">{{ index + 1 }}</div>
           <div class="tool-title">
-            <span class="tool-code">{{ tool.code || '-' }}</span>
             <strong>{{ tool.title }}</strong>
             <small>{{ activityFormLabel(tool.formCode) }}</small>
           </div>
@@ -441,98 +463,36 @@ const deliveryTypeDisplay = (value) => {
     </section>
 
     <div v-else class="formal-stack">
-      <section class="card delivery-code-card">
-        <div class="delivery-code-copy">
-          <div class="delivery-code-title">ตั้งค่ารหัสรูปแบบ</div>
-          <div class="delivery-code-sub">แก้ตรงนี้ครั้งเดียว ทุกกิจกรรมที่ใช้รูปแบบเดียวกันจะใช้รหัสนี้ร่วมกัน</div>
-        </div>
-        <div class="delivery-type-settings">
-          <div v-for="option in deliveryTypeOptions" :key="option.value" class="delivery-type-setting" :class="{ readonly: !deliveryEditing }">
-            <div class="delivery-setting-head">
-              <div>
-                <strong>{{ option.label }}</strong>
-                <span>Formal Learning</span>
-              </div>
-              <em>{{ option.code || '--' }}</em>
-            </div>
-            <div v-if="!deliveryEditing" class="delivery-setting-summary">
-              <div class="delivery-summary-code">
-                <span>รหัส</span>
-                <strong>{{ option.code || '--' }}</strong>
-              </div>
-              <div class="delivery-summary-form">
-                <span>แบบฟอร์ม</span>
-                <strong>{{ activityFormLabel(option.formCode) }}</strong>
-              </div>
-              <button class="btn btn-s btn-sm delivery-preview-btn" type="button" @click="openFormPreview(option.formCode)">ดูตัวอย่าง</button>
-            </div>
-            <div v-else class="delivery-setting-controls">
-              <label class="delivery-code-field">
-                <span>รหัส</span>
-                <input
-                  class="inp delivery-code-input"
-                  inputmode="numeric"
-                  maxlength="20"
-                  pattern="[0-9]*"
-                  :value="option.code"
-                  @input="updateDeliveryTypeCode(option.value, $event.target.value)"
-                />
-              </label>
-              <label class="delivery-form-field">
-                <span>แบบฟอร์ม</span>
-                <select
-                  class="sel delivery-form-select"
-                  :class="{ invalid: deliveryFormError(option.value) }"
-                  :value="option.formCode"
-                  @change="updateDeliveryTypeForm(option.value, $event.target.value)"
-                >
-                  <option v-for="formOption in previewFormOptions" :key="formOption.value" :value="formOption.value">{{ formOption.label }}</option>
-                </select>
-              </label>
-              <button class="btn btn-s btn-sm delivery-preview-btn" type="button" @click="openFormPreview(option.formCode)">ดูตัวอย่าง</button>
-            </div>
-            <small v-if="deliveryCodeError(option.value)" class="field-error">{{ deliveryCodeError(option.value) }}</small>
-            <small v-if="deliveryFormError(option.value)" class="field-error">{{ deliveryFormError(option.value) }}</small>
-          </div>
-          <div class="delivery-save-row">
-            <button
-              v-if="!deliveryEditing"
-              class="btn btn-s btn-sm"
-              type="button"
-              @click="deliveryEditing = true"
-            >แก้ไข</button>
-            <template v-else>
-            <button class="btn btn-s btn-sm" type="button" :disabled="deliveryCodeSaving" @click="cancelDeliveryTypeEdit">ยกเลิก</button>
-            <button class="btn btn-p btn-sm" type="button" :disabled="deliveryCodeSaving" @click="saveDeliveryTypeCodes">
-              {{ deliveryCodeSaving ? 'กำลังบันทึก' : 'บันทึกรหัสรูปแบบ' }}
-            </button>
-            </template>
-          </div>
-        </div>
-      </section>
-
       <section class="card focus-panel">
         <div class="panel-head">
           <div>
             <div class="ct">Learning Catalog</div>
-            <div class="cs">จัดการกิจกรรมและหลักสูตรสำหรับ Formal Learning</div>
+            <div class="cs">จัดการหลักสูตรที่พนักงานเลือกใช้ในแผน IDP</div>
           </div>
           <div class="panel-actions">
-            <button class="btn btn-p" type="button" @click="openCatalogCreate">เพิ่มกิจกรรม</button>
+            <span class="panel-count">{{ learningCatalogs.length }} หลักสูตร</span>
+            <button class="btn btn-p" type="button" @click="openCatalogCreate(catalogView)">เพิ่มหลักสูตร</button>
           </div>
         </div>
 
         <div class="catalog-card">
+          <div class="catalog-type-tabs">
+            <button type="button" :class="{ active: catalogView === 'in_class' }" @click="catalogView = 'in_class'">
+              <span><strong>Training Roadmap (In-class Training)</strong><small>ทะเบียนหลักสูตรฝึกอบรมในห้องเรียน</small></span>
+              <em>{{ catalogCounts.in_class }}</em>
+            </button>
+            <button type="button" :class="{ active: catalogView === 'e_learning' }" @click="catalogView = 'e_learning'">
+              <span><strong>e-Learning Catalog</strong><small>ทะเบียนหลักสูตรและบทเรียนออนไลน์</small></span>
+              <em>{{ catalogCounts.e_learning }}</em>
+            </button>
+            <button class="catalog-form-preview" type="button" @click="openFormPreview(formalTrainingFormCode)">ดูแบบฟอร์มการฝึกอบรม</button>
+          </div>
           <div class="catalog-filter-bar">
             <input
               v-model="catalogSearch"
               class="inp catalog-filter-search"
-              placeholder="ค้นหารหัส / ชื่อกิจกรรม / คำอธิบาย"
+              placeholder="ค้นหารหัสหลักสูตร ชื่อหลักสูตร หรือคำอธิบาย"
             />
-            <select v-model="catalogDeliveryFilter" class="sel catalog-filter-select">
-              <option value="all">ทุกรูปแบบ</option>
-              <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ deliveryTypeSelectLabel(option) }}</option>
-            </select>
             <select v-model="catalogStatusFilter" class="sel catalog-filter-select compact">
               <option value="all">ทุกสถานะ</option>
               <option value="active">เปิดใช้</option>
@@ -545,21 +505,23 @@ const deliveryTypeDisplay = (value) => {
               <thead>
                 <tr>
                   <th class="col-order">ลำดับ</th>
+                  <th v-if="catalogView === 'in_class'">รหัสหลักสูตร</th>
+                  <th>{{ catalogView === 'e_learning' ? 'ชื่อหลักสูตร/บทเรียน' : 'ชื่อหลักสูตร' }}</th>
                   <th>สมรรถนะที่เกี่ยวข้อง</th>
-                  <th>รหัส</th>
-                  <th>ชื่อกิจกรรม</th>
-                  <th>รูปแบบ</th>
+                  <th v-if="catalogView === 'e_learning'">ระดับคาดหวัง</th>
+                  <th>{{ catalogView === 'e_learning' ? 'ชม.เรียนรู้' : 'จำนวนชั่วโมง' }}</th>
+                  <th v-if="catalogView === 'e_learning'">แหล่งหลักสูตร</th>
                   <th>สถานะ</th>
                   <th></th>
                 </tr>
               </thead>
-              <tbody v-if="!learningCatalogs.length">
+              <tbody v-if="!catalogCounts[catalogView]">
                 <tr>
-                  <td colspan="7">
+                  <td :colspan="catalogView === 'e_learning' ? 8 : 7">
                     <div class="table-empty-cell">
                       <div>
-                        <div class="fw8 fs14">ยังไม่มี Learning Catalog</div>
-                        <p class="muted fs13 mb0">เมื่อมีตารางกิจกรรมพัฒนาแล้ว รายการหลักสูตรและกิจกรรมจะแสดงที่นี่</p>
+                        <div class="fw8 fs14">ยังไม่มีหลักสูตรในหมวดนี้</div>
+                        <p class="muted fs13 mb0">กด “เพิ่มหลักสูตร” เพื่อสร้างรายการแรก</p>
                       </div>
                     </div>
                   </td>
@@ -567,7 +529,7 @@ const deliveryTypeDisplay = (value) => {
               </tbody>
               <tbody v-else-if="!filteredCatalogs.length">
                 <tr>
-                  <td colspan="7">
+                  <td :colspan="catalogView === 'e_learning' ? 8 : 7">
                     <div class="table-empty-cell">
                       <div>
                         <div class="fw8 fs14">ไม่พบรายการตาม filter</div>
@@ -580,17 +542,24 @@ const deliveryTypeDisplay = (value) => {
               <tbody v-else>
                 <tr v-for="(item, index) in filteredCatalogs" :key="item.id">
                   <td class="fw8 muted">{{ index + 1 }}</td>
-                  <td><span class="competency-badge">{{ competencyLabel(item) }}</span></td>
-                  <td class="fw8">{{ item.code || '-' }}</td>
+                  <td v-if="catalogView === 'in_class'" class="fw8">{{ item.code || '-' }}</td>
                   <td>
-                    <div class="fw8">{{ item.name }}</div>
-                    <div class="catalog-form-label">{{ deliveryTypeFormLabel(item.deliveryType) }}</div>
-                  </td>
-                  <td>
-                    <div class="catalog-format-cell">
-                      <span class="catalog-delivery-label">{{ deliveryTypeLabel(item.deliveryType) }}</span>
+                    <button class="catalog-name-button" type="button" :aria-expanded="expandedCatalogId === item.id" @click="expandedCatalogId = expandedCatalogId === item.id ? null : item.id">
+                      <span>{{ item.name }}</span><em>{{ expandedCatalogId === item.id ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด' }}</em>
+                    </button>
+                    <div v-if="catalogView === 'e_learning' && item.code" class="catalog-form-label">{{ item.code }}</div>
+                    <div v-if="expandedCatalogId === item.id" class="catalog-description">
+                      <span>คำอธิบายหลักสูตร</span>
+                      <p>{{ item.description || 'ไม่มีคำอธิบายหลักสูตร' }}</p>
                     </div>
                   </td>
+                  <td><span class="competency-badge">{{ competencyLabel(item) }}</span></td>
+                  <td v-if="catalogView === 'e_learning'">
+                    <span v-if="item.expectedLevels?.length" class="catalog-levels">ระดับ {{ formatExpectedLevels(item.expectedLevels) }}</span>
+                    <span v-else class="muted">ไม่ระบุ</span>
+                  </td>
+                  <td>{{ item.hours ?? '-' }}</td>
+                  <td v-if="catalogView === 'e_learning'">{{ item.sourceType === 'external' ? 'ภายนอก' : 'ภายใน' }}</td>
                   <td>
                     <span class="status-pill" :class="item.isActive ? 'active' : 'inactive'">
                       {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
@@ -617,8 +586,6 @@ const deliveryTypeDisplay = (value) => {
           <button class="modal-close" type="button" @click="toolModalOpen = false">×</button>
         </div>
         <div class="modal-body">
-          <label class="lbl">รหัส</label>
-          <input v-model="toolForm.code" class="inp" required placeholder="เช่น EXP-01" />
           <label class="lbl">หัวข้อ</label>
           <input v-model="toolForm.title" class="inp" required placeholder="เช่น การมอบหมายงานโครงการ / งานพิเศษ" />
           <label class="lbl">แบบฟอร์มที่ใช้</label>
@@ -643,163 +610,88 @@ const deliveryTypeDisplay = (value) => {
     </div>
 
     <div v-if="catalogModalOpen" class="modal" @click.self="catalogModalOpen = false">
-      <form class="modal-box" @submit.prevent="submitCatalog">
+      <form class="modal-box catalog-modal-box" @submit.prevent="submitCatalog">
         <div class="modal-head">
           <div>
-            <div class="ct">{{ catalogMode === 'edit' ? 'แก้ไขกิจกรรม Learning Catalog' : 'เพิ่มกิจกรรม Learning Catalog' }}</div>
-            <div class="cs">ข้อมูลนี้จะถูกใช้เป็นกิจกรรมใน Formal Learning Focus</div>
+            <div class="ct">{{ catalogMode === 'edit' ? 'แก้ไขหลักสูตร' : 'เพิ่มหลักสูตร' }}</div>
+            <div class="cs">ข้อมูลนี้จะแสดงใน Learning Catalog สำหรับการทำแผน IDP</div>
           </div>
           <button class="modal-close" type="button" @click="catalogModalOpen = false">×</button>
         </div>
         <div class="modal-body">
           <section class="form-section catalog-section">
-            <div class="section-title">1. เลือกรูปแบบกิจกรรม</div>
-            <div class="form-grid">
-              <div class="fg">
-                <label class="lbl">รูปแบบ</label>
-                <select
-                  class="sel"
-                  :value="catalogForm.deliveryType"
-                  @change="setCatalogDeliveryType($event.target.value)"
-                >
-                  <option v-for="option in deliveryTypeOptions" :key="option.value" :value="option.value">{{ deliveryTypeSelectLabel(option) }}</option>
-                </select>
-              </div>
-              <div class="fg">
-                <label class="lbl">รหัสรูปแบบ</label>
-                <div class="readonly-field">{{ deliveryTypeDisplay(catalogForm.deliveryType) }}</div>
-                <div class="field-hint">แก้รหัสรูปแบบได้จากแผงตั้งค่าด้านบนตาราง Learning Catalog</div>
-              </div>
-              <div class="fg span-2">
-                <label class="lbl">แบบฟอร์มที่ใช้</label>
-                <div class="form-select-row">
-                  <div class="readonly-field">{{ deliveryTypeFormLabel(catalogForm.deliveryType) }}</div>
-                  <button
-                    class="btn btn-s"
-                    type="button"
-                    @click="openFormPreview(deliveryTypeFormCode(catalogForm.deliveryType))"
-                  >ดูตัวอย่าง</button>
-                </div>
-                <div class="field-hint">ฟอร์มผูกกับหัวข้อรูปแบบด้านบน ไม่ได้ผูกแยกตามกิจกรรมย่อย</div>
-              </div>
+            <div class="section-title">รูปแบบการอบรม</div>
+            <div class="catalog-format-picker">
+              <button type="button" :class="{ selected: catalogForm.deliveryType === 'in_class' }" @click="setCatalogDeliveryType('in_class')">
+                <strong>Training Roadmap (In-class Training)</strong>
+                <span>ทะเบียนหลักสูตรฝึกอบรมในห้องเรียน</span>
+              </button>
+              <button type="button" :class="{ selected: catalogForm.deliveryType === 'e_learning' }" @click="setCatalogDeliveryType('e_learning')">
+                <strong>e-Learning Catalog</strong>
+                <span>ทะเบียนหลักสูตรหรือบทเรียนออนไลน์</span>
+              </button>
             </div>
           </section>
 
           <section class="form-section catalog-section">
             <div class="catalog-section-head">
               <div>
-                <div class="section-title">2. เลือกสมรรถนะที่เกี่ยวข้อง</div>
-                <div class="section-sub">เลือกสมรรถนะหลักที่หลักสูตรนี้ช่วยพัฒนาหรือปิด Gap ได้ 1 รายการ</div>
+                <div class="section-title">สมรรถนะที่เกี่ยวข้อง</div>
+                <div class="section-sub">เลือกสมรรถนะหลักที่หลักสูตรนี้ใช้พัฒนา 1 รายการ</div>
               </div>
               <span class="count-pill">{{ catalogForm.competencyIds.length ? 'เลือกแล้ว' : 'ยังไม่เลือก' }}</span>
             </div>
-            <input
-              v-model="catalogCompetencySearch"
-              class="inp catalog-search-input"
-              placeholder="ค้นหารหัสหรือชื่อสมรรถนะ เช่น CC, MC, FC"
-            />
-            <div class="competency-list">
-              <button
-                v-for="competency in filteredCatalogCompetencies"
-                :key="competency.id"
-                class="competency-option"
-                :class="{ selected: catalogForm.competencyIds.includes(competency.id) }"
-                type="button"
-                @click="toggleCatalogCompetency(competency.id)"
-              >
-                <span>{{ competency.cd }}</span>
-                <strong>{{ competency.n }}</strong>
-                <em>{{ competency.t || '-' }}</em>
+            <div v-if="catalogErrors.competency_ids" class="field-error catalog-field-error">{{ catalogErrors.competency_ids }}</div>
+            <input v-model="catalogCompetencySearch" class="inp catalog-search-input" placeholder="ค้นหารหัสหรือชื่อสมรรถนะ เช่น CC, MC, FC" />
+            <div class="competency-list compact-list">
+              <button v-for="competency in filteredCatalogCompetencies" :key="competency.id" class="competency-option" :class="{ selected: catalogForm.competencyIds.includes(competency.id) }" type="button" @click="toggleCatalogCompetency(competency.id)">
+                <span>{{ competency.cd }}</span><strong>{{ competency.n }}</strong><em>{{ competency.t || '-' }}</em>
               </button>
               <div v-if="!filteredCatalogCompetencies.length" class="empty-inline">ไม่พบสมรรถนะที่ค้นหา</div>
-            </div>
-
-            <div v-if="isCatalogELearning" class="level-picker">
-              <div class="catalog-section-head compact">
-                <div>
-                  <div class="section-title small">เหมาะสำหรับผู้ที่มีระดับความคาดหวัง</div>
-                  <div class="section-sub">เลือกได้มากกว่า 1 ระดับ หรือไม่ระบุก็ได้หากคู่มือไม่ได้กำหนดไว้</div>
-                </div>
-                <button class="count-pill ghost" type="button" @click="catalogForm.expectedLevels = []">
-                  {{ catalogForm.expectedLevels.length ? `${catalogForm.expectedLevels.length} ระดับ` : 'ไม่ระบุ' }}
-                </button>
-              </div>
-              <div class="level-grid">
-                <button
-                  v-for="level in levelOptions"
-                  :key="level.value"
-                  class="level-option"
-                  :class="{ selected: catalogForm.expectedLevels.includes(level.value) }"
-                  type="button"
-                  @click="toggleExpectedLevel(level.value)"
-                >
-                  <span class="level-dot"></span>
-                  <strong>{{ level.label }}</strong>
-                  <small>
-                    <template v-if="level.value === 1">พื้นฐาน / เริ่มต้น</template>
-                    <template v-else-if="level.value === 2">ลงมือปฏิบัติ</template>
-                    <template v-else-if="level.value === 3">พัฒนา / ทำได้ดี</template>
-                    <template v-else-if="level.value === 4">ขั้นสูง / ชำนาญ</template>
-                    <template v-else>เชี่ยวชาญ</template>
-                  </small>
-                </button>
-              </div>
             </div>
           </section>
 
           <section class="form-section catalog-section">
-            <div class="section-title">3. รายละเอียดหลักสูตร/กิจกรรม</div>
-            <div v-if="catalogPrimaryError" class="form-alert">
-              {{ catalogPrimaryError }}
-            </div>
-            <div class="form-grid">
+            <div class="section-title">ข้อมูลหลักสูตร</div>
+            <div v-if="catalogPrimaryError" class="form-alert">{{ catalogPrimaryError }}</div>
+            <div class="form-grid catalog-detail-grid">
               <div class="fg">
                 <label class="lbl">{{ isCatalogELearning ? 'รหัสหลักสูตร/บทเรียน' : 'รหัสหลักสูตร' }}</label>
-                <input
-                  v-model="catalogForm.code"
-                  class="inp"
-                  :class="{ invalid: catalogErrors.code }"
-                  :placeholder="isCatalogELearning ? 'เช่น ศูนย์นวัตกรรมการเรียนการสอน, OCSC014' : 'เช่น TN001'"
-                  @input="clearCatalogError('code')"
-                />
+                <input v-model="catalogForm.code" class="inp" :class="{ invalid: catalogErrors.code }" :required="!isCatalogELearning" :placeholder="isCatalogELearning ? 'เช่น OCSC014 , ศูนย์นวัตกรรมการเรียนการสอน' : 'เช่น TN001'" @input="clearCatalogError('code')" />
                 <div v-if="catalogErrors.code" class="field-error">{{ catalogErrors.code }}</div>
               </div>
               <div class="fg">
-                <label class="lbl">ประเภทกิจกรรม</label>
-                <div class="readonly-field">Formal Learning</div>
+                <label class="lbl">{{ isCatalogELearning ? 'ชื่อหลักสูตร/บทเรียน' : 'ชื่อหลักสูตร' }}</label>
+                <input v-model="catalogForm.name" class="inp" :class="{ invalid: catalogErrors.name }" required placeholder="ชื่อหลักสูตร" @input="clearCatalogError('name')" />
+                <div v-if="catalogErrors.name" class="field-error">{{ catalogErrors.name }}</div>
+              </div>
+              <div v-if="isCatalogELearning" class="fg">
+                <label class="lbl">แหล่งหลักสูตร</label>
+                <select v-model="catalogForm.sourceType" class="sel"><option value="internal">ภายในมหาวิทยาลัย</option><option value="external">ภายนอกมหาวิทยาลัย</option></select>
               </div>
               <div class="fg">
-                <label class="lbl">{{ isCatalogELearning ? 'ชื่อหลักสูตร/บทเรียน' : 'ชื่อหลักสูตร' }}</label>
-                <input
-                  v-model="catalogForm.name"
-                  class="inp"
-                  :class="{ invalid: catalogErrors.name }"
-                  required
-                  placeholder="ชื่อกิจกรรมพัฒนา"
-                  @input="clearCatalogError('name')"
-                />
-                <div v-if="catalogErrors.name" class="field-error">{{ catalogErrors.name }}</div>
+                <label class="lbl">{{ isCatalogELearning ? 'ชั่วโมงเรียนรู้' : 'จำนวนชั่วโมง' }}</label>
+                <input v-model="catalogForm.hours" class="inp" min="0" step="0.5" type="number" placeholder="เช่น 6" />
+              </div>
+              <div v-if="isCatalogELearning" class="fg">
+                <label class="lbl">ค่าใช้จ่าย (บาท)</label>
+                <input v-model="catalogForm.cost" class="inp" min="0" step="0.01" type="number" placeholder="0" />
+              </div>
+              <div v-if="isCatalogELearning" class="fg span-2 catalog-level-field">
+                <div class="catalog-level-head">
+                  <div>
+                    <label class="lbl">ระดับความคาดหวังที่เหมาะสม</label>
+                  </div>
+                  <button class="count-pill ghost" type="button" @click="selectAllExpectedLevels">{{ catalogForm.expectedLevels.length === levelOptions.length ? 'เลือกครบทุกระดับ' : 'เลือกทุกระดับ' }}</button>
+                </div>
+                <div class="level-grid compact-level-grid">
+                  <button v-for="level in levelOptions" :key="level.value" class="level-option" :class="{ selected: catalogForm.expectedLevels.includes(level.value) }" type="button" @click="toggleExpectedLevel(level.value)"><span class="level-dot"></span><strong>{{ level.label }}</strong></button>
+                </div>
+                <div v-if="catalogErrors.expected_levels" class="field-error">{{ catalogErrors.expected_levels }}</div>
               </div>
               <div class="fg span-2">
                 <label class="lbl">คำอธิบายหลักสูตร</label>
-                <textarea v-model="catalogForm.description" class="ta" placeholder="รายละเอียด เนื้อหา และวัตถุประสงค์ของการเรียนรู้"></textarea>
-              </div>
-              <template v-if="isCatalogELearning">
-                <div class="fg">
-                  <label class="lbl">แหล่งหลักสูตร</label>
-                  <select v-model="catalogForm.sourceType" class="sel">
-                    <option value="internal">ภายในมหาวิทยาลัย</option>
-                    <option value="external">ภายนอกมหาวิทยาลัย</option>
-                  </select>
-                </div>
-                <div class="fg">
-                  <label class="lbl">ค่าใช้จ่าย</label>
-                  <input v-model="catalogForm.cost" class="inp" min="0" step="0.01" type="number" placeholder="0" />
-                </div>
-              </template>
-              <div class="fg" :class="{ 'span-2': !isCatalogELearning }">
-                <label class="lbl">{{ isCatalogELearning ? 'ชั่วโมงเรียนรู้' : 'จำนวนชั่วโมง' }}</label>
-                <input v-model="catalogForm.hours" class="inp" min="0" step="0.5" type="number" placeholder="เช่น 3" />
+                <textarea v-model="catalogForm.description" class="ta" rows="4" placeholder="รายละเอียด เนื้อหา และวัตถุประสงค์ของการเรียนรู้"></textarea>
               </div>
             </div>
           </section>
@@ -814,7 +706,7 @@ const deliveryTypeDisplay = (value) => {
         </div>
         <div class="modal-foot">
           <button class="btn btn-s" type="button" @click="catalogModalOpen = false">ยกเลิก</button>
-          <button class="btn btn-p" type="submit">{{ catalogMode === 'edit' ? 'บันทึกการแก้ไข' : 'เพิ่มกิจกรรม' }}</button>
+          <button class="btn btn-p" type="submit">{{ catalogMode === 'edit' ? 'บันทึกการแก้ไข' : 'เพิ่มหลักสูตร' }}</button>
         </div>
       </form>
     </div>
@@ -824,20 +716,20 @@ const deliveryTypeDisplay = (value) => {
         <div class="modal-head">
           <div>
             <div class="ct">เลือกตัวอย่างแบบฟอร์ม</div>
-            <div class="cs">แบบฟอร์ม IDP ทั้งหมด 10 รายการ</div>
+            <div class="cs">แบบฟอร์ม IDP ทั้งหมด {{ activePreviewOptions.length }} รายการ</div>
           </div>
           <button class="modal-close" type="button" @click="previewPickerOpen = false">×</button>
         </div>
         <div class="modal-body">
           <button
-            v-for="option in activePreviewOptions"
+            v-for="(option, optionIndex) in activePreviewOptions"
             :key="option.value"
             class="preview-option"
             type="button"
             @click="openFormPreview(option.value)"
           >
+            <span class="preview-option-number">{{ optionIndex + 1 }}</span>
             <strong>{{ option.label }}</strong>
-            <span>ดูโครงฟอร์มที่ user จะกรอก</span>
           </button>
         </div>
       </div>
@@ -856,13 +748,8 @@ const deliveryTypeDisplay = (value) => {
           <section class="preview-paper">
             <div class="preview-title-band">
               <div>
-                <strong>แบบฟอร์มที่ {{ previewForm.number }} {{ previewForm.title }}</strong>
-                <span>{{ previewForm.focus }}</span>
+                <strong>{{ previewForm.title }}</strong>
               </div>
-              <label>
-                <span>เอกสารประกอบหมายเลข</span>
-                <input disabled />
-              </label>
             </div>
 
             <div class="preview-block readonly">
@@ -874,7 +761,6 @@ const deliveryTypeDisplay = (value) => {
                 <label><span>ชื่อผู้รับการพัฒนา</span><input disabled /></label>
                 <label><span>รหัสพนักงาน</span><input disabled /></label>
                 <label><span>ตำแหน่ง</span><input disabled /></label>
-                <label><span>สังกัด</span><input disabled /></label>
               </div>
             </div>
 
@@ -890,12 +776,45 @@ const deliveryTypeDisplay = (value) => {
               </div>
             </div>
 
+            <div class="preview-block readonly">
+              <header>
+                <h4>ลำดับการส่งแผน IDP</h4>
+                <span>ดึงจากระบบ</span>
+              </header>
+              <div class="preview-approval-route">
+                <div class="preview-approval-step"><span>1</span><div><strong>ผู้อนุมัติลำดับ 1</strong><small>ชื่อและตำแหน่งจะแสดงตามผู้ใช้</small></div></div>
+                <span class="preview-approval-arrow">→</span>
+                <div class="preview-approval-step"><span>2</span><div><strong>ผู้อนุมัติลำดับถัดไป</strong><small>จำนวนลำดับเป็นไปตามที่ Admin กำหนด</small></div></div>
+              </div>
+              <p class="preview-approval-notice">หากข้อมูลลำดับการส่งไม่ถูกต้อง กรุณาติดต่อ Admin</p>
+            </div>
+
             <div v-if="previewForm.detailFields.length" class="preview-block">
               <header>
                 <h4>{{ previewForm.detailTitle }}</h4>
                 <span>พนักงานกรอกตอนทำแผน</span>
               </header>
-              <div class="preview-meta-grid" :class="{ three: previewForm.detailFields.length === 3 }">
+              <div v-if="['4', '5', '6', '7', '8'].includes(previewForm.number)" class="preview-meta-grid">
+                <label>
+                  <span>{{ previewForm.number === '7' ? 'ผู้อำนวยการ/ผู้นำกิจกรรม' : previewForm.number === '8' ? 'ผู้ให้ข้อมูล' : 'ผู้สอนงาน' }}</span>
+                  <select v-model="previewCoachType">
+                    <option value="">เลือกจากรายการ</option>
+                    <option value="ผู้บังคับบัญชา">ผู้บังคับบัญชา</option>
+                    <option value="ผู้เชี่ยวชาญ">ผู้เชี่ยวชาญ</option>
+                  </select>
+                </label>
+                <label v-if="previewCoachType === 'ผู้บังคับบัญชา'">
+                  <span>เลือกผู้บังคับบัญชา</span>
+                  <select disabled>
+                    <option>เลือกผู้บังคับบัญชา</option>
+                  </select>
+                </label>
+                <label v-else-if="previewCoachType === 'ผู้เชี่ยวชาญ'">
+                  <span>ชื่อผู้เชี่ยวชาญ</span>
+                  <input placeholder="กรอกชื่อผู้เชี่ยวชาญ" />
+                </label>
+              </div>
+              <div v-else class="preview-meta-grid" :class="{ three: previewForm.detailFields.length === 3 }">
                 <label
                   v-for="field in previewForm.detailFields"
                   :key="field.key"
@@ -903,6 +822,7 @@ const deliveryTypeDisplay = (value) => {
                 >
                   <span>{{ field.label }}</span>
                   <textarea v-if="field.type === 'area'" disabled rows="3" />
+                  <input v-else-if="field.type === 'date'" disabled type="date" />
                   <select v-else-if="['choice', 'supervisor-chain'].includes(field.type)" disabled>
                     <option>เลือกจากรายการ</option>
                   </select>
@@ -911,17 +831,195 @@ const deliveryTypeDisplay = (value) => {
               </div>
             </div>
 
-            <div class="preview-block">
+            <div v-if="previewForm.rowFields.length" class="preview-block">
               <header>
                 <h4>{{ previewForm.rowTitle }}</h4>
-                <button v-if="!['7', '9', '10'].includes(previewForm.number)" type="button" disabled>+ เพิ่มแถว</button>
+                <button type="button" disabled>
+                  {{ previewForm.number === '3' ? '+ เพิ่มงานที่ได้รับมอบหมาย' : previewForm.number === '4' ? '+ เพิ่มหัวข้อฝึกปฏิบัติ' : previewForm.number === '5' ? '+ เพิ่มหัวข้อการสอนงาน' : previewForm.number === '6' ? '+ เพิ่มหัวข้อที่ต้องการพัฒนา' : previewForm.number === '7' ? '+ เพิ่มกิจกรรม' : previewForm.number === '8' ? '+ เพิ่มหัวข้อการพัฒนา' : previewForm.number === '9' ? '+ เพิ่มรายการศึกษาดูงาน' : previewForm.number === '10' ? '+ เพิ่มหลักสูตรอบรม' : '+ เพิ่มแถว' }}
+                </button>
               </header>
-              <div class="preview-table-wrap">
+              <div v-if="previewForm.number === '3'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>งานที่ได้รับมอบหมาย 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้องานโครงการ/งานพิเศษที่ได้รับมอบหมาย</span><input disabled /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><input disabled /></label>
+                    <label class="wide"><span>รายละเอียด</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline group-activity-timeline wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะเวลาดำเนินการ</strong>
+                        <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '4'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>หัวข้อฝึกปฏิบัติ 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นการฝึกปฏิบัติงาน</span><textarea disabled rows="3" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="3" /></label>
+                    <label class="wide"><span>วิธีการ</span><textarea disabled rows="2" /></label>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะเวลาการฝึกปฏิบัติงาน</strong>
+                        <span>กำหนดช่วงเวลาและจำนวนชั่วโมงรวม</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                      <label><span>จำนวนชั่วโมง</span><input disabled type="number" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '5'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>หัวข้อการสอนงาน 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นการสอนงาน</span><textarea disabled rows="3" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="3" /></label>
+                    <label class="wide"><span>วิธีการ</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-approaches wide">
+                      <div class="preview-coaching-heading">
+                        <div><span>แนวทางการสอนงาน</span><small>เลือกได้มากกว่า 1 แนวทาง</small></div>
+                        <button type="button" @click="previewCoachingHelpOpen = true">อ่านเพิ่มเติม</button>
+                      </div>
+                      <div class="preview-coaching-options">
+                        <button
+                          v-for="approach in [{ code: 'A', title: 'ส่งเสริม' }, { code: 'B', title: 'สร้างสรรค์' }, { code: 'C', title: 'กระตุ้น' }, { code: 'D', title: 'แก้ไขปัญหา' }]"
+                          :key="approach.code"
+                          disabled
+                          type="button"
+                        ><strong>{{ approach.code }}</strong><span>{{ approach.title }}</span></button>
+                      </div>
+                    </div>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline coaching-timeline-four wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะเวลาการพัฒนา</strong>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                      <label><span>จำนวนครั้ง</span><input disabled type="number" /></label>
+                      <label><span>ระยะเวลาต่อครั้ง</span><input disabled placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '6'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>หัวข้อที่ต้องการพัฒนา 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea disabled rows="3" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="3" /></label>
+                    <label class="wide"><span>เทคนิค</span><textarea disabled rows="2" /></label>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline coaching-timeline-four wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะเวลาการพัฒนา</strong>
+                        <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                      <label><span>จำนวนครั้ง</span><input disabled type="number" /></label>
+                      <label><span>ระยะเวลาต่อครั้ง</span><input disabled placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '7'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>กิจกรรม 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label><span>เทคนิค</span><textarea disabled rows="2" /></label>
+                    <label><span>เครื่องมือและเงื่อนไขการประเมิน</span><textarea disabled rows="2" /></label>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline group-activity-timeline wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>กำหนดการจัดกิจกรรม</strong>
+                        <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '8'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>หัวข้อการพัฒนา 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label class="wide"><span>แหล่งข้อมูลป้อนกลับ</span><textarea disabled rows="2" /></label>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline coaching-timeline-four wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะการพัฒนา</strong>
+                        <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                      <label><span>จำนวนครั้ง</span><input disabled type="number" /></label>
+                      <label><span>ระยะเวลาต่อครั้ง</span><input disabled placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '9'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>รายการศึกษาดูงาน 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid">
+                    <label><span>หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="1" /></label>
+                    <label><span>สถานที่/แหล่งศึกษาดูงาน</span><textarea disabled rows="2" /></label>
+                    <label><span>เครื่องมือและเงื่อนไขการประเมิน</span><textarea disabled rows="2" /></label>
+                    <label class="wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline group-activity-timeline wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>กำหนดการจัดกิจกรรม</strong>
+                        <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else-if="previewForm.number === '10'" class="preview-project-list">
+                <article class="preview-project-item">
+                  <div class="preview-project-head"><strong>หลักสูตรอบรม 1</strong><button disabled type="button">ลบ</button></div>
+                  <div class="preview-project-grid training-form-grid">
+                    <label class="training-meta"><span>รูปแบบการอบรม</span><select disabled><option>เลือกจากรายการ</option></select></label>
+                    <label class="training-meta"><span>รหัสหลักสูตร</span><input disabled /></label>
+                    <label class="training-meta"><span>ชื่อหลักสูตร</span><input disabled /></label>
+                    <label class="training-wide"><span>เป้าหมายในการพัฒนา</span><textarea disabled rows="3" /></label>
+                    <label class="training-wide"><span>รายละเอียดเพิ่มเติม (ถ้ามี)</span><textarea disabled rows="2" /></label>
+                    <div class="preview-coaching-timeline training-summary training-wide">
+                      <div class="preview-coaching-timeline-heading">
+                        <strong>ระยะเวลาการอบรมและค่าใช้จ่าย</strong>
+                        <span>กำหนดช่วงเวลา จำนวนชั่วโมง และค่าใช้จ่าย</span>
+                      </div>
+                      <label><span>วันที่เริ่มต้น</span><input disabled type="date" /></label>
+                      <label><span>วันที่สิ้นสุด</span><input disabled type="date" /></label>
+                      <label><span>จำนวนชั่วโมง</span><input disabled type="number" /></label>
+                      <label><span>ค่าใช้จ่าย (บาท)</span><input disabled type="number" /></label>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="preview-table-wrap">
                 <table class="preview-table">
                   <thead>
                     <tr>
                       <th
-                        v-if="!['7', '9'].includes(previewForm.number)"
+                        v-if="previewForm.number !== '9'"
                         class="row-number"
                         :rowspan="hasGroupedRowFields(previewForm.rowFields) ? 2 : 1"
                       >ที่</th>
@@ -947,7 +1045,7 @@ const deliveryTypeDisplay = (value) => {
                   </thead>
                   <tbody>
                     <tr v-for="(row, rowIndex) in previewRows" :key="row">
-                      <td v-if="!['7', '9'].includes(previewForm.number)" class="row-number">{{ rowIndex + 1 }}</td>
+                      <td v-if="previewForm.number !== '9'" class="row-number">{{ rowIndex + 1 }}</td>
                       <td
                         v-for="(field, fieldIndex) in previewForm.rowFields"
                         :key="`${row}-${field.key}-${fieldIndex}`"
@@ -959,7 +1057,7 @@ const deliveryTypeDisplay = (value) => {
                           </label>
                         </div>
                         <button v-else-if="field.type === 'multi-checkbox'" class="preview-check" disabled type="button"></button>
-                        <div v-else-if="['7', '9'].includes(previewForm.number) && fieldIndex === 0" class="preview-fixed-topic">
+                        <div v-else-if="previewForm.number === '9' && fieldIndex === 0" class="preview-fixed-topic">
                           <strong>{{ row }}</strong>
                           <label v-if="rowIndex === 0">
                             <span>ระบุ</span>
@@ -976,7 +1074,7 @@ const deliveryTypeDisplay = (value) => {
               <div v-if="previewForm.note" class="preview-note">{{ previewForm.note }}</div>
             </div>
 
-            <div class="preview-block result">
+            <div v-if="!['3', '4', '5', '6', '7', '8', '9', '10'].includes(previewForm.number)" class="preview-block result">
               <header>
                 <h4>ผลการดำเนินการ</h4>
                 <span>ใช้หลังแผนอนุมัติแล้ว</span>
@@ -988,7 +1086,7 @@ const deliveryTypeDisplay = (value) => {
               </div>
             </div>
 
-            <div class="preview-block assessment">
+            <div v-if="!['3', '4', '5', '6', '7', '8', '9', '10'].includes(previewForm.number)" class="preview-block assessment">
               <header>
                 <h4>การติดตามประเมินผล / คำรับรอง</h4>
                 <span>หัวหน้าใช้ตอนติดตามผล</span>
@@ -1004,6 +1102,28 @@ const deliveryTypeDisplay = (value) => {
         <div class="modal-foot">
           <button class="btn btn-p" type="button" @click="previewFormCode = ''">ปิด</button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="previewCoachingHelpOpen" class="modal preview-layer coaching-help-layer" @click.self="previewCoachingHelpOpen = false">
+      <div class="modal-box coaching-help-modal">
+        <div class="modal-head">
+          <div>
+            <div class="ct">คำอธิบายแนวทางการสอนงาน</div>
+            <div class="cs">ใช้ประกอบการเลือกแนวทาง A–D ในแบบฟอร์มที่ 5</div>
+          </div>
+          <button class="modal-close" type="button" @click="previewCoachingHelpOpen = false">×</button>
+        </div>
+        <div class="modal-body coaching-help-body">
+          <article v-for="approach in coachingApproachDescriptions" :key="approach.code" class="coaching-help-card">
+            <header>
+              <b>{{ approach.code }}</b>
+              <div><strong>{{ approach.title }}</strong><span>{{ approach.summary }}</span></div>
+            </header>
+            <ul><li v-for="item in approach.items" :key="item">{{ item.replace(/^[-▪]\s*/, '') }}</li></ul>
+          </article>
+        </div>
+        <div class="modal-foot"><button class="btn btn-p" type="button" @click="previewCoachingHelpOpen = false">ปิด</button></div>
       </div>
     </div>
   </div>
@@ -1040,8 +1160,16 @@ const deliveryTypeDisplay = (value) => {
 .tool-title { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 10px; color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.45; }
 .tool-title strong { min-width: 0; }
 .tool-title small { grid-column: 2; color: var(--text3); font-size: 11px; font-weight: 800; }
-.tool-code { border-radius: 999px; background: #eef4ff; color: #2563eb; font-size: 11px; font-weight: 900; padding: 5px 9px; white-space: nowrap; }
-.delivery-code-card { display: grid; grid-template-columns: minmax(260px, 0.34fr) minmax(0, 1fr); gap: 22px; align-items: start; padding: 20px 22px; background: #fff; }
+.formal-delivery-panel { overflow: hidden; background: #fff; }
+.formal-delivery-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.formal-delivery-list { display: grid; }
+.formal-delivery-item { display: grid; grid-template-columns: 44px minmax(220px, 0.75fr) minmax(260px, 1fr) auto; align-items: center; gap: 14px; min-height: 76px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fff; }
+.formal-delivery-item:last-child { border-bottom: 0; }
+.formal-delivery-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; background: #eef4ff; color: #2563eb; font-size: 13px; font-weight: 900; }
+.formal-delivery-copy, .formal-delivery-form { min-width: 0; display: grid; gap: 3px; }
+.formal-delivery-copy strong, .formal-delivery-form strong { color: var(--text); font-size: 13px; font-weight: 900; line-height: 1.35; }
+.formal-delivery-copy span, .formal-delivery-form span { color: var(--text3); font-size: 11px; font-weight: 800; }
+.formal-delivery-form { min-height: 48px; align-content: center; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; padding: 8px 12px; }
 .delivery-code-title { color: var(--text); font-size: 14px; font-weight: 900; }
 .delivery-code-sub { margin-top: 3px; color: var(--text3); font-size: 12px; font-weight: 700; line-height: 1.45; }
 .delivery-type-settings { display: grid; gap: 10px; }
@@ -1070,8 +1198,18 @@ const deliveryTypeDisplay = (value) => {
 .delivery-preview-btn { min-height: 40px; white-space: nowrap; }
 .delivery-save-row { display: flex; justify-content: flex-end; gap: 10px; padding-top: 2px; }
 .catalog-card { background: #fff; }
+.catalog-type-tabs { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fbfdff; }
+.catalog-type-tabs > button { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text2); cursor: pointer; padding: 10px 14px; text-align: left; }
+.catalog-type-tabs > button:hover { border-color: #b9c9df; background: #f8fbff; }
+.catalog-type-tabs > button.active { border-color: #8eb4f7; background: #eff6ff; color: var(--blue); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.06); }
+.catalog-type-tabs button span { display: grid; gap: 2px; }
+.catalog-type-tabs button strong { color: inherit; font-size: 13px; font-weight: 900; }
+.catalog-type-tabs button small { color: var(--text3); font-size: 11px; font-weight: 700; }
+.catalog-type-tabs button em { min-width: 30px; height: 30px; display: grid; place-items: center; border-radius: 999px; background: #f1f5f9; color: var(--text2); font-size: 12px; font-style: normal; font-weight: 900; }
+.catalog-type-tabs button.active em { background: #dbeafe; color: #1d4ed8; }
+.catalog-type-tabs > .catalog-form-preview { min-width: 190px; justify-content: center; color: var(--text2); font-weight: 900; }
 .catalog-card-head { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.catalog-filter-bar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.55fr) minmax(130px, 0.32fr) auto; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fbfdff; }
+.catalog-filter-bar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(130px, 0.3fr) auto; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); background: #fff; }
 .catalog-filter-search, .catalog-filter-select { min-height: 40px; border-radius: 8px; font-size: 13px; }
 .catalog-filter-select.compact { min-width: 124px; }
 .table-wrap { max-height: 560px; overflow: auto; }
@@ -1085,6 +1223,13 @@ const deliveryTypeDisplay = (value) => {
 .catalog-code-badge { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; border-radius: 8px; background: #f8fafc; color: var(--text); font-size: 12px; font-weight: 900; letter-spacing: 0; padding: 3px 9px; }
 .catalog-delivery-label { color: var(--text2); font-size: 12px; font-weight: 800; line-height: 1.35; }
 .catalog-form-label { margin-top: 4px; color: var(--text3); font-size: 11px; font-weight: 800; line-height: 1.4; }
+.catalog-name-button { display: grid; gap: 2px; border: 0; background: transparent; color: var(--text); cursor: pointer; padding: 0; text-align: left; }
+.catalog-name-button span { font-size: 13px; font-weight: 900; line-height: 1.4; }
+.catalog-name-button em { color: var(--blue); font-size: 10px; font-style: normal; font-weight: 800; }
+.catalog-description { max-width: 72ch; margin-top: 10px; border: 1px solid #dce5f0; border-radius: 8px; background: #f8fafc; padding: 12px 14px; }
+.catalog-description span { display: block; margin-bottom: 5px; color: var(--text3); font-size: 10px; font-weight: 900; }
+.catalog-description p { margin: 0; color: var(--text2); font-size: 12px; font-weight: 600; line-height: 1.7; white-space: pre-line; }
+.catalog-levels { color: var(--text2); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-weight: 900; white-space: nowrap; }
 .status-pill.active { border: 1px solid #bbf7d0; background: #dcfce7; color: #15803d; }
 .status-pill.inactive { border: 1px solid #fecaca; background: #fee2e2; color: #b91c1c; }
@@ -1101,7 +1246,16 @@ const deliveryTypeDisplay = (value) => {
 .modal.preview-layer { z-index: 950; }
 .modal-box { width: min(1180px, 100%); border-radius: 12px; background: #fff; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24); overflow: hidden; }
 .modal-box.compact { width: min(620px, 100%); }
-.preview-modal { width: min(1280px, 100%); }
+.catalog-modal-box { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 56px); overflow: hidden; }
+.catalog-modal-box > .modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.preview-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1680px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
+}
+.preview-modal > .modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .modal-head, .modal-foot { padding: 16px 20px; border-bottom: 1px solid var(--border); }
 .modal-foot { border-top: 1px solid var(--border); border-bottom: 0; justify-content: flex-end; }
 .modal-body { display: grid; gap: 14px; padding: 18px 20px; }
@@ -1119,6 +1273,14 @@ const deliveryTypeDisplay = (value) => {
 .preview-block h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 900; }
 .preview-block header span { color: var(--text3); font-size: 11px; font-weight: 900; }
 .preview-block header button { min-height: 34px; border: 1px solid #9ccfbe; border-radius: 7px; background: #eefaf6; color: #247260; font-size: 12px; font-weight: 900; padding: 6px 10px; }
+.preview-approval-route { display: flex; align-items: center; gap: 10px; padding: 14px; }
+.preview-approval-step { display: flex; align-items: center; gap: 10px; min-width: 260px; border: 1px solid #cfe3dc; border-radius: 8px; background: #f8fcfa; padding: 10px 12px; }
+.preview-approval-step > span { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; border-radius: 50%; background: #247260; color: #fff; font-size: 12px; font-weight: 900; }
+.preview-approval-step strong, .preview-approval-step small { display: block; }
+.preview-approval-step strong { color: var(--text); font-size: 12px; }
+.preview-approval-step small { margin-top: 3px; color: var(--text3); font-size: 10px; font-weight: 800; }
+.preview-approval-arrow { color: var(--text3); font-size: 18px; font-weight: 900; }
+.preview-approval-notice { margin: 0; border-top: 1px solid var(--border); background: #fffaf0; padding: 9px 14px; color: #9a4d00; font-size: 11px; font-weight: 900; }
 .preview-meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .preview-meta-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .preview-block > .preview-meta-grid { padding: 12px; }
@@ -1148,6 +1310,49 @@ const deliveryTypeDisplay = (value) => {
 .preview-table th small { display: block; margin-top: 3px; color: #9a4d00; font-size: 10px; }
 .preview-table td { height: 58px; color: var(--text); font-size: 12px; font-weight: 800; }
 .preview-table .row-number { width: 44px; text-align: center; }
+.preview-project-list { padding: 14px; }
+.preview-project-item { overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: #fbfdff; }
+.preview-project-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); background: #f8fafc; padding: 10px 12px; }
+.preview-project-head strong { color: var(--text); font-size: 13px; }
+.preview-project-head button { border: 1px solid #fecaca; border-radius: 6px; background: #fff; color: #b42318; padding: 6px 9px; font-size: 11px; font-weight: 900; }
+.preview-project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px; }
+.preview-project-grid.training-form-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: start; }
+.training-form-grid > .training-meta { grid-column: span 2; }
+.training-form-grid > .training-wide { grid-column: 1 / -1; }
+.preview-coaching-timeline.training-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.preview-project-grid label { display: grid; gap: 6px; color: var(--text2); font-size: 12px; font-weight: 900; }
+.preview-project-grid > .wide { grid-column: 1 / -1; }
+.preview-project-grid input, .preview-project-grid textarea, .preview-project-grid select { width: 100%; min-height: 40px; border: 1px solid #cfd8e3; border-radius: 7px; background-color: #fff; padding: 9px 10px; font: inherit; color: var(--text); }
+.preview-project-grid select { appearance: none; padding-right: 38px; background-image: linear-gradient(45deg, transparent 50%, #7a8798 50%), linear-gradient(135deg, #7a8798 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-repeat: no-repeat; background-size: 6px 6px, 6px 6px; }
+.preview-coaching-approaches { display: grid; gap: 12px; border: 1px solid #dce9e5; border-radius: 9px; background: #f8fcfb; padding: 12px; color: var(--text2); font-size: 12px; font-weight: 900; }
+.preview-coaching-approaches > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.preview-coaching-approaches > .preview-coaching-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.preview-coaching-heading > div { display: grid; gap: 2px; }
+.preview-coaching-heading small { color: var(--text3); font-size: 10px; }
+.preview-coaching-heading button { min-height: 28px; height: 28px; border: 1px solid #9ad4c4; border-radius: 999px; background: #fff; color: #247260; padding: 5px 11px; }
+.preview-coaching-approaches .preview-coaching-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.preview-coaching-options button { display: flex; align-items: center; justify-content: flex-start; gap: 9px; min-height: 48px; border: 1px solid #cfd8e3; border-radius: 8px; background: #fff; color: var(--text2); padding: 9px 10px; font-weight: 900; opacity: 1; }
+.preview-coaching-options strong { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: #edf1f5; color: #344054; }
+.preview-coaching-options span { font-size: 11px; }
+.preview-coaching-timeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; border: 1px solid #d8e2e8; border-radius: 9px; background: #fff; padding: 12px; }
+.preview-coaching-timeline.coaching-timeline-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.preview-coaching-timeline.group-activity-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); align-self: stretch; }
+.preview-coaching-timeline-heading { grid-column: 1 / -1; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e8edf1; padding: 0 2px 10px; }
+.preview-coaching-timeline-heading strong { color: var(--text); font-size: 12px; }
+.preview-coaching-timeline-heading span { color: var(--text3); font-size: 10px; }
+.preview-coaching-timeline input { min-height: 42px; background: #fbfcfd; }
+.modal.coaching-help-layer { z-index: 1000; align-items: center; overflow: hidden; padding: 12px; }
+.coaching-help-modal { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(1180px, calc(100vw - 24px)); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); min-height: 0; overflow: hidden; }
+.coaching-help-body { display: flex; flex-direction: column; gap: 16px; min-height: 0; overflow-x: hidden; overflow-y: scroll; overscroll-behavior: contain; background: #f4f7f9; padding: 18px; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; }
+.coaching-help-card { flex: 0 0 auto; overflow: hidden; border: 1px solid #d8e2e8; border-radius: 10px; background: #fff; }
+.coaching-help-card header { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #e3e9ee; background: #f8fcfb; padding: 16px 18px; }
+.coaching-help-card header b { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border-radius: 9px; background: #247260; color: #fff; font-size: 15px; }
+.coaching-help-card header div { display: grid; gap: 3px; }
+.coaching-help-card header strong { color: var(--text); font-size: 16px; }
+.coaching-help-card header span { color: var(--text3); font-size: 12px; line-height: 1.45; }
+.coaching-help-card ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 30px; margin: 0; padding: 18px 28px 22px; color: var(--text2); font-size: 13px; line-height: 1.6; list-style: none; }
+.coaching-help-card li { position: relative; margin: 0; padding-left: 20px; }
+.coaching-help-card li::before { content: ''; position: absolute; top: .72em; left: 0; width: 8px; height: 8px; border: 2px solid #65ad9b; border-radius: 50%; background: #e8f7f2; transform: translateY(-50%); }
 .preview-table textarea { min-width: 220px; min-height: 68px; }
 .preview-checkboxes { display: grid; gap: 8px; min-width: 130px; }
 .preview-checkboxes label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -1157,10 +1362,11 @@ const deliveryTypeDisplay = (value) => {
 .preview-fixed-topic strong { font-weight: 900; line-height: 1.45; }
 .preview-fixed-topic label { display: grid; gap: 4px; }
 .preview-note { margin: 10px 12px 12px; border-left: 4px solid #f59e0b; background: #fffbeb; color: #92400e; font-size: 12px; font-weight: 800; line-height: 1.5; padding: 10px 12px; }
-.preview-option { display: grid; gap: 4px; width: 100%; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text); padding: 13px 14px; text-align: left; cursor: pointer; }
+.preview-option { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; width: 100%; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text); padding: 11px 14px; text-align: left; cursor: pointer; }
 .preview-option:hover { border-color: #9fc0fb; background: #eff6ff; }
 .preview-option strong { font-size: 13px; font-weight: 900; }
 .preview-option span { color: var(--text3); font-size: 12px; font-weight: 800; }
+.preview-option .preview-option-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 8px; background: #fff1eb; color: #cf4429; font-size: 13px; font-weight: 950; }
 .catalog-section { padding: 18px; }
 .catalog-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
 .catalog-section-head.compact { align-items: center; margin-bottom: 12px; }
@@ -1201,17 +1407,39 @@ const deliveryTypeDisplay = (value) => {
 .catalog-status-toggle input { width: 16px; height: 16px; margin-top: 2px; accent-color: #2563eb; }
 .catalog-status-toggle span { display: grid; gap: 3px; }
 .catalog-status-toggle small { color: var(--text3); font-size: 12px; font-weight: 700; }
+.catalog-format-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.catalog-format-picker button { min-height: 68px; display: grid; gap: 3px; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text2); cursor: pointer; padding: 12px 14px; text-align: left; }
+.catalog-format-picker button:hover { border-color: #b9c9df; background: #f8fbff; }
+.catalog-format-picker button.selected { border-color: #8eb4f7; background: #eff6ff; color: var(--blue); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.06); }
+.catalog-format-picker strong { font-size: 13px; font-weight: 900; }
+.catalog-format-picker span { color: var(--text3); font-size: 11px; font-weight: 700; }
+.catalog-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.catalog-field-error { margin: 8px 0; }
+.compact-list { max-height: 220px; }
+.compact-level-picker { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.catalog-level-field { margin-top: 2px; }
+.catalog-level-head { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.compact-level-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.compact-level-grid .level-option { min-height: 54px; grid-template-rows: auto; }
 .muted-note { margin-top: 10px; color: var(--text3); font-size: 12px; }
 .fw8 { font-weight: 800; }
 @media (max-width: 900px) {
   .focus-tabs, .form-grid, .level-grid, .catalog-filter-bar { grid-template-columns: 1fr; }
-  .delivery-code-card { grid-template-columns: 1fr; }
+  .catalog-type-tabs { grid-template-columns: 1fr; }
+  .catalog-type-tabs > .catalog-form-preview { min-width: 0; }
+  .catalog-format-picker, .catalog-detail-grid { grid-template-columns: 1fr; }
+  .formal-delivery-head { align-items: flex-start; }
+  .formal-delivery-item { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .formal-delivery-form { grid-column: 2 / -1; }
   .delivery-setting-summary { grid-template-columns: 1fr; }
   .delivery-setting-controls { grid-template-columns: 1fr; }
   .delivery-save-row { justify-content: flex-start; }
   .span-2 { grid-column: auto; }
   .tool-row { grid-template-columns: 1fr; }
-  .form-select-row, .preview-meta-grid, .preview-meta-grid.three { grid-template-columns: 1fr; }
+  .form-select-row, .preview-meta-grid, .preview-meta-grid.three, .preview-project-grid, .preview-project-grid.training-form-grid, .preview-coaching-timeline, .preview-coaching-timeline.group-activity-timeline, .preview-coaching-timeline.training-summary, .coaching-help-body { grid-template-columns: 1fr; }
+  .training-form-grid > .training-meta, .training-form-grid > .training-wide { grid-column: 1; }
+  .coaching-help-card ul { grid-template-columns: 1fr; }
+  .preview-coaching-timeline-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
   .tool-actions, .panel-actions { justify-content: flex-start; }
   .panel-head { align-items: flex-start; flex-direction: column; }
 }
