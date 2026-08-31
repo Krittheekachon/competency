@@ -29,7 +29,7 @@ class NewUserIncompleteMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.new-user-incomplete',
+            view: 'emails.new-user-incomplete',
             with: [
                 'user' => $this->user,
                 'actionUrl' => $this->actionUrl,
@@ -37,3 +37,4 @@ class NewUserIncompleteMail extends Mailable
         );
     }
 }
+

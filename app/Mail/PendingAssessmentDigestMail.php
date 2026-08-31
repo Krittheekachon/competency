@@ -18,13 +18,13 @@ class PendingAssessmentDigestMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: '[A-IDP] สรุปประจำวัน: บุคลากรยังไม่ประเมินตนเอง');
+        return new Envelope(subject: 'สรุปประจำวัน: บุคลากรยังไม่ประเมินตนเอง');
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.digests.pending-assessments',
+            view: 'emails.digests.pending-assessments',
             with: [
                 'users' => $this->users,
                 'actionUrl' => route('dashboard'),
@@ -32,3 +32,4 @@ class PendingAssessmentDigestMail extends Mailable
         );
     }
 }
+

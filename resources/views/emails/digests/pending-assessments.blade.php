@@ -1,13 +1,22 @@
-@component('mail::message')
-# สรุปประจำวัน: บุคลากรยังไม่ประเมินตนเอง
+@extends('emails.layouts.app')
 
-มีบุคลากรที่ยังไม่ประเมินตนเองทั้งหมด {{ count($users) }} รายการ
+@section('content')
+<div class="mail-eyebrow">Daily Digest</div>
 
-@foreach($users as $user)
-- {{ $user['name'] ?? 'ไม่ระบุชื่อ' }}@if(!empty($user['email'])) ({{ $user['email'] }})@endif
-@endforeach
+<h1>สรุปประจำวัน: บุคลากรยังไม่ประเมินตนเอง</h1>
 
-@component('mail::button', ['url' => $actionUrl, 'color' => 'success'])
-เปิดแดชบอร์ด
-@endcomponent
-@endcomponent
+<p class="mail-lead">มีบุคลากรที่ยังไม่ส่งแบบประเมินตนเอง {{ count($users) }} คน โปรดติดตามให้ดำเนินการในระบบ</p>
+
+@include('emails.partials.summary-card', [
+    'tone' => 'warning',
+    'title' => 'บุคลากรยังไม่ประเมินตนเอง',
+    'count' => count($users),
+    'description' => 'ยังไม่พบการส่งแบบประเมินตนเองในระบบ',
+    'items' => $users,
+    'formatter' => fn ($user) => ($user['name'] ?? 'ไม่ระบุชื่อ').(!empty($user['email']) ? ' ('.$user['email'].')' : ''),
+])
+
+@include('emails.components.button', ['url' => $actionUrl, 'label' => 'เปิดแดชบอร์ด'])
+@endsection
+
+

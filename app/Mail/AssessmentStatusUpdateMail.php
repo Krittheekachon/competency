@@ -31,7 +31,7 @@ class AssessmentStatusUpdateMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.assessment-status-update',
+            view: 'emails.assessment-status-update',
             with: [
                 'employee' => $this->employee,
                 'status' => $this->status,
@@ -41,3 +41,4 @@ class AssessmentStatusUpdateMail extends Mailable
         );
     }
 }
+

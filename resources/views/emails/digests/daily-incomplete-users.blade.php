@@ -1,13 +1,22 @@
-@component('mail::message')
-# สรุปประจำวัน: ผู้ใช้งานข้อมูลไม่ครบ
+@extends('emails.layouts.app')
 
-มีผู้ใช้งานข้อมูลโครงสร้างไม่ครบทั้งหมด {{ count($users) }} รายการ
+@section('content')
+<div class="mail-eyebrow">Daily Digest</div>
 
-@foreach($users as $user)
-- {{ $user['name'] ?? 'ไม่ระบุชื่อ' }}@if(!empty($user['email'])) ({{ $user['email'] }})@endif
-@endforeach
+<h1>สรุปประจำวัน: ผู้ใช้งานข้อมูลไม่ครบ</h1>
 
-@component('mail::button', ['url' => $actionUrl, 'color' => 'success'])
-เปิดหน้าจัดการผู้ใช้งาน
-@endcomponent
-@endcomponent
+<p class="mail-lead">มีผู้ใช้งานที่ข้อมูลโครงสร้างยังไม่ครบ {{ count($users) }} รายการ โปรดตรวจสอบและปรับปรุงข้อมูลให้พร้อมใช้งาน</p>
+
+@include('emails.partials.summary-card', [
+    'tone' => 'warning',
+    'title' => 'ข้อมูลบุคลากรไม่ครบ',
+    'count' => count($users),
+    'description' => 'ข้อมูลตำแหน่ง หน่วยงาน หรือโครงสร้างยังไม่สมบูรณ์',
+    'items' => $users,
+    'formatter' => fn ($user) => ($user['name'] ?? 'ไม่ระบุชื่อ').(!empty($user['email']) ? ' ('.$user['email'].')' : ''),
+])
+
+@include('emails.components.button', ['url' => $actionUrl, 'label' => 'เปิดแดชบอร์ด'])
+@endsection
+
+

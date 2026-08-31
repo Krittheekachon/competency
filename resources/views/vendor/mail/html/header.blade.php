@@ -1,12 +1,11 @@
 @props(['url'])
 <tr>
 <td class="header">
-<a href="{{ $url }}" style="display:inline-block;text-decoration:none;">
-  <span style="font-size:24px;font-weight:700;color:#3C3489;letter-spacing:0.5px;">
-    Competency &amp; IDP System
-  </span>
-  <span style="display:block;font-size:12px;color:#64748b;margin-top:6px;font-weight:400;">
-    คณะวิศวกรรมศาสตร์ มหาวิทยาลัยขอนแก่น
+<a href="{{ $url }}" class="brand-link">
+  <span class="brand-mark">CIDP</span>
+  <span class="brand-copy">
+    <span class="brand-title">Competency &amp; IDP System</span>
+    <span class="brand-subtitle">คณะวิศวกรรมศาสตร์ มหาวิทยาลัยขอนแก่น</span>
   </span>
 </a>
 </td>

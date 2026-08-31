@@ -31,7 +31,7 @@ class RoleNotificationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.role-notification',
+            view: 'emails.role-notification',
             with: [
                 'title' => $this->title,
                 'body' => $this->body,
@@ -41,3 +41,4 @@ class RoleNotificationMail extends Mailable
         );
     }
 }
+

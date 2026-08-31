@@ -30,7 +30,7 @@ class AssessmentSubmittedMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.assessment-submitted',
+            view: 'emails.assessment-submitted',
             with: [
                 'employee' => $this->employee,
                 'competencyName' => $this->competencyName,
@@ -39,3 +39,4 @@ class AssessmentSubmittedMail extends Mailable
         );
     }
 }
+
