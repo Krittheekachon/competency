@@ -10,12 +10,14 @@ use App\Http\Controllers\Admin\CompetencyTypeController as AdminCompetencyTypeCo
 use App\Http\Controllers\Admin\IdpDeliveryTypeSettingController as AdminIdpDeliveryTypeSettingController;
 use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMethodController;
 use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
+use App\Http\Controllers\Admin\ReviewerChainTemplateController as AdminReviewerChainTemplateController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\IdpController as EmployeeIdpController;
 use App\Http\Controllers\Employee\IdpActivityUpdateController;
-use App\Http\Controllers\Hr\CompetencyAssignmentController as HrCompetencyAssignmentController;
+use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
+use App\Http\Controllers\FcTopicSelectionApprovalController;
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
 use App\Http\Controllers\IdpApprovalController;
@@ -54,6 +56,11 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
     Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
     Route::delete('/admin/users/{user}', [AdminUserController::class, 'destroy'])->name('admin.users.destroy');
+    Route::post('/admin/reviewer-chain-templates', [AdminReviewerChainTemplateController::class, 'store'])->name('admin.reviewer-chain-templates.store');
+    Route::patch('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'update'])->name('admin.reviewer-chain-templates.update');
+    Route::delete('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'destroy'])->name('admin.reviewer-chain-templates.destroy');
+    Route::post('/admin/reviewer-chain-templates/{template}/users', [AdminReviewerChainTemplateController::class, 'addUsers'])->name('admin.reviewer-chain-templates.users.store');
+    Route::delete('/admin/reviewer-chain-templates/{template}/users/{user}', [AdminReviewerChainTemplateController::class, 'removeUser'])->name('admin.reviewer-chain-templates.users.destroy');
     Route::post('/admin/competency-types', [AdminCompetencyTypeController::class, 'store'])->name('admin.competency-types.store');
     Route::put('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'update'])->name('admin.competency-types.update');
     Route::delete('/admin/competency-types/{competencyType}', [AdminCompetencyTypeController::class, 'destroy'])->name('admin.competency-types.destroy');
@@ -85,12 +92,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
     Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
     Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
-    Route::post('/hr/competency-assignments', [HrCompetencyAssignmentController::class, 'store'])->name('hr.competency-assignments.store');
     Route::post('/assessments/draft', [AssessmentController::class, 'draft'])->name('assessments.draft');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
     Route::post('/assessments/approve', [AssessmentController::class, 'approve'])->name('assessments.approve');
     Route::post('/assessments/reject', [AssessmentController::class, 'reject'])->name('assessments.reject');
+    Route::post('/employee/fc-topic-selection/submit', [EmployeeFcTopicSelectionController::class, 'submit'])->name('employee.fc-topic-selection.submit');
+    Route::post('/fc-topic-selections/approve', [FcTopicSelectionApprovalController::class, 'approve'])->name('fc-topic-selections.approve');
+    Route::post('/fc-topic-selections/reject', [FcTopicSelectionApprovalController::class, 'reject'])->name('fc-topic-selections.reject');
     Route::post('/employee/idp/draft', [EmployeeIdpController::class, 'saveDraft'])->name('employee.idp.draft');
     Route::post('/employee/idp/submit', [EmployeeIdpController::class, 'submit'])->name('employee.idp.submit');
     Route::post('/employee/idp/submit-item', [EmployeeIdpController::class, 'submitItem'])->name('employee.idp.submit-item');
@@ -107,6 +116,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
     Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
     Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
+    Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
     Route::post('/hr/remind-assess', function (NotificationService $notifications) {
         $notifications->remindPendingEmployees();
 

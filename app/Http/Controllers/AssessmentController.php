@@ -6,6 +6,7 @@ use App\Models\Assessment;
 use App\Models\User;
 use App\Services\ExpectedLevelResolver;
 use App\Services\NotificationService;
+use App\Services\ReviewerChainResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ class AssessmentController extends Controller
     public function __construct(
         private ExpectedLevelResolver $expectedLevelResolver,
         private NotificationService $notifications,
+        private ReviewerChainResolver $reviewerChainResolver,
     )
     {
     }
@@ -26,6 +28,7 @@ class AssessmentController extends Controller
         $data = $this->validatedAssessmentPayload($request);
 
         $this->assertCanSelfAssess($request->user());
+        $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         $savedAt = null;
         DB::transaction(function () use ($request, $data, &$savedAt): void {
@@ -44,6 +47,7 @@ class AssessmentController extends Controller
         $data = $this->validatedAssessmentPayload($request);
 
         $this->assertCanSelfAssess($request->user());
+        $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         DB::transaction(function () use ($request, $data): void {
             $this->persistSelfAssessment($request, $data, true);
@@ -240,15 +244,61 @@ class AssessmentController extends Controller
             return;
         }
 
-        $hasAssignedEvaluator = collect([
-            $user->supervisor_id_1,
-            $user->supervisor_id_2,
-            $user->supervisor_id_3,
-        ])->contains(fn ($id) => filled($id));
+        $hasAssignedEvaluator = $this->reviewerChainResolver->stepsForUser($user) !== [];
 
         if (! $hasAssignedEvaluator) {
             throw ValidationException::withMessages([
                 'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินก่อน',
+            ]);
+        }
+    }
+
+    private function assertFcTopicsApprovedForAssessment($user, int $competencyId): void
+    {
+        $positionId = (int) ($user->position_id ?? 0);
+        if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
+            return;
+        }
+
+        $requiredCount = (int) DB::table('position_fc_selection_rules')
+            ->where('position_id', $positionId)
+            ->value('required_fc_count');
+
+        if ($requiredCount <= 0) {
+            return;
+        }
+
+        $selection = Schema::hasTable('fc_topic_selections')
+            ? DB::table('fc_topic_selections')
+                ->where('user_id', $user->id)
+                ->where('position_id', $positionId)
+                ->first()
+            : null;
+
+        if (! $selection || $selection->status !== 'approved') {
+            throw ValidationException::withMessages([
+                'assessment' => 'ยังไม่สามารถประเมินได้ กรุณาเลือกหัวข้อ FC และรอหัวหน้า 1 อนุมัติก่อน',
+            ]);
+        }
+
+        $isFcCompetency = DB::table('competencies')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('competencies.id', $competencyId)
+            ->where('competency_types.code', 'FC')
+            ->exists();
+
+        if (! $isFcCompetency) {
+            return;
+        }
+
+        $isSelectedFc = Schema::hasTable('fc_topic_selection_items') && DB::table('fc_topic_selection_items')
+            ->where('fc_topic_selection_id', $selection->id)
+            ->where('competency_id', $competencyId)
+            ->exists();
+
+        if (! $isSelectedFc) {
+            throw ValidationException::withMessages([
+                'assessment' => 'ประเมินได้เฉพาะหัวข้อ FC ที่หัวหน้า 1 อนุมัติแล้วเท่านั้น',
             ]);
         }
     }
@@ -284,7 +334,7 @@ class AssessmentController extends Controller
 
         if ($existingAssessment && ! in_array($existingStatus, ['draft', 'revision_required'], true)) {
             throw ValidationException::withMessages([
-                'assessment' => 'ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
+                'assessment' => 'ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว ไม่สามารถแก้ไขได้จนกว่าจะถูกส่งกลับมาแก้ไข',
             ]);
         }
 
@@ -414,7 +464,7 @@ class AssessmentController extends Controller
         }
 
         return [
-            'expected_status' => $this->pendingStatusForStep($reviewStep),
+            'expected_status' => $this->reviewerChainResolver->pendingStatusForStep($reviewStep),
             'approved_status' => $this->nextStatusAfterStep($target, $reviewStep),
             'submitted_at_column' => $this->submittedAtColumnForStep($reviewStep),
             'review_step' => $reviewStep,
@@ -455,10 +505,10 @@ class AssessmentController extends Controller
 
     private function initialSubmittedStatusForUser($user): string
     {
-        foreach ([1, 2, 3] as $step) {
-            if (filled($user->{'supervisor_id_'.$step})) {
-                return $this->pendingStatusForStep($step);
-            }
+        $steps = $this->reviewerChainResolver->stepsForUser($user);
+
+        if ($steps !== []) {
+            return $this->reviewerChainResolver->pendingStatusForStep((int) $steps[0]['step']);
         }
 
         throw ValidationException::withMessages([
@@ -468,46 +518,17 @@ class AssessmentController extends Controller
 
     private function reviewStepForReviewer($target, int $reviewerId): ?int
     {
-        foreach ([1, 2, 3] as $step) {
-            if ((int) ($target->{'supervisor_id_'.$step} ?? 0) === $reviewerId) {
-                return $step;
-            }
-        }
-
-        return null;
-    }
-
-    private function pendingStatusForStep(int $step): string
-    {
-        return match ($step) {
-            1 => 'self_submitted',
-            2 => 'unit_evaluated',
-            3 => 'dept_evaluated',
-            default => throw ValidationException::withMessages([
-                'assessment' => 'ลำดับผู้ประเมินไม่ถูกต้อง',
-            ]),
-        };
+        return $this->reviewerChainResolver->stepForReviewer($target, $reviewerId);
     }
 
     private function nextStatusAfterStep($target, int $currentStep): string
     {
-        for ($step = $currentStep + 1; $step <= 3; $step++) {
-            if (filled($target->{'supervisor_id_'.$step} ?? null)) {
-                return $this->pendingStatusForStep($step);
-            }
-        }
-
-        return 'approved';
+        return $this->reviewerChainResolver->nextStatusAfterStep($target, $currentStep);
     }
 
     private function submittedAtColumnForStep(int $step): string
     {
-        return match ($step) {
-            1 => 'supervisor_1_submitted_at',
-            2 => 'supervisor_2_submitted_at',
-            3 => 'dean_approved_at',
-            default => 'updated_at',
-        };
+        return $this->reviewerChainResolver->submittedAtColumnForStep($step);
     }
 
     private function isoTimestamp($value): ?string

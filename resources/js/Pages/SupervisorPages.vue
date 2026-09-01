@@ -15,8 +15,22 @@ const useEffect = (effect: any) => {
     if (typeof cleanup === "function") onCleanup(cleanup);
   });
 };
+const reviewerStepsForUser = (user: any) => {
+  const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
 
-import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const currentUserId = Number(currentUser.db_id);const isAssignedReviewer = (u: any) => currentUserId > 0 && [u.supervisor_id_1, u.supervisor_id_2, u.supervisor_id_3].some((id) => Number(id) === currentUserId);const supervisorMode = ['supervisor', 'manager_dept', 'dept_head'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี' || currentUser.r === 'dean' || currentUser.r === 'manager';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || ['manager_dept', 'dept_head'].includes(currentUser.r);if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = isAssignedReviewer(u);const hasAccess = isDean || isDeptIncharge || isDirectSub;
+  return steps
+    .map((step: any, index: number) => ({
+      step: Number(step.step || index + 1),
+      reviewer_id: Number(step.id || step.reviewer_id || 0),
+    }))
+    .filter((step: any) => step.step > 0 && step.reviewer_id > 0);
+};
+const isAssignedReviewerForUser = (user: any, currentUserId: number) =>
+  currentUserId > 0 && reviewerStepsForUser(user).some((step: any) => Number(step.reviewer_id) === currentUserId);
+
+import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineComponent({ name: "SupervisorAssess", props: ["users", "setUsers", "currentUser", "supervisorUsers", "onSupervisorChange", "drafts", "setDrafts", "onDirtyChange", "hideSupervisorHeader"], setup(__props) {const { users = [], setUsers, currentUser = {}, supervisorUsers, onSupervisorChange, drafts = {}, setDrafts, onDirtyChange, hideSupervisorHeader = false } = __props as any;const deptKeys = Object.keys(DEPT_STRUCTURE);const userDept = currentUser.d?.split(" > ")[0];const defaultDept = userDept && deptKeys.includes(userDept) ? userDept : deptKeys[0];const [activeDept, setActiveDept] = useState(defaultDept);const [selectedEmployee, setSelectedEmployee] = useState<any>(null);const [searchTerm, setSearchTerm] = useState("");const currentUserId = Number(currentUser.db_id);const isAssignedReviewer = (u: any) => isAssignedReviewerForUser(u, currentUserId);const supervisorMode = ['supervisor', 'manager_dept', 'dept_head'].includes(currentUser.r) && !!supervisorUsers?.length;const filteredUsers = users.filter((u) => {const isDean = currentUser.p === 'คณบดี' || currentUser.r === 'dean' || currentUser.r === 'manager';const isDeptIncharge = currentUser.p?.includes('รองคณบดี') || currentUser.p?.includes('ผู้ช่วยคณบดี') || ['manager_dept', 'dept_head'].includes(currentUser.r);if (!u.d) return false;const matchesDept = u.d.split(" > ")[0] === activeDept;const isDirectSub = isAssignedReviewer(u);const hasAccess = isDean || isDeptIncharge || isDirectSub;
         const reviewerAccess = supervisorMode ? isDirectSub : hasAccess;
         const matchesSearch = !searchTerm.value || u.n.toLowerCase().includes(searchTerm.value.toLowerCase()) || u.sso && u.sso.toLowerCase().includes(searchTerm.value.toLowerCase());
 
@@ -130,7 +144,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
       setIsDirty(false);
     };
     const changeSupervisor = (sso: string) => {
-      if (isDirty.value && !window.confirm("ยังไม่ได้บันทึกผลการประเมิน หากเปลี่ยนหัวหน้างานข้อมูลล่าสุดจะไม่ถูกบันทึก")) return;
+      if (isDirty.value && !window.confirm("ยังไม่ได้บันทึกผลการประเมิน หากเปลี่ยนหัวหน้าหน่วยข้อมูลล่าสุดจะไม่ถูกบันทึก")) return;
       onSupervisorChange?.(sso);
     };
     const handleMark = (id: string, val: number) => {
@@ -224,7 +238,7 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                     <div class="flex ic jb mb20" style={{ flexWrap: "wrap", gap: "8px" }}>
                         <div>
                             <div class="sec-t">ประเมินลูกน้อง</div>
-                            <div class="sec-s">พิจารณาข้อมูลที่บุคลากรส่งมา และให้คะแนนหัวหน้างาน</div>
+                            <div class="sec-s">พิจารณาข้อมูลที่บุคลากรส่งมา และให้คะแนนหัวหน้าหน่วย</div>
                         </div>
                         <span class="b by">รอประเมิน {assessCounts.pending} คน</span>
                     </div>
@@ -438,15 +452,15 @@ import { DEPT_STRUCTURE } from '../data';export const SupervisorAssess = defineC
                                                 </div>
                                             </div>
                                             <div style={{ padding: "22px 20px" }}>
-                                                <div class="bc fw8 fs12 mb10">1. หัวหน้างาน (คุณ) *</div>
+                                                <div class="bc fw8 fs12 mb10">1. หัวหน้าหน่วย (คุณ) *</div>
                                                 <div class="muted fw7 fs11 mb6">พฤติกรรมบ่งชี้ (ใช้ประกอบการตัดสิน)</div>
                                                 <ul style={{ margin: "0 0 18px 18px", padding: 0, fontSize: "12px", lineHeight: 1.7 }}>
                                                     {getSupervisorBehaviors(c).map((item) => <li key={item}>{item}</li>)}
                                                 </ul>
                                                 <div class="fs11" style={{ padding: "10px 12px", marginBottom: "18px", background: "var(--blue-lt)", borderRadius: "8px", color: "var(--blue)" }}>
-                                                    แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้างานเลือก ระดับ {selectedMockScore(c.id)}: {scoreLabels[selectedMockScore(c.id) - 1]}
+                                                    แสดงพฤติกรรมบ่งชี้ตามคะแนนที่หัวหน้าหน่วยเลือก ระดับ {selectedMockScore(c.id)}: {scoreLabels[selectedMockScore(c.id) - 1]}
                                                 </div>
-                                                <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากรโดยหัวหน้างาน</div>
+                                                <div class="muted fw7 fs11 mb8">คะแนนความสามารถของบุคลากรโดยหัวหน้าหน่วย</div>
                                                 <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: "7px", marginBottom: "16px" }}>
                                                     {[1, 2, 3, 4, 5].map((value) => {
                         const selected = selectedMockScore(c.id) === value;
@@ -551,7 +565,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
     ["การทำงานเป็นทีม", "การใช้เทคโนโลยีดิจิทัล"]];
 
     const currentUserId = Number(currentUser?.db_id);
-    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId);
+    const isAssignedReviewer = (user: any) => isAssignedReviewerForUser(user, currentUserId);
     const directGapPeople = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso &&
@@ -625,7 +639,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
                             <th style={{ textAlign: "center" }}>ประเภท</th>
                             <th style={{ textAlign: "center" }}>คาดหวัง</th>
                             <th style={{ textAlign: "center" }}>ประเมินตนเอง</th>
-                            <th style={{ textAlign: "center" }}>หัวหน้างานประเมิน</th>
+                            <th style={{ textAlign: "center" }}>หัวหน้าหน่วยประเมิน</th>
                             <th style={{ textAlign: "center" }}>Gap</th>
                             <th style={{ textAlign: "center" }}>สถานะ</th>
                         </tr>
@@ -649,7 +663,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
             <div class="card" style={{ overflow: "hidden" }}>
                 <div class="ch"><div class="ct">ข้อเสนอแนะ</div></div>
                 <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
-                    <div class="bc fw7 fs12 mb10">● หัวหน้างาน</div>
+                    <div class="bc fw7 fs12 mb10">● หัวหน้าหน่วย</div>
                     <div style={{ background: "var(--blue-lt)", borderRadius: "9px", padding: "12px 14px" }} class="fs12">ยังไม่มีข้อเสนอแนะ</div>
                 </div>
                 <div style={{ padding: "16px 18px" }}>
@@ -1074,7 +1088,7 @@ const SupervisorIDPHeader = defineComponent({ name: "SupervisorIDPHeader", props
                         <div class="av" style={{ width: "34px", height: "34px", background: "var(--orange)", fontSize: "12px" }}>{currentUser?.n?.[0] || "ส"}</div>
                         <div class="flex ic g4" style={{ flexWrap: "nowrap", whiteSpace: "nowrap" }}>
                             <div class="fw8 fs12">{supervisorName}</div>
-                            <div class="muted fs11">| {currentUser?.p || "หัวหน้างาน"} | {supervisorUnit}</div>
+                            <div class="muted fs11">| {currentUser?.p || "หัวหน้าหน่วย"} | {supervisorUnit}</div>
                         </div>
                     </div>
                 </div>
@@ -1091,7 +1105,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
     const [feedback, setFeedback] = useState<Record<string, string>>({});
 
     const currentUserId = Number(currentUser?.db_id);
-    const isAssignedReviewer = (user: any) => currentUserId > 0 && [user.supervisor_id_1, user.supervisor_id_2, user.supervisor_id_3].some((id) => Number(id) === currentUserId);
+    const isAssignedReviewer = (user: any) => isAssignedReviewerForUser(user, currentUserId);
     const directReports = users.filter((user) =>
     currentUser &&
     user.sso !== currentUser.sso &&
@@ -1193,7 +1207,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
 
                 {forwardedPlan &&
           <div class="card">
-                        <div class="ch"><div class="ct">แผนผ่านการตรวจจากหัวหน้างานแล้ว</div><div class="cs">อยู่ระหว่างรอหัวหน้าฝ่ายตรวจสอบต่อ</div></div>
+                        <div class="ch"><div class="ct">แผนผ่านการตรวจจากหัวหน้าหน่วยแล้ว</div><div class="cs">อยู่ระหว่างรอหัวหน้าฝ่ายตรวจสอบต่อ</div></div>
                         <GapRows gaps={activeEmployee.gaps} decisions={decisions.value} employeeId={activeEmployee.id} feedback={feedback} />
                     </div>
           }
@@ -1258,7 +1272,7 @@ const DetailedSupervisorIDP = defineComponent({ name: "DetailedSupervisorIDP", p
             {!hideSupervisorHeader && <SupervisorIDPHeader currentUser={currentUser} supervisorUsers={supervisorUsers} onSupervisorChange={onSupervisorChange} />}
             <div class="mb16">
                 <div class="sec-t">IDP & ติดตามทีม</div>
-                <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้างาน</div>
+                <div class="sec-s">ติดตามความก้าวหน้าแผนพัฒนาบุคลากรในมุมมองหัวหน้าหน่วย</div>
             </div>
             <div
         class="mb14"
@@ -1382,7 +1396,7 @@ const deptHeadIDPMock = {
     home: "หน่วยแผนยุทธศาสตร์",
     phase: "pendingPlan" as DeptHeadIDPPhase,
     sent: "15 พ.ค. 68",
-    lv1: "หัวหน้างานอนุมัติแล้ว 16 พ.ค. 68",
+    lv1: "หัวหน้าหน่วยอนุมัติแล้ว 16 พ.ค. 68",
     gaps: [
     { cd: "FC2-061", n: "การใช้เทคโนโลยีดิจิทัล", t: "FC", tg: "tag-fc", exp: 4, got: 3, goal: "พัฒนาทักษะการใช้ Excel ขั้นสูง", acts: ["เข้าร่วมกิจกรรม Team Building ประจำคณะ"] }]
 
@@ -1393,7 +1407,7 @@ const deptHeadIDPMock = {
     p: "นักวิเคราะห์",
     home: "หน่วยแผนยุทธศาสตร์",
     phase: "deanPlan" as DeptHeadIDPPhase,
-    lv1: "หัวหน้างานอนุมัติแล้ว",
+    lv1: "หัวหน้าหน่วยอนุมัติแล้ว",
     gaps: [{ cd: "CC-005", n: "AI Literacy", t: "CC", tg: "tag-cc", exp: 4, got: 1, goal: "ใช้ AI ช่วยวิเคราะห์งานแผนอย่างรับผิดชอบ", acts: ["สัมมนาวิชาการระดับชาติ"] }]
   },
   {
@@ -1523,7 +1537,7 @@ const DeptHeadIDP = defineComponent({ name: "DeptHeadIDP", props: Object as Prop
     <>
             <div class="mb16">
                 <div class="sec-t">IDP & ติดตามทีม</div>
-                <div class="sec-s">หัวหน้าฝ่ายตรวจแผนและหลักฐานที่ส่งต่อจากหัวหน้างาน</div>
+                <div class="sec-s">หัวหน้าฝ่ายตรวจแผนและหลักฐานที่ส่งต่อจากหัวหน้าหน่วย</div>
             </div>
             <div class="card mb14">
                 <div class="cb flex ic jb" style={{ flexWrap: "wrap", gap: "10px" }}>

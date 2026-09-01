@@ -9,13 +9,25 @@ const props = defineProps<{
 const selectedUser = ref<any | null>(null);
 const approvedIds = ref<number[]>([]);
 
+const reviewerStepsForUser = (user: any) => {
+  const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+  return steps
+    .map((step: any, index: number) => ({
+      step: Number(step.step || index + 1),
+      reviewer_id: Number(step.id || step.reviewer_id || 0),
+    }))
+    .filter((step: any) => step.step > 0 && step.reviewer_id > 0);
+};
+
 const evaluatorLevel = (user: any) => {
   const currentUserId = Number(props.currentUserId || 0);
   if (!currentUserId) return 0;
-  if (Number(user?.supervisor_id_1) === currentUserId) return 1;
-  if (Number(user?.supervisor_id_2) === currentUserId) return 2;
-  if (Number(user?.supervisor_id_3) === currentUserId) return 3;
-  return 0;
+  return reviewerStepsForUser(user)
+    .find((step) => step.reviewer_id === currentUserId)
+    ?.step || 0;
 };
 
 const userById = (id: any) =>
@@ -25,11 +37,7 @@ const displayName = (user: any) =>
   user ? `${user?.t || ''}${user?.n || ''}`.trim() : '';
 
 const evaluatorName = (user: any, level: 1 | 2 | 3) => {
-  const id = level === 1
-    ? user?.supervisor_id_1
-    : level === 2
-      ? user?.supervisor_id_2
-      : user?.supervisor_id_3;
+  const id = reviewerStepsForUser(user).find((step) => step.step === level)?.reviewer_id;
 
   return displayName(userById(id));
 };
@@ -84,8 +92,8 @@ const approve = (user: any) => {
           <thead>
             <tr>
               <th>บุคลากร</th>
+              <th>หัวหน้าหน่วย</th>
               <th>หัวหน้างาน</th>
-              <th>ผู้บังคับบัญชา</th>
               <th>ลำดับของคุณ</th>
               <th>หัวข้อ IDP</th>
               <th>สถานะ</th>

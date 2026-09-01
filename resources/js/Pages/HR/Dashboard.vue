@@ -28,6 +28,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    currentUserFcTopicSelection: {
+        type: Object,
+        default: () => ({}),
+    },
     hrSummary: {
         type: Object,
         required: true,
@@ -40,11 +44,19 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    supportOrg: {
+        type: Object,
+        default: () => ({}),
+    },
     positionLookup: {
         type: Array,
         default: () => [],
     },
     positionCompetencies: {
+        type: Object,
+        default: () => ({}),
+    },
+    positionFcSelectionRules: {
         type: Object,
         default: () => ({}),
     },
@@ -55,10 +67,6 @@ const props = defineProps({
     competencies: {
         type: Array,
         default: () => [],
-    },
-    assignedCompetenciesByScope: {
-        type: Object,
-        default: () => ({}),
     },
     learningMethods: {
         type: Array,
@@ -85,12 +93,10 @@ const isSidebarOpen = ref(true);
 const activePage = ref('hr-position-competencies');
 const activeModal = ref('');
 const selectedWorkline = ref('');
-const selectedJobFamily = ref('');
+const selectedOrgScope = ref('');
 const selectedPosition = ref('');
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
-const assignedByScope = ref(props.assignedCompetenciesByScope || {});
-const savingAssignment = ref(false);
 const selectedDetailCompetency = ref(null);
 const expandedDetailLevels = ref({});
 const catalogCompetencySearch = ref('');
@@ -164,14 +170,17 @@ const pageTitles = {
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
 const currentPageTitle = computed(() => pageTitles[activePage.value] || props.pageTitle);
 const currentProfileUser = computed(() => props.currentUser || {});
+const reviewerStepsForUser = (user) => {
+    const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+        ? user.reviewerSteps
+        : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+    return steps;
+};
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value;
     const reasons = Array.isArray(user?.structureIssues) ? [...user.structureIssues] : [];
-    const hasAssignedEvaluator = [
-        user?.supervisor_id_1,
-        user?.supervisor_id_2,
-        user?.supervisor_id_3,
-    ].some((id) => Number(id) > 0);
+    const hasAssignedEvaluator = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedEvaluator) {
         reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
@@ -187,32 +196,40 @@ const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.
 const updateUsers = () => {};
 const worklineOptions = computed(() => props.worklines || []);
 
-const familiesForSelectedWorkline = computed(() => {
-    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
-    return Object.keys(groups);
-});
+const isSupportWorkline = computed(() => selectedWorkline.value === 'สายสนับสนุน');
+const supportUnitScopes = computed(() => Object.entries(props.supportOrg || {}).flatMap(([division, works]) =>
+    (works || []).flatMap((work) => (work.units || []).map((unit) => ({
+        key: unit.key || [division, work.work, unit.name].join('|||'),
+        label: unit.name,
+        positions: unit.positions || [],
+    }))),
+));
+const organizationScopes = computed(() => {
+    if (isSupportWorkline.value) return supportUnitScopes.value;
 
-const rawPositionsForSelectedFamily = computed(() => {
-    const groups = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
-    return groups[selectedJobFamily.value] || [];
+    const departments = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
+    return Object.keys(departments).map((name) => ({ key: name, label: name, positions: departments[name] || [] }));
 });
+const selectedScope = computed(() => organizationScopes.value.find((scope) => scope.key === selectedOrgScope.value) || null);
 
 const levelsForSelectedWorkline = computed(() => {
     return props.levelsByWorkline?.[selectedWorkline.value] || [];
 });
 
 const positionOptions = computed(() => {
-    if (rawPositionsForSelectedFamily.value.length) return rawPositionsForSelectedFamily.value;
-    return [];
+    return selectedScope.value?.positions || [];
 });
-const needsPositionBeforeMapping = computed(() => Boolean(selectedJobFamily.value && !positionOptions.value.length));
+const needsPositionBeforeMapping = computed(() => Boolean(selectedOrgScope.value && !positionOptions.value.length));
 
 const allPositionCount = computed(() => {
     return worklineOptions.value.reduce((total, workline) => {
-        const families = props.jobFamiliesByWorkline?.[workline] || {};
-        return total + Object.entries(families || {}).reduce((sum, [familyName, positions]) => {
+        if (workline === 'สายสนับสนุน') {
+            return total + supportUnitScopes.value.reduce((sum, unit) => sum + unit.positions.length, 0);
+        }
+        const departments = props.jobFamiliesByWorkline?.[workline] || {};
+        return total + Object.entries(departments || {}).reduce((sum, [departmentName, positions]) => {
             const count = Array.isArray(positions) ? positions.length : 0;
-            return sum + (familyName ? count : 0);
+            return sum + (departmentName ? count : 0);
         }, 0);
     }, 0);
 });
@@ -220,12 +237,13 @@ const allPositionCount = computed(() => {
 const configuredPositionCount = computed(() => Object.values(props.positionCompetencies || {}).filter((items) => items.length).length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
-const jobFamilyLabel = computed(() => selectedJobFamily.value || 'ยังไม่มีข้อมูลกลุ่มงาน');
+const organizationScopeLabel = computed(() => selectedScope.value?.label || (isSupportWorkline.value ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา'));
 const currentPosition = computed(() => {
     return (props.positionLookup || []).find((position) => {
-        return position.worklineName === selectedWorkline.value
-            && position.jobFamilyName === selectedJobFamily.value
-            && position.name === selectedPosition.value;
+        if (position.worklineName !== selectedWorkline.value || position.name !== selectedPosition.value) return false;
+        return isSupportWorkline.value
+            ? position.supportUnitKey === selectedOrgScope.value
+            : position.jobFamilyName === selectedOrgScope.value;
     }) || null;
 });
 const currentPositionId = computed(() => currentPosition.value?.id || null);
@@ -240,6 +258,10 @@ const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
+const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'FC').length);
+const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
+const requiredFcCount = ref(0);
+const savedRequiredFcCount = computed(() => Number(props.positionFcSelectionRules?.[currentPositionId.value] || 0));
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
@@ -298,12 +320,16 @@ watch(worklineOptions, (next) => {
     if (!selectedWorkline.value && next.length) selectedWorkline.value = next[0];
 }, { immediate: true });
 
-watch(familiesForSelectedWorkline, (next) => {
-    if (!next.includes(selectedJobFamily.value)) selectedJobFamily.value = next[0] || '';
+watch(organizationScopes, (next) => {
+    if (!next.some((scope) => scope.key === selectedOrgScope.value)) selectedOrgScope.value = next[0]?.key || '';
 }, { immediate: true });
 
 watch(positionOptions, (next) => {
     if (!next.includes(selectedPosition.value)) selectedPosition.value = next[0] || '';
+}, { immediate: true });
+
+watch([currentPositionId, savedRequiredFcCount], () => {
+    requiredFcCount.value = savedRequiredFcCount.value;
 }, { immediate: true });
 
 const openModal = (modal) => {
@@ -360,26 +386,6 @@ const openCatalogEdit = (item) => {
         isActive: Boolean(item.isActive),
     };
 
-    saveAssignedForCurrentScope(items);
-};
-
-const saveAssignedForCurrentScope = (items) => {
-    if (!selectedWorkline.value || !selectedJobFamily.value || !selectedPosition.value) return;
-
-    savingAssignment.value = true;
-
-    router.post(route('hr.competency-assignments.store'), {
-        workline_name: selectedWorkline.value,
-        job_family_name: selectedJobFamily.value,
-        level_name: selectedPosition.value,
-        competency_ids: items.map((item) => item.id),
-    }, {
-        preserveScroll: true,
-        preserveState: true,
-        onFinish: () => {
-            savingAssignment.value = false;
-        },
-    });
 };
 
 const catalogPayload = () => ({
@@ -460,6 +466,17 @@ const removeCompetency = (itemId) => {
             position_id: currentPositionId.value,
             competency_id: itemId,
         },
+        preserveScroll: true,
+    });
+};
+
+const saveFcSelectionRule = () => {
+    if (!currentPositionId.value) return;
+
+    router.put(route('hr.position-fc-selection-rules.update'), {
+        position_id: currentPositionId.value,
+        required_fc_count: Number(requiredFcCount.value || 0),
+    }, {
         preserveScroll: true,
     });
 };
@@ -548,6 +565,7 @@ const formatWeight = (weight) => {
                     :user="currentProfileUser"
                     :set-users="updateUsers"
                     :competencies="props.currentUserCompetencies"
+                    :fc-topic-selection="props.currentUserFcTopicSelection"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -604,18 +622,18 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-picker">
                             <div class="fg mb0">
-                                <label class="lbl">กลุ่มงาน / Job Family</label>
-                                <select v-model="selectedJobFamily" class="sel">
-                                    <option value="">ยังไม่มีข้อมูลกลุ่มงาน</option>
-                                    <option v-for="family in familiesForSelectedWorkline" :key="family" :value="family">
-                                        {{ family }}
+                                <label class="lbl">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</label>
+                                <select v-model="selectedOrgScope" class="sel">
+                                    <option value="">{{ isSupportWorkline ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา' }}</option>
+                                    <option v-for="scope in organizationScopes" :key="scope.key" :value="scope.key">
+                                        {{ scope.label }}
                                     </option>
                                 </select>
                             </div>
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
                                 <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
-                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งในกลุ่มงาน</option>
+                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
                                         {{ position }}
                                     </option>
@@ -631,17 +649,59 @@ const formatWeight = (weight) => {
                         <div class="position-card selected">
                             <div class="position-card-label">ตำแหน่งที่กำลังกำหนด</div>
                             <div class="position-card-title">{{ positionLabel }}</div>
-                            <div class="position-card-sub">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ jobFamilyLabel }}</div>
+                            <div class="position-card-sub">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ organizationScopeLabel }}</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
-                            <div class="position-card-sub">{{ savingAssignment ? 'กำลังบันทึก' : (assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ') }}</div>
+                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
+                        </div>
+                        <div class="position-card type-breakdown-card">
+                            <div class="position-card-label">แยกตามประเภทที่กำหนด</div>
+                            <div class="type-breakdown">
+                                <div>
+                                    <span>CC</span>
+                                    <strong>{{ assignedCoreCompetencyCount }}</strong>
+                                </div>
+                                <div>
+                                    <span>FC</span>
+                                    <strong>{{ assignedFcCompetencyCount }}</strong>
+                                </div>
+                                <div>
+                                    <span>MC</span>
+                                    <strong>{{ assignedManagerialCompetencyCount }}</strong>
+                                </div>
+                            </div>
+                            <div class="position-card-sub">นับจากรายการที่ผูกกับตำแหน่งนี้</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
                             <div class="position-card-title warn">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
                             <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
+                        </div>
+                        <div class="position-card fc-rule-card">
+                            <div class="position-card-label">FC ที่ต้องให้ผู้ประเมินเลือก</div>
+                            <div class="fc-rule-control">
+                                <input
+                                    v-model.number="requiredFcCount"
+                                    class="inp fc-rule-input"
+                                    type="number"
+                                    min="0"
+                                    :max="assignedFcCompetencyCount"
+                                    :disabled="!currentPositionId"
+                                />
+                                <button
+                                    class="btn btn-p btn-sm"
+                                    type="button"
+                                    :disabled="!currentPositionId || requiredFcCount > assignedFcCompetencyCount"
+                                    @click="saveFcSelectionRule"
+                                >
+                                    บันทึก
+                                </button>
+                            </div>
+                            <div class="position-card-sub">
+                                มี FC ในตำแหน่งนี้ {{ assignedFcCompetencyCount }} ข้อ · 0 คือไม่ใช้ flow เลือกหัวข้อ
+                            </div>
                         </div>
                     </div>
 
@@ -676,7 +736,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <div class="assigned-actions">
                                         <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
-                                        <button class="btn btn-s btn-sm danger-text" :disabled="savingAssignment" type="button" @click="removeCompetency(item.id)">ลบ</button>
+                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
                                     </div>
                                 </div>
                             </div>
@@ -713,7 +773,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <button
                                         class="btn btn-p btn-sm"
-                                        :disabled="savingAssignment || !selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        :disabled="!selectedPosition || assignedCompetencyIds.has(item.id)"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >
@@ -728,6 +788,7 @@ const formatWeight = (weight) => {
                 <ManagerGap
                     v-else-if="activePage === 'hr-competency-overview'"
                     :users="props.users"
+                    :active-cycle-name="props.activeCycleName"
                     :can-send-reminders="true"
                 />
 
@@ -1474,7 +1535,7 @@ const formatWeight = (weight) => {
 
 .position-board {
     display: grid;
-    grid-template-columns: 1.35fr repeat(2, minmax(180px, 0.65fr));
+    grid-template-columns: 1.25fr repeat(4, minmax(160px, 0.65fr));
     gap: 14px;
 }
 
@@ -1515,6 +1576,48 @@ const formatWeight = (weight) => {
     font-size: 12px;
     font-weight: 600;
     margin-top: 7px;
+}
+
+.type-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.type-breakdown div {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+}
+
+.type-breakdown span {
+    display: block;
+    color: var(--text3);
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.type-breakdown strong {
+    display: block;
+    margin-top: 2px;
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.fc-rule-control {
+    display: grid;
+    grid-template-columns: minmax(80px, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.fc-rule-input {
+    min-height: 38px;
+    font-size: 18px;
+    font-weight: 800;
 }
 
 .position-layout {

@@ -11,7 +11,7 @@ class AdminUserControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_create_user_and_keep_supervisor_names_with_ids(): void
+    public function test_admin_can_create_user_with_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
@@ -41,8 +41,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $evaluator->id,
+                'reviewer_ids' => [$supervisor->id, $evaluator->id],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -51,9 +50,20 @@ class AdminUserControllerTest extends TestCase
             'sso' => 'staff-001',
             'name' => 'บุคลากร ใหม่',
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $evaluator->id,
             'is_active' => true,
+        ]);
+        $userId = (int) DB::table('users')->where('sso', 'staff-001')->value('id');
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $evaluator->id,
         ]);
     }
 
@@ -81,8 +91,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'อาจารย์',
                 'l' => 'อาจารย์',
                 'r' => 'supervisor',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
+                'reviewer_ids' => [],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -96,7 +105,7 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_update_three_evaluator_levels(): void
+    public function test_admin_can_update_three_assessment_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
@@ -135,19 +144,19 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $managerDept->id,
-                'supervisor_id_3' => $dean->id,
+                'reviewer_ids' => [$supervisor->id, $managerDept->id, $dean->id],
                 'act' => true,
             ])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('users', [
-            'id' => $user->id,
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $managerDept->id,
-            'supervisor_id_3' => $dean->id,
-        ]);
+        foreach ([$supervisor, $managerDept, $dean] as $index => $reviewer) {
+            $this->assertDatabaseHas('user_reviewer_steps', [
+                'user_id' => $user->id,
+                'chain_type' => 'assessment',
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewer->id,
+            ]);
+        }
     }
 
     public function test_admin_normalizes_manager_dept_alias_to_role_table_key(): void
@@ -174,8 +183,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักทรัพยากรบุคคล',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'manager_dept',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
+                'reviewer_ids' => [],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -186,7 +194,7 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_update_reporting_line_with_linked_user_ids(): void
+    public function test_admin_can_update_assessment_reviewer_steps_with_linked_user_ids(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
@@ -222,8 +230,7 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'นักวิชาการศึกษา',
                 'l' => 'ปฏิบัติการ',
                 'r' => 'employee',
-                'supervisor_id_1' => $supervisor->id,
-                'supervisor_id_2' => $evaluator->id,
+                'reviewer_ids' => [$supervisor->id, $evaluator->id],
                 'act' => true,
             ])
             ->assertRedirect();
@@ -231,8 +238,18 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'department' => 'ฝ่ายบริหาร > งานคลังและพัสดุ',
-            'supervisor_id_1' => $supervisor->id,
-            'supervisor_id_2' => $evaluator->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $user->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $user->id,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $evaluator->id,
         ]);
     }
 
@@ -257,8 +274,6 @@ class AdminUserControllerTest extends TestCase
                 'p' => 'รองคณบดีฝ่ายบริหาร',
                 'l' => 'บริหาร',
                 'r' => 'employee',
-                'supervisor_id_1' => null,
-                'supervisor_id_2' => null,
                 'act' => true,
             ])
             ->assertRedirect('/dashboard')
@@ -325,6 +340,604 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'id' => $user->id,
             'is_active' => true,
+        ]);
+    }
+
+    public function test_admin_can_apply_reviewer_chain_template_when_creating_user(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $this->createStructure('สายทดลอง', 'งานทดสอบ', 'นักทดสอบระบบ', 'ปฏิบัติการ');
+        $templateId = (int) DB::table('reviewer_chain_templates')
+            ->where('is_default', true)
+            ->value('id');
+        $supervisor = User::factory()->create([
+            'name' => 'หัวหน้าหน่วย Template',
+            'role_id' => $this->roleId('supervisor'),
+            'workline' => 'สายทดลอง',
+            'department' => 'งานทดสอบ',
+            'position' => 'หัวหน้าหน่วย',
+            'is_active' => true,
+        ]);
+        $deptHead = User::factory()->create([
+            'name' => 'หัวหน้างาน Template',
+            'role_id' => $this->roleId('dept_head'),
+            'workline' => 'สายทดลอง',
+            'department' => 'งานอื่น',
+            'position' => 'หัวหน้างาน',
+            'is_active' => true,
+        ]);
+        $dean = User::factory()->create([
+            'name' => 'คณบดี Template',
+            'role_id' => $this->roleId('dean'),
+            'workline' => 'สายบริหาร',
+            'department' => 'ผู้บริหาร',
+            'position' => 'คณบดี',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'sso' => 'staff-template',
+                't' => 'นาย',
+                'fn' => 'ใช้',
+                'ln' => 'เทมเพลต',
+                'fe' => 'Template',
+                'le' => 'Staff',
+                'em' => 'template-staff@example.com',
+                'ph' => null,
+                'w' => 'สายทดลอง',
+                'd' => 'งานทดสอบ',
+                'p' => 'นักทดสอบระบบ',
+                'l' => 'ปฏิบัติการ',
+                'r' => 'employee',
+                'reviewer_template_id' => $templateId,
+                'reviewer_ids' => [],
+                'act' => true,
+            ])
+            ->assertRedirect();
+
+        $userId = (int) DB::table('users')->where('sso', 'staff-template')->value('id');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $userId,
+            'reviewer_template_id' => $templateId,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'step_order' => 1,
+            'reviewer_id' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'step_order' => 2,
+            'reviewer_id' => $deptHead->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $userId,
+            'step_order' => 3,
+            'reviewer_id' => $dean->id,
+        ]);
+    }
+
+    public function test_admin_can_create_assessment_reviewer_chain_for_selected_users(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'name' => 'นาย A',
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $reviewerB = User::factory()->create([
+            'name' => 'นาย B',
+            'role_id' => $this->roleId('dept_head'),
+            'is_active' => true,
+        ]);
+        $reviewerC = User::factory()->create([
+            'name' => 'นาย C',
+            'role_id' => $this->roleId('dean'),
+            'is_active' => true,
+        ]);
+        $firstUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+        $secondUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reviewer-chain-templates.store'), [
+                'name' => 'ลำดับประเมินทดสอบ',
+                'description' => 'นาย A -> นาย B -> นาย C',
+                'chain_type' => 'assessment',
+                'reviewer_ids' => [$reviewerA->id, $reviewerB->id, $reviewerC->id],
+                'assignment_user_ids' => [$firstUser->id, $secondUser->id],
+            ])
+            ->assertRedirect();
+
+        $templateId = (int) DB::table('reviewer_chain_templates')
+            ->where('name', 'ลำดับประเมินทดสอบ')
+            ->value('id');
+
+        $this->assertGreaterThan(0, $templateId);
+        $this->assertDatabaseHas('reviewer_chain_templates', [
+            'id' => $templateId,
+            'name' => 'ลำดับประเมินทดสอบ',
+            'chain_type' => 'assessment',
+        ]);
+
+        foreach ([$reviewerA, $reviewerB, $reviewerC] as $index => $reviewer) {
+            $this->assertDatabaseHas('reviewer_chain_template_steps', [
+                'template_id' => $templateId,
+                'step_order' => $index + 1,
+                'resolver_type' => 'fixed_user',
+                'reviewer_id' => $reviewer->id,
+            ]);
+        }
+
+        foreach ([$firstUser, $secondUser] as $user) {
+            $this->assertDatabaseHas('reviewer_chain_template_assignments', [
+                'template_id' => $templateId,
+                'scope_type' => 'user',
+                'user_id' => $user->id,
+            ]);
+            $this->assertDatabaseHas('users', [
+                'id' => $user->id,
+                'reviewer_template_id' => $templateId,
+            ]);
+
+            foreach ([$reviewerA, $reviewerB, $reviewerC] as $index => $reviewer) {
+                $this->assertDatabaseHas('user_reviewer_steps', [
+                    'user_id' => $user->id,
+                    'chain_type' => 'assessment',
+                    'step_order' => $index + 1,
+                    'reviewer_id' => $reviewer->id,
+                ]);
+            }
+        }
+    }
+
+    public function test_admin_can_create_assessment_reviewer_chain_without_assigned_users(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'name' => 'นาย A',
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $reviewerB = User::factory()->create([
+            'name' => 'นาย B',
+            'role_id' => $this->roleId('dept_head'),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reviewer-chain-templates.store'), [
+                'name' => 'ลำดับประเมินที่ยังไม่ผูกผู้ใช้',
+                'description' => 'เก็บไว้เลือกผู้ใช้ภายหลัง',
+                'chain_type' => 'assessment',
+                'reviewer_ids' => [$reviewerA->id, $reviewerB->id],
+                'assignment_user_ids' => [],
+            ])
+            ->assertRedirect();
+
+        $templateId = (int) DB::table('reviewer_chain_templates')
+            ->where('name', 'ลำดับประเมินที่ยังไม่ผูกผู้ใช้')
+            ->value('id');
+
+        $this->assertGreaterThan(0, $templateId);
+        $this->assertDatabaseHas('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+            'step_order' => 1,
+            'resolver_type' => 'fixed_user',
+            'reviewer_id' => $reviewerA->id,
+        ]);
+        $this->assertDatabaseHas('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+            'step_order' => 2,
+            'resolver_type' => 'fixed_user',
+            'reviewer_id' => $reviewerB->id,
+        ]);
+        $this->assertSame(0, DB::table('reviewer_chain_template_assignments')
+            ->where('template_id', $templateId)
+            ->count());
+    }
+
+    public function test_admin_can_create_idp_reviewer_chain_for_selected_users(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'name' => 'นาย A',
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $reviewerB = User::factory()->create([
+            'name' => 'นาย B',
+            'role_id' => $this->roleId('dept_head'),
+            'is_active' => true,
+        ]);
+        $assignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reviewer-chain-templates.store'), [
+                'name' => 'ลำดับ IDP ทดสอบ',
+                'description' => 'นาย A -> นาย B',
+                'chain_type' => 'idp',
+                'reviewer_ids' => [$reviewerA->id, $reviewerB->id],
+                'assignment_user_ids' => [$assignedUser->id],
+            ])
+            ->assertRedirect();
+
+        $templateId = (int) DB::table('reviewer_chain_templates')
+            ->where('name', 'ลำดับ IDP ทดสอบ')
+            ->value('id');
+
+        $this->assertGreaterThan(0, $templateId);
+        $this->assertDatabaseHas('reviewer_chain_templates', [
+            'id' => $templateId,
+            'chain_type' => 'idp',
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $assignedUser->id,
+            'idp_reviewer_template_id' => $templateId,
+            'reviewer_template_id' => null,
+        ]);
+
+        foreach ([$reviewerA, $reviewerB] as $index => $reviewer) {
+            $this->assertDatabaseHas('user_reviewer_steps', [
+                'user_id' => $assignedUser->id,
+                'chain_type' => 'idp',
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewer->id,
+            ]);
+        }
+    }
+
+    public function test_admin_can_update_assessment_reviewer_chain_template(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'name' => 'นาย A',
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $reviewerB = User::factory()->create([
+            'name' => 'นาย B',
+            'role_id' => $this->roleId('dept_head'),
+            'is_active' => true,
+        ]);
+        $reviewerC = User::factory()->create([
+            'name' => 'นาย C',
+            'role_id' => $this->roleId('dean'),
+            'is_active' => true,
+        ]);
+        $assignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $templateId = DB::table('reviewer_chain_templates')->insertGetId([
+            'name' => 'ลำดับเดิม',
+            'description' => 'นาย A -> นาย B',
+            'chain_type' => 'assessment',
+            'is_default' => false,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reviewer_chain_template_steps')->insert([
+            [
+                'template_id' => $templateId,
+                'step_order' => 1,
+                'resolver_type' => 'fixed_user',
+                'role_key' => null,
+                'reviewer_id' => $reviewerA->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'template_id' => $templateId,
+                'step_order' => 2,
+                'resolver_type' => 'fixed_user',
+                'role_key' => null,
+                'reviewer_id' => $reviewerB->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        DB::table('reviewer_chain_template_assignments')->insert([
+            'template_id' => $templateId,
+            'scope_type' => 'user',
+            'scope_value' => null,
+            'user_id' => $assignedUser->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            [
+                'user_id' => $assignedUser->id,
+                'chain_type' => 'assessment',
+                'step_order' => 1,
+                'reviewer_id' => $reviewerA->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'user_id' => $assignedUser->id,
+                'chain_type' => 'assessment',
+                'step_order' => 2,
+                'reviewer_id' => $reviewerB->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        $assignedUser->forceFill([
+            'reviewer_template_id' => $templateId,
+        ])->save();
+
+        $this->actingAs($admin)
+            ->patch(route('admin.reviewer-chain-templates.update', $templateId), [
+                'name' => 'ลำดับแก้ไขแล้ว',
+                'description' => 'นาย C -> นาย A',
+                'reviewer_ids' => [$reviewerC->id, $reviewerA->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('reviewer_chain_templates', [
+            'id' => $templateId,
+            'name' => 'ลำดับแก้ไขแล้ว',
+            'description' => 'นาย C -> นาย A',
+        ]);
+        $this->assertDatabaseHas('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+            'step_order' => 1,
+            'reviewer_id' => $reviewerC->id,
+        ]);
+        $this->assertDatabaseHas('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+            'step_order' => 2,
+            'reviewer_id' => $reviewerA->id,
+        ]);
+        $this->assertDatabaseMissing('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+            'step_order' => 2,
+            'reviewer_id' => $reviewerB->id,
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $assignedUser->id,
+            'reviewer_template_id' => $templateId,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $reviewerC->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $reviewerA->id,
+        ]);
+        $this->assertDatabaseMissing('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $reviewerB->id,
+        ]);
+    }
+
+    public function test_admin_can_add_users_to_existing_assessment_reviewer_chain(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'name' => 'นาย A',
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $reviewerB = User::factory()->create([
+            'name' => 'นาย B',
+            'role_id' => $this->roleId('dept_head'),
+            'is_active' => true,
+        ]);
+        $assignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $templateId = DB::table('reviewer_chain_templates')->insertGetId([
+            'name' => 'ลำดับเพิ่มสมาชิก',
+            'description' => 'นาย A -> นาย B',
+            'chain_type' => 'assessment',
+            'is_default' => false,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reviewer_chain_template_steps')->insert([
+            [
+                'template_id' => $templateId,
+                'step_order' => 1,
+                'resolver_type' => 'fixed_user',
+                'role_key' => null,
+                'reviewer_id' => $reviewerA->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'template_id' => $templateId,
+                'step_order' => 2,
+                'resolver_type' => 'fixed_user',
+                'role_key' => null,
+                'reviewer_id' => $reviewerB->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.reviewer-chain-templates.users.store', $templateId), [
+                'user_ids' => [$assignedUser->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('reviewer_chain_template_assignments', [
+            'template_id' => $templateId,
+            'scope_type' => 'user',
+            'user_id' => $assignedUser->id,
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $assignedUser->id,
+            'reviewer_template_id' => $templateId,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $reviewerA->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 2,
+            'reviewer_id' => $reviewerB->id,
+        ]);
+    }
+
+    public function test_admin_can_remove_user_from_existing_assessment_reviewer_chain(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $assignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $templateId = DB::table('reviewer_chain_templates')->insertGetId([
+            'name' => 'ลำดับลบสมาชิก',
+            'description' => null,
+            'chain_type' => 'assessment',
+            'is_default' => false,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reviewer_chain_template_assignments')->insert([
+            'template_id' => $templateId,
+            'scope_type' => 'user',
+            'scope_value' => null,
+            'user_id' => $assignedUser->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $reviewerA->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $assignedUser->forceFill([
+            'reviewer_template_id' => $templateId,
+        ])->save();
+
+        $this->actingAs($admin)
+            ->delete(route('admin.reviewer-chain-templates.users.destroy', [$templateId, $assignedUser->id]))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reviewer_chain_template_assignments', [
+            'template_id' => $templateId,
+            'scope_type' => 'user',
+            'user_id' => $assignedUser->id,
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $assignedUser->id,
+            'reviewer_template_id' => null,
+        ]);
+        $this->assertDatabaseMissing('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+        ]);
+    }
+
+    public function test_admin_can_delete_assessment_reviewer_chain(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $reviewerA = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+            'is_active' => true,
+        ]);
+        $assignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $templateId = DB::table('reviewer_chain_templates')->insertGetId([
+            'name' => 'ลำดับที่จะลบ',
+            'description' => null,
+            'chain_type' => 'assessment',
+            'is_default' => false,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reviewer_chain_template_steps')->insert([
+            'template_id' => $templateId,
+            'step_order' => 1,
+            'resolver_type' => 'fixed_user',
+            'role_key' => null,
+            'reviewer_id' => $reviewerA->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('reviewer_chain_template_assignments')->insert([
+            'template_id' => $templateId,
+            'scope_type' => 'user',
+            'scope_value' => null,
+            'user_id' => $assignedUser->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $reviewerA->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $assignedUser->forceFill([
+            'reviewer_template_id' => $templateId,
+        ])->save();
+
+        $this->actingAs($admin)
+            ->delete(route('admin.reviewer-chain-templates.destroy', $templateId))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('reviewer_chain_templates', [
+            'id' => $templateId,
+        ]);
+        $this->assertDatabaseMissing('reviewer_chain_template_steps', [
+            'template_id' => $templateId,
+        ]);
+        $this->assertDatabaseMissing('reviewer_chain_template_assignments', [
+            'template_id' => $templateId,
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $assignedUser->id,
+            'reviewer_template_id' => null,
+        ]);
+        $this->assertDatabaseMissing('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
         ]);
     }
 

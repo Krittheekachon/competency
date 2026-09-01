@@ -72,8 +72,8 @@ class IdpController extends Controller
             'items.*.activities.*.activityDescription' => ['nullable', 'string'],
             'items.*.activities.*.documentReferenceNumber' => ['nullable', 'string', 'max:255'],
             'items.*.activities.*.weightPercent' => [$required, 'numeric', 'min:0', 'max:100'],
-            'items.*.activities.*.startDate' => [$required, 'date'],
-            'items.*.activities.*.endDate' => [$required, 'date'],
+            'items.*.activities.*.startDate' => ['nullable', 'date'],
+            'items.*.activities.*.endDate' => ['nullable', 'date'],
             'items.*.activities.*.formCode' => ['nullable', 'string', 'max:120'],
             'items.*.activities.*.formDetails' => ['nullable', 'array'],
         ]);
@@ -138,7 +138,7 @@ class IdpController extends Controller
         );
         $owner = DB::table('users')
             ->where('id', auth()->id())
-            ->first(['id', 'supervisor_id_1', 'supervisor_id_2', 'supervisor_id_3']);
+            ->first(['id']);
 
         DB::transaction(function () use ($items, $status, $methodIdsByKey, $owner): void {
             $idpId = $this->currentUserIdpId();
@@ -211,10 +211,16 @@ class IdpController extends Controller
                         'idp_learning_method_id' => $activity['developmentToolId'] ?? null,
                         'activity_name' => $activity['activityName'] ?? null,
                         'weight_percent' => $activity['weightPercent'] ?? null,
-                        'start_date' => $activity['startDate'] ?? null,
-                        'end_date' => $activity['endDate'] ?? null,
+                        'start_date' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
+                            ? collect($activity['formDetails']['planRows'] ?? [])->pluck('developmentStart')->filter()->sort()->first()
+                            : ($activity['startDate'] ?? null),
+                        'end_date' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
+                            ? collect($activity['formDetails']['planRows'] ?? [])->pluck('developmentEnd')->filter()->sort()->last()
+                            : ($activity['endDate'] ?? null),
                         'description' => $activity['activityDescription'] ?? null,
-                        'document_reference_number' => $activity['documentReferenceNumber'] ?? null,
+                        'document_reference_number' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
+                            ? null
+                            : ($activity['documentReferenceNumber'] ?? null),
                         'form_code' => $activity['formCode'] ?? null,
                         'form_details' => isset($activity['formDetails'])
                             ? json_encode($activity['formDetails'], JSON_UNESCAPED_UNICODE)
@@ -272,6 +278,14 @@ class IdpController extends Controller
                 $toolId = $activity['developmentToolId'] ?? null;
                 $tool = $toolId ? $toolsById->get($toolId) : null;
 
+                if ($status === 'submitted'
+                    && ($activity['formCode'] ?? null) !== 'form_7_group_activity'
+                    && (blank($activity['startDate'] ?? null) || blank($activity['endDate'] ?? null))) {
+                    throw ValidationException::withMessages([
+                        "$prefix.startDate" => 'กรุณาระบุวันที่เริ่มต้นและวันที่สิ้นสุด',
+                    ]);
+                }
+
                 if ($methodKey !== '' && (! in_array($methodKey, self::CANONICAL_LEARNING_METHOD_KEYS, true) || ! $methodIdsByKey->has($methodKey))) {
                     throw ValidationException::withMessages([
                         "$prefix.methodKey" => 'ไม่พบประเภทการเรียนรู้ที่เลือก',
@@ -327,6 +341,398 @@ class IdpController extends Controller
                     throw ValidationException::withMessages([
                         "$prefix.formDetails" => 'กรุณาบันทึกฟอร์มกิจกรรมก่อนส่งแผน',
                     ]);
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_3_project_assignment') {
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มงานที่ได้รับมอบหมายอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'assignmentTopic' => 'หัวข้องานโครงการ/งานพิเศษที่ได้รับมอบหมาย',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                            'developmentApproach' => 'วิธีดำเนินการ',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_4_ojt') {
+                    $details = $activity['formDetails']['detail'] ?? [];
+                    $trainerType = $details['trainerType'] ?? null;
+                    if (! in_array($trainerType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.trainerType" => 'กรุณาเลือกประเภทผู้สอนงาน',
+                        ]);
+                    }
+                    if ($trainerType === 'ผู้บังคับบัญชา' && blank($details['trainerSupervisorUserId'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.trainerSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
+                        ]);
+                    }
+                    if ($trainerType === 'ผู้เชี่ยวชาญ' && blank($details['trainerExpertName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.trainerExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
+                        ]);
+                    }
+
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มหัวข้อฝึกปฏิบัติอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'skillTopic' => 'หัวข้อทักษะ/ประเด็นการฝึกปฏิบัติงาน',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'hours' => 'จำนวนชั่วโมง',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                            'developmentApproach' => 'วิธีการ',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (! is_numeric($row['hours'] ?? null) || (float) $row['hours'] <= 0) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.hours" => 'จำนวนชั่วโมงต้องมากกว่า 0',
+                            ]);
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_5_coaching') {
+                    $details = $activity['formDetails']['detail'] ?? [];
+                    $coachType = $details['coachType'] ?? null;
+                    if (! in_array($coachType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.coachType" => 'กรุณาเลือกประเภทผู้สอนงาน',
+                        ]);
+                    }
+                    if ($coachType === 'ผู้บังคับบัญชา' && blank($details['coachSupervisorUserId'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.coachSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
+                        ]);
+                    }
+                    if ($coachType === 'ผู้เชี่ยวชาญ' && blank($details['coachExpertName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.coachExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
+                        ]);
+                    }
+
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มหัวข้อการสอนงานอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'topic' => 'หัวข้อทักษะ/ประเด็นการสอนงาน',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'sessionCount' => 'จำนวนครั้ง',
+                            'sessionDuration' => 'ระยะเวลาต่อครั้ง',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                            'developmentApproach' => 'วิธีดำเนินการ',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        $approaches = collect($row['coachingApproaches'] ?? [])->filter()->unique()->values();
+                        if ($approaches->isEmpty() || $approaches->diff(['A', 'B', 'C', 'D'])->isNotEmpty()) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.coachingApproaches" => 'กรุณาเลือกแนวทางการสอนงาน A–D อย่างน้อย 1 ข้อ',
+                            ]);
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
+                            ]);
+                        }
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_6_mentoring') {
+                    $details = $activity['formDetails']['detail'] ?? [];
+                    $mentorType = $details['mentorType'] ?? null;
+                    if (! in_array($mentorType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.mentorType" => 'กรุณาเลือกประเภทผู้สอนงาน',
+                        ]);
+                    }
+                    if ($mentorType === 'ผู้บังคับบัญชา' && blank($details['mentorSupervisorUserId'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.mentorSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
+                        ]);
+                    }
+                    if ($mentorType === 'ผู้เชี่ยวชาญ' && blank($details['mentorExpertName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.mentorExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
+                        ]);
+                    }
+
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มหัวข้อที่ต้องการพัฒนาอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'skillTopic' => 'หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา',
+                            'technique' => 'เทคนิค',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'sessionCount' => 'จำนวนครั้ง',
+                            'sessionDuration' => 'ระยะเวลาต่อครั้ง',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
+                            ]);
+                        }
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_7_group_activity') {
+                    $details = $activity['formDetails']['detail'] ?? [];
+                    $facilitatorType = $details['facilitatorType'] ?? null;
+                    if (! in_array($facilitatorType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.facilitatorType" => 'กรุณาเลือกประเภทผู้อำนวยการ/ผู้นำกิจกรรม',
+                        ]);
+                    }
+                    if ($facilitatorType === 'ผู้บังคับบัญชา' && blank($details['facilitatorSupervisorUserId'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.facilitatorSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
+                        ]);
+                    }
+                    if ($facilitatorType === 'ผู้เชี่ยวชาญ' && blank($details['facilitatorExpertName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.facilitatorExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
+                        ]);
+                    }
+
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มกิจกรรมอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'learningTopic' => 'หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา',
+                            'technique' => 'เทคนิค',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'assessmentTools' => 'เครื่องมือและเงื่อนไขการประเมิน',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_8_feedback') {
+                    $details = $activity['formDetails']['detail'] ?? [];
+                    $providerType = $details['feedbackProviderType'] ?? null;
+                    if (! in_array($providerType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.feedbackProviderType" => 'กรุณาเลือกประเภทผู้ให้ข้อมูล',
+                        ]);
+                    }
+                    if ($providerType === 'ผู้บังคับบัญชา' && blank($details['feedbackSupervisorUserId'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.feedbackSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
+                        ]);
+                    }
+                    if ($providerType === 'ผู้เชี่ยวชาญ' && blank($details['feedbackExpertName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.detail.feedbackExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
+                        ]);
+                    }
+
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มหัวข้อการพัฒนาอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'skillTopic' => 'หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา',
+                            'feedbackSource' => 'แหล่งข้อมูลป้อนกลับ',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'sessionCount' => 'จำนวนครั้ง',
+                            'sessionDuration' => 'ระยะเวลาต่อครั้ง',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
+                            ]);
+                        }
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_9_field_trip') {
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มรายการศึกษาดูงานอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'skillTopic' => 'หัวข้อทักษะ/ประเด็นที่ต้องการพัฒนา',
+                            'learningPlace' => 'สถานที่/แหล่งศึกษาดูงาน',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'assessmentTools' => 'เครื่องมือและเงื่อนไขการประเมิน',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+                    }
+                }
+
+                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_10_training') {
+                    $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
+                    if ($rows->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            "$prefix.formDetails.planRows" => 'กรุณาเพิ่มหลักสูตรอบรมอย่างน้อย 1 รายการ',
+                        ]);
+                    }
+
+                    foreach ($rows as $rowIndex => $row) {
+                        foreach ([
+                            'trainingType' => 'รูปแบบการอบรม',
+                            'courseName' => 'ชื่อหลักสูตร',
+                            'developmentStart' => 'วันที่เริ่มต้น',
+                            'developmentEnd' => 'วันที่สิ้นสุด',
+                            'hours' => 'จำนวนชั่วโมง',
+                            'developmentGoal' => 'เป้าหมายในการพัฒนา',
+                        ] as $field => $label) {
+                            if (blank($row[$field] ?? null)) {
+                                throw ValidationException::withMessages([
+                                    "$prefix.formDetails.planRows.$rowIndex.$field" => "กรุณากรอก{$label}",
+                                ]);
+                            }
+                        }
+
+                        if (! in_array($row['trainingType'] ?? null, ['In-class Training', 'e-Learning'], true)) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.trainingType" => 'กรุณาเลือกรูปแบบการอบรมจากรายการ',
+                            ]);
+                        }
+                        if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
+                            ]);
+                        }
+
+                        if (! is_numeric($row['hours'] ?? null) || (float) $row['hours'] <= 0) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails.planRows.$rowIndex.hours" => 'จำนวนชั่วโมงต้องมากกว่า 0',
+                            ]);
+                        }
+                    }
                 }
             }
         }

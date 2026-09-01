@@ -870,7 +870,7 @@ export const ManagerAssessmentApproval = defineComponent({ name: "ManagerAssessm
     <>
             <div class="mb20">
                 <div class="sec-t">อนุมัติผลการประเมินรายบุคคล</div>
-                <div class="sec-s">ตรวจสอบผู้ถูกประเมิน หัวหน้างาน และผู้บังคับบัญชา ก่อนยืนยันผลการประเมิน</div>
+                <div class="sec-s">ตรวจสอบผู้ถูกประเมิน หัวหน้าหน่วย และหัวหน้างาน ก่อนยืนยันผลการประเมิน</div>
             </div>
             <div class="card">
                 <div class="ch"><div class="ct">รายการผลการประเมินที่รอยืนยัน</div></div>
@@ -879,8 +879,8 @@ export const ManagerAssessmentApproval = defineComponent({ name: "ManagerAssessm
                         <thead>
                             <tr>
                                 <th>ผู้ถูกประเมิน</th>
+                                <th>หัวหน้าหน่วย</th>
                                 <th>หัวหน้างาน</th>
-                                <th>ผู้บังคับบัญชา</th>
                                 <th style={{ width: "100px", textAlign: "center" }}>คะแนน</th>
                                 <th style={{ width: "118px" }}>สถานะ</th>
                                 <th style={{ width: "190px" }}>จัดการ</th>
@@ -913,7 +913,7 @@ export const ManagerAssessmentApproval = defineComponent({ name: "ManagerAssessm
       <div class="mo" style={{ zIndex: 300 }} onMouseDown={() => setSelectedId(null)}>
                     <div class="mo-box" style={{ width: "720px" }} onMouseDown={(event) => event.stopPropagation()}>
                         <div class="mo-h">
-                            <div><div class="fw8 fs14">{selected.employee}</div><div class="muted fs11">{selected.evaluator1 || "ไม่มีหัวหน้างาน"} · {selected.evaluator2}</div></div>
+                            <div><div class="fw8 fs14">{selected.employee}</div><div class="muted fs11">{selected.evaluator1 || "ไม่มีหัวหน้าหน่วย"} · {selected.evaluator2}</div></div>
                             <button class="btn btn-s btn-sm" onClick={() => setSelectedId(null)}>ปิด</button>
                         </div>
                         <div class="mo-b">
@@ -945,7 +945,7 @@ export const ManagerIDPApproval = defineComponent({ name: "ManagerIDPApproval", 
     <>
             <div class="mb20">
                 <div class="sec-t">อนุมัติแผน IDP รายบุคคล</div>
-                <div class="sec-s">ตรวจสอบแผน IDP จากหัวหน้างานและผู้บังคับบัญชา ก่อนยืนยันแผนพัฒนารายบุคคล</div>
+                <div class="sec-s">ตรวจสอบแผน IDP จากหัวหน้าหน่วยและหัวหน้างาน ก่อนยืนยันแผนพัฒนารายบุคคล</div>
             </div>
             <div class="card">
                 <div class="ch"><div class="ct">รายการแผน IDP ที่รอยืนยัน</div></div>
@@ -954,8 +954,8 @@ export const ManagerIDPApproval = defineComponent({ name: "ManagerIDPApproval", 
                         <thead>
                             <tr>
                                 <th>ผู้ถูกประเมิน</th>
+                                <th>หัวหน้าหน่วย</th>
                                 <th>หัวหน้างาน</th>
-                                <th>ผู้บังคับบัญชา</th>
                                 <th>หัวข้อ IDP</th>
                                 <th style={{ width: "118px" }}>สถานะ</th>
                                 <th style={{ width: "190px" }}>จัดการ</th>
@@ -988,7 +988,7 @@ export const ManagerIDPApproval = defineComponent({ name: "ManagerIDPApproval", 
       <div class="mo" style={{ zIndex: 300 }} onMouseDown={() => setSelectedId(null)}>
                     <div class="mo-box" style={{ width: "720px" }} onMouseDown={(event) => event.stopPropagation()}>
                         <div class="mo-h">
-                            <div><div class="fw8 fs14">{selected.employee}</div><div class="muted fs11">{selected.evaluator1 || "ไม่มีหัวหน้างาน"} · {selected.evaluator2}</div></div>
+                            <div><div class="fw8 fs14">{selected.employee}</div><div class="muted fs11">{selected.evaluator1 || "ไม่มีหัวหน้าหน่วย"} · {selected.evaluator2}</div></div>
                             <button class="btn btn-s btn-sm" onClick={() => setSelectedId(null)}>ปิด</button>
                         </div>
                         <div class="mo-b">
@@ -1028,7 +1028,7 @@ export const DeptMonitor = defineComponent({ name: "DeptMonitor", props: Object 
     <>
             <div class="flex ic jb mb20">
                 <div>
-                    <div class="sec-t">ภาพรวมหน่วยงาน (ผู้บังคับบัญชา) </div>
+                    <div class="sec-t">ภาพรวมหน่วยงาน (หัวหน้างาน) </div>
                     <div class="sec-s">ตรวจสอบผลการประเมินจากหัวหน้าหน่วยงานใน {activeDept.value} เพื่อส่งต่อผู้บริหาร</div>
                 </div>
                 <div class="flex ic g8">

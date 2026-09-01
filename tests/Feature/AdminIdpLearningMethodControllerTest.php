@@ -21,7 +21,6 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'experiential',
-                'code' => 'EXP-X',
                 'title' => 'การมอบหมายงานโครงการ',
             ])
             ->assertRedirect()
@@ -29,10 +28,13 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
         $methodId = DB::table('idp_learning_methods')->where('title', 'การมอบหมายงานโครงการ')->value('id');
 
+        $createdCode = DB::table('idp_learning_methods')->where('id', $methodId)->value('code');
+        $this->assertSame(sprintf('EXP-%04d', $methodId), $createdCode);
+
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'experiential',
-            'code' => 'EXP-X',
+            'code' => $createdCode,
             'title' => 'การมอบหมายงานโครงการ',
             'sort_order' => $nextSortOrder,
             'is_active' => true,
@@ -41,7 +43,6 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.idp-learning-methods.update', $methodId), [
                 'focus_type' => 'social',
-                'code' => 'SOC-X',
                 'title' => 'การสอนงาน',
             ])
             ->assertRedirect()
@@ -50,7 +51,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'social',
-            'code' => 'SOC-X',
+            'code' => $createdCode,
             'title' => 'การสอนงาน',
         ]);
 
@@ -71,7 +72,6 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'formal',
-                'code' => 'FOR-X',
                 'title' => 'Formal Learning Focus',
             ])
             ->assertRedirect()
@@ -90,7 +90,6 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'social',
-                'code' => 'SOC-M',
                 'title' => '',
             ])
             ->assertRedirect()
@@ -112,15 +111,18 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
                 'focus_type' => 'social',
-                'code' => 'SOC-MENTOR',
                 'title' => 'การเป็นพี่เลี้ยง',
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
+        $method = DB::table('idp_learning_methods')->where('title', 'การเป็นพี่เลี้ยง')->first();
+        $this->assertNotNull($method);
+        $this->assertSame(sprintf('SOC-%04d', $method->id), $method->code);
+
         $this->assertDatabaseHas('idp_learning_methods', [
             'focus_type' => 'social',
-            'code' => 'SOC-MENTOR',
+            'code' => $method->code,
             'title' => 'การเป็นพี่เลี้ยง',
             'sort_order' => $nextSortOrder,
         ]);

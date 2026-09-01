@@ -6,13 +6,32 @@ const props = defineProps<{
   user: any;
   setUsers: any;
   competencies?: any[];
+  fcTopicSelection?: any;
   blocked?: boolean;
   blockReasons?: string[];
 }>();
 
 const assignedCompetencies = computed(() => props.competencies || []);
+const fcTopicSelection = computed(() => props.fcTopicSelection || {});
+const requiredFcCount = computed(() => Number(fcTopicSelection.value.requiredCount || 0));
+const fcSelectionRequired = computed(() => requiredFcCount.value > 0);
+const fcSelectionStatus = computed(() => fcTopicSelection.value.status || (fcSelectionRequired.value ? 'draft' : 'not_required'));
+const isFcSelectionApproved = computed(() => !fcSelectionRequired.value || fcSelectionStatus.value === 'approved');
+const availableFcCompetencies = computed(() => fcTopicSelection.value.availableCompetencies || []);
+const selectedFcIds = ref<number[]>([]);
+const isSubmittingFcSelection = ref(false);
 const blockReasons = computed(() => props.blockReasons || []);
-const isAssessmentBlocked = computed(() => Boolean(props.blocked) || blockReasons.value.length > 0);
+const fcSelectionBlockReason = computed(() => {
+  if (!fcSelectionRequired.value || isFcSelectionApproved.value) return '';
+  if (fcSelectionStatus.value === 'submitted') return 'ส่งหัวข้อ FC ให้หัวหน้า 1 แล้ว รออนุมัติก่อนเริ่มประเมิน';
+  if (fcSelectionStatus.value === 'revision_required') return 'หัวหน้า 1 ส่งหัวข้อ FC กลับให้เลือกใหม่ กรุณาเลือกและส่งอนุมัติอีกครั้ง';
+  return `กรุณาเลือกหัวข้อ FC ${requiredFcCount.value} ข้อ และส่งให้หัวหน้า 1 อนุมัติก่อนเริ่มประเมิน`;
+});
+const allBlockReasons = computed(() => [
+  ...blockReasons.value,
+  fcSelectionBlockReason.value,
+].filter(Boolean));
+const isAssessmentBlocked = computed(() => Boolean(props.blocked) || allBlockReasons.value.length > 0);
 const selectedCompetency = ref<any | null>(null);
 const checkedIndicators = ref<Record<string, boolean>>({});
 const competencyNotes = ref<Record<string, string>>({});
@@ -26,6 +45,54 @@ const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const draftSavedAt = ref<string>('');
 const suppressAutoSave = ref(false);
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(fcTopicSelection, (next) => {
+  selectedFcIds.value = [...(next?.selectedCompetencyIds || [])].map((id) => Number(id));
+}, { immediate: true });
+
+const fcSelectionStatusLabel = computed(() => {
+  if (!fcSelectionRequired.value) return 'ไม่ต้องเลือก FC';
+  if (fcSelectionStatus.value === 'approved') return 'อนุมัติหัวข้อแล้ว';
+  if (fcSelectionStatus.value === 'submitted') return 'รอหัวหน้า 1 อนุมัติ';
+  if (fcSelectionStatus.value === 'revision_required') return 'ส่งกลับให้เลือกใหม่';
+  return 'ยังไม่ส่งหัวข้อ';
+});
+
+const selectedFcCount = computed(() => selectedFcIds.value.length);
+const canSubmitFcSelection = computed(() =>
+  fcSelectionRequired.value
+  && !isSubmittingFcSelection.value
+  && ['draft', 'revision_required'].includes(fcSelectionStatus.value)
+  && selectedFcCount.value === requiredFcCount.value,
+);
+
+const toggleFcSelection = (id: number) => {
+  if (!['draft', 'revision_required'].includes(fcSelectionStatus.value)) return;
+
+  const current = new Set(selectedFcIds.value);
+  if (current.has(id)) {
+    current.delete(id);
+  } else {
+    if (current.size >= requiredFcCount.value) return;
+    current.add(id);
+  }
+
+  selectedFcIds.value = [...current];
+};
+
+const submitFcSelection = () => {
+  if (!canSubmitFcSelection.value) return;
+
+  isSubmittingFcSelection.value = true;
+  router.post(route('employee.fc-topic-selection.submit'), {
+    competency_ids: selectedFcIds.value,
+  }, {
+    preserveScroll: true,
+    onFinish: () => {
+      isSubmittingFcSelection.value = false;
+    },
+  });
+};
 
 const isLockedStatus = (status: string) => !['draft', 'revision_required'].includes(status);
 const isFinalApprovedStatus = (status: string) => ['approved', 'dean_approved'].includes(status);
@@ -41,8 +108,8 @@ const submittedAssessmentCount = computed(() =>
 );
 const competencyStatusLabel = (item: any) => {
   const status = competencyStatus(item);
-  if (status === 'unit_evaluated') return 'หัวหน้างานอนุมัติผลการประเมิน รอการตรวจสอบจากผู้บังคับบัญชา';
-  if (status === 'dept_evaluated') return 'ผู้บังคับบัญชาอนุมัติผลการประเมิน รอการตรวจสอบขั้นถัดไป';
+  if (status === 'unit_evaluated') return 'หัวหน้าหน่วยอนุมัติผลการประเมิน รอการตรวจสอบจากหัวหน้างาน';
+  if (status === 'dept_evaluated') return 'หัวหน้างานอนุมัติผลการประเมิน รอการตรวจสอบขั้นถัดไป';
   if (isFinalApprovedStatus(status)) return 'อนุมัติแล้ว';
   if (status === 'self_submitted') return 'รออนุมัติ';
   if (status === 'revision_required') return 'ส่งกลับแก้ไข';
@@ -227,7 +294,7 @@ const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey
 const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
 const selectedCompetencyStatusCopy = computed(() => {
   if (selectedCompetencyStatus.value === 'unit_evaluated') {
-    return 'รอการตรวจสอบจากผู้บังคับบัญชา';
+    return 'รอการตรวจสอบจากหัวหน้างาน';
   }
   if (selectedCompetencyStatus.value === 'dept_evaluated') {
     return 'รอการตรวจสอบขั้นถัดไป';
@@ -297,10 +364,74 @@ onBeforeUnmount(() => {
 
     <div v-if="isAssessmentBlocked" class="blocked-card">
       <div class="blocked-title">ยังไม่สามารถประเมินตนเองได้</div>
-      <div class="blocked-copy">กรุณาให้ Admin ตรวจสอบข้อมูลโครงสร้างและกำหนดหัวหน้างาน/ผู้บังคับบัญชาก่อนเริ่มประเมิน</div>
-      <ul v-if="blockReasons.length" class="blocked-list">
-        <li v-for="reason in blockReasons" :key="reason">{{ reason }}</li>
+      <div class="blocked-copy">ระบบจะเปิดแบบประเมินเมื่อข้อมูลพื้นฐานครบ และหัวข้อ FC ได้รับอนุมัติแล้ว</div>
+      <ul v-if="allBlockReasons.length" class="blocked-list">
+        <li v-for="reason in allBlockReasons" :key="reason">{{ reason }}</li>
       </ul>
+    </div>
+
+    <div v-if="fcSelectionRequired" class="fc-selection-card">
+      <div class="fc-selection-head">
+        <div>
+          <div class="fc-kicker">FC TOPIC APPROVAL</div>
+          <h2>เลือกหัวข้อ FC ก่อนเริ่มประเมิน</h2>
+          <p>เลือกจาก FC ที่ HR กำหนดให้ตำแหน่งนี้ แล้วส่งให้หัวหน้า 1 อนุมัติ</p>
+        </div>
+        <span
+          class="fc-status-pill"
+          :class="{
+            approved: fcSelectionStatus === 'approved',
+            waiting: fcSelectionStatus === 'submitted',
+            revision: fcSelectionStatus === 'revision_required',
+          }"
+        >
+          {{ fcSelectionStatusLabel }}
+        </span>
+      </div>
+
+      <div v-if="fcTopicSelection.reviewComment && fcSelectionStatus === 'revision_required'" class="fc-revision-note">
+        <strong>เหตุผลที่ส่งกลับ:</strong>
+        <span>{{ fcTopicSelection.reviewComment }}</span>
+      </div>
+
+      <div class="fc-selection-meter">
+        <span>เลือกแล้ว {{ selectedFcCount }}/{{ requiredFcCount }} ข้อ</span>
+        <span>{{ fcSelectionStatus === 'approved' ? 'พร้อมประเมินทั้งหมด' : 'ต้องอนุมัติก่อนจึงจะประเมินได้' }}</span>
+      </div>
+
+      <div class="fc-choice-grid">
+        <button
+          v-for="item in availableFcCompetencies"
+          :key="item.id"
+          class="fc-choice"
+          :class="{ selected: selectedFcIds.includes(Number(item.id)), locked: !['draft', 'revision_required'].includes(fcSelectionStatus) }"
+          type="button"
+          @click="toggleFcSelection(Number(item.id))"
+        >
+          <span class="fc-check" aria-hidden="true"></span>
+          <span>
+            <strong>{{ item.cd }} · {{ item.n }}</strong>
+            <small>{{ item.det || 'ไม่มีคำอธิบาย' }}</small>
+          </span>
+        </button>
+      </div>
+
+      <div v-if="!availableFcCompetencies.length" class="empty-card compact">
+        <div class="empty-title">ยังไม่มี FC สำหรับตำแหน่งนี้</div>
+        <div class="empty-copy">กรุณาให้ HR ผูก FC กับตำแหน่งก่อน</div>
+      </div>
+
+      <div class="fc-selection-actions">
+        <span class="muted fs12">ต้องเลือกให้ครบตามจำนวนที่ HR กำหนด</span>
+        <button
+          class="btn btn-p"
+          type="button"
+          :disabled="!canSubmitFcSelection"
+          @click="submitFcSelection"
+        >
+          {{ isSubmittingFcSelection ? 'กำลังส่ง...' : 'ส่งให้หัวหน้า 1 อนุมัติ' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="assignedCompetencies.length && !isAssessmentBlocked" class="summary-grid">
@@ -375,10 +506,10 @@ onBeforeUnmount(() => {
             </div>
             <h2>{{ selectedCompetency.n }}</h2>
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
-            <p v-if="selectedCompetencyStatus === 'unit_evaluated'" class="approved-copy">หัวหน้างานอนุมัติผลการประเมินแล้ว รอการตรวจสอบจากผู้บังคับบัญชา</p>
-            <p v-else-if="selectedCompetencyStatus === 'dept_evaluated'" class="approved-copy">ผู้บังคับบัญชาอนุมัติผลการประเมินแล้ว รอการตรวจสอบขั้นถัดไป</p>
-            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากผู้บังคับบัญชาแล้ว</p>
-            <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้ผู้บังคับบัญชาแล้ว จะแก้ไขได้เมื่อผู้บังคับบัญชาส่งกลับมาแก้ไข</p>
+            <p v-if="selectedCompetencyStatus === 'unit_evaluated'" class="approved-copy">หัวหน้าหน่วยอนุมัติผลการประเมินแล้ว รอการตรวจสอบจากหัวหน้างาน</p>
+            <p v-else-if="selectedCompetencyStatus === 'dept_evaluated'" class="approved-copy">หัวหน้างานอนุมัติผลการประเมินแล้ว รอการตรวจสอบขั้นถัดไป</p>
+            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากหัวหน้างานแล้ว</p>
+            <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว จะแก้ไขได้เมื่อหัวหน้างานส่งกลับมาแก้ไข</p>
             <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
           </div>
           <button class="btn btn-s btn-sm" type="button" @click="closeCompetencyDetail">ปิด</button>
@@ -493,7 +624,7 @@ onBeforeUnmount(() => {
     <div v-if="showSubmitConfirm" class="confirm-backdrop" @click.self="cancelSubmitConfirm">
       <div class="confirm-modal">
         <div class="confirm-title">ยืนยันการส่งผลการประเมิน</div>
-        <p>หากกดบันทึกและส่งตรวจจะเป็นการยืนยันผลการประเมินและส่งต่อไปยังผู้บังคับบัญชา ต้องการยืนยันหรือไม่</p>
+        <p>หากกดบันทึกและส่งตรวจจะเป็นการยืนยันผลการประเมินและส่งต่อไปยังหัวหน้างาน ต้องการยืนยันหรือไม่</p>
         <div class="confirm-actions">
           <button class="btn btn-s" type="button" @click="cancelSubmitConfirm">ยกเลิก</button>
           <button class="btn btn-t" type="button" :disabled="isSaving" @click="saveAndClose">ยืนยัน</button>
@@ -519,6 +650,127 @@ onBeforeUnmount(() => {
 .blocked-copy { margin-top: 6px; color: #b91c1c; font-size: 13px; }
 .blocked-list { margin: 12px 0 0; padding-left: 20px; color: #7f1d1d; font-size: 13px; }
 .blocked-list li + li { margin-top: 4px; }
+.fc-selection-card {
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fffaf3;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.fc-selection-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  border-bottom: 1px solid #ffedd5;
+  padding-bottom: 14px;
+}
+.fc-kicker {
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+.fc-selection-head h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
+}
+.fc-selection-head p {
+  margin: 6px 0 0;
+  color: var(--text3);
+  font-size: 13px;
+}
+.fc-status-pill {
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #9a3412;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.fc-status-pill.approved { background: #dcfce7; color: #166534; }
+.fc-status-pill.waiting { background: #fef3c7; color: #92400e; }
+.fc-status-pill.revision { background: #fee2e2; color: #991b1b; }
+.fc-revision-note {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  padding: 10px 12px;
+  color: #991b1b;
+  font-size: 13px;
+}
+.fc-selection-meter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 800;
+}
+.fc-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.fc-choice {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.fc-choice.selected {
+  border-color: #ea580c;
+  background: #fff7ed;
+}
+.fc-choice.locked {
+  cursor: default;
+}
+.fc-check {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #fdba74;
+  border-radius: 5px;
+  margin-top: 2px;
+}
+.fc-choice.selected .fc-check {
+  border-color: #ea580c;
+  background: #ea580c;
+  box-shadow: inset 0 0 0 4px #fff7ed;
+}
+.fc-choice strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+}
+.fc-choice small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.fc-selection-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
 .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .summary-card {
   border: 1px solid var(--border);

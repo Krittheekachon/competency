@@ -135,6 +135,10 @@ class StructureController extends Controller
 
     public function storePosition(Request $request): RedirectResponse
     {
+        if ($request->filled('unit_name')) {
+            return $this->storeSupportPosition($request);
+        }
+
         $jobFamilyId = $this->jobFamilyId(
             $request->string('job_family_name')->toString(),
             $request->string('workline_name')->toString() ?: null
@@ -171,6 +175,10 @@ class StructureController extends Controller
 
     public function updatePosition(Request $request): RedirectResponse
     {
+        if ($request->filled('unit_name')) {
+            return $this->updateSupportPosition($request);
+        }
+
         $jobFamilyId = $this->jobFamilyId(
             $request->string('job_family_name')->toString(),
             $request->string('workline_name')->toString() ?: null
@@ -208,6 +216,10 @@ class StructureController extends Controller
 
     public function destroyPosition(Request $request): RedirectResponse
     {
+        if ($request->filled('unit_name')) {
+            return $this->destroySupportPosition($request);
+        }
+
         $jobFamilyId = $this->jobFamilyId(
             $request->string('job_family_name')->toString(),
             $request->string('workline_name')->toString() ?: null
@@ -451,17 +463,11 @@ class StructureController extends Controller
     public function storeLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
-        $jobFamilyId = $request->filled('job_family_name')
-            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
-            : null;
+        $jobFamilyId = null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
-            'job_family_name' => [
-                'nullable',
-                'string',
-                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
-            ],
+            'job_family_name' => ['prohibited'],
             'name' => [
                 'required',
                 'string',
@@ -488,17 +494,11 @@ class StructureController extends Controller
     public function updateLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
-        $jobFamilyId = $request->filled('job_family_name')
-            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
-            : null;
+        $jobFamilyId = null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
-            'job_family_name' => [
-                'nullable',
-                'string',
-                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
-            ],
+            'job_family_name' => ['prohibited'],
             'old_name' => [
                 'required',
                 'string',
@@ -542,17 +542,11 @@ class StructureController extends Controller
     public function destroyLevel(Request $request): RedirectResponse
     {
         $worklineId = $this->worklineId($request->string('workline_name')->toString() ?: null);
-        $jobFamilyId = $request->filled('job_family_name')
-            ? $this->jobFamilyId($request->string('job_family_name')->toString(), $request->string('workline_name')->toString() ?: null)
-            : null;
+        $jobFamilyId = null;
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
-            'job_family_name' => [
-                'nullable',
-                'string',
-                Rule::exists('job_families', 'name')->where(fn ($query) => $query->where('workline_id', $worklineId)),
-            ],
+            'job_family_name' => ['prohibited'],
             'name' => [
                 'required',
                 'string',
@@ -690,5 +684,80 @@ class StructureController extends Controller
     private function supportDepartmentId(string $name): int
     {
         return (int) DB::table('support_departments')->where('name', $name)->value('id');
+    }
+
+    private function storeSupportPosition(Request $request): RedirectResponse
+    {
+        $unitId = $this->supportUnitId($request);
+        $data = $request->validate([
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'unit_name' => ['required', 'string'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
+        ]);
+
+        $supportWorklineId = $this->worklineId('สายสนับสนุน');
+        $jobFamilyId = DB::table('job_families')->where('workline_id', $supportWorklineId)->orderBy('id')->value('id');
+        if (! $jobFamilyId) {
+            $jobFamilyId = DB::table('job_families')->insertGetId([
+                'workline_id' => $supportWorklineId,
+                'name' => 'ตำแหน่งสายสนับสนุน',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        DB::table('positions')->insert([
+            'job_family_id' => $jobFamilyId,
+            'support_unit_id' => $unitId,
+            'name' => $data['name'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'บันทึกตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    private function updateSupportPosition(Request $request): RedirectResponse
+    {
+        $unitId = $this->supportUnitId($request);
+        $data = $request->validate([
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'unit_name' => ['required', 'string'],
+            'old_name' => ['required', 'string', Rule::exists('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
+            'name' => ['required', 'string', 'max:255', Rule::unique('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))->ignore(DB::table('positions')->where('support_unit_id', $unitId)->where('name', $request->old_name)->value('id'))],
+        ]);
+
+        DB::table('positions')->where('support_unit_id', $unitId)->where('name', $data['old_name'])
+            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        $this->syncUserPositionName('สายสนับสนุน', $data['division_name'], $data['old_name'], $data['name']);
+
+        return back()->with('success', 'อัปเดตตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    private function destroySupportPosition(Request $request): RedirectResponse
+    {
+        $unitId = $this->supportUnitId($request);
+        $data = $request->validate([
+            'division_name' => ['required', 'string'],
+            'work_name' => ['required', 'string'],
+            'unit_name' => ['required', 'string'],
+            'name' => ['required', 'string', Rule::exists('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
+        ]);
+        DB::table('positions')->where('support_unit_id', $unitId)->where('name', $data['name'])->delete();
+
+        return back()->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    private function supportUnitId(Request $request): int
+    {
+        return (int) DB::table('support_units')
+            ->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+            ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
+            ->where('support_departments.name', $request->string('division_name')->toString())
+            ->where('support_works.name', $request->string('work_name')->toString())
+            ->where('support_units.name', $request->string('unit_name')->toString())
+            ->value('support_units.id');
     }
 }

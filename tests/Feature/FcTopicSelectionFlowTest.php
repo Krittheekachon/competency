@@ -1,0 +1,208 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Tests\TestCase;
+
+class FcTopicSelectionFlowTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_employee_must_get_first_supervisor_approval_for_fc_topics_before_assessment(): void
+    {
+        Mail::fake();
+
+        [$positionId, $ccId, $selectedFcId, $otherFcId] = $this->positionWithCompetencies();
+
+        DB::table('position_fc_selection_rules')->insert([
+            'position_id' => $positionId,
+            'required_fc_count' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'position_id' => $positionId,
+            'is_active' => true,
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'assessment',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('assessments.save'), [
+                'competency_id' => $ccId,
+                'checked_indicators' => [],
+                'score' => 0,
+                'note' => '',
+            ])
+            ->assertSessionHasErrors('assessment');
+
+        $this->actingAs($employee)
+            ->post(route('employee.fc-topic-selection.submit'), [
+                'competency_ids' => [$selectedFcId],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $selectionId = (int) DB::table('fc_topic_selections')
+            ->where('user_id', $employee->id)
+            ->value('id');
+
+        $this->assertDatabaseHas('fc_topic_selections', [
+            'id' => $selectionId,
+            'user_id' => $employee->id,
+            'position_id' => $positionId,
+            'status' => 'submitted',
+            'submitted_to' => $supervisor->id,
+        ]);
+        $this->assertDatabaseHas('fc_topic_selection_items', [
+            'fc_topic_selection_id' => $selectionId,
+            'competency_id' => $selectedFcId,
+        ]);
+
+        $this->actingAs($supervisor)
+            ->post(route('fc-topic-selections.reject'), [
+                'selection_id' => $selectionId,
+                'comment' => '',
+            ])
+            ->assertSessionHasErrors('comment');
+
+        $this->actingAs($supervisor)
+            ->post(route('fc-topic-selections.reject'), [
+                'selection_id' => $selectionId,
+                'comment' => 'เลือกใหม่ให้ตรงงานที่รับผิดชอบ',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('fc_topic_selections', [
+            'id' => $selectionId,
+            'status' => 'revision_required',
+            'review_comment' => 'เลือกใหม่ให้ตรงงานที่รับผิดชอบ',
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('employee.fc-topic-selection.submit'), [
+                'competency_ids' => [$selectedFcId],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($supervisor)
+            ->post(route('fc-topic-selections.approve'), [
+                'selection_id' => $selectionId,
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('fc_topic_selections', [
+            'id' => $selectionId,
+            'status' => 'approved',
+            'reviewed_by' => $supervisor->id,
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('assessments.save'), [
+                'competency_id' => $ccId,
+                'checked_indicators' => [],
+                'score' => 0,
+                'note' => '',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('assessments', [
+            'user_id' => $employee->id,
+            'competency_id' => $ccId,
+            'status' => 'self_submitted',
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('assessments.save'), [
+                'competency_id' => $otherFcId,
+                'checked_indicators' => [],
+                'score' => 0,
+                'note' => '',
+            ])
+            ->assertSessionHasErrors('assessment');
+    }
+
+    private function positionWithCompetencies(): array
+    {
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายทดสอบ FC',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'กลุ่มงานทดสอบ FC',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $positionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $jobFamilyId,
+            'name' => 'ตำแหน่งทดสอบ FC',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $ccTypeId = DB::table('competency_types')->insertGetId([
+            'code' => 'CC',
+            'full_name' => 'Core Competency',
+            'description' => 'Core competency',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $fcTypeId = DB::table('competency_types')->insertGetId([
+            'code' => 'FC',
+            'full_name' => 'Functional Competency',
+            'description' => 'Functional competency',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $ccId = $this->competency($ccTypeId, 'CC-FLOW-01');
+        $selectedFcId = $this->competency($fcTypeId, 'FC-FLOW-01');
+        $otherFcId = $this->competency($fcTypeId, 'FC-FLOW-02');
+
+        foreach ([$ccId, $selectedFcId, $otherFcId] as $competencyId) {
+            DB::table('position_competencies')->insert([
+                'position_id' => $positionId,
+                'competency_id' => $competencyId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        return [$positionId, $ccId, $selectedFcId, $otherFcId];
+    }
+
+    private function competency(int $typeId, string $code): int
+    {
+        return DB::table('competencies')->insertGetId([
+            'competency_type_id' => $typeId,
+            'code' => $code,
+            'name' => 'สมรรถนะ '.$code,
+            'detail' => 'รายละเอียด '.$code,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function roleId(string $key): int
+    {
+        return (int) DB::table('roles')->where('key', $key)->value('id');
+    }
+}

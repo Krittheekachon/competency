@@ -16,12 +16,12 @@ class HrDashboardTest extends TestCase
     {
         $hrUser = User::factory()->create([
             'email' => 'hr@example.com',
-            'role_id' => 1,
+            'role_id' => $this->roleId('hr'),
         ]);
 
         User::factory()->create([
             'email' => 'staff@example.com',
-            'role_id' => 4,
+            'role_id' => $this->roleId('employee'),
         ]);
 
         $this->actingAs($hrUser)
@@ -31,8 +31,9 @@ class HrDashboardTest extends TestCase
                 ->component('HR/Dashboard')
                 ->where('hrSummary.totalUsers', 2)
                 ->where('hrSummary.hrUsers', 1)
-                ->where('hrSummary.staffUsers', 1)
+                ->where('hrSummary.employeeUsers', 1)
                 ->where('hrSummary.source', 'database')
+                ->has('users', 2)
                 ->missing('roleSwitcher')
             );
     }
@@ -41,7 +42,7 @@ class HrDashboardTest extends TestCase
     {
         $hrUser = User::factory()->create([
             'email' => 'hr-position@example.com',
-            'role_id' => 1,
+            'role_id' => $this->roleId('hr'),
         ]);
 
         $worklineId = DB::table('worklines')->insertGetId([
@@ -79,5 +80,65 @@ class HrDashboardTest extends TestCase
                 ->where('jobFamiliesByWorkline.สายทดสอบ.กลุ่มงานทดสอบ.0', 'ตำแหน่งจากตาราง position')
                 ->missing('levelsByWorkline')
             );
+    }
+
+    public function test_hr_dashboard_exposes_support_units_with_their_positions(): void
+    {
+        $hrUser = User::factory()->create([
+            'role_id' => $this->roleId('hr'),
+        ]);
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ตำแหน่งสายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $departmentId = DB::table('support_departments')->insertGetId([
+            'name' => 'ฝ่ายบริหาร',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $workId = DB::table('support_works')->insertGetId([
+            'support_department_id' => $departmentId,
+            'name' => 'งานบุคคล',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $unitId = DB::table('support_units')->insertGetId([
+            'support_work_id' => $workId,
+            'name' => 'หน่วยพัฒนา',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('positions')->insert([
+            'job_family_id' => $jobFamilyId,
+            'support_unit_id' => $unitId,
+            'name' => 'นักทรัพยากรบุคคล',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($hrUser)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('HR/Dashboard')
+                ->where('supportOrg.ฝ่ายบริหาร.0.units.0.key', 'ฝ่ายบริหาร|||งานบุคคล|||หน่วยพัฒนา')
+                ->where('supportOrg.ฝ่ายบริหาร.0.units.0.positions.0', 'นักทรัพยากรบุคคล')
+                ->where('positionLookup.0.supportUnitKey', 'ฝ่ายบริหาร|||งานบุคคล|||หน่วยพัฒนา')
+            );
+    }
+
+    private function roleId(string $key): int
+    {
+        return (int) DB::table('roles')
+            ->where('key', $key)
+            ->orWhere('role_key', $key)
+            ->value('id');
     }
 }

@@ -2,10 +2,16 @@
   <div class="admin-users-head mb20">
     <div>
       <div class="sec-t">จัดการผู้ใช้งาน </div>
-      <div class="sec-s">รายชื่อบุคลากรทั้งหมด · กำหนด Role และข้อมูลตามโครงสร้างองค์กร</div>
+      <div class="sec-s">รายชื่อบุคลากรทั้งหมด , กำหนดบทบาทในระบบ และลำดับการประเมิน</div>
     </div>
     <div class="action-row">
       <!-- <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button> -->
+      <button class="btn btn-s reviewer-template-entry-btn" type="button" @click="openReviewerTemplateModal('assessment')">
+        ลำดับการประเมิน
+      </button>
+      <button class="btn btn-s reviewer-template-entry-btn" type="button" @click="openReviewerTemplateModal('idp')">
+        ลำดับ IDP
+      </button>
       <button class="btn btn-p add-user-btn" type="button" @click="openModal('modal-user')">+ เพิ่มผู้ใช้</button>
     </div>
   </div>
@@ -207,6 +213,7 @@ type RoleBadge = {
 
 const props = defineProps<{
   openModal: (type: string, data?: unknown) => void;
+  openReviewerTemplateModal: (chainType?: string) => void;
   users: User[];
   setUsers: (next: User[] | ((users: User[]) => User[])) => void;
   academicDepts: string[];
@@ -226,8 +233,8 @@ const page = usePage();
 const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
 const roleOptions = [
   'บุคลากร',
+  'หัวหน้าหน่วย',
   'หัวหน้างาน',
-  'ผู้บังคับบัญชา',
   'ผู้บริหารคณะ',
   'งานทรัพยากรบุคคล',
   'ผู้ดูแลระบบ',
@@ -237,6 +244,7 @@ const getDisplayLevel = (user: User) => (user.w === 'สายงานบริ
 const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '—');
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
+const openReviewerTemplateModal = (chainType?: string) => props.openReviewerTemplateModal(chainType);
 const worklineOptions = computed(() => props.worklines || []);
 const isActive = (user: User) => user.act !== false;
 const isCurrentUser = (user: User) => Boolean(user.db_id && Number(user.db_id) === currentUserId.value);
@@ -305,13 +313,13 @@ const roleBadge = (role?: string): RoleBadge => {
       };
     case 'supervisor':
       return {
-        label: 'หัวหน้างาน',
+        label: 'หัวหน้าหน่วย',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
     case 'dept_head':
     case 'manager_dept':
-      return { label: 'ผู้บังคับบัญชา', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
+      return { label: 'หัวหน้างาน', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
     default:
       return { label: 'บุคลากร', className: 'bgr' };
   }
@@ -336,7 +344,7 @@ const filteredUsers = computed(() => {
       || (statusFilter.value === 'ปกติ / ใช้งาน' ? isActive(user) : !isActive(user));
 
     return matchesSearch && matchesWorkline && matchesDepartment && matchesPosition && matchesRole && matchesStatus;
-  });
+  }).sort((a, b) => Number(b.db_id || 0) - Number(a.db_id || 0));
 });
 
 const toggleStatus = (user: User) => {
@@ -442,6 +450,14 @@ const deleteUser = (user: User) => {
   border-color: #1d4ed8;
   background: #1d4ed8;
   color: #fff;
+}
+
+.reviewer-template-entry-btn {
+  min-width: 136px;
+  justify-content: center;
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #334155;
 }
 
 .user-dashboard-grid {

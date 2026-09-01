@@ -15,16 +15,16 @@ const failedRows = computed(() => rows.value
 const isFinalApproved = computed(() => ['approved', 'dean_approved'].includes(props.evalStatus || ''));
 const gapStatusLabel = computed(() => {
   if (props.evalStatus === 'unit_evaluated') {
-    return 'หัวหน้างานอนุมัติผลการประเมินแล้ว — รอการตรวจสอบจากผู้บังคับบัญชา';
+    return 'หัวหน้าหน่วยอนุมัติผลการประเมินแล้ว — รอการตรวจสอบจากหัวหน้างาน';
   }
   if (props.evalStatus === 'dept_evaluated') {
-    return 'ผู้บังคับบัญชาอนุมัติผลการประเมินแล้ว — รอการตรวจสอบขั้นถัดไป';
+    return 'หัวหน้างานอนุมัติผลการประเมินแล้ว — รอการตรวจสอบขั้นถัดไป';
   }
   if (isFinalApproved.value) {
     return 'Gap (ยืนยันครบทุกลำดับแล้ว)';
   }
 
-  return 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้างาน';
+  return 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้าหน่วย';
 });
 const developmentStatusLabel = (row: any) => {
   if (Number(row.gap) >= 0) return 'ผ่านเกณฑ์';

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 const props = defineProps<{
   users?: any[];
   canSendReminders?: boolean;
+  activeCycleName?: string;
 }>();
 
 const selectedUnit = ref<any | null>(null);
@@ -34,16 +35,13 @@ const severityClass = (count: number) => {
 
 const summary = computed(() => {
   const assessedUsers = activeUsers.value.filter(isAssessed);
+  const failedUsers = assessedUsers.filter((user) => negativeGapCount(user) > 0).length;
 
   return {
     total: activeUsers.value.length,
     assessed: assessedUsers.length,
     complete: assessedUsers.filter((user) => negativeGapCount(user) === 0).length,
-    moderate: assessedUsers.filter((user) => {
-      const count = negativeGapCount(user);
-      return count >= 1 && count <= 2;
-    }).length,
-    high: assessedUsers.filter((user) => negativeGapCount(user) >= 3).length,
+    failed: failedUsers,
   };
 });
 
@@ -92,18 +90,29 @@ const jobFamilyName = (user: any) => {
 const worklineName = (user: any) =>
   String(user?.w || '').trim() || 'ยังไม่ระบุสายงาน';
 
+const cycleLabel = computed(() => props.activeCycleName || 'รอบประเมินปัจจุบัน');
+
 const userById = (id: any) =>
   activeUsers.value.find((user) => Number(user?.db_id) === Number(id));
 
 const displayName = (user: any) =>
   user ? `${user?.t || ''}${user?.n || ''}`.trim() : '';
 
+const reviewerStepsForUser = (user: any) => {
+  const steps = Array.isArray(user?.reviewerSteps) && user.reviewerSteps.length
+    ? user.reviewerSteps
+    : (Array.isArray(user?.supervisorChain) ? user.supervisorChain : []);
+
+  return steps
+    .map((step: any, index: number) => ({
+      step: Number(step.step || index + 1),
+      reviewer_id: Number(step.id || step.reviewer_id || 0),
+    }))
+    .filter((step: any) => step.step > 0 && step.reviewer_id > 0);
+};
+
 const evaluatorName = (user: any, level: 1 | 2 | 3) => {
-  const id = level === 1
-    ? user?.supervisor_id_1
-    : level === 2
-      ? user?.supervisor_id_2
-      : user?.supervisor_id_3;
+  const id = reviewerStepsForUser(user).find((step) => step.step === level)?.reviewer_id;
 
   return displayName(userById(id));
 };
@@ -113,7 +122,7 @@ const supervisorName = (users: any[]) => {
     .map((user) => evaluatorName(user, 2) || evaluatorName(user, 3) || evaluatorName(user, 1))
     .find(Boolean);
 
-  return name || 'ยังไม่ระบุผู้บังคับบัญชา';
+  return name || 'ยังไม่ระบุหัวหน้างาน';
 };
 
 const buildUnitRows = (getName: (user: any) => string) => {
@@ -164,16 +173,24 @@ const toggleCommonGap = (item: any) => {
 const assessmentTotals = (user: any) => {
   const rows = Array.isArray(user?.competencyGaps) ? user.competencyGaps : [];
   const expected = rows.reduce((total: number, row: any) =>
-    total + Number(row?.expectedIndicatorCount ?? 0), 0);
+    total + Number(row?.expected ?? row?.expectedLevel ?? row?.target ?? 0), 0);
   const actual = rows.reduce((total: number, row: any) =>
-    total + Number(row?.checkedIndicatorCount ?? row?.actual ?? 0), 0);
+    total + Number(row?.actual ?? row?.actualLevel ?? row?.headScore ?? row?.score ?? 0), 0);
+  const gap = rows.reduce((total: number, row: any) => {
+    const expectedLevel = Number(row?.expected ?? row?.expectedLevel ?? row?.target ?? 0);
+    const actualLevel = Number(row?.actual ?? row?.actualLevel ?? row?.headScore ?? row?.score ?? 0);
+    return total + Number(row?.gap ?? actualLevel - expectedLevel);
+  }, 0);
 
   return {
-    expected,
-    actual,
-    gap: actual - expected,
+    expected: Math.round(expected * 100) / 100,
+    actual: Math.round(actual * 100) / 100,
+    gap: Math.round(gap * 100) / 100,
   };
 };
+
+const formatLevelTotal = (value: number) =>
+  Number(value || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 
 const detailGroups = computed(() => {
   if (!selectedUnit.value) return [];
@@ -192,7 +209,7 @@ const detailGroups = computed(() => {
       return {
         name,
         supervisor: users.map((user) => evaluatorName(user, 1)).find(Boolean)
-          || 'ยังไม่ระบุหัวหน้างาน',
+          || 'ยังไม่ระบุหัวหน้าหน่วย',
         users: [...users].sort((left, right) =>
           String(left?.n || '').localeCompare(String(right?.n || ''), 'th')),
         complete: completeUsers,
@@ -222,7 +239,7 @@ const toggleDetailGroup = (name: string) => {
     <header class="faculty-page-head">
       <div>
         <h1>ภาพรวมผลการประเมินคณะ</h1>
-        <p>มุมมองสำหรับคณบดีและ HR คณะวิศวกรรมศาสตร์ · รอบประเมิน 2568</p>
+        <p>มุมมองสำหรับคณบดีและ HR คณะวิศวกรรมศาสตร์ · {{ cycleLabel }}</p>
       </div>
     </header>
 
@@ -239,18 +256,13 @@ const toggleDetailGroup = (name: string) => {
           <small>จากทั้งหมด</small>
         </div>
         <div class="faculty-summary-item complete">
-          <span>ครบตามเกณฑ์</span>
+          <span>ผ่านเกณฑ์</span>
           <strong>{{ summary.complete }}</strong>
           <small>คน</small>
         </div>
-        <div class="faculty-summary-item moderate">
-          <span>ขาด 1-2 สมรรถนะ</span>
-          <strong>{{ summary.moderate }}</strong>
-          <small>คน</small>
-        </div>
         <div class="faculty-summary-item high">
-          <span>ขาด 3+ สมรรถนะ</span>
-          <strong>{{ summary.high }}</strong>
+          <span>ไม่ผ่านเกณฑ์</span>
+          <strong>{{ summary.failed }}</strong>
           <small>คน</small>
         </div>
       </div>
@@ -340,13 +352,17 @@ const toggleDetailGroup = (name: string) => {
           </button>
 
           <div v-if="openedCommonGapKey === commonGapKey(item)" class="faculty-common-gap-people">
-            <div v-for="user in item.users" :key="user.db_id || user.sso" class="faculty-common-gap-person">
-              <div>
-                <strong>{{ `${user.t || ''}${user.n || '-'}` }}</strong>
-                <span>{{ user.p || 'ยังไม่ระบุตำแหน่ง' }}</span>
+            <div class="faculty-common-gap-person-list">
+              <div v-for="user in item.users" :key="user.db_id || user.sso" class="faculty-common-gap-person">
+                <div class="faculty-common-gap-person-main">
+                  <div class="av faculty-common-gap-avatar">{{ user.n?.[0] || '?' }}</div>
+                  <div>
+                    <strong>{{ `${user.t || ''}${user.n || '-'}` }}</strong>
+                    <span>{{ user.p || 'ยังไม่ระบุตำแหน่ง' }} · {{ jobFamilyName(user) }}</span>
+                  </div>
+                </div>
+                <span class="faculty-gap-person-mini-badge">ตก {{ negativeGapCount(user) }} สมรรถนะ</span>
               </div>
-              <span>{{ jobFamilyName(user) }}</span>
-              <span class="faculty-gap-person-badge">ขาด {{ negativeGapCount(user) }} สมรรถนะ</span>
             </div>
           </div>
         </template>
@@ -374,7 +390,7 @@ const toggleDetailGroup = (name: string) => {
         >
           <div class="faculty-unit-type">{{ unit.type }}</div>
           <h3>{{ unit.name }}</h3>
-          <p>ผู้บังคับบัญชา: {{ unit.supervisor }}</p>
+          <p>หัวหน้างาน: {{ unit.supervisor }}</p>
 
           <div class="faculty-unit-numbers">
             <div>
@@ -405,7 +421,7 @@ const toggleDetailGroup = (name: string) => {
         <header class="faculty-detail-head">
           <div>
             <h2>{{ selectedUnit.type }}: {{ selectedUnit.name }}</h2>
-            <p>ผู้บังคับบัญชา: {{ selectedUnit.supervisor }} · รายละเอียดผลการประเมินแยกตามกลุ่มงานและรายบุคคล</p>
+            <p>หัวหน้างาน: {{ selectedUnit.supervisor }} · รายละเอียดผลการประเมินแยกตามกลุ่มงานและรายบุคคล</p>
           </div>
           <button class="faculty-detail-close" type="button" @click="closeUnitDetail">ปิด</button>
         </header>
@@ -420,7 +436,7 @@ const toggleDetailGroup = (name: string) => {
             >
               <div>
                 <h3>{{ group.name }}</h3>
-                <p>หัวหน้างาน: {{ group.supervisor }}</p>
+                <p>หัวหน้าหน่วย: {{ group.supervisor }}</p>
               </div>
               <span class="faculty-detail-group-summary">
                 <span class="faculty-group-complete">ครบตามเกณฑ์ {{ group.complete }}/{{ group.assessed }} คนที่ประเมินแล้ว</span>
@@ -456,13 +472,13 @@ const toggleDetailGroup = (name: string) => {
                 </div>
                 <div class="faculty-person-unit">{{ user.p || 'ยังไม่ระบุตำแหน่ง' }}</div>
                 <template v-if="isAssessed(user)">
-                  <div>คาดหวัง {{ assessmentTotals(user).expected }} ข้อ</div>
-                  <div>ได้จริง {{ assessmentTotals(user).actual }} ข้อ</div>
+                  <div>คาดหวัง {{ formatLevelTotal(assessmentTotals(user).expected) }}</div>
+                  <div>ประเมินได้ {{ formatLevelTotal(assessmentTotals(user).actual) }}</div>
                   <div
                     class="faculty-person-gap"
                     :class="{ passed: assessmentTotals(user).gap >= 0, failed: assessmentTotals(user).gap < 0 }"
                   >
-                    {{ assessmentTotals(user).gap > 0 ? '+' : '' }}{{ assessmentTotals(user).gap }}
+                    {{ assessmentTotals(user).gap > 0 ? '+' : '' }}{{ formatLevelTotal(assessmentTotals(user).gap) }}
                   </div>
                   <span
                     class="faculty-person-status"
@@ -525,7 +541,7 @@ const toggleDetailGroup = (name: string) => {
 
 .faculty-summary-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .faculty-summary-item {
@@ -873,44 +889,77 @@ const toggleDetailGroup = (name: string) => {
 }
 
 .faculty-common-gap-people {
-  padding: 4px 14px 10px 42px;
-  border-bottom: 1px solid var(--border);
-  background: #f8fafc;
+  display: grid;
+  margin: 0 0 12px 42px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fffaf5;
+  box-shadow: inset 3px 0 0 #fdba74;
+}
+
+.faculty-common-gap-person-list {
+  display: grid;
+  gap: 6px;
 }
 
 .faculty-common-gap-person {
-  display: grid;
-  grid-template-columns: minmax(210px, 1.4fr) minmax(180px, 1fr) 130px;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
   color: var(--text3);
   font-size: 11px;
 }
 
-.faculty-common-gap-person:last-child {
-  border-bottom: 0;
+.faculty-common-gap-person-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.faculty-common-gap-person > div {
+.faculty-common-gap-person-main > div {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.faculty-common-gap-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
 }
 
 .faculty-common-gap-person strong {
+  overflow: hidden;
   color: var(--text);
   font-size: 12px;
   font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.faculty-gap-person-badge {
-  justify-self: start;
+.faculty-common-gap-person-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.faculty-gap-person-mini-badge {
+  flex-shrink: 0;
   padding: 4px 8px;
-  border: 1px solid #fb923c;
   border-radius: 999px;
   background: #fff7ed;
   color: #9a3412;
+  font-size: 10px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -1407,8 +1456,10 @@ const toggleDetailGroup = (name: string) => {
   }
 
   .faculty-common-gap-person {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: flex-start;
+    flex-direction: column;
   }
+
 }
 
 @media (max-width: 620px) {
@@ -1441,7 +1492,8 @@ const toggleDetailGroup = (name: string) => {
   }
 
   .faculty-common-gap-people {
-    padding-left: 14px;
+    margin-left: 0;
+    padding: 12px;
   }
 
   .faculty-common-gap-person {

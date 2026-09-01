@@ -38,10 +38,6 @@ class ProfileUpdateRequest extends FormRequest
                 Rule::unique(User::class)->ignore($this->user()->id),
             ],
             'phone' => ['nullable', 'string', 'max:12'],
-            'workline' => ['nullable', 'string', 'max:255'],
-            'department' => ['nullable', 'string', 'max:255'],
-            'position' => ['nullable', 'string', 'max:255'],
-            'level' => ['nullable', 'string', 'max:255'],
             'profile_photo' => ['nullable', 'string'],
         ];
     }

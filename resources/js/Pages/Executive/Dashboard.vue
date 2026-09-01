@@ -138,7 +138,7 @@ const logout = () => router.post(route('logout'));
                 <ManagerGap
                     v-if="activePage === 'manager-competency-overview'"
                     :users="props.users"
-                    :disable-mock-data="false"
+                    :active-cycle-name="props.activeCycleName"
                 />
                 <ManagerIDP
                     v-else-if="activePage === 'manager-idp-overview'"

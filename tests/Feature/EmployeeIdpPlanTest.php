@@ -146,13 +146,20 @@ class EmployeeIdpPlanTest extends TestCase
                         'endDate' => '2026-09-30',
                         'formCode' => 'form_5_coaching',
                         'formDetails' => [
-                            'coachType' => 'supervisor',
-                            'coachName' => 'หัวหน้างาน',
+                            '_saved' => true,
+                            'detail' => [
+                                'coachType' => 'ผู้เชี่ยวชาญ',
+                                'coachExpertName' => 'ผู้เชี่ยวชาญทดสอบ',
+                            ],
                             'planRows' => [[
                                 'topic' => 'ฝึกสื่อสารกับผู้รับบริการ',
-                                'approach' => 'A',
-                                'period' => 'ก.ค.-ก.ย.',
-                                'sessionDuration' => '2 ชั่วโมง/ครั้ง',
+                                'coachingApproaches' => ['A', 'C'],
+                                'developmentStart' => '2026-07-01',
+                                'developmentEnd' => '2026-09-30',
+                                'sessionCount' => 6,
+                                'sessionDuration' => 'ครั้งละ 2 ชั่วโมง',
+                                'developmentGoal' => 'สื่อสารกับผู้รับบริการได้ตามมาตรฐาน',
+                                'developmentApproach' => 'สาธิต ฝึกปฏิบัติ และให้ข้อเสนอแนะ',
                             ]],
                         ],
                     ]],
@@ -166,10 +173,190 @@ class EmployeeIdpPlanTest extends TestCase
 
         $this->assertNotNull($activity);
         $this->assertSame('form_5_coaching', $activity->form_code);
+        $this->assertNull($activity->document_reference_number);
+        $this->assertSame('2026-07-01', $activity->start_date);
+        $this->assertSame('2026-09-30', $activity->end_date);
+        $formDetails = json_decode($activity->form_details, true);
         $this->assertSame(
             'ฝึกสื่อสารกับผู้รับบริการ',
-            json_decode($activity->form_details, true)['planRows'][0]['topic'],
+            $formDetails['planRows'][0]['topic'],
         );
+        $this->assertSame(['A', 'C'], $formDetails['planRows'][0]['coachingApproaches']);
+        $this->assertSame('ผู้เชี่ยวชาญทดสอบ', $formDetails['detail']['coachExpertName']);
+    }
+
+    public function test_project_assignment_and_ojt_use_the_reworked_form_fields(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $competencyId = $this->competencyId('CC-PROJECT');
+        $assessment = $this->assessment($employee, $competencyId);
+        $gapId = DB::table('competency_gaps')->insertGetId([
+            'assessment_id' => $assessment->id,
+            'competency_id' => $competencyId,
+            'expected_level' => 3,
+            'actual_level' => 2,
+            'gap' => -1,
+            'requires_idp' => true,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('learning_method_types')->insert([
+            'key' => 'experiential-learning',
+            'label' => 'Experiential Learning',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)->post(route('employee.idp.draft'), [
+            'items' => [[
+                'competencyGapId' => $gapId,
+                'goal' => 'พัฒนาการบริหารโครงการ',
+                'successCriteria' => '',
+                'activities' => [[
+                    'methodKey' => 'experiential-learning',
+                    'activityName' => 'การมอบหมายงานโครงการ',
+                    'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
+                    'weightPercent' => 50,
+                    'startDate' => '2026-09-01',
+                    'endDate' => '2026-10-31',
+                    'formCode' => 'form_3_project_assignment',
+                    'formDetails' => [
+                        '_saved' => true,
+                        'planRows' => [
+                            [
+                                'assignmentTopic' => 'ปรับปรุงกระบวนการบริการ',
+                                'developmentGoal' => 'บริหารโครงการได้ครบวงจร',
+                                'developmentApproach' => 'วางแผนและติดตามผลรายสัปดาห์',
+                                'developmentStart' => '2026-09-01',
+                                'developmentEnd' => '2026-10-31',
+                            ],
+                            [
+                                'assignmentTopic' => 'จัดทำคู่มือบริการ',
+                                'developmentGoal' => 'ถ่ายทอดกระบวนการทำงานได้',
+                                'developmentApproach' => 'รวบรวมและทดสอบขั้นตอนกับทีม',
+                                'developmentStart' => '2026-10-01',
+                                'developmentEnd' => '2026-11-30',
+                            ],
+                        ],
+                    ],
+                ], [
+                    'methodKey' => 'experiential-learning',
+                    'activityName' => 'การเรียนรู้จากการปฏิบัติงานจริง',
+                    'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
+                    'weightPercent' => 50,
+                    'startDate' => '2026-12-01',
+                    'endDate' => '2027-01-31',
+                    'formCode' => 'form_4_ojt',
+                    'formDetails' => [
+                        '_saved' => true,
+                        'detail' => [
+                            'trainerType' => 'ผู้เชี่ยวชาญ',
+                            'trainerExpertName' => 'ผู้เชี่ยวชาญด้านข้อมูล',
+                        ],
+                        'planRows' => [[
+                            'skillTopic' => 'ฝึกวิเคราะห์ข้อมูลบริการ',
+                            'developmentStart' => '2026-12-01',
+                            'developmentEnd' => '2027-01-31',
+                            'hours' => 12,
+                            'developmentGoal' => 'วิเคราะห์ปัญหาได้ด้วยตนเอง',
+                            'developmentApproach' => 'ฝึกจากข้อมูลจริงร่วมกับผู้เชี่ยวชาญ',
+                        ]],
+                    ],
+                ]],
+            ]],
+        ])->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->where('form_code', 'form_3_project_assignment')->first();
+
+        $this->assertNotNull($activity);
+        $this->assertNull($activity->document_reference_number);
+        $this->assertSame('2026-09-01', $activity->start_date);
+        $this->assertSame('2026-11-30', $activity->end_date);
+        $this->assertCount(2, json_decode($activity->form_details, true)['planRows']);
+        $this->assertSame(
+            'ปรับปรุงกระบวนการบริการ',
+            json_decode($activity->form_details, true)['planRows'][0]['assignmentTopic'],
+        );
+
+        $ojtActivity = DB::table('idp_activities')->where('form_code', 'form_4_ojt')->first();
+        $this->assertNotNull($ojtActivity);
+        $this->assertNull($ojtActivity->document_reference_number);
+        $this->assertSame(
+            'ผู้เชี่ยวชาญด้านข้อมูล',
+            json_decode($ojtActivity->form_details, true)['detail']['trainerExpertName'],
+        );
+        $this->assertSame('2026-12-01', $ojtActivity->start_date);
+        $this->assertSame('2027-01-31', $ojtActivity->end_date);
+        $this->assertSame(12, json_decode($ojtActivity->form_details, true)['planRows'][0]['hours']);
+    }
+
+    public function test_employee_can_save_reworked_mentoring_form(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $competencyId = $this->competencyId('CC-MENTORING');
+        $assessment = $this->assessment($employee, $competencyId);
+        $gapId = DB::table('competency_gaps')->insertGetId([
+            'assessment_id' => $assessment->id,
+            'competency_id' => $competencyId,
+            'expected_level' => 3,
+            'actual_level' => 2,
+            'gap' => -1,
+            'requires_idp' => true,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('learning_method_types')->insert([
+            'key' => 'social-learning',
+            'label' => 'Social Learning',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)->post(route('employee.idp.draft'), [
+            'items' => [[
+                'competencyGapId' => $gapId,
+                'goal' => 'พัฒนาทักษะการให้คำปรึกษา',
+                'successCriteria' => '',
+                'activities' => [[
+                    'methodKey' => 'social-learning',
+                    'activityName' => 'การเป็นพี่เลี้ยง',
+                    'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
+                    'weightPercent' => 100,
+                    'startDate' => '2027-02-01',
+                    'endDate' => '2027-03-31',
+                    'formCode' => 'form_6_mentoring',
+                    'formDetails' => [
+                        '_saved' => true,
+                        'detail' => [
+                            'mentorType' => 'ผู้เชี่ยวชาญ',
+                            'mentorExpertName' => 'ผู้เชี่ยวชาญด้านการให้คำปรึกษา',
+                        ],
+                        'planRows' => [[
+                            'skillTopic' => 'ฝึกการให้คำปรึกษาแก่ทีมงาน',
+                            'technique' => 'สังเกตการณ์และสะท้อนผล',
+                            'developmentStart' => '2027-02-01',
+                            'developmentEnd' => '2027-03-31',
+                            'sessionCount' => 8,
+                            'sessionDuration' => 'ครั้งละ 1 ชั่วโมง',
+                            'developmentGoal' => 'ให้คำปรึกษาได้อย่างเป็นระบบ',
+                        ]],
+                    ],
+                ]],
+            ]],
+        ])->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->where('form_code', 'form_6_mentoring')->first();
+        $this->assertNotNull($activity);
+        $details = json_decode($activity->form_details, true);
+        $this->assertNull($activity->document_reference_number);
+        $this->assertSame('2027-02-01', $activity->start_date);
+        $this->assertSame('2027-03-31', $activity->end_date);
+        $this->assertSame('ผู้เชี่ยวชาญด้านการให้คำปรึกษา', $details['detail']['mentorExpertName']);
+        $this->assertSame('สังเกตการณ์และสะท้อนผล', $details['planRows'][0]['technique']);
     }
 
     public function test_employee_must_complete_required_idp_fields_before_submit(): void
@@ -260,6 +447,90 @@ class EmployeeIdpPlanTest extends TestCase
             ->assertSessionHasErrors('items.0.activities.0.learningCatalogId');
     }
 
+    public function test_training_form_keeps_catalog_snapshot_and_allows_e_learning_without_code_or_cost(): void
+    {
+        $supervisor = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'idp',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $competencyId = $this->competencyId('CC-TRAINING');
+        $gapId = $this->approvedGap($employee, $competencyId);
+        $formalMethodId = DB::table('learning_method_types')->insertGetId([
+            'key' => 'formal-learning',
+            'label' => 'Formal Learning',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $catalogId = DB::table('learning_catalogs')->insertGetId([
+            'code' => null,
+            'name' => 'บทเรียนออนไลน์เพื่อพัฒนาทักษะ',
+            'method_type_id' => $formalMethodId,
+            'delivery_type' => 'e_learning',
+            'source_type' => 'internal',
+            'cost' => null,
+            'hours' => 6,
+            'description' => 'คำอธิบายจาก Learning Catalog',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('learning_catalog_competency')->insert([
+            'learning_catalog_id' => $catalogId,
+            'competency_id' => $competencyId,
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('employee.idp.submit'), [
+                'items' => [[
+                    'competencyGapId' => $gapId,
+                    'goal' => 'พัฒนาทักษะตามสมรรถนะ',
+                    'successCriteria' => 'ผ่านตามเกณฑ์ที่กำหนด',
+                    'activities' => [[
+                        'methodKey' => 'formal-learning',
+                        'developmentToolId' => null,
+                        'learningCatalogId' => $catalogId,
+                        'activityName' => 'บทเรียนออนไลน์เพื่อพัฒนาทักษะ',
+                        'activityDescription' => 'คำอธิบายจาก Learning Catalog',
+                        'weightPercent' => 100,
+                        'startDate' => '2026-09-01',
+                        'endDate' => '2026-09-30',
+                        'formCode' => 'form_10_training',
+                        'formDetails' => [
+                            '_saved' => true,
+                            'planRows' => [[
+                                'trainingType' => 'e-Learning',
+                                'courseCode' => '',
+                                'courseName' => 'บทเรียนออนไลน์เพื่อพัฒนาทักษะ',
+                                'courseDescription' => 'คำอธิบายจาก Learning Catalog',
+                                'hours' => 6,
+                                'cost' => null,
+                                'developmentStart' => '2026-09-01',
+                                'developmentEnd' => '2026-09-30',
+                                'developmentGoal' => 'นำความรู้ไปใช้ในการทำงาน',
+                                'additionalDetails' => 'ต้องการแจ้งหัวหน้าให้ทราบล่วงหน้า',
+                            ]],
+                        ],
+                    ]],
+                ]],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->where('learning_catalog_id', $catalogId)->first();
+        $this->assertNotNull($activity);
+        $details = json_decode($activity->form_details, true);
+        $this->assertSame('คำอธิบายจาก Learning Catalog', $details['planRows'][0]['courseDescription']);
+        $this->assertSame(6, $details['planRows'][0]['hours']);
+        $this->assertNull($details['planRows'][0]['cost']);
+        $this->assertSame('ต้องการแจ้งหัวหน้าให้ทราบล่วงหน้า', $details['planRows'][0]['additionalDetails']);
+    }
+
     public function test_employee_can_submit_one_competency_plan_while_another_remains_draft(): void
     {
         $supervisor = User::factory()->create([
@@ -267,7 +538,14 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'idp',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         $firstCompetencyId = $this->competencyId('CC-FIRST');
         $secondCompetencyId = $this->competencyId('CC-SECOND');
@@ -324,7 +602,6 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
-            'supervisor_id_1' => $supervisor->id,
         ]);
         $competencyId = $this->competencyId('CC-LOCKED');
         $gapId = $this->approvedGap($employee, $competencyId);
