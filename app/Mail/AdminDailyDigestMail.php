@@ -8,25 +8,25 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class DailyIncompleteUserDigestMail extends Mailable
+class AdminDailyDigestMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public array $users)
+    public function __construct(public array $sections)
     {
     }
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'สรุปประจำวัน: ผู้ใช้งานข้อมูลไม่ครบ');
+        return new Envelope(subject: 'สรุปประจำวัน: รายการที่ต้องดำเนินการ');
     }
 
     public function content(): Content
     {
         return new Content(
-            view: 'emails.digests.daily-incomplete-users',
+            view: 'emails.digests.admin-daily',
             with: [
-                'users' => $this->users,
+                'sections' => $this->sections,
                 'actionUrl' => route('dashboard'),
             ],
         );

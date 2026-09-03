@@ -29,7 +29,7 @@ class ReminderAssessMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.reminder-assess',
+            view: 'emails.reminder-assess',
             with: [
                 'employee' => $this->employee,
                 'actionUrl' => $this->actionUrl,
@@ -37,3 +37,4 @@ class ReminderAssessMail extends Mailable
         );
     }
 }
+

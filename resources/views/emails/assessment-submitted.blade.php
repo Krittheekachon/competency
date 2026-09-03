@@ -1,9 +1,20 @@
-@component('mail::message')
-# มีผลการประเมินรอการตรวจสอบ
+@extends('emails.layouts.app')
 
-{{ $employee->name }} ส่งผลการประเมินสมรรถนะ "{{ $competencyName }}" เข้าสู่ขั้นตอนการตรวจสอบแล้ว กรุณาเข้าสู่ระบบเพื่อพิจารณารายการนี้
+@section('content')
+<div class="mail-eyebrow">Assessment Review</div>
 
-@component('mail::button', ['url' => $actionUrl, 'color' => 'success'])
-เปิดรายการตรวจสอบ
-@endcomponent
-@endcomponent
+<h1>มีผลการประเมินรอการตรวจสอบ</h1>
+
+<p class="mail-lead">{{ $employee->name }} ส่งผลการประเมินสมรรถนะเข้าสู่ขั้นตอนการตรวจสอบแล้ว</p>
+
+@include('emails.partials.summary-card', [
+    'tone' => 'primary',
+    'title' => 'รายการที่รอพิจารณา',
+    'count' => 1,
+    'description' => 'สมรรถนะ: '.$competencyName,
+])
+
+@include('emails.components.button', ['url' => $actionUrl, 'label' => 'เปิดรายการตรวจสอบ'])
+@endsection
+
+

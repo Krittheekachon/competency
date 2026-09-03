@@ -28,7 +28,7 @@ class UnmappedPositionMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.unmapped-position',
+            view: 'emails.unmapped-position',
             with: [
                 'positionName' => $this->positionName,
                 'actionUrl' => $this->actionUrl,
@@ -36,3 +36,4 @@ class UnmappedPositionMail extends Mailable
         );
     }
 }
+

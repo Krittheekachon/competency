@@ -18,13 +18,13 @@ class UnmappedPositionDigestMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: '[A-IDP] ตำแหน่งยังไม่ผูกสมรรถนะ');
+        return new Envelope(subject: 'ตำแหน่งยังไม่ผูกสมรรถนะ');
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.digests.unmapped-positions',
+            view: 'emails.digests.unmapped-positions',
             with: [
                 'positions' => $this->positions,
                 'actionUrl' => route('dashboard'),
@@ -32,3 +32,4 @@ class UnmappedPositionDigestMail extends Mailable
         );
     }
 }
+

@@ -18,13 +18,13 @@ class NewUserDigestMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: '[A-IDP] สรุปผู้ใช้งานใหม่');
+        return new Envelope(subject: 'สรุปผู้ใช้งานใหม่');
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.digests.new-users',
+            view: 'emails.digests.new-users',
             with: [
                 'users' => $this->users,
                 'actionUrl' => route('dashboard'),
@@ -32,3 +32,4 @@ class NewUserDigestMail extends Mailable
         );
     }
 }
+

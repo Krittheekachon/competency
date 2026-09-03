@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 class CompetencyAssessmentSyncService
 {
+    public function __construct(private NotificationService $notifications)
+    {
+    }
+
     public function syncUser(User $user): void
     {
         $competencyIds = $this->competencyIdsForUser($user);
@@ -153,6 +157,21 @@ class CompetencyAssessmentSyncService
                 ->whereIn('job_family_id', $jobFamilyIds)
                 ->pluck('competency_id');
 
+        $mappedPositionIds = $positionIds->isEmpty()
+            ? collect()
+            : DB::table('position_competencies')
+                ->whereIn('position_id', $positionIds)
+                ->pluck('position_id')
+                ->unique()
+                ->values();
+
+        $unmappedPositionIds = $positionIds->diff($mappedPositionIds)->values();
+
+        if ($unmappedPositionIds->isNotEmpty()) {
+            $this->notifyUnmappedPositions($user, $unmappedPositionIds);
+            $this->notifications->notifyHrUserWithUnmappedPosition($user);
+        }
+
         $positionCompetencyIds = $positionIds->isEmpty()
             ? collect()
             : DB::table('position_competencies')
@@ -163,6 +182,22 @@ class CompetencyAssessmentSyncService
             ->merge($positionCompetencyIds)
             ->unique()
             ->values();
+    }
+
+    private function notifyUnmappedPositions(User $user, Collection $positionIds): void
+    {
+        $names = DB::table('positions')
+            ->whereIn('id', $positionIds)
+            ->pluck('name')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($names->isEmpty() && $user->position) {
+            $names->push($user->position);
+        }
+
+        $names->each(fn (string $name) => $this->notifications->notifyHrUnmappedPosition($name));
     }
 
     private function levelIdsForUser(User $user): Collection

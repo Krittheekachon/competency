@@ -1,9 +1,20 @@
-@component('mail::message')
-# {{ $title }}
+@extends('emails.layouts.app')
 
-{{ $body }}
+@section('content')
+<div class="mail-eyebrow">Notification</div>
 
-@component('mail::button', ['url' => $actionUrl, 'color' => 'success'])
-{{ $buttonText }}
-@endcomponent
-@endcomponent
+<h1>{{ $title }}</h1>
+
+<p class="mail-lead">{{ $body }}</p>
+
+@include('emails.partials.summary-card', [
+    'tone' => 'neutral',
+    'title' => $title,
+    'count' => 1,
+    'description' => 'มีรายการที่ต้องตรวจสอบในระบบ',
+])
+
+@include('emails.components.button', ['url' => $actionUrl, 'label' => $buttonText])
+@endsection
+
+

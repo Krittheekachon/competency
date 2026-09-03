@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -89,6 +90,10 @@ class NotificationService
 
         $this->digest->queueIncompleteUser($user);
 
+        if ($this->hasUnmappedPositionCompetency($user)) {
+            $this->digest->queueUserWithUnmappedPosition($user);
+        }
+
         return;
 
         $this->sendToUsers(
@@ -124,6 +129,15 @@ class NotificationService
         }
 
         $this->digest->queueUnmappedPosition($positionName);
+    }
+
+    public function notifyHrUserWithUnmappedPosition(User $user): void
+    {
+        if (! $this->isNotificationEnabled()) {
+            return;
+        }
+
+        $this->digest->queueUserWithUnmappedPosition($user);
     }
 
     public function remindPendingEmployees(): void
@@ -202,6 +216,31 @@ class NotificationService
                 });
             });
         });
+    }
+
+    private function hasUnmappedPositionCompetency(User $user): bool
+    {
+        if (! Schema::hasTable('position_competencies')) {
+            return false;
+        }
+
+        if (Schema::hasColumn('users', 'position_id') && $user->position_id) {
+            return ! DB::table('position_competencies')
+                ->where('position_id', $user->position_id)
+                ->exists();
+        }
+
+        if (! $user->position || ! Schema::hasTable('positions')) {
+            return false;
+        }
+
+        $positionId = DB::table('positions')
+            ->where('name', $user->position)
+            ->value('id');
+
+        return $positionId
+            ? ! DB::table('position_competencies')->where('position_id', $positionId)->exists()
+            : false;
     }
 
     private function sendToUsers(Collection $users, callable $mailableFactory): void
