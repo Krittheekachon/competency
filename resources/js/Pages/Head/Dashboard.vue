@@ -9,6 +9,7 @@ import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 import IdpItemApproval from './IdpItemApproval.vue';
+import FcTopicApproval from '../Employee/FcTopicApproval.vue';
 const selectedEmployee = ref(null);
 const props = defineProps({
     roleKey: { type: String, default: null },
@@ -23,7 +24,7 @@ const normalizeRoleKey = (role) => ({
     manager_dept: 'dept_head',
     manager: 'dean',
 }[role] || role || 'dept_head');
-const defaultPageForRole = (role) => normalizeRoleKey(role) === 'supervisor' ? 'dh-assess' : 'sup-gap';
+const defaultPageForRole = () => 'dh-assess';
 
 const page = usePage();
 const users = ref(clone(page.props.users || []));
@@ -34,7 +35,7 @@ const initialRoleKey = normalizeRoleKey(props.roleKey || page.props.roleKey || p
 const rememberedHeadState = useRemember({
     showSidebar: true,
     activePage: requestedPage.value || defaultPageForRole(initialRoleKey),
-}, 'HeadDashboardStable');
+}, 'UnifiedReviewerDashboardV2');
 
 const showSidebar = computed({
     get: () => rememberedHeadState.value.showSidebar !== false,
@@ -71,6 +72,8 @@ const learningMethods = ref([
 ]);
 
 const authRoleKey = computed(() => normalizeRoleKey(props.roleKey || page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
+const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
+const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [], pendingCount: 0 });
 const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.dept_head || ROLES_CONFIG.supervisor);
 const navSections = computed(() => {
     const sections = [
@@ -93,19 +96,25 @@ const navSections = computed(() => {
     },
     ];
 
-    if (!['dept_head', 'supervisor'].includes(authRoleKey.value)) return sections;
+    const usesSupervisorApprovalUi = ['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey.value)
+        || assessmentApprovalModule.value.enabled;
+
+    if (!usesSupervisorApprovalUi) return sections;
 
     return sections.map((section, index) => index === 1
         ? {
             ...section,
             items: [
+                ...(fcTopicApprovalModule.value.enabled ? [{ id: 'dh-fc-topic-approval', ic: '', lb: 'อนุมัติหัวข้อการประเมิน' }] : []),
                 { id: 'dh-assess', ic: '', lb: 'อนุมัติผลการประเมิน' },
                 ...section.items,
             ],
         }
         : section);
 });
-const pageTitle = computed(() => PAGE_TITLES[activePage.value] || activePage.value);
+const pageTitle = computed(() => ({
+    'dh-fc-topic-approval': 'อนุมัติหัวข้อการประเมิน',
+}[activePage.value] || PAGE_TITLES[activePage.value] || activePage.value));
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
 const implementedPages = new Set([
@@ -117,6 +126,7 @@ const implementedPages = new Set([
     'sup-gap',
     'dh-idp',
     'dh-assess',
+    'dh-fc-topic-approval',
 ]);
 
 const currentUser = computed(() =>
@@ -137,14 +147,15 @@ const currentUser = computed(() =>
 );
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentUser.value || {};
-    const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
+    const rawStructureIssues = Array.isArray(user.structureIssues) ? user.structureIssues : [];
+    const reasons = rawStructureIssues.filter((reason) => reason !== 'ยังไม่ได้กำหนดลำดับ IDP');
     const hasAssignedHeadOrSupervisor = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedHeadOrSupervisor) {
         reasons.push('ยังไม่ได้กำหนดหัวหน้าหน่วยหรือหัวหน้างาน');
     }
 
-    if (user.structureStatus === 'invalid' && reasons.length === 0) {
+    if (user.structureStatus === 'invalid' && rawStructureIssues.length === 0) {
         reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
     }
 
@@ -278,6 +289,9 @@ const reviewerStepsForUser = (user) => {
         .map((step, index) => ({
             step: Number(step.step || index + 1),
             reviewer_id: Number(step.id || step.reviewer_id || step.value || 0),
+            name: step.name || step.label || '',
+            position: step.position || '',
+            role: step.role || '',
         }))
         .filter((step) => step.step > 0 && step.reviewer_id > 0)
         .sort((a, b) => a.step - b.step);
@@ -311,16 +325,23 @@ const isAssignedReviewer = (user, reviewer) => {
         || isSamePersonName(user.evaluator3, reviewer)
     );
 };
-const isReviewerRole = (role) => ['supervisor', 'manager_dept', 'dept_head', 'manager', 'dean'].includes(role);
-
 const teamMembers = computed(() => {
     return users.value.filter((user) =>
         user.sso !== currentUser.value.sso
         && isAssignedReviewer(user, currentUser.value)
-        && !isReviewerRole(user.r)
         && user.act !== false,
     );
 });
+const approvalOrganizationFor = (person) => {
+    if (person?.approvalOrg) return person.approvalOrg;
+
+    const department = String(person?.d || '');
+    const isSupport = ['สายสนับสนุน', 'สายงานสนับสนุน'].includes(person?.w);
+    if (!isSupport) return department || '-';
+
+    const parts = department.split(' > ').map((part) => part.trim()).filter(Boolean);
+    return parts.at(-1) || department || '-';
+};
 // const teamMembers = computed(() => {
 //     return users.value.filter((user) =>
 //         user.sso !== currentUser.value.sso
@@ -354,7 +375,6 @@ const assessCounts = computed(() => ({
 }));
 const normalizeAssessmentStatus = (status) => status === 'dean_approved' ? 'approved' : (status || 'draft');
 const reviewerStepCountForUser = (user) => reviewerStepsForUser(user).length;
-const reviewProgressLabel = (completed, total) => `ตรวจสอบแล้ว ${completed}/${total}`;
 const reviewedStatusesForStep = (step) => {
     const statuses = ['revision_required', 'approved'];
 
@@ -368,50 +388,137 @@ const reviewedStatusesForStep = (step) => {
     return statuses;
 };
 const isReviewedByStep = (status, step) => reviewedStatusesForStep(step).includes(normalizeAssessmentStatus(status));
-const assessmentReviewProgress = (person, results = []) => {
-    const rows = Array.isArray(results) ? results : [];
-    const step = reviewerStepForUser(person);
-    const total = rows.length;
-
-    if (!total) return { completed: 0, total: 0 };
-
-    return {
-        completed: rows.filter((row) => row.hasAssessment && isReviewedByStep(row.status, step)).length,
-        total,
-    };
-};
 const supervisorApprovalStatus = (person, results = []) => {
-    const progress = assessmentReviewProgress(person, results);
+    const rows = Array.isArray(results) ? results : [];
+    const workflows = rows.map((row) => row.workflowStatus || competencyWorkflowStatus(person, row));
 
-    if (!person?.evalStatus || person.evalStatus === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
-    if (progress.total) {
-        return {
-            label: reviewProgressLabel(progress.completed, progress.total),
-            cls: person.evalStatus === 'revision_required'
-                ? 'br'
-                : (progress.completed >= progress.total ? 'bg' : 'by'),
-        };
+    if (workflows.length === 0 || workflows.every((workflow) => workflow.key === 'self_pending')) {
+        return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
+    }
+    if (workflows.every((workflow) => workflow.key === 'approved')) {
+        return { label: 'เสร็จสิ้น', cls: 'bg' };
+    }
+    if (workflows.some((workflow) => workflow.isCurrentReviewer)) {
+        return { label: 'รอคุณประเมิน', cls: 'by' };
+    }
+    if (workflows.some((workflow) => workflow.key === 'revision_required')) {
+        return { label: 'ถูกส่งกลับแก้ไข', cls: 'br' };
     }
 
-    return { label: person.evalStatus, cls: 'bgr' };
+    const hasNotSelfAssessed = workflows.some((workflow) => workflow.key === 'self_pending');
+    const hasStarted = workflows.some((workflow) => workflow.key !== 'self_pending');
+    if (hasNotSelfAssessed && hasStarted) {
+        return { label: 'อยู่ระหว่างดำเนินการ', cls: 'bb' };
+    }
+
+    return { label: 'รอท่านอื่นประเมิน', cls: 'bb' };
 };
-const competencyApprovalStatus = (row) => {
-    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมิน', cls: 'bgr' };
-    const completed = isReviewedByStep(row.status, row.reviewStep) ? 1 : 0;
+const workflowStatusClass = (key) => ({
+    self_pending: 'bgr',
+    pending_review: 'by',
+    revision_required: 'br',
+    approved: 'bg',
+}[key] || 'bgr');
+const fallbackWorkflowFor = (person, row) => {
+    const status = normalizeAssessmentStatus(row?.status);
+    const steps = reviewerStepsForUser(person);
+    const current = steps.find((step) => pendingStatusForReviewerStep(step.step) === status);
+    const rejectStep = steps.find((step) => step.reviewer_id === Number(row?.rejectReviewerId));
+    let key = 'pending_review';
+    let label = 'อยู่ระหว่างการประเมิน';
+
+    if (!row?.hasAssessment || status === 'draft') {
+        key = 'self_pending';
+        label = 'ยังไม่ประเมินตนเอง';
+    } else if (status === 'revision_required') {
+        key = 'revision_required';
+        label = row?.rejectReviewerName ? `ถูกส่งกลับโดย ${row.rejectReviewerName}` : 'ถูกส่งกลับแก้ไข';
+    } else if (status === 'approved') {
+        key = 'approved';
+        label = 'ผ่านครบทุกลำดับ';
+    } else if (current) {
+        label = `รอการประเมินลำดับที่ ${current.step}${current.name ? ` · ${current.name}` : ''}`;
+    }
 
     return {
-        label: reviewProgressLabel(completed, 1),
-        cls: row.status === 'revision_required' ? 'br' : (completed ? 'bg' : 'by'),
+        key,
+        label,
+        currentStep: current?.step || null,
+        currentReviewerId: current?.reviewer_id || null,
+        currentReviewerName: current?.name || null,
+        totalSteps: steps.length,
+        timeline: [
+            {
+                kind: 'self',
+                step: 0,
+                label: 'ประเมินตนเอง',
+                name: `${person?.t || ''}${person?.n || ''}`,
+                state: ['draft', 'revision_required'].includes(status) ? 'active' : 'complete',
+            },
+            ...steps.map((step) => ({
+                kind: 'reviewer',
+                step: step.step,
+                label: `ผู้ประเมินลำดับที่ ${step.step}`,
+                name: step.name,
+                position: step.position,
+                reviewerId: step.reviewer_id,
+                state: status === 'approved'
+                    ? 'complete'
+                    : (current
+                        ? (step.step < current.step ? 'complete' : (step.step === current.step ? 'active' : 'waiting'))
+                        : (status === 'revision_required' && rejectStep
+                            ? (step.step < rejectStep.step ? 'complete' : (step.step === rejectStep.step ? 'returned' : 'waiting'))
+                            : 'waiting')),
+            })),
+        ],
     };
 };
+const competencyWorkflowStatus = (person, row) => {
+    const workflow = row?.workflow?.key ? row.workflow : fallbackWorkflowFor(person, row);
+    const isCurrentReviewer = workflow.key === 'pending_review'
+        && Number(workflow.currentReviewerId) === Number(currentUser.value?.db_id);
+
+    return {
+        ...workflow,
+        label: isCurrentReviewer ? 'รอคุณประเมิน' : workflow.label,
+        cls: workflowStatusClass(workflow.key),
+        isCurrentReviewer,
+    };
+};
+const competencyApprovalStatus = (row) => {
+    if (row?.workflowStatus) return row.workflowStatus;
+    if (!row?.hasAssessment || row.status === 'draft') return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
+    if (row.status === 'revision_required') {
+        return { label: 'ส่งกลับแก้ไข', cls: 'br' };
+    }
+    if (row.status === pendingStatusForReviewerStep(row.reviewStep)) {
+        return { label: 'รอคุณประเมิน', cls: 'by' };
+    }
+    if (isReviewedByStep(row.status, row.reviewStep)) {
+        return { label: 'ผ่าน', cls: 'bg' };
+    }
+
+    return { label: 'ยังไม่ประเมินตนเอง', cls: 'bgr' };
+};
+const workflowNodeStateLabel = (state) => ({
+    complete: 'ผ่านแล้ว',
+    active: 'กำลังดำเนินการ',
+    returned: 'ส่งกลับแก้ไข',
+    waiting: 'รอ',
+}[state] || 'รอ');
 const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => {
     const reviewStep = reviewerStepForUser(person);
     const approvalTotalSteps = reviewerStepCountForUser(person);
-    const results = gapResultRows(person).map((row) => ({
-        ...row,
-        reviewStep,
-        approvalTotalSteps,
-    }));
+    const results = gapResultRows(person).map((row) => {
+        const workflowStatus = competencyWorkflowStatus(person, row);
+
+        return {
+            ...row,
+            reviewStep,
+            approvalTotalSteps,
+            workflowStatus,
+        };
+    });
     const hasSubmittedAssessment = results.some((row) => row.hasAssessment) || (person.evalStatus && person.evalStatus !== 'draft');
     const hasReviewableCompetencies = results.length > 0;
     const approvalExpectedStatus = pendingStatusForReviewerStep(reviewStep);
@@ -430,12 +537,25 @@ const supervisorApprovalRows = computed(() => teamMembers.value.map((person) => 
         submittedAt: results.find((row) => row.hasAssessment)?.updatedAt || person.updatedAt || '-',
     };
 }));
-const approvalRoleLabel = computed(() => authRoleKey.value === 'supervisor' ? 'หัวหน้าหน่วย' : 'หัวหน้างาน');
+const approvalRoleLabel = computed(() => ({
+    supervisor: 'หัวหน้าหน่วย',
+    dept_head: 'หัวหน้างาน',
+    division_head: 'หัวหน้าฝ่าย',
+    academic_department_head: 'หัวหน้าภาควิชา',
+}[authRoleKey.value] || 'ผู้ประเมิน'));
 const approvalForwardLabel = computed(() => 'ส่งต่อขั้นตอนถัดไปแล้ว');
-const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === person.approvalExpectedStatus));
-const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) => person.evalStatus === person.approvalNextStatus));
+const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) =>
+    person.results.some((row) => row.workflowStatus.isCurrentReviewer),
+));
+const supervisorTrackingRows = computed(() => supervisorApprovalRows.value.filter((person) =>
+    person.hasReviewableCompetencies
+    && !person.results.some((row) => row.workflowStatus.isCurrentReviewer),
+));
+const supervisorForwardedRows = computed(() => supervisorApprovalRows.value.filter((person) =>
+    person.results.some((row) => normalizeAssessmentStatus(row.status) === person.approvalNextStatus),
+));
 const supervisorApprovedRows = computed(() => supervisorApprovalRows.value.filter((person) =>
-    (authRoleKey.value === 'dept_head' ? ['dept_evaluated', 'approved'] : ['approved']).includes(person.evalStatus),
+    person.results.length > 0 && person.results.every((row) => row.workflowStatus.key === 'approved'),
 ));
 const fcTopicApprovalRows = computed(() => teamMembers.value
     .map((person) => ({
@@ -604,6 +724,29 @@ const selectedSupervisorApproval = computed(() =>
     supervisorApprovalRows.value.find((person) => person.sso === selectedSupervisorApprovalSso.value) || null,
 );
 const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
+const selectedSupervisorCompetency = computed(() => selectedSupervisorApproval.value?.results
+    ?.find((row) => supervisorCompetencyKey(row) === openedSupervisorCompetencyId.value) || null);
+const selectedSupervisorLevels = computed(() => {
+    const row = selectedSupervisorCompetency.value;
+    if (!row) return [];
+
+    return (row.levels || []).map((level, levelIndex) => {
+        const indicators = Array.isArray(level.indicators) ? level.indicators : [];
+        const levelNumber = Number(level.lvl ?? level.level ?? levelIndex + 1);
+        const rows = indicators.map((indicator, indicatorIndex) => ({
+            text: typeof indicator === 'string' ? indicator : (indicator?.description || indicator?.text || ''),
+            checked: isIndicatorChecked(row, { ...level, id: level.id, lvl: levelNumber }, indicatorIndex),
+            index: indicatorIndex,
+        }));
+
+        return {
+            id: level.id || levelNumber,
+            number: levelNumber,
+            rows,
+            checkedCount: rows.filter((indicator) => indicator.checked).length,
+        };
+    });
+});
 const canDecideSupervisorCompetency = (row) =>
     Boolean(row?.hasAssessment)
     && row?.status === selectedSupervisorApproval.value?.approvalExpectedStatus;
@@ -648,6 +791,7 @@ const gapResultRows = (person) => {
         title: row.title || row.name || row.n || row.competency_name || '-',
         group: row.group || row.type || row.t || '-',
         code: row.code || row.cd || '',
+        detail: row.detail || row.det || '',
         expected: Number(row.expected ?? row.expectedScore ?? row.expectedLevel ?? row.target ?? 3),
         selfScore: null,
         headScore: null,
@@ -655,6 +799,9 @@ const gapResultRows = (person) => {
         feedback: '',
         note: '',
         reviewerComment: row.reviewerComment || row.rejectComment || '',
+        rejectReviewerId: row.rejectReviewerId || null,
+        rejectReviewerName: row.rejectReviewerName || '',
+        workflow: row.workflow || null,
         levels: row.levels || [],
         checkedIndicatorKeys: [],
         checkedIndicatorCount: 0,
@@ -676,6 +823,7 @@ const gapResultRows = (person) => {
                 title: row.title || row.name || row.n || row.competency_name || '-',
                 group: row.group || row.type || row.t || '-',
                 code: row.code || row.cd || '',
+                detail: row.detail || row.det || '',
                 expected,
                 selfScore,
                 headScore,
@@ -683,6 +831,9 @@ const gapResultRows = (person) => {
                 feedback: row.feedback || '',
                 note: row.note || '',
                 reviewerComment: row.reviewerComment || row.evaluatorComment || row.rejectComment || '',
+                rejectReviewerId: row.rejectReviewerId || null,
+                rejectReviewerName: row.rejectReviewerName || '',
+                workflow: row.workflow || null,
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
@@ -920,8 +1071,13 @@ const closeSupervisorApprovalModal = () => {
 const supervisorCompetencyKey = (row) => `${competencyIdentity(row)}`;
 const isSupervisorCompetencyOpen = (row) => openedSupervisorCompetencyId.value === supervisorCompetencyKey(row);
 const toggleSupervisorCompetency = (row) => {
-    const key = supervisorCompetencyKey(row);
-    openedSupervisorCompetencyId.value = openedSupervisorCompetencyId.value === key ? null : key;
+    openedSupervisorCompetencyId.value = supervisorCompetencyKey(row);
+};
+const closeSupervisorCompetencyModal = () => {
+    if (isSubmittingApprovalDecision.value) return;
+    openedSupervisorCompetencyId.value = null;
+    approvalDecision.value = null;
+    approvalDecisionCompetency.value = null;
 };
 const checkedIndicatorKey = (row, level, index) => `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
 const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
@@ -971,7 +1127,7 @@ const requestApprovalDecision = (decision, row) => {
     if (!selectedSupervisorApproval.value || !canDecideSupervisorCompetency(row)) return;
     approvalDecisionCompetency.value = row;
     approvalDecision.value = decision;
-    approvalComment.value = reviewerComments.value[approvalCommentKey(row)] || row.reviewerComment || '';
+    approvalComment.value = reviewerComments.value[approvalCommentKey(row)] ?? '';
 };
 const closeApprovalDecision = () => {
     if (isSubmittingApprovalDecision.value) return;
@@ -1087,7 +1243,6 @@ const logout = () => router.post(route('logout'));
             <div class="topbar">
                 <button class="btn btn-s btn-sm menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
                 <div class="tb-title">{{ pageTitle }}</div>
-                <span class="tb-badge">รอบประเมิน 2568</span>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
                 </button>
@@ -1314,10 +1469,6 @@ const logout = () => router.post(route('logout'));
                             <div class="sec-t">Competency Gap ทีม</div>
                             <div class="sec-s">Dashboard, Heatmap และการจัดกลุ่มพนักงานตามศักยภาพของ Direct Reports</div>
                         </div>
-                        <div class="flex g8" style="flex-wrap: wrap">
-                            <button class="btn btn-s btn-sm" type="button">Export PDF</button>
-                            <button class="btn btn-s btn-sm" type="button">Export Excel</button>
-                        </div>
                     </div>
 
                     <div v-if="teamHeatmapRows.length === 0" class="card empty-card">
@@ -1454,16 +1605,17 @@ const logout = () => router.post(route('logout'));
                     </template>
                 </template>
 
+                <FcTopicApproval
+                    v-else-if="activePage === 'dh-fc-topic-approval' && fcTopicApprovalModule.enabled"
+                    :module="fcTopicApprovalModule"
+                />
+
                 <template v-else-if="activePage === 'dh-assess'">
-                    <template v-if="['dept_head', 'supervisor'].includes(authRoleKey)">
+                    <template v-if="['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey) || assessmentApprovalModule.enabled">
                         <div class="team-page-head mb20">
                             <div>
                                 <div class="sec-t">ตรวจประเมินลูกน้อง</div>
                                 <div class="sec-s">{{ approvalRoleLabel }}ตรวจผลก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</div>
-                            </div>
-                            <div class="flex g8" style="flex-wrap: wrap">
-                                <button class="btn btn-s btn-sm" type="button">Export PDF</button>
-                                <button class="btn btn-s btn-sm" type="button">Export Excel</button>
                             </div>
                         </div>
 
@@ -1479,13 +1631,13 @@ const logout = () => router.post(route('logout'));
                                 <div class="ss muted">ดำเนินการในขั้นนี้แล้ว</div>
                             </div>
                             <div class="sc">
-                                <div class="sl">อนุมัติแล้ว</div>
+                                <div class="sl">อนุมัติครบแล้ว</div>
                                 <div class="sv gcc">{{ supervisorApprovedRows.length }}</div>
                                 <div class="ss muted">คน</div>
                             </div>
                         </div>
 
-                        <div class="card supervisor-approval-card mb16">
+                        <div v-if="activePage === 'dh-fc-topic-approval'" class="card supervisor-approval-card mb16">
                             <div class="team-card-head">
                                 <div>
                                     <div class="ct">อนุมัติหัวข้อ FC</div>
@@ -1508,7 +1660,7 @@ const logout = () => router.post(route('logout'));
                                             <td>
                                                 <div class="person-cell">
                                                     <strong>{{ `${person.t || ''}${person.n}` }}</strong>
-                                                    <small>{{ person.d || '-' }}</small>
+                                                    <small>{{ approvalOrganizationFor(person) }}</small>
                                                 </div>
                                             </td>
                                             <td>{{ person.p || '-' }}</td>
@@ -1538,7 +1690,7 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
 
-                        <div v-if="selectedFcTopicApproval" class="approval-modal-backdrop" @click.self="closeFcTopicDecision">
+                        <div v-if="activePage === 'dh-fc-topic-approval' && selectedFcTopicApproval" class="approval-modal-backdrop" @click.self="closeFcTopicDecision">
                             <div class="fc-topic-decision-modal">
                                 <div class="approval-modal-head">
                                     <div>
@@ -1586,8 +1738,8 @@ const logout = () => router.post(route('logout'));
                         <div class="card supervisor-approval-card mb16">
                             <div class="team-card-head">
                                 <div>
-                                    <div class="ct">รายการรอดำเนินการ</div>
-                                    <div class="cs">เฉพาะบุคลากรที่เชื่อมกับ {{ approvalRoleLabel }} และอยู่ในสถานะรอตรวจ</div>
+                                    <div class="ct">รอคุณประเมิน</div>
+                                    <div class="cs">สมรรถนะที่มาถึงลำดับของคุณและดำเนินการได้ทันที</div>
                                 </div>
                                 <span class="b by">{{ supervisorPendingRows.length }} รายการ</span>
                             </div>
@@ -1603,7 +1755,7 @@ const logout = () => router.post(route('logout'));
                                     </thead>
                                     <tbody>
                                         <tr
-                                            v-for="person in supervisorApprovalRows"
+                                            v-for="person in supervisorPendingRows"
                                             :key="person.sso"
                                             :class="{ selected: selectedSupervisorApproval?.sso === person.sso, disabled: !person.hasReviewableCompetencies }"
                                             @click="openSupervisorApprovalModal(person)"
@@ -1611,15 +1763,58 @@ const logout = () => router.post(route('logout'));
                                             <td>
                                                 <div class="person-cell">
                                                     <strong>{{ `${person.t || ''}${person.n}` }}</strong>
-                                                    <small>{{ person.d || '-' }}</small>
+                                                    <small>{{ approvalOrganizationFor(person) }}</small>
                                                 </div>
                                             </td>
                                             <td>{{ person.p || '-' }}</td>
                                             <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
                                             <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
                                         </tr>
-                                        <tr v-if="supervisorApprovalRows.length === 0">
-                                            <td colspan="4" class="muted ac py20">ไม่มีบุคลากรในความดูแล</td>
+                                        <tr v-if="supervisorPendingRows.length === 0">
+                                            <td colspan="4" class="muted ac py20">ขณะนี้ไม่มีสมรรถนะที่รอคุณประเมิน</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card supervisor-approval-card mb16">
+                            <div class="team-card-head">
+                                <div>
+                                    <div class="ct">ติดตามสถานะ</div>
+                                    <div class="cs">ดูความคืบหน้าของสมรรถนะที่ยังไม่ถึงลำดับคุณ ถูกส่งกลับ หรืออนุมัติครบแล้ว</div>
+                                </div>
+                                <span class="b bgr">{{ supervisorTrackingRows.length }} รายการ</span>
+                            </div>
+                            <div class="team-table-wrap approval-table-wrap">
+                                <table class="team-table approval-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ชื่อ-นามสกุล</th>
+                                            <th>ตำแหน่ง</th>
+                                            <th>วันที่อัปเดต</th>
+                                            <th>สถานะปัจจุบัน</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr
+                                            v-for="person in supervisorTrackingRows"
+                                            :key="`tracking-${person.sso}`"
+                                            :class="{ selected: selectedSupervisorApproval?.sso === person.sso }"
+                                            @click="openSupervisorApprovalModal(person)"
+                                        >
+                                            <td>
+                                                <div class="person-cell">
+                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <small>{{ approvalOrganizationFor(person) }}</small>
+                                                </div>
+                                            </td>
+                                            <td>{{ person.p || '-' }}</td>
+                                            <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
+                                            <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
+                                        </tr>
+                                        <tr v-if="supervisorTrackingRows.length === 0">
+                                            <td colspan="4" class="muted ac py20">ไม่มีรายการที่ต้องติดตาม</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1657,7 +1852,7 @@ const logout = () => router.post(route('logout'));
                                             </div>
                                         </button>
 
-                                        <div v-if="isSupervisorCompetencyOpen(row)" class="approval-accordion-body">
+                                        <div v-if="false" class="approval-accordion-body">
                                             <div v-for="level in approvalLevelsForRow(row)" :key="level.id || level.lvl" class="approval-level-card">
                                                 <div class="approval-level-head">
                                                     <div>
@@ -1688,13 +1883,13 @@ const logout = () => router.post(route('logout'));
                                                 </div>
                                             </div>
                                             <div class="approval-comment-box">
-                                                <div class="fs12 fw8">Note จากผู้ประเมินตนเอง</div>
-                                                <div>{{ row.note || 'ไม่มี Note' }}</div>
+                                                <div class="fs12 fw8">ความคิดเห็นของผู้ประเมิน</div>
+                                                <div>{{ row.note || 'ไม่มีความคิดเห็น' }}</div>
                                             </div>
                                             <label class="approval-reviewer-comment">
-                                                <span>Comment จากหัวหน้างาน</span>
+                                                <span>ความคิดเห็นของคุณ</span>
                                                 <textarea
-                                                    :value="reviewerComments[approvalCommentKey(row)] ?? row.reviewerComment ?? ''"
+                                                    :value="reviewerComments[approvalCommentKey(row)] ?? ''"
                                                     rows="3"
                                                     :disabled="!canDecideSupervisorCompetency(row)"
                                                     @input="reviewerComments[approvalCommentKey(row)] = $event.target.value"
@@ -1720,10 +1915,106 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
 
+                        <div v-if="selectedSupervisorCompetency" class="competency-detail-backdrop" @click.self="closeSupervisorCompetencyModal">
+                            <section class="competency-detail-modal" role="dialog" aria-modal="true">
+                                <header class="competency-detail-head">
+                                    <div>
+                                        <div class="flex ic g10">
+                                            <span class="tag-cc" :class="{ 'tag-fc': selectedSupervisorCompetency.group === 'FC' }">{{ selectedSupervisorCompetency.group }}</span>
+                                            <strong>{{ selectedSupervisorCompetency.code }}</strong>
+                                        </div>
+                                        <h2>{{ selectedSupervisorCompetency.title }}</h2>
+                                        <p>{{ supervisorApprovalName }} · Expected Level {{ selectedSupervisorCompetency.expected ?? '-' }}</p>
+                                        <span class="b competency-current-status" :class="competencyApprovalStatus(selectedSupervisorCompetency).cls">
+                                            {{ competencyApprovalStatus(selectedSupervisorCompetency).label }}
+                                        </span>
+                                    </div>
+                                    <button class="btn btn-s btn-sm" type="button" @click="closeSupervisorCompetencyModal">ปิด</button>
+                                </header>
+
+                                <div class="competency-detail-body">
+                                    <section v-if="selectedSupervisorCompetency.detail" class="approval-comment-box">
+                                        <div class="fs12 fw8">คำอธิบายสมรรถนะ</div>
+                                        <div>{{ selectedSupervisorCompetency.detail }}</div>
+                                    </section>
+
+                                    <section class="assessment-workflow-panel">
+                                        <div class="assessment-workflow-title">
+                                            <strong>ลำดับการประเมิน</strong>
+                                            <span>{{ selectedSupervisorCompetency.workflowStatus?.totalSteps || selectedSupervisorApproval.approvalTotalSteps }} ลำดับ</span>
+                                        </div>
+                                        <ol class="assessment-workflow-list">
+                                            <li
+                                                v-for="node in selectedSupervisorCompetency.workflowStatus?.timeline || []"
+                                                :key="`${node.kind}-${node.step}`"
+                                                :class="`is-${node.state}`"
+                                            >
+                                                <span class="assessment-workflow-marker">{{ node.state === 'complete' ? '✓' : (node.step || 'ตนเอง') }}</span>
+                                                <div>
+                                                    <strong>{{ node.label }}</strong>
+                                                    <small>{{ node.name }}{{ node.position ? ` · ${node.position}` : '' }}</small>
+                                                </div>
+                                                <b>{{ workflowNodeStateLabel(node.state) }}</b>
+                                            </li>
+                                        </ol>
+                                    </section>
+
+                                    <article v-for="level in selectedSupervisorLevels" :key="level.id" class="detail-level-card">
+                                        <header>
+                                            <div><strong>ระดับที่ {{ level.number }}</strong><span>เลือกแล้ว {{ level.checkedCount }}/{{ level.rows.length }} พฤติกรรม</span></div>
+                                            <b :class="{ complete: level.rows.length > 0 && level.checkedCount === level.rows.length, partial: level.checkedCount > 0 && level.checkedCount < level.rows.length }">
+                                                {{ level.checkedCount === 0 ? 'ยังไม่เลือก' : (level.checkedCount === level.rows.length ? 'เลือกครบ' : 'เลือกบางส่วน') }}
+                                            </b>
+                                        </header>
+                                        <div class="detail-indicator-list">
+                                            <div v-for="indicator in level.rows" :key="indicator.index" :class="{ selected: indicator.checked }">
+                                                <span>{{ indicator.checked ? '✓' : '' }}</span>
+                                                <p><strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>{{ indicator.text }}</p>
+                                            </div>
+                                            <p v-if="level.rows.length === 0" class="muted">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</p>
+                                        </div>
+                                    </article>
+
+                                    <div class="approval-comment-box">
+                                        <div class="fs12 fw8">ความคิดเห็นของผู้ประเมิน</div>
+                                        <div>{{ selectedSupervisorCompetency.note || 'ไม่มีความคิดเห็น' }}</div>
+                                    </div>
+                                    <label v-if="canDecideSupervisorCompetency(selectedSupervisorCompetency)" class="approval-reviewer-comment">
+                                        <span>ความคิดเห็นของคุณ</span>
+                                        <textarea
+                                            :value="reviewerComments[approvalCommentKey(selectedSupervisorCompetency)] ?? ''"
+                                            rows="3"
+                                            :disabled="!canDecideSupervisorCompetency(selectedSupervisorCompetency)"
+                                            @input="reviewerComments[approvalCommentKey(selectedSupervisorCompetency)] = $event.target.value"
+                                            placeholder="พิมพ์ข้อเสนอแนะ หากส่งกลับแก้ไขต้องกรอกเหตุผล"
+                                        ></textarea>
+                                    </label>
+                                </div>
+
+                                <footer class="competency-detail-actions">
+                                    <span>
+                                        {{ canDecideSupervisorCompetency(selectedSupervisorCompetency)
+                                            ? 'ตรวจสอบพฤติกรรมบ่งชี้ก่อนดำเนินการ'
+                                            : `ดูได้อย่างเดียว · ${competencyApprovalStatus(selectedSupervisorCompetency).label}` }}
+                                    </span>
+                                    <div v-if="canDecideSupervisorCompetency(selectedSupervisorCompetency)" class="flex g8">
+                                        <button class="btn btn-r" type="button" @click="requestApprovalDecision('reject', selectedSupervisorCompetency)">ส่งกลับแก้ไข</button>
+                                        <button class="btn btn-t" type="button" @click="requestApprovalDecision('approve', selectedSupervisorCompetency)">ผ่านและส่งต่อ</button>
+                                    </div>
+                                </footer>
+                            </section>
+                        </div>
+
                         <div v-if="approvalDecision" class="approval-decision-backdrop" @click.self="closeApprovalDecision">
                             <div class="approval-decision-modal">
                                 <div class="approval-decision-title">{{ approvalDecisionTitle }}</div>
                                 <div class="approval-decision-message">{{ approvalDecisionMessage }}</div>
+                                <div
+                                    v-if="approvalDecision === 'reject' && !approvalComment.trim()"
+                                    class="approval-decision-warning"
+                                >
+                                    ยังส่งกลับไม่ได้ กรุณากรอกเหตุผลในช่อง “ความคิดเห็นของคุณ” ก่อน
+                                </div>
                                 <div class="approval-decision-actions">
                                     <button class="btn btn-s" type="button" :disabled="isSubmittingApprovalDecision" @click="closeApprovalDecision">
                                         ยกเลิก
@@ -2117,6 +2408,265 @@ const logout = () => router.post(route('logout'));
     overflow-y: auto;
 }
 
+.competency-detail-backdrop {
+    position: fixed;
+    z-index: 1250;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(15, 20, 25, 0.7);
+}
+
+.competency-detail-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(920px, 100%);
+    max-height: calc(100vh - 48px);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.34);
+}
+
+.competency-detail-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    border-bottom: 1px solid var(--border);
+    padding: 20px 24px;
+}
+
+.competency-detail-head h2 {
+    margin: 8px 0 2px;
+    font-size: 20px;
+}
+
+.competency-detail-head p {
+    margin: 0;
+    color: var(--text3);
+    font-size: 12px;
+}
+
+.competency-current-status {
+    display: inline-flex;
+    margin-top: 10px;
+    max-width: 100%;
+    white-space: normal;
+}
+
+.competency-detail-body {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    background: #f8fafc;
+    padding: 20px 24px;
+}
+
+.competency-detail-body > * + * {
+    margin-top: 14px;
+}
+
+.competency-detail-body > .approval-comment-box {
+    margin-right: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+}
+
+.competency-detail-body > .detail-level-card + .approval-comment-box {
+    margin-top: 24px;
+}
+
+.assessment-workflow-panel {
+    border: 1px solid #dbe3ea;
+    border-radius: 10px;
+    background: #fff;
+    padding: 16px;
+}
+
+.assessment-workflow-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.assessment-workflow-title strong {
+    font-size: 14px;
+}
+
+.assessment-workflow-title span {
+    color: var(--text3);
+    font-size: 11px;
+}
+
+.assessment-workflow-list {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.assessment-workflow-list li {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    border: 1px solid #e5eaf0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 10px 12px;
+}
+
+.assessment-workflow-marker {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.assessment-workflow-list li > div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.assessment-workflow-list li strong {
+    font-size: 12px;
+}
+
+.assessment-workflow-list li small {
+    overflow: hidden;
+    color: var(--text3);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.assessment-workflow-list li > b {
+    color: #64748b;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.assessment-workflow-list li.is-complete {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+}
+
+.assessment-workflow-list li.is-complete .assessment-workflow-marker {
+    background: #16a34a;
+    color: #fff;
+}
+
+.assessment-workflow-list li.is-complete > b { color: #15803d; }
+
+.assessment-workflow-list li.is-active {
+    border-color: #fed7aa;
+    background: #fff7ed;
+}
+
+.assessment-workflow-list li.is-active .assessment-workflow-marker {
+    background: #ea580c;
+    color: #fff;
+}
+
+.assessment-workflow-list li.is-active > b { color: #c2410c; }
+
+.assessment-workflow-list li.is-returned {
+    border-color: #fecaca;
+    background: #fff7f7;
+}
+
+.assessment-workflow-list li.is-returned .assessment-workflow-marker {
+    background: #dc2626;
+    color: #fff;
+}
+
+.assessment-workflow-list li.is-returned > b { color: #b91c1c; }
+
+.detail-level-card {
+    min-height: max-content;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid #e1d8d2;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.detail-level-card > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 58px;
+    border-bottom: 1px solid #eadfd9;
+    background: #fff3ed;
+    padding: 12px 16px;
+}
+
+.detail-level-card > header > div {
+    display: grid;
+    gap: 3px;
+}
+
+.detail-level-card > header strong {
+    color: #b93d28;
+    font-size: 14px;
+}
+
+.detail-level-card > header span {
+    color: #8d817a;
+    font-size: 11px;
+}
+
+.detail-level-card > header b {
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    padding: 5px 10px;
+    font-size: 11px;
+}
+
+.detail-level-card > header b.complete { border-color: #bbf7d0; background: #ecfdf5; color: #047857; }
+.detail-level-card > header b.partial { border-color: #fed7aa; background: #fff7ed; color: #b45309; }
+.detail-indicator-list { display: grid; padding: 10px 12px; }
+.detail-indicator-list > div { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; border: 1px solid #edf0f2; border-radius: 8px; background: #fff; padding: 10px 12px; color: #8c949d; }
+.detail-indicator-list > div + div { margin-top: 7px; }
+.detail-indicator-list > div.selected { border-color: #f2b7a9; background: #fff8f5; color: #302b28; }
+.detail-indicator-list > div > span { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #d6dbe0; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 900; }
+.detail-indicator-list > div.selected > span { border-color: #c7432b; background: #c7432b; }
+.detail-indicator-list p { margin: 0; font-size: 12px; line-height: 1.6; }
+.detail-indicator-list p strong { display: inline-block; margin-right: 8px; color: inherit; }
+
+.competency-detail-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-top: 1px solid var(--border);
+    padding: 14px 20px;
+}
+
+.competency-detail-actions > span {
+    color: var(--text3);
+    font-size: 11px;
+}
+
 .fc-topic-list,
 .fc-topic-review-list {
     display: flex;
@@ -2392,7 +2942,7 @@ const logout = () => router.post(route('logout'));
 .approval-decision-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 100;
+    z-index: 1300;
     display: grid;
     place-items: center;
     padding: 18px;
@@ -2419,6 +2969,18 @@ const logout = () => router.post(route('logout'));
     color: var(--text2);
     font-size: 13px;
     line-height: 1.65;
+}
+
+.approval-decision-warning {
+    margin-top: 12px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+    color: #b42318;
+    padding: 9px 11px;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.5;
 }
 
 .approval-reviewer-comment {

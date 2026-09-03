@@ -228,6 +228,8 @@ class ReviewerTemplateResolver
         $roleLabel = match ($this->normalizeRoleKey($roleKey)) {
             'supervisor' => 'หัวหน้าหน่วย',
             'dept_head' => 'หัวหน้างาน',
+            'division_head' => 'หัวหน้าฝ่าย',
+            'academic_department_head' => 'หัวหน้าภาควิชา',
             'dean' => 'ผู้บริหารคณะ',
             'hr' => 'งานทรัพยากรบุคคล',
             'admin' => 'ผู้ดูแลระบบ',

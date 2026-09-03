@@ -112,7 +112,7 @@ class NotificationDigestService
 
     private function staffUsers(): Builder
     {
-        return $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head']);
+        return $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head']);
     }
 
     private function usersWithRole(string $roleKey): Builder

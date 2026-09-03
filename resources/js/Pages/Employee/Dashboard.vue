@@ -14,6 +14,7 @@ import EmployeeGap from './EmployeeGap.vue';
 import EmployeeIDP from './EmployeeIDP.vue';
 import EmployeeIDPDetail from './EmployeeIDPDetail.vue';
 import EmployeeProgress from './EmployeeProgress.vue';
+import FcTopicApproval from './FcTopicApproval.vue';
 
 const props = defineProps({
     pageTitle: {
@@ -35,6 +36,7 @@ const implementedEmployeePages = new Set([
     'emp-idp',
     'emp-progress',
     'emp-idp-detail',
+    'emp-fc-topic-approval',
 ]);
 
 const showSidebar = ref(true);
@@ -65,8 +67,11 @@ const defaultLearningMethods = [
 ];
 
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
-const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
+const currentPageTitle = computed(() => ({
+    'emp-fc-topic-approval': 'อนุมัติหัวข้อการประเมิน',
+}[activePage.value] || PAGE_TITLES[activePage.value] || props.pageTitle));
 const serverCurrentUser = computed(() => page.props.currentUser || null);
+const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
 const currentProfileUser = computed(() =>
     serverCurrentUser.value
     || users.value.find((user) => user.r === 'employee')
@@ -98,14 +103,15 @@ const reviewerStepsForUser = (user) => {
 };
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value || {};
-    const reasons = Array.isArray(user.structureIssues) ? [...user.structureIssues] : [];
+    const rawStructureIssues = Array.isArray(user.structureIssues) ? user.structureIssues : [];
+    const reasons = rawStructureIssues.filter((reason) => reason !== 'ยังไม่ได้กำหนดลำดับ IDP');
     const hasAssignedEvaluator = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedEvaluator) {
-        reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
+        reasons.push('ยังไม่ได้กำหนดหัวหน้าอย่างน้อย 1 ลำดับ');
     }
 
-    if (user.structureStatus === 'invalid' && reasons.length === 0) {
+    if (user.structureStatus === 'invalid' && rawStructureIssues.length === 0) {
         reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
     }
 
@@ -152,6 +158,19 @@ const logout = () => router.post(route('logout'));
                     >
                         <span class="nav-ic">{{ item.ic }}</span>
                         {{ item.lb }}
+                    </div>
+                </div>
+                <div v-if="fcTopicApprovalModule.enabled">
+                    <div class="nav-sec">งานของหัวหน้า</div>
+                    <div
+                        v-if="fcTopicApprovalModule.enabled"
+                        class="nav-item"
+                        :class="{ on: activePage === 'emp-fc-topic-approval' }"
+                        @click="requestPageChange('emp-fc-topic-approval')"
+                    >
+                        <span class="nav-ic"></span>
+                        อนุมัติหัวข้อการประเมิน
+                        <span v-if="fcTopicApprovalModule.items.length" class="nav-count">{{ fcTopicApprovalModule.items.length }}</span>
                     </div>
                 </div>
             </div>
@@ -208,8 +227,18 @@ const logout = () => router.post(route('logout'));
 
                 <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 
+                <FcTopicApproval
+                    v-else-if="activePage === 'emp-fc-topic-approval' && fcTopicApprovalModule.enabled"
+                    :module="fcTopicApprovalModule"
+                />
+
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>
             </div>
         </div>
     </div>
 </template>
+
+<style scoped>
+.nav-count { display: grid; place-items: center; min-width: 20px; height: 20px; margin-left: auto; border-radius: 10px; background: #fff1ec; color: #c7432b; padding: 0 6px; font-size: 10px; font-weight: 900; }
+.nav-item.on .nav-count { background: rgba(255,255,255,.2); color: #fff; }
+</style>

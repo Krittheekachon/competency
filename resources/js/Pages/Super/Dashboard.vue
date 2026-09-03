@@ -1,11 +1,12 @@
 <script setup>
 import HeadDashboard from '../Head/Dashboard.vue';
 
-defineProps({
+const props = defineProps({
+    roleKey: { type: String, default: 'supervisor' },
     idpReviewItems: { type: Array, default: () => [] },
 });
 </script>
 
 <template>
-    <HeadDashboard role-key="supervisor" :idp-review-items="idpReviewItems"/>
+    <HeadDashboard :role-key="props.roleKey" :idp-review-items="props.idpReviewItems"/>
 </template>

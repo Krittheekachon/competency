@@ -242,7 +242,6 @@ export const EmployeeGap = defineComponent({ name: "EmployeeGap", props: Object 
                     <div class="sec-t">สรุปผลสมรรถนะ </div>
                     <div class="sec-s">ยืนยันโดย รศ.ดร.วิไล ใจดี · 5 พ.ค. 2568 · สถานะ: approved</div>
                 </div>
-                <button class="btn btn-s"> Export PDF</button>
             </div>
 
             <div class="g2 mb14">
@@ -477,7 +476,6 @@ export const EmployeeIDP = defineComponent({ name: "EmployeeIDP", props: Object 
                     <div class="sec-t">แผนพัฒนา IDP</div>
                     <div class="sec-s">ดึงข้อมูลสมรรถนะที่ต้องการพัฒนาอัตโนมัติ ปีงบประมาณ 2568 สถานะ: draft</div>
                 </div>
-                <button class="btn btn-s">Export PDF</button>
             </div>
 
             <div class="card mb20">
@@ -1012,7 +1010,6 @@ export const EmployeeIDPDetail = defineComponent({ name: "EmployeeIDPDetail", pr
                         <span style={{ fontSize: "11px", color: "rgba(255,255,255,.6)" }}>รอบปัจจุบัน</span>
                     </div>
                 </div>
-                <button class="btn btn-s"> Export PDF</button>
             </div>
 
             <div class="g4 mb20">

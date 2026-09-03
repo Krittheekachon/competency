@@ -174,6 +174,8 @@ const roleLabelsByKey = {
     admin: 'ผู้ดูแลระบบ',
     supervisor: 'หัวหน้าหน่วย',
     dept_head: 'หัวหน้างาน',
+    division_head: 'หัวหน้าฝ่าย',
+    academic_department_head: 'หัวหน้าภาควิชา',
     employee: 'บุคลากร',
     hr: 'งานทรัพยากรบุคคล',
     dean: 'ผู้บริหารคณะ',
@@ -182,6 +184,8 @@ const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
     { id: 1, key: 'supervisor', label: 'หัวหน้าหน่วย' },
     { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
+    { id: 6, key: 'division_head', label: 'หัวหน้าฝ่าย' },
+    { id: 7, key: 'academic_department_head', label: 'หัวหน้าภาควิชา' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -1046,8 +1050,8 @@ const deanOptions = computed(() =>
         .map(reviewerOption),
 );
 
-const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
-const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', 'division_head', 'academic_department_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
+const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'division_head', 'academic_department_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
 
@@ -1584,10 +1588,8 @@ const logout = () => router.post(route('logout'));
                             {{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}นี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกใหม่ก่อนบันทึก
                         </div>
                     </div>
-                </div>
 
-                <div v-if="isSupportWorkline && userForm.job" class="modal-grid single-col">
-                    <div class="fg">
+                    <div v-if="isSupportWorkline && userForm.job" class="fg">
                         <label class="lbl req">หน่วย</label>
                         <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
                             <option value="">— เลือกหน่วย —</option>

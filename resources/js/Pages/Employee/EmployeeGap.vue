@@ -7,28 +7,17 @@ const props = defineProps<{
   evalStatus?: string;
 }>();
 
-const rows = computed(() => (props.gaps || []).filter((row) => row.gap !== null && row.gap !== undefined));
+const sourceRows = computed(() => (props.gaps || []).filter((row) => row.gap !== null && row.gap !== undefined));
+const rows = computed(() => sourceRows.value.filter((row) => ['approved', 'dean_approved'].includes(row.status || '')));
+const hasPendingResults = computed(() => sourceRows.value.some((row) => !['approved', 'dean_approved'].includes(row.status || '')));
 const passedRows = computed(() => rows.value.filter((row) => Number(row.gap) >= 0));
 const failedRows = computed(() => rows.value
   .filter((row) => Number(row.gap) < 0)
   .sort((a, b) => Number(a.gap) - Number(b.gap)));
-const isFinalApproved = computed(() => ['approved', 'dean_approved'].includes(props.evalStatus || ''));
-const gapStatusLabel = computed(() => {
-  if (props.evalStatus === 'unit_evaluated') {
-    return 'หัวหน้าหน่วยอนุมัติผลการประเมินแล้ว — รอการตรวจสอบจากหัวหน้างาน';
-  }
-  if (props.evalStatus === 'dept_evaluated') {
-    return 'หัวหน้างานอนุมัติผลการประเมินแล้ว — รอการตรวจสอบขั้นถัดไป';
-  }
-  if (isFinalApproved.value) {
-    return 'Gap (ยืนยันครบทุกลำดับแล้ว)';
-  }
-
-  return 'Gap เบื้องต้น (จากการประเมินตนเอง) — รอการยืนยันจากหัวหน้าหน่วย';
-});
+const isFinalApproved = computed(() => rows.value.length > 0);
 const developmentStatusLabel = (row: any) => {
   if (Number(row.gap) >= 0) return 'ผ่านเกณฑ์';
-  return isFinalApproved.value ? 'เข้า IDP' : 'รอผลอนุมัติ';
+  return isFinalApproved.value ? 'ไม่ผ่านเกณฑ์' : 'รอผลอนุมัติ';
 };
 
 const formatLevel = (value: unknown) => {
@@ -56,9 +45,6 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
       <div>
         <h1>ผลการประเมิน</h1>
         <p>คำนวณจากคะแนนการประเมินตนเองลบด้วยค่าความคาดหวัง</p>
-        <span class="gap-status-badge" :class="{ confirmed: isFinalApproved }">
-          {{ gapStatusLabel }}
-        </span>
       </div>
       <button class="btn btn-s btn-sm" type="button" @click="setPage('emp-assess')">กลับไปประเมิน</button>
     </div>
@@ -196,9 +182,15 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
     </section>
 
     <div v-if="!rows.length" class="empty-card">
-      <div class="empty-title">ยังไม่มีผลการประเมิน</div>
-      <div class="empty-copy">เมื่อบันทึกการประเมินตนเองแล้ว ผลการประเมินจะแสดงในหน้านี้</div>
-      <button class="btn btn-t btn-sm" type="button" @click="setPage('emp-assess')">เริ่มประเมินตนเอง</button>
+      <div class="empty-title">{{ hasPendingResults ? 'ผลการประเมินอยู่ระหว่างการอนุมัติ' : 'ยังไม่มีผลการประเมิน' }}</div>
+      <div class="empty-copy">
+        {{ hasPendingResults
+          ? 'ระบบจะแสดงคะแนนและ Gap เมื่อผู้ประเมินอนุมัติครบทุกลำดับแล้ว'
+          : 'เมื่อส่งแบบประเมินและได้รับอนุมัติครบทุกลำดับแล้ว ผลการประเมินจะแสดงในหน้านี้' }}
+      </div>
+      <button class="btn btn-t btn-sm" type="button" @click="setPage('emp-assess')">
+        {{ hasPendingResults ? 'ดูสถานะการประเมิน' : 'เริ่มประเมินตนเอง' }}
+      </button>
     </div>
   </section>
 </template>
@@ -208,21 +200,6 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
 .page-head p { margin: 6px 0 0; color: var(--text3); font-size: 13px; }
-.gap-status-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: var(--text3);
-  font-size: 11px;
-  font-weight: 800;
-}
-.gap-status-badge.confirmed {
-  background: #ecfdf5;
-  color: #059669;
-}
 .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .summary-card,
 .result-section,

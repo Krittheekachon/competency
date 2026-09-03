@@ -28,6 +28,8 @@
 ## Compatibility And Legacy Concerns
 
 - `manager` and `manager_dept` may appear as legacy role aliases and must be normalized to `dean` and `dept_head`.
+- `division_head` is the canonical role for หัวหน้าฝ่าย and uses the head/reviewer dashboard; actual approval authority still comes from `user_reviewer_steps`.
+- `academic_department_head` is the canonical role for หัวหน้าภาควิชา and uses the same reviewer dashboard; approval authority still comes from `user_reviewer_steps`.
 - Existing data may still contain `dean_approved`; the application should read it as approved where needed but write `approved`.
 - `assessment_evidences` exists as a legacy table and migration source, but checked behavior indicators now belong in `assessment_indicator_results`.
 - `idp_delivery_type_settings` is a removed legacy delivery configuration table and should only appear in migration compatibility logic.

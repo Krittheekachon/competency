@@ -13,7 +13,9 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_create_position_under_support_unit(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create([
+            'role_id' => (int) DB::table('roles')->where('key', 'admin')->value('id'),
+        ]);
         $worklineId = DB::table('worklines')->insertGetId(['name' => 'สายสนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('job_families')->insert(['workline_id' => $worklineId, 'name' => 'ตำแหน่งสายสนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
         $departmentId = DB::table('support_departments')->insertGetId(['name' => 'ฝ่ายบริหาร', 'created_at' => now(), 'updated_at' => now()]);
@@ -35,7 +37,9 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_workline(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = User::factory()->create([
+            'role_id' => (int) DB::table('roles')->where('key', 'admin')->value('id'),
+        ]);
 
         $this->actingAs($admin)
             ->post(route('admin.structure.worklines.store'), ['name' => 'สายทดสอบ'])
@@ -62,7 +66,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_job_family(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         DB::table('worklines')->insert(['id' => 1, 'name' => 'สายสนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
 
         $this->actingAs($admin)
@@ -97,7 +101,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_reuse_job_family_name_in_different_worklines_but_not_same_workline(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $academicId = DB::table('worklines')->insertGetId(['name' => 'วิชาการ', 'created_at' => now(), 'updated_at' => now()]);
         $supportId = DB::table('worklines')->insertGetId(['name' => 'สนับสนุน', 'created_at' => now(), 'updated_at' => now()]);
 
@@ -137,7 +141,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_position_under_job_family(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายสนับสนุน',
             'created_at' => now(),
@@ -182,7 +186,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_level(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายทดสอบ',
             'created_at' => now(),
@@ -237,7 +241,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_can_store_level_without_expected_level_and_rejects_out_of_range_expected_level(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายสนับสนุน',
             'created_at' => now(),
@@ -276,7 +280,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_cannot_scope_levels_to_a_job_family(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายวิชาการ',
             'created_at' => now(),
@@ -307,7 +311,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_renaming_structure_items_syncs_existing_user_assignment_strings(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายเดิม',
             'created_at' => now(),
@@ -383,7 +387,7 @@ class AdminStructureControllerTest extends TestCase
 
     public function test_admin_cannot_reuse_level_name_in_same_workline_but_can_reuse_it_in_another_workline(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายวิชาการ',
             'created_at' => now(),
@@ -425,9 +429,9 @@ class AdminStructureControllerTest extends TestCase
         $this->assertSame(2, DB::table('levels')->where('name', 'ระดับ 1')->count());
     }
 
-    public function test_admin_can_create_update_and_delete_learning_method(): void
+    public function test_learning_methods_are_fixed_and_cannot_be_mutated(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->createAdmin();
 
         $this->actingAs($admin)
             ->post(route('admin.structure.learning-methods.store'), [
@@ -435,14 +439,7 @@ class AdminStructureControllerTest extends TestCase
                 'label' => 'ประเภททดสอบ',
                 'description' => 'รายละเอียดทดสอบ',
             ])
-            ->assertRedirect();
-
-        $this->assertDatabaseHas('learning_method_types', [
-            'key' => 'test-learning',
-            'label' => 'ประเภททดสอบ',
-            'description' => 'รายละเอียดทดสอบ',
-            'is_active' => true,
-        ]);
+            ->assertForbidden();
 
         $this->actingAs($admin)
             ->put(route('admin.structure.learning-methods.update'), [
@@ -451,18 +448,19 @@ class AdminStructureControllerTest extends TestCase
                 'label' => 'ประเภทแก้ไข',
                 'description' => 'รายละเอียดแก้ไข',
             ])
-            ->assertRedirect();
-
-        $this->assertDatabaseHas('learning_method_types', [
-            'key' => 'test-learning',
-            'label' => 'ประเภทแก้ไข',
-            'description' => 'รายละเอียดแก้ไข',
-        ]);
+            ->assertForbidden();
 
         $this->actingAs($admin)
             ->delete(route('admin.structure.learning-methods.destroy'), ['key' => 'test-learning'])
-            ->assertRedirect();
+            ->assertForbidden();
 
         $this->assertDatabaseMissing('learning_method_types', ['key' => 'test-learning']);
+    }
+
+    private function createAdmin(): User
+    {
+        return User::factory()->create([
+            'role_id' => (int) DB::table('roles')->where('key', 'admin')->value('id'),
+        ]);
     }
 }

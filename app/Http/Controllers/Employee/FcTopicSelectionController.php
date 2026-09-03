@@ -124,7 +124,7 @@ class FcTopicSelectionController extends Controller
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('position_competencies.position_id', $positionId)
-            ->where('competency_types.code', 'FC')
+            ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->pluck('competencies.id')
             ->map(fn ($id) => (int) $id)
             ->values();

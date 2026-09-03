@@ -6,11 +6,42 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class FcTopicSelectionFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_employee_assigned_as_first_reviewer_sees_fc_topic_approval_module(): void
+    {
+        $reviewer = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $reviewer->id,
+            'step_order' => 1,
+            'chain_type' => 'assessment',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($reviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Super/Dashboard')
+                ->where('roleKey', 'employee')
+                ->where('fcTopicApprovalModule.enabled', true)
+                ->has('fcTopicApprovalModule.items', 0));
+    }
 
     public function test_employee_must_get_first_supervisor_approval_for_fc_topics_before_assessment(): void
     {
@@ -165,17 +196,24 @@ class FcTopicSelectionFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $fcTypeId = DB::table('competency_types')->insertGetId([
-            'code' => 'FC',
-            'full_name' => 'Functional Competency',
-            'description' => 'Functional competency',
+        $fc1TypeId = DB::table('competency_types')->insertGetId([
+            'code' => 'FC1',
+            'full_name' => 'Functional Competency 1',
+            'description' => 'Functional competency level 1',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $fc2TypeId = DB::table('competency_types')->insertGetId([
+            'code' => 'FC2',
+            'full_name' => 'Functional Competency 2',
+            'description' => 'Functional competency level 2',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
         $ccId = $this->competency($ccTypeId, 'CC-FLOW-01');
-        $selectedFcId = $this->competency($fcTypeId, 'FC-FLOW-01');
-        $otherFcId = $this->competency($fcTypeId, 'FC-FLOW-02');
+        $selectedFcId = $this->competency($fc1TypeId, 'FC1-FLOW-01');
+        $otherFcId = $this->competency($fc2TypeId, 'FC2-FLOW-02');
 
         foreach ([$ccId, $selectedFcId, $otherFcId] as $competencyId) {
             DB::table('position_competencies')->insert([

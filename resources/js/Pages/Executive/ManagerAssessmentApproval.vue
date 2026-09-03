@@ -255,10 +255,6 @@ const submitReject = () => {
         <h1>ตรวจประเมินลูกน้อง</h1>
         <p>คณบดีตรวจผลแบบ read-only ก่อนอนุมัติและปิดรอบประเมิน</p>
       </div>
-      <div class="approval-export-actions">
-        <button class="btn btn-s btn-sm" type="button">Export PDF</button>
-        <button class="btn btn-s btn-sm" type="button">Export Excel</button>
-      </div>
     </header>
 
     <div class="approval-summary-grid">

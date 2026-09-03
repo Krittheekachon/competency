@@ -9,11 +9,88 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AssessmentReviewerChainTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_employee_role_reviewer_sees_assessment_approval_module_from_runtime_chain(): void
+    {
+        $reviewer = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'ทดสอบฝ่าย > ทดสอบงาน > ทดสอบหน่วย',
+        ]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $competencyId = $this->competencyId('CC-EMPLOYEE-REVIEWER');
+        $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
+        $assessment->forceFill(['last_draft_saved_at' => now()])->save();
+
+        $this->actingAs($reviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Super/Dashboard')
+                ->where('roleKey', 'employee')
+                ->where('assessmentApprovalModule.enabled', true)
+                ->where('assessmentApprovalModule.pendingCount', 1)
+                ->where('assessmentApprovalModule.items.0.employeeId', $employee->id)
+                ->where('assessmentApprovalModule.items.0.reviewStep', 1)
+                ->where('assessmentApprovalModule.items.0.organizationLabel', 'หน่วย')
+                ->where('assessmentApprovalModule.items.0.organization', 'ทดสอบหน่วย')
+                ->where('assessmentApprovalModule.items.0.competencies.0.competencyId', $competencyId)
+                ->where('users', fn ($users) => collect($users)->contains(
+                    fn (array $user): bool => $user['db_id'] === $employee->id
+                        && $user['d'] === 'ทดสอบฝ่าย > ทดสอบงาน > ทดสอบหน่วย'
+                        && $user['approvalOrg'] === 'ทดสอบหน่วย'
+                ))
+            );
+    }
+
+    public function test_later_reviewer_can_track_the_current_reviewer_for_each_competency(): void
+    {
+        $firstReviewer = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+            'title' => 'นาย',
+            'name' => 'ผู้ประเมินลำดับหนึ่ง',
+        ]);
+        $secondReviewer = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            1 => $firstReviewer->id,
+            2 => $secondReviewer->id,
+        ]);
+        $competencyId = $this->competencyId('CC-TRACKING');
+        $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
+        $assessment->forceFill(['last_draft_saved_at' => now()])->save();
+
+        $this->actingAs($secondReviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Super/Dashboard')
+                ->where('assessmentApprovalModule.enabled', true)
+                ->where('assessmentApprovalModule.pendingCount', 0)
+                ->where('assessmentApprovalModule.items.0.reviewStep', 2)
+                ->where('assessmentApprovalModule.items.0.competencies', [])
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.competencyId', $competencyId)
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.key', 'pending_review')
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.currentStep', 1)
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.currentReviewerId', $firstReviewer->id)
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.currentReviewerName', 'นายผู้ประเมินลำดับหนึ่ง')
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.timeline.1.state', 'active')
+                ->where('assessmentApprovalModule.items.0.allCompetencies.0.workflow.timeline.2.state', 'waiting')
+            );
+    }
 
     public function test_self_assessment_with_only_third_evaluator_is_sent_to_third_step(): void
     {
@@ -261,7 +338,24 @@ class AssessmentReviewerChainTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'revision_required')
             ->assertJsonPath('reject_comment', $rejectComment)
+            ->assertJsonPath('reject_reviewer_name', trim(($reviewer->title ?: '').($reviewer->name ?: '')))
             ->assertJsonPath('locked', false);
+
+        $this->actingAs($employee)
+            ->postJson(route('assessments.draft'), [
+                'competency_id' => $firstCompetencyId,
+                'checked_indicators' => [],
+                'score' => 0,
+                'note' => 'แก้ไขฉบับร่างหลังถูกส่งกลับ',
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'revision_required');
+
+        $this->assertDatabaseHas('competency_gaps', [
+            'assessment_id' => $firstAssessment->id,
+            'competency_id' => $firstCompetencyId,
+            'status' => 'revision_required',
+        ]);
     }
 
     public function test_supervisor_approval_mail_uses_intermediate_status_copy(): void

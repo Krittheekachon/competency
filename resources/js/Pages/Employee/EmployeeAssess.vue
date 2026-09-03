@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps<{
@@ -19,13 +19,42 @@ const fcSelectionStatus = computed(() => fcTopicSelection.value.status || (fcSel
 const isFcSelectionApproved = computed(() => !fcSelectionRequired.value || fcSelectionStatus.value === 'approved');
 const availableFcCompetencies = computed(() => fcTopicSelection.value.availableCompetencies || []);
 const selectedFcIds = ref<number[]>([]);
+const selectedFcDetail = ref<any | null>(null);
 const isSubmittingFcSelection = ref(false);
 const blockReasons = computed(() => props.blockReasons || []);
+const reviewerSteps = computed(() => {
+  if (Array.isArray(props.user?.reviewerSteps) && props.user.reviewerSteps.length) return props.user.reviewerSteps;
+  return Array.isArray(props.user?.supervisorChain) ? props.user.supervisorChain : [];
+});
+const hasAssessmentReviewer = computed(() => reviewerSteps.value.length > 0);
+const structureIssues = computed(() => blockReasons.value.filter((reason) => !/ผู้ประเมิน|หัวหน้า/.test(reason)));
+const hasCompleteStructure = computed(() => structureIssues.value.length === 0);
+const hasAssignedCompetencies = computed(() => assignedCompetencies.value.length > 0);
+const readinessItems = computed(() => [
+  {
+    key: 'reviewer',
+    label: 'หัวหน้าตามลำดับการอนุมัติ',
+    ready: hasAssessmentReviewer.value,
+    detail: hasAssessmentReviewer.value ? `กำหนดแล้ว ${reviewerSteps.value.length} ลำดับ` : 'ยังไม่ได้กำหนดหัวหน้า',
+    owner: 'Admin',
+  },
+  {
+    key: 'competencies',
+    label: 'สมรรถนะประจำตำแหน่ง',
+    ready: hasCompleteStructure.value && hasAssignedCompetencies.value,
+    detail: !hasCompleteStructure.value
+      ? structureIssues.value.join(' · ')
+      : (hasAssignedCompetencies.value ? `มีหัวข้อสำหรับประเมิน ${assignedCompetencies.value.length} รายการ` : 'ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้'),
+    owner: 'HR',
+  },
+]);
+const readinessCompletedCount = computed(() => readinessItems.value.filter((item) => item.ready).length);
+const isBaseAssessmentReady = computed(() => readinessItems.value.every((item) => item.ready));
 const fcSelectionBlockReason = computed(() => {
   if (!fcSelectionRequired.value || isFcSelectionApproved.value) return '';
-  if (fcSelectionStatus.value === 'submitted') return 'ส่งหัวข้อ FC ให้หัวหน้า 1 แล้ว รออนุมัติก่อนเริ่มประเมิน';
-  if (fcSelectionStatus.value === 'revision_required') return 'หัวหน้า 1 ส่งหัวข้อ FC กลับให้เลือกใหม่ กรุณาเลือกและส่งอนุมัติอีกครั้ง';
-  return `กรุณาเลือกหัวข้อ FC ${requiredFcCount.value} ข้อ และส่งให้หัวหน้า 1 อนุมัติก่อนเริ่มประเมิน`;
+  if (fcSelectionStatus.value === 'submitted') return 'ส่งหัวข้อ FC ให้หัวหน้าแล้ว รออนุมัติก่อนเริ่มประเมิน';
+  if (fcSelectionStatus.value === 'revision_required') return 'หัวหน้าส่งหัวข้อ FC กลับให้เลือกใหม่ กรุณาเลือกและส่งอนุมัติอีกครั้ง';
+  return `กรุณาเลือกหัวข้อ FC ${requiredFcCount.value} ข้อ และส่งให้หัวหน้าอนุมัติก่อนเริ่มประเมิน`;
 });
 const allBlockReasons = computed(() => [
   ...blockReasons.value,
@@ -41,6 +70,7 @@ const lockedCompetencies = ref<Record<string, boolean>>({});
 const competencyStatuses = ref<Record<string, string>>({});
 const competencyDraftSavedAt = ref<Record<string, string>>({});
 const competencyRejectComments = ref<Record<string, string>>({});
+const competencyRejectReviewerNames = ref<Record<string, string>>({});
 const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const draftSavedAt = ref<string>('');
 const suppressAutoSave = ref(false);
@@ -53,7 +83,7 @@ watch(fcTopicSelection, (next) => {
 const fcSelectionStatusLabel = computed(() => {
   if (!fcSelectionRequired.value) return 'ไม่ต้องเลือก FC';
   if (fcSelectionStatus.value === 'approved') return 'อนุมัติหัวข้อแล้ว';
-  if (fcSelectionStatus.value === 'submitted') return 'รอหัวหน้า 1 อนุมัติ';
+  if (fcSelectionStatus.value === 'submitted') return 'รอหัวหน้าอนุมัติหัวข้อ';
   if (fcSelectionStatus.value === 'revision_required') return 'ส่งกลับให้เลือกใหม่';
   return 'ยังไม่ส่งหัวข้อ';
 });
@@ -80,6 +110,14 @@ const toggleFcSelection = (id: number) => {
   selectedFcIds.value = [...current];
 };
 
+const openFcDetail = (item: any) => {
+  selectedFcDetail.value = item;
+};
+
+const closeFcDetail = () => {
+  selectedFcDetail.value = null;
+};
+
 const submitFcSelection = () => {
   if (!canSubmitFcSelection.value) return;
 
@@ -96,7 +134,20 @@ const submitFcSelection = () => {
 
 const isLockedStatus = (status: string) => !['draft', 'revision_required'].includes(status);
 const isFinalApprovedStatus = (status: string) => ['approved', 'dean_approved'].includes(status);
-const isReviewInProgressStatus = (status: string) => ['unit_evaluated', 'dept_evaluated'].includes(status);
+const reviewStepFromStatus = (status: string) => {
+  if (status === 'self_submitted') return 1;
+  if (status === 'unit_evaluated') return 2;
+  if (status === 'dept_evaluated') return 3;
+  const dynamicStep = status.match(/^review_step_(\d+)$/);
+  return dynamicStep ? Number(dynamicStep[1]) : null;
+};
+const isReviewInProgressStatus = (status: string) => reviewStepFromStatus(status) !== null;
+const reviewProgressLabel = (status: string) => {
+  const step = reviewStepFromStatus(status);
+  if (step === null) return '';
+  const total = Math.max(reviewerSteps.value.length, ...reviewerSteps.value.map((item: any) => Number(item.step || 0)));
+  return `รอการอนุมัติผลการประเมินจากหัวหน้าลำดับที่ ${step}${total > 0 ? ` จาก ${total}` : ''}`;
+};
 const competencyStatus = (item: any) => competencyStatuses.value[String(item?.id || '')] || item?.assessmentStatus || 'draft';
 const submittedAssessmentCount = computed(() =>
   assignedCompetencies.value.reduce((total: number, item: any) => {
@@ -108,11 +159,9 @@ const submittedAssessmentCount = computed(() =>
 );
 const competencyStatusLabel = (item: any) => {
   const status = competencyStatus(item);
-  if (status === 'unit_evaluated') return 'หัวหน้าหน่วยอนุมัติผลการประเมิน รอการตรวจสอบจากหัวหน้างาน';
-  if (status === 'dept_evaluated') return 'หัวหน้างานอนุมัติผลการประเมิน รอการตรวจสอบขั้นถัดไป';
-  if (isFinalApprovedStatus(status)) return 'อนุมัติแล้ว';
-  if (status === 'self_submitted') return 'รออนุมัติ';
-  if (status === 'revision_required') return 'ส่งกลับแก้ไข';
+  if (isReviewInProgressStatus(status)) return reviewProgressLabel(status);
+  if (isFinalApprovedStatus(status)) return 'อนุมัติครบทุกลำดับแล้ว';
+  if (status === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
   return '';
 };
 
@@ -226,6 +275,7 @@ const openCompetencyDetail = async (item: any) => {
     lockedCompetencies.value[String(item.id)] = Boolean(data.locked);
     draftSavedAt.value = data.lastDraftSavedAt || '';
     competencyRejectComments.value[String(item.id)] = data.reject_comment || item.rejectComment || '';
+    competencyRejectReviewerNames.value[String(item.id)] = data.reject_reviewer_name || item.rejectReviewerName || '';
     if (data.lastDraftSavedAt) {
       competencyDraftSavedAt.value[String(item.id)] = data.lastDraftSavedAt;
       selectedCompetency.value.lastDraftSavedAt = data.lastDraftSavedAt;
@@ -234,6 +284,7 @@ const openCompetencyDetail = async (item: any) => {
   } catch {
     // ถ้า load ไม่ได้ ใช้ค่าเดิม
   } finally {
+    await nextTick();
     suppressAutoSave.value = false;
   }
 };
@@ -293,18 +344,15 @@ const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.val
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
 const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
 const selectedCompetencyStatusCopy = computed(() => {
-  if (selectedCompetencyStatus.value === 'unit_evaluated') {
-    return 'รอการตรวจสอบจากหัวหน้างาน';
-  }
-  if (selectedCompetencyStatus.value === 'dept_evaluated') {
-    return 'รอการตรวจสอบขั้นถัดไป';
-  }
+  if (isReviewInProgressStatus(selectedCompetencyStatus.value)) return reviewProgressLabel(selectedCompetencyStatus.value);
   if (isFinalApprovedStatus(selectedCompetencyStatus.value)) {
-    return 'อนุมัติแล้ว';
+    return 'อนุมัติครบทุกลำดับแล้ว';
   }
+  if (selectedCompetencyStatus.value === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
   return '';
 });
 const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
+const selectedRejectReviewerName = computed(() => competencyRejectReviewerNames.value[noteKey.value] || selectedCompetency.value?.rejectReviewerName || '');
 
 const flattenedIndicators = computed(() => {
   const rows: any[] = [];
@@ -354,28 +402,112 @@ onBeforeUnmount(() => {
   <section class="employee-page">
     <div class="page-head">
       <div>
-        <h1>ประเมินตนเอง</h1>
-        <!-- <p>รอเชื่อมข้อมูลสมรรถนะและแบบประเมินจริง</p> -->
+        <h1>{{ fcSelectionRequired && !isFcSelectionApproved ? 'เริ่มกระบวนการประเมิน' : 'ประเมินตนเอง' }}</h1>
+        <p>ดำเนินการตามขั้นตอนให้ครบ ก่อนส่งผลให้หัวหน้าตรวจสอบ</p>
       </div>
-      <span class="b" :class="isAssessmentBlocked ? 'br' : 'bgr'">
-        {{ isAssessmentBlocked ? 'ยังไม่พร้อมประเมิน' : (assignedCompetencies.length ? 'พร้อมประเมิน' : 'ยังไม่มีข้อมูล') }}
+      <span class="b" :class="!isBaseAssessmentReady || isAssessmentBlocked ? 'br' : 'bgr'">
+        {{ !isBaseAssessmentReady || isAssessmentBlocked ? 'ยังไม่พร้อมประเมิน' : 'พร้อมประเมิน' }}
       </span>
     </div>
 
-    <div v-if="isAssessmentBlocked" class="blocked-card">
-      <div class="blocked-title">ยังไม่สามารถประเมินตนเองได้</div>
-      <div class="blocked-copy">ระบบจะเปิดแบบประเมินเมื่อข้อมูลพื้นฐานครบ และหัวข้อ FC ได้รับอนุมัติแล้ว</div>
-      <ul v-if="allBlockReasons.length" class="blocked-list">
-        <li v-for="reason in allBlockReasons" :key="reason">{{ reason }}</li>
-      </ul>
+    <div v-if="fcSelectionRequired && isBaseAssessmentReady" class="assessment-process">
+      <div class="process-intro">
+        <strong>ขั้นตอนก่อนเริ่มทำแบบประเมิน</strong>
+        <span>ขณะนี้คุณอยู่ที่ขั้นตอน {{ isFcSelectionApproved ? '3' : (fcSelectionStatus === 'submitted' ? '2' : '1') }} จาก 3</span>
+      </div>
+      <ol class="process-steps">
+        <li :class="{ active: ['draft', 'revision_required'].includes(fcSelectionStatus), done: ['submitted', 'approved'].includes(fcSelectionStatus) }">
+          <span>1</span>
+          <div><strong>เลือกหัวข้อ FC</strong><small>เลือก {{ requiredFcCount }} ข้อที่เหมาะสมกับงานของตน</small></div>
+        </li>
+        <li :class="{ active: fcSelectionStatus === 'submitted', done: fcSelectionStatus === 'approved' }">
+          <span>2</span>
+          <div><strong>รอนอนุมัติหัวข้อการประเมิน</strong><small>หัวหน้าตรวจหัวข้อที่เลือก</small></div>
+        </li>
+        <li :class="{ active: isFcSelectionApproved }">
+          <span>3</span>
+          <div><strong>ทำแบบประเมิน</strong><small>ประเมินสมรรถนะทีละหัวข้อ</small></div>
+        </li>
+      </ol>
     </div>
 
-    <div v-if="fcSelectionRequired" class="fc-selection-card">
+    <section v-if="hasAssessmentReviewer && isBaseAssessmentReady" class="review-route">
+      <header>
+        <div>
+          <h2>ลำดับการประเมินของคุณ</h2>
+        </div>
+        <span>ทั้งหมด {{ reviewerSteps.length }} ลำดับ</span>
+      </header>
+      <div class="review-route-track">
+        <div class="review-route-person employee">
+          <span>คุณ</span>
+          <div>
+            <strong>{{ props.user?.t || '' }}{{ props.user?.n || props.user?.name || 'ผู้รับการประเมิน' }}</strong>
+            <small>ประเมินตนเองและส่งผล</small>
+          </div>
+        </div>
+        <template v-for="reviewer in reviewerSteps" :key="`${reviewer.step}-${reviewer.id}`">
+          <span class="review-route-arrow" aria-hidden="true">→</span>
+          <div
+            class="review-route-person"
+            :class="{ current: fcSelectionStatus === 'submitted' && Number(reviewer.step) === 1 }"
+          >
+            <span>{{ reviewer.step }}</span>
+            <div>
+              <strong>{{ reviewer.name }}</strong>
+              <small>{{ reviewer.position || reviewer.label }}</small>
+            </div>
+          </div>
+        </template>
+      </div>
+      <footer v-if="fcSelectionRequired && !isFcSelectionApproved">
+        หัวข้อ FC จะถูกส่งให้หัวหน้าอนุมัติก่อนเริ่มทำแบบประเมิน
+      </footer>
+      <div class="review-route-help">
+        <span aria-hidden="true">!</span>
+        <p>หากข้อมูลลำดับการประเมินไม่ถูกต้อง โปรดติดต่อผู้ดูแลระบบ (Admin)</p>
+      </div>
+    </section>
+
+    <section v-if="!isBaseAssessmentReady" class="readiness-panel">
+      <header class="readiness-head">
+        <div class="readiness-symbol" aria-hidden="true">!</div>
+        <div>
+          <div class="readiness-kicker">ASSESSMENT READINESS</div>
+          <h2>ยังไม่สามารถเริ่มประเมินได้</h2>
+          <p>ระบบกำลังรอข้อมูลจากผู้ดูแล เมื่อครบแล้วหน้านี้จะเปิดขั้นตอนประเมินให้อัตโนมัติ</p>
+        </div>
+        <div class="readiness-count">
+          <strong>{{ readinessCompletedCount }}/{{ readinessItems.length }}</strong>
+          <span>รายการพร้อม</span>
+        </div>
+      </header>
+
+      <div class="readiness-list">
+        <div v-for="item in readinessItems" :key="item.key" class="readiness-row" :class="{ ready: item.ready }">
+          <span class="readiness-state" aria-hidden="true">{{ item.ready ? '✓' : '!' }}</span>
+          <div>
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.detail }}</small>
+          </div>
+          <span class="readiness-owner">{{ item.ready ? 'พร้อม' : `รอ ${item.owner}` }}</span>
+        </div>
+      </div>
+
+      <footer class="readiness-footer">
+        <div>
+          <strong>ต้องดำเนินการอย่างไร?</strong>
+          <span>ติดต่อ Admin หรือ HR พร้อมแจ้งชื่อและตำแหน่งของคุณ จากนั้นกลับมาตรวจสอบหน้านี้อีกครั้ง</span>
+        </div>
+      </footer>
+    </section>
+
+    <div v-if="fcSelectionRequired && isBaseAssessmentReady" class="fc-selection-card">
       <div class="fc-selection-head">
         <div>
-          <div class="fc-kicker">FC TOPIC APPROVAL</div>
-          <h2>เลือกหัวข้อ FC ก่อนเริ่มประเมิน</h2>
-          <p>เลือกจาก FC ที่ HR กำหนดให้ตำแหน่งนี้ แล้วส่งให้หัวหน้า 1 อนุมัติ</p>
+          <div class="fc-kicker">ขั้นตอนที่ 1</div>
+          <h2>{{ fcSelectionStatus === 'submitted' ? 'ส่งหัวข้อให้ผู้หัวหน้าตรวจสอบแล้ว' : (fcSelectionStatus === 'approved' ? 'หัวข้อ FC ได้รับอนุมัติแล้ว' : 'เลือกหัวข้อ FC ที่ตรงกับงานของคุณ') }}</h2>
+          <p>{{ fcSelectionStatus === 'submitted' ? 'ระบบจะเปิดแบบประเมินทันทีหลังหัวหน้าอนุมัติ' : 'อ่านชื่อและรายละเอียด แล้วเลือกให้ครบตามจำนวนที่กำหนด' }}</p>
         </div>
         <span
           class="fc-status-pill"
@@ -395,25 +527,42 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="fc-selection-meter">
-        <span>เลือกแล้ว {{ selectedFcCount }}/{{ requiredFcCount }} ข้อ</span>
-        <span>{{ fcSelectionStatus === 'approved' ? 'พร้อมประเมินทั้งหมด' : 'ต้องอนุมัติก่อนจึงจะประเมินได้' }}</span>
+        <div>
+          <strong>{{ selectedFcCount }}</strong>
+          <span>/ {{ requiredFcCount }} หัวข้อที่เลือก</span>
+        </div>
+        <span>{{ selectedFcCount === requiredFcCount ? 'เลือกครบแล้ว พร้อมส่งอนุมัติ' : `เลือกเพิ่มอีก ${Math.max(requiredFcCount - selectedFcCount, 0)} หัวข้อ` }}</span>
       </div>
 
-      <div class="fc-choice-grid">
-        <button
+      <div class="fc-choice-list">
+        <article
           v-for="item in availableFcCompetencies"
           :key="item.id"
           class="fc-choice"
           :class="{ selected: selectedFcIds.includes(Number(item.id)), locked: !['draft', 'revision_required'].includes(fcSelectionStatus) }"
-          type="button"
-          @click="toggleFcSelection(Number(item.id))"
+          role="button"
+          tabindex="0"
+          @click="openFcDetail(item)"
+          @keydown.enter="openFcDetail(item)"
+          @keydown.space.prevent="openFcDetail(item)"
         >
-          <span class="fc-check" aria-hidden="true"></span>
-          <span>
-            <strong>{{ item.cd }} · {{ item.n }}</strong>
-            <small>{{ item.det || 'ไม่มีคำอธิบาย' }}</small>
-          </span>
-        </button>
+          <div class="fc-choice-main">
+            <span class="fc-choice-copy">
+              <span class="fc-code">{{ item.cd }}</span>
+              <strong>{{ item.n }}</strong>
+              <span class="fc-detail-link">อ่านรายละเอียด</span>
+            </span>
+          </div>
+          <button
+            class="fc-choice-state"
+            type="button"
+            :disabled="!['draft', 'revision_required'].includes(fcSelectionStatus)"
+            @click.stop="toggleFcSelection(Number(item.id))"
+          >
+            <span class="fc-check" aria-hidden="true">{{ selectedFcIds.includes(Number(item.id)) ? '✓' : '' }}</span>
+            {{ selectedFcIds.includes(Number(item.id)) ? 'เลือกแล้ว' : 'เลือก' }}
+          </button>
+        </article>
       </div>
 
       <div v-if="!availableFcCompetencies.length" class="empty-card compact">
@@ -422,19 +571,70 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="fc-selection-actions">
-        <span class="muted fs12">ต้องเลือกให้ครบตามจำนวนที่ HR กำหนด</span>
+        <div>
+          <strong>{{ fcSelectionStatus === 'submitted' ? 'กำลังรอการอนุมัติ' : 'เมื่อส่งแล้วจะเปลี่ยนหัวข้อไม่ได้' }}</strong>
+          <span>{{ fcSelectionStatus === 'submitted' ? 'กลับมาที่หน้านี้เพื่อตรวจสอบสถานะได้' : 'ตรวจสอบหัวข้อที่เลือกก่อนส่งให้หัวหน้า' }}</span>
+        </div>
         <button
           class="btn btn-p"
           type="button"
           :disabled="!canSubmitFcSelection"
           @click="submitFcSelection"
         >
-          {{ isSubmittingFcSelection ? 'กำลังส่ง...' : 'ส่งให้หัวหน้า 1 อนุมัติ' }}
+          {{ isSubmittingFcSelection ? 'กำลังส่ง...' : (fcSelectionStatus === 'submitted' ? 'ส่งหัวข้อแล้ว' : (fcSelectionStatus === 'approved' ? 'อนุมัติแล้ว' : 'ส่งหัวข้อให้หัวหน้า')) }}
         </button>
       </div>
     </div>
 
-    <div v-if="assignedCompetencies.length && !isAssessmentBlocked" class="summary-grid">
+    <div v-if="selectedFcDetail" class="fc-detail-backdrop" @click.self="closeFcDetail">
+      <section class="fc-detail-modal" role="dialog" aria-modal="true" aria-labelledby="fc-detail-title">
+        <header>
+          <div>
+            <div class="fc-detail-meta">
+              <span>{{ selectedFcDetail.t || 'FC' }}</span>
+              <strong>{{ selectedFcDetail.cd }}</strong>
+            </div>
+            <h2 id="fc-detail-title">{{ selectedFcDetail.n }}</h2>
+          </div>
+          <button type="button" aria-label="ปิดหน้าต่าง" @click="closeFcDetail">×</button>
+        </header>
+        <div class="fc-detail-body">
+          <section class="fc-detail-description">
+            <h3>คำอธิบายสมรรถนะ</h3>
+            <p>{{ selectedFcDetail.det || 'ยังไม่มีคำอธิบายสำหรับสมรรถนะนี้' }}</p>
+          </section>
+          <section v-if="selectedFcDetail.levels?.length" class="fc-detail-levels">
+            <h3>ระดับและพฤติกรรมบ่งชี้</h3>
+            <div v-for="level in selectedFcDetail.levels" :key="level.id || level.lvl" class="fc-detail-level">
+              <div class="fc-detail-level-head">
+                <strong>{{ level.label || `ระดับที่ ${level.lvl}` }}</strong>
+                <span>{{ level.indicators?.length || 0 }} พฤติกรรมบ่งชี้</span>
+              </div>
+              <ul v-if="level.indicators?.length">
+                <li v-for="(indicator, index) in level.indicators" :key="index">{{ indicator }}</li>
+              </ul>
+              <p v-else>ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</p>
+            </div>
+          </section>
+        </div>
+        <footer>
+          <span>{{ selectedFcIds.includes(Number(selectedFcDetail.id)) ? 'หัวข้อนี้ถูกเลือกแล้ว' : 'เลือกหัวข้อนี้เพื่อส่งให้หัวหน้าอนุมัติ' }}</span>
+          <div>
+            <button class="btn btn-s" type="button" @click="closeFcDetail">ปิด</button>
+            <button
+              class="btn btn-p"
+              type="button"
+              :disabled="!['draft', 'revision_required'].includes(fcSelectionStatus)"
+              @click="toggleFcSelection(Number(selectedFcDetail.id))"
+            >
+              {{ selectedFcIds.includes(Number(selectedFcDetail.id)) ? 'ยกเลิกการเลือก' : 'เลือกหัวข้อนี้' }}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="assignedCompetencies.length && !isAssessmentBlocked && isBaseAssessmentReady" class="summary-grid">
       <div class="summary-card">
         <div class="summary-label">สมรรถนะที่ต้องประเมิน</div>
         <div class="summary-value">{{ assignedCompetencies.length }}</div>
@@ -447,7 +647,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-if="assignedCompetencies.length && !isAssessmentBlocked" class="content-card">
+    <div v-if="assignedCompetencies.length && !isAssessmentBlocked && isBaseAssessmentReady" class="content-card">
       <div class="card-head">
         <div>
           <h2>หัวข้อสมรรถนะที่ต้องประเมิน</h2>
@@ -491,11 +691,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-else-if="!isAssessmentBlocked" class="empty-card">
-      <div class="empty-title">ยังไม่มีหัวข้อสมรรถนะที่ต้องประเมิน</div>
-      <div class="empty-copy">เมื่อเชื่อมข้อมูลจริงแล้ว รายการสมรรถนะและแบบประเมินจะแสดงที่นี่</div>
-    </div>
-
     <div v-if="selectedCompetency" class="modal-backdrop" @click.self="closeCompetencyDetail">
       <div class="detail-modal">
         <div class="modal-head">
@@ -506,11 +701,10 @@ onBeforeUnmount(() => {
             </div>
             <h2>{{ selectedCompetency.n }}</h2>
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
-            <p v-if="selectedCompetencyStatus === 'unit_evaluated'" class="approved-copy">หัวหน้าหน่วยอนุมัติผลการประเมินแล้ว รอการตรวจสอบจากหัวหน้างาน</p>
-            <p v-else-if="selectedCompetencyStatus === 'dept_evaluated'" class="approved-copy">หัวหน้างานอนุมัติผลการประเมินแล้ว รอการตรวจสอบขั้นถัดไป</p>
-            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">ผลการประเมินสมรรถนะนี้ผ่านการอนุมัติจากหัวหน้างานแล้ว</p>
+            <p v-if="isReviewInProgressStatus(selectedCompetencyStatus)" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
+            <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
             <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว จะแก้ไขได้เมื่อหัวหน้างานส่งกลับมาแก้ไข</p>
-            <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">ผู้ประเมินส่งกลับมาให้ประเมินสมรรถนะนี้ใหม่</p>
+            <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">{{ selectedCompetencyStatusCopy }}</p>
           </div>
           <button class="btn btn-s btn-sm" type="button" @click="closeCompetencyDetail">ปิด</button>
         </div>
@@ -587,7 +781,7 @@ onBeforeUnmount(() => {
           </section>
 
           <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
-            <div class="reviewer-comment-label">Comment จากผู้ประเมิน</div>
+            <div class="reviewer-comment-label">ความคิดเห็นจาก {{ selectedRejectReviewerName || 'ผู้ประเมิน' }}</div>
             <p>{{ selectedRejectComment }}</p>
           </section>
 
@@ -637,8 +831,76 @@ onBeforeUnmount(() => {
 <style scoped>
 .employee-page { display: grid; gap: 20px; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
-.page-head p { margin: 8px 0 0; color: var(--text3); font-size: 13px; }
+.page-eyebrow { margin-bottom: 6px; color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .12em; }
+.page-head h1 { margin: 0; color: var(--text); font-size: 24px; font-weight: 900; }
+.page-head p { margin: 7px 0 0; color: var(--text3); font-size: 12px; }
+.readiness-panel { overflow: hidden; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; box-shadow: 0 12px 32px rgba(21, 25, 29, .07); }
+.readiness-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 15px; border-bottom: 1px solid #e2e6eb; padding: 20px 22px; }
+.readiness-symbol { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #f7ded7; color: #a63824; font-size: 17px; font-weight: 900; }
+.readiness-kicker { margin-bottom: 4px; color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.readiness-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 900; }
+.readiness-head p { margin: 5px 0 0; color: var(--text3); font-size: 12px; }
+.readiness-count { display: grid; min-width: 88px; border: 1px solid #e0e4e9; border-radius: 8px; background: #f3f5f7; padding: 9px 12px; text-align: center; }
+.readiness-count strong { color: var(--text); font-size: 18px; font-weight: 900; }
+.readiness-count span { color: var(--text3); font-size: 9px; font-weight: 800; }
+.readiness-list { display: grid; padding: 8px 22px; }
+.readiness-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 0; }
+.readiness-row + .readiness-row { border-top: 1px solid #e7eaee; }
+.readiness-state { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #fff0eb; color: #ad3b26; font-size: 11px; font-weight: 900; }
+.readiness-row.ready .readiness-state { background: #e3f1ec; color: #24624f; }
+.readiness-row > div { display: grid; gap: 3px; min-width: 0; }
+.readiness-row strong { color: var(--text); font-size: 12px; font-weight: 900; }
+.readiness-row small { color: #778391; font-size: 11px; line-height: 1.45; }
+.readiness-owner { border-radius: 999px; background: #fff0eb; color: #a63824; padding: 5px 9px; font-size: 10px; font-weight: 900; white-space: nowrap; }
+.readiness-row.ready .readiness-owner { background: #e3f1ec; color: #24624f; }
+.readiness-footer { border-top: 1px solid #e2e6eb; background: #f3f5f7; padding: 13px 22px; }
+.readiness-footer > div { display: grid; gap: 3px; }
+.readiness-footer strong { color: var(--text); font-size: 11px; font-weight: 900; }
+.readiness-footer span { color: var(--text3); font-size: 10px; line-height: 1.5; }
+.assessment-process {
+  overflow: hidden;
+  border: 1px solid #d9dee5;
+  border-radius: 12px;
+  background: #fbfcfd;
+  box-shadow: 0 8px 24px rgba(21, 25, 29, .05);
+}
+.process-intro { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid #e2e6eb; }
+.process-intro strong { color: var(--text); font-size: 13px; font-weight: 900; }
+.process-intro span { color: var(--text3); font-size: 11px; font-weight: 800; }
+.process-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.process-steps li { position: relative; display: flex; align-items: center; gap: 11px; min-width: 0; padding: 16px 18px; color: #8b96a5; }
+.process-steps li + li { border-left: 1px solid #e2e6eb; }
+.process-steps li > span { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border: 1px solid #d8dee6; border-radius: 50%; background: #f1f3f6; color: #7d8794; font-size: 11px; font-weight: 900; }
+.process-steps li div { display: grid; gap: 2px; min-width: 0; }
+.process-steps li strong { color: #667180; font-size: 12px; font-weight: 900; }
+.process-steps li small { overflow: hidden; color: #929cab; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.process-steps li.active { background: #fff5f1; }
+.process-steps li.active > span { border-color: var(--blue); background: var(--blue); color: #fffaf8; }
+.process-steps li.active strong { color: #a63824; }
+.process-steps li.done > span { border-color: #2f735f; background: #e5f1ed; color: #24624f; }
+.process-steps li.done > span::after { content: '✓'; }
+.process-steps li.done > span { font-size: 0; }
+.process-steps li.done strong { color: #24624f; }
+.review-route { overflow: hidden; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; box-shadow: 0 8px 24px rgba(21, 25, 29, .05); }
+.review-route > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e2e6eb; padding: 13px 18px; }
+.review-route-kicker { margin-bottom: 3px; color: var(--blue); font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.review-route h2 { margin: 0; color: var(--text); font-size: 14px; font-weight: 900; }
+.review-route > header > span { color: var(--text3); font-size: 10px; font-weight: 800; }
+.review-route-track { display: flex; align-items: center; gap: 10px; overflow-x: auto; padding: 15px 18px; }
+.review-route-person { display: flex; align-items: center; gap: 10px; min-width: 210px; border: 1px solid #dce2e8; border-radius: 8px; background: #fdfefe; padding: 10px 12px; }
+.review-route-person > span { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; background: #edf0f3; color: #687482; font-size: 10px; font-weight: 900; }
+.review-route-person > div { display: grid; gap: 2px; min-width: 0; }
+.review-route-person strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.review-route-person small { overflow: hidden; color: var(--text3); font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.review-route-person.employee { border-color: #c7ddd5; background: #f0f7f4; }
+.review-route-person.employee > span { background: #2f735f; color: #f8fcfa; }
+.review-route-person.current { border-color: #d8816e; background: #fff4f0; }
+.review-route-person.current > span { background: var(--blue); color: #fffaf8; }
+.review-route-arrow { flex: 0 0 auto; color: #a2abb6; font-size: 17px; font-weight: 900; }
+.review-route > footer { border-top: 1px solid #e2e6eb; background: #f5f7f8; padding: 9px 18px; color: #7c503f; font-size: 10px; font-weight: 800; }
+.review-route-help { display: flex; align-items: center; gap: 7px; border-top: 1px solid #eadfd9; background: #fff9f6; padding: 9px 18px; color: #8b4c3a; }
+.review-route-help > span { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border: 1px solid #e3a28f; border-radius: 50%; font-size: 10px; font-weight: 900; }
+.review-route-help p { margin: 0; font-size: 10px; font-weight: 800; }
 .blocked-card {
   border: 1px solid #fecaca;
   border-radius: 8px;
@@ -651,10 +913,10 @@ onBeforeUnmount(() => {
 .blocked-list { margin: 12px 0 0; padding-left: 20px; color: #7f1d1d; font-size: 13px; }
 .blocked-list li + li { margin-top: 4px; }
 .fc-selection-card {
-  border: 1px solid #fed7aa;
-  border-radius: 10px;
-  background: #fffaf3;
-  padding: 18px;
+  border: 1px solid #d9dee5;
+  border-radius: 12px;
+  background: #fbfcfd;
+  padding: 20px;
   box-shadow: var(--shadow);
 }
 .fc-selection-head {
@@ -662,30 +924,31 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-  border-bottom: 1px solid #ffedd5;
-  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e6eb;
+  padding-bottom: 16px;
 }
 .fc-kicker {
-  color: #c2410c;
-  font-size: 11px;
+  color: var(--blue);
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: .08em;
 }
 .fc-selection-head h2 {
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   color: var(--text);
   font-size: 18px;
   font-weight: 900;
 }
 .fc-selection-head p {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   color: var(--text3);
   font-size: 13px;
 }
 .fc-status-pill {
   border-radius: 999px;
-  background: #ffedd5;
-  color: #9a3412;
+  border: 1px solid #efc6bd;
+  background: #fff2ee;
+  color: #a63824;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 900;
@@ -707,70 +970,121 @@ onBeforeUnmount(() => {
 }
 .fc-selection-meter {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 16px;
+  border-radius: 8px;
+  background: #f1f3f5;
+  padding: 10px 12px;
   color: var(--text3);
   font-size: 12px;
   font-weight: 800;
 }
-.fc-choice-grid {
+.fc-selection-meter > div { display: flex; align-items: baseline; gap: 5px; }
+.fc-selection-meter strong { color: var(--text); font-size: 18px; font-weight: 900; }
+.fc-selection-meter > span { color: #7c503f; }
+.fc-choice-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 .fc-choice {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 10px;
-  align-items: flex-start;
-  border: 1px solid #fed7aa;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #dce1e7;
   border-radius: 8px;
-  background: #fff;
-  padding: 12px;
-  text-align: left;
-  color: var(--text);
+  background: #fdfefe;
+  padding: 13px 14px;
   cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.fc-choice:hover { border-color: #d7a79b; background: #fffaf8; }
+.fc-choice:focus-visible { outline: 3px solid rgba(199, 67, 43, .16); border-color: var(--blue); }
+.fc-choice-main {
+  min-width: 0;
+  flex: 1;
 }
 .fc-choice.selected {
-  border-color: #ea580c;
-  background: #fff7ed;
+  border-color: #d46a53;
+  background: #fff7f4;
+  box-shadow: 0 4px 14px rgba(199, 67, 43, .07);
 }
 .fc-choice.locked {
   cursor: default;
 }
 .fc-check {
-  width: 18px;
-  height: 18px;
-  border: 2px solid #fdba74;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border: 2px solid #bcc5d0;
   border-radius: 5px;
-  margin-top: 2px;
-}
-.fc-choice.selected .fc-check {
-  border-color: #ea580c;
-  background: #ea580c;
-  box-shadow: inset 0 0 0 4px #fff7ed;
-}
-.fc-choice strong {
-  display: block;
-  font-size: 13px;
+  color: #fffaf8;
+  font-size: 11px;
   font-weight: 900;
 }
-.fc-choice small {
-  display: block;
-  margin-top: 4px;
-  color: var(--text3);
-  font-size: 12px;
-  line-height: 1.45;
+.fc-choice.selected .fc-check {
+  border-color: var(--blue);
+  background: var(--blue);
 }
+.fc-choice-copy { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 5px 10px; min-width: 0; }
+.fc-code { color: var(--blue); font-size: 11px; font-weight: 900; }
+.fc-choice-copy strong {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-detail-link {
+  grid-column: 1 / -1;
+  color: #a63824;
+  font-size: 10px;
+  font-weight: 900;
+}
+.fc-choice-state { display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; border: 0; border-radius: 999px; background: #eef1f4; color: #687381; padding: 7px 10px; font-size: 10px; font-weight: 900; cursor: pointer; }
+.fc-choice.selected .fc-choice-state { background: #f7ded7; color: #a63824; }
+.fc-choice-state:disabled { cursor: default; opacity: .72; }
+.fc-choice-state .fc-check { width: 15px; height: 15px; border-width: 1.5px; border-radius: 4px; }
+.fc-detail-backdrop { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(21, 25, 29, .56); padding: 16px; }
+.fc-detail-modal { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(760px, 100%); max-height: min(760px, calc(100vh - 32px)); overflow: hidden; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; box-shadow: 0 28px 80px rgba(21, 25, 29, .28); }
+.fc-detail-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e1e5ea; padding: 20px 22px; }
+.fc-detail-modal > header h2 { max-width: 34ch; margin: 7px 0 0; color: var(--text); font-size: 19px; line-height: 1.4; }
+.fc-detail-meta { display: flex; align-items: center; gap: 8px; color: var(--blue); font-size: 11px; font-weight: 900; }
+.fc-detail-meta span { border-radius: 5px; background: #f7ded7; padding: 4px 7px; }
+.fc-detail-modal > header > button { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border: 1px solid #d7dde4; border-radius: 7px; background: #f6f7f8; color: #626d79; font-size: 22px; cursor: pointer; }
+.fc-detail-body { overflow-y: auto; padding: 20px 22px; }
+.fc-detail-body > section > h3 { margin: 0 0 9px; color: var(--text); font-size: 12px; font-weight: 900; }
+.fc-detail-body > section > p { max-width: 72ch; margin: 0; color: #586574; font-size: 13px; line-height: 1.75; white-space: pre-line; }
+.fc-detail-description { border: 1px solid #dce2e8; border-radius: 9px; background: #f7f9fa; padding: 15px 16px; }
+.fc-detail-levels { margin-top: 18px; }
+.fc-detail-level { overflow: hidden; border: 1px solid #ead5cc; border-radius: 9px; background: #fdfefe; }
+.fc-detail-level + .fc-detail-level { margin-top: 10px; }
+.fc-detail-level-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid #ead5cc; background: #fff3ed; padding: 13px 16px; }
+.fc-detail-level-head strong { color: #b63820; font-size: 13px; font-weight: 900; }
+.fc-detail-level-head span { color: #8b7d77; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.fc-detail-level ul { display: grid; gap: 9px; margin: 0; padding: 13px 16px; color: #586574; font-size: 12px; line-height: 1.6; list-style: none; }
+.fc-detail-level li { position: relative; padding-left: 18px; }
+.fc-detail-level li::before { content: ''; position: absolute; top: .62em; left: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+.fc-detail-level > p { margin: 0; padding: 13px 16px; color: var(--text3); font-size: 11px; }
+.fc-detail-modal > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #e1e5ea; background: #f5f7f8; padding: 13px 22px; }
+.fc-detail-modal > footer > span { color: var(--text3); font-size: 11px; font-weight: 800; }
+.fc-detail-modal > footer > div { display: flex; gap: 9px; }
 .fc-selection-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 18px;
+  border-top: 1px solid #e2e6eb;
+  padding-top: 16px;
 }
+.fc-selection-actions > div { display: grid; gap: 3px; }
+.fc-selection-actions strong { color: var(--text); font-size: 11px; font-weight: 900; }
+.fc-selection-actions span { color: var(--text3); font-size: 10px; }
 .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .summary-card {
   border: 1px solid var(--border);
@@ -795,7 +1109,7 @@ onBeforeUnmount(() => {
 .competency-list { display: grid; gap: 10px; padding: 16px 20px; }
 .competency-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 320px 150px 42px;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 48%);
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -847,11 +1161,13 @@ onBeforeUnmount(() => {
   font-weight: 900;
 }
 .row-actions {
-  display: contents;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 .draft-status {
-  grid-column: 2;
-  align-items: center;
   min-width: 0;
   color: #64748b;
   font-size: 12px;
@@ -861,7 +1177,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .assessment-status {
-  grid-column: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -873,9 +1188,10 @@ onBeforeUnmount(() => {
   padding: 3px 9px;
   font-size: 11px;
   font-weight: 900;
-  line-height: 1;
-  white-space: nowrap;
-  justify-self: center;
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
 }
 .assessment-status.approved {
   border-color: #bbf7d0;
@@ -1335,6 +1651,26 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 760px) {
   .page-head { align-items: flex-start; flex-direction: column; }
+  .readiness-head { grid-template-columns: auto minmax(0, 1fr); padding: 17px; }
+  .readiness-count { grid-column: 1 / -1; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: 5px; }
+  .readiness-list { padding-right: 17px; padding-left: 17px; }
+  .readiness-row { grid-template-columns: 28px minmax(0, 1fr); }
+  .readiness-owner { grid-column: 2; justify-self: start; }
+  .readiness-footer { padding-right: 17px; padding-left: 17px; }
+  .process-intro,
+  .fc-selection-head,
+  .fc-selection-actions { align-items: stretch; flex-direction: column; }
+  .process-steps { grid-template-columns: 1fr; }
+  .process-steps li + li { border-top: 1px solid #e2e6eb; border-left: 0; }
+  .review-route-person { min-width: 190px; }
+  .fc-selection-meter { align-items: flex-start; flex-direction: column; }
+  .fc-choice { align-items: flex-start; }
+  .fc-choice-copy { grid-template-columns: 1fr; }
+  .fc-code,
+  .fc-detail-link { grid-column: 1; }
+  .fc-selection-actions .btn { width: 100%; }
+  .fc-detail-modal > footer { align-items: stretch; flex-direction: column; }
+  .fc-detail-modal > footer > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-grid { grid-template-columns: 1fr; }
   .competency-row {
     grid-template-columns: minmax(0, 1fr) 42px;

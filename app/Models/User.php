@@ -62,6 +62,8 @@ class User extends Authenticatable
     public function isHR(): bool         { return $this->hasRole('hr'); }
     public function isSupervisor(): bool { return $this->hasRole('supervisor'); }
     public function isDeptHead(): bool   { return $this->hasRole('dept_head'); }
+    public function isDivisionHead(): bool { return $this->hasRole('division_head'); }
+    public function isAcademicDepartmentHead(): bool { return $this->hasRole('academic_department_head'); }
     public function isDean(): bool       { return $this->hasRole('dean'); }
 
     // ======================================================

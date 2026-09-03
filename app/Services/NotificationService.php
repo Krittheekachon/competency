@@ -128,7 +128,7 @@ class NotificationService
 
     public function remindPendingEmployees(): void
     {
-        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head'])
+        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head'])
             ->whereNotExists(function ($query): void {
                 $query->selectRaw('1')
                     ->from('assessments')
@@ -243,7 +243,7 @@ class NotificationService
 
         return match ($roleKey) {
             'supervisor' => self::REVIEWER_1_RECIPIENT,
-            'dept_head', 'dean' => self::REVIEWER_2_3_RECIPIENT,
+            'dept_head', 'division_head', 'academic_department_head', 'dean' => self::REVIEWER_2_3_RECIPIENT,
             default => self::DEFAULT_TEST_RECIPIENT,
         };
     }

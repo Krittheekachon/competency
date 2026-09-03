@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -14,11 +15,11 @@ class ManagerDashboardTest extends TestCase
     public function test_manager_role_sees_manager_dashboard_with_database_summary(): void
     {
         $manager = User::factory()->create([
-            'role_id' => 2,
+            'role_id' => (int) DB::table('roles')->where('key', 'dean')->value('id'),
         ]);
 
         User::factory()->create([
-            'role_id' => 4,
+            'role_id' => (int) DB::table('roles')->where('key', 'employee')->value('id'),
         ]);
 
         $response = $this->actingAs($manager)->get('/dashboard');
@@ -34,7 +35,7 @@ class ManagerDashboardTest extends TestCase
             ->where('managerSummary.pendingAssessmentApprovals', 0)
             ->where('managerSummary.pendingIdpApprovals', 0)
             ->where('managerSummary.source', 'database')
-            ->where('activeCycleName', '')
+            ->where('activeCycleName', 'รอบประเมินปัจจุบัน')
             ->where('departmentRows', [])
             ->where('problemCompetencyRows', [])
             ->where('idpProgressRows', [])

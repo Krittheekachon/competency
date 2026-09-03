@@ -179,14 +179,15 @@ const reviewerStepsForUser = (user) => {
 };
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value;
-    const reasons = Array.isArray(user?.structureIssues) ? [...user.structureIssues] : [];
+    const rawStructureIssues = Array.isArray(user?.structureIssues) ? user.structureIssues : [];
+    const reasons = rawStructureIssues.filter((reason) => reason !== 'ยังไม่ได้กำหนดลำดับ IDP');
     const hasAssignedEvaluator = reviewerStepsForUser(user).length > 0;
 
     if (!hasAssignedEvaluator) {
-        reasons.push('ยังไม่ได้กำหนดผู้ประเมินอย่างน้อย 1 ลำดับ');
+        reasons.push('ยังไม่ได้กำหนดหัวหน้าอย่างน้อย 1 ลำดับ');
     }
 
-    if (user?.structureStatus === 'invalid' && reasons.length === 0) {
+    if (user?.structureStatus === 'invalid' && rawStructureIssues.length === 0) {
         reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
     }
 
@@ -221,20 +222,26 @@ const positionOptions = computed(() => {
 });
 const needsPositionBeforeMapping = computed(() => Boolean(selectedOrgScope.value && !positionOptions.value.length));
 
-const allPositionCount = computed(() => {
-    return worklineOptions.value.reduce((total, workline) => {
-        if (workline === 'สายสนับสนุน') {
-            return total + supportUnitScopes.value.reduce((sum, unit) => sum + unit.positions.length, 0);
-        }
-        const departments = props.jobFamiliesByWorkline?.[workline] || {};
-        return total + Object.entries(departments || {}).reduce((sum, [departmentName, positions]) => {
-            const count = Array.isArray(positions) ? positions.length : 0;
-            return sum + (departmentName ? count : 0);
-        }, 0);
-    }, 0);
-});
+const visiblePositionIds = computed(() => new Set(
+    (props.positionLookup || [])
+        .filter((position) => {
+            if (!worklineOptions.value.includes(position.worklineName)) return false;
 
-const configuredPositionCount = computed(() => Object.values(props.positionCompetencies || {}).filter((items) => items.length).length);
+            if (position.worklineName === 'สายสนับสนุน') {
+                const unit = supportUnitScopes.value.find((scope) => scope.key === position.supportUnitKey);
+                return Boolean(unit && unit.positions.includes(position.name));
+            }
+
+            const positions = props.jobFamiliesByWorkline?.[position.worklineName]?.[position.jobFamilyName] || [];
+            return positions.includes(position.name);
+        })
+        .map((position) => Number(position.id))
+        .filter((id) => id > 0),
+));
+const allPositionCount = computed(() => visiblePositionIds.value.size);
+const configuredPositionCount = computed(() => Object.entries(props.positionCompetencies || {})
+    .filter(([positionId, items]) => visiblePositionIds.value.has(Number(positionId)) && items.length)
+    .length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
 const organizationScopeLabel = computed(() => selectedScope.value?.label || (isSupportWorkline.value ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา'));
@@ -258,7 +265,7 @@ const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
-const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'FC').length);
+const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => String(item.t || '').startsWith('FC')).length);
 const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
 const requiredFcCount = ref(0);
 const savedRequiredFcCount = computed(() => Number(props.positionFcSelectionRules?.[currentPositionId.value] || 0));
@@ -1409,13 +1416,14 @@ const formatWeight = (weight) => {
     align-items: end;
     padding: 24px 26px;
     border-radius: 14px;
-    background: #102f5d;
+    border: 1px solid rgba(199, 67, 43, 0.34);
+    background: linear-gradient(135deg, #171b1f 0%, #25282c 68%, #30211e 100%);
     color: #f8fbff;
-    box-shadow: 0 16px 34px rgba(15, 45, 91, 0.18);
+    box-shadow: 0 16px 34px rgba(21, 25, 29, 0.16);
 }
 
 .position-kicker {
-    color: rgba(248, 251, 255, 0.58);
+    color: #e68a76;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.12em;
@@ -1442,9 +1450,9 @@ const formatWeight = (weight) => {
 
 .position-hero-metrics div {
     padding: 14px;
-    border: 1px solid rgba(248, 251, 255, 0.16);
+    border: 1px solid rgba(230, 138, 118, 0.3);
     border-radius: 10px;
-    background: rgba(248, 251, 255, 0.08);
+    background: rgba(199, 67, 43, 0.1);
 }
 
 .position-hero-metrics span {

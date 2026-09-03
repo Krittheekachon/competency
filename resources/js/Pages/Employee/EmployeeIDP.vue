@@ -89,6 +89,9 @@ const page = usePage();
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
 const activeFormActivityKey = ref<string | null>(null);
+type BuilderFocus = 'experiential' | 'social' | 'formal';
+const activityBuilderOpen = ref(false);
+const activityBuilderFocus = ref<BuilderFocus>('experiential');
 const showCoachingApproachHelp = ref(false);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const lastSavedAt = ref('');
@@ -107,6 +110,7 @@ const supervisorChainOptions = computed<SupervisorChainOption[]>(() => props.use
 const idpApprovalSteps = computed<SupervisorChainOption[]>(() =>
   Array.isArray(props.user?.idpReviewerSteps) ? props.user.idpReviewerSteps : [],
 );
+const hasIdpReviewerSteps = computed(() => idpApprovalSteps.value.length > 0);
 const selectedGap = computed(() => idpGaps.value.find((gap) => gap.id === selectedGapId.value) || null);
 const selectedPlan = computed(() => plans.value.find((plan) => plan.competencyGapId === selectedGapId.value) || null);
 const isReviewStatus = (status: string) => /^review_step_[123]$/.test(status);
@@ -290,6 +294,10 @@ const formCodeForActivity = (activity: Activity) => {
 
   return '';
 };
+const methodKeyForFocus = (focus: BuilderFocus) =>
+  methods.value.find((method) => focusType(method.key) === focus)?.key || `${focus}-learning`;
+const builderTools = computed(() => activeTools.value.filter((tool) => tool.focusType === activityBuilderFocus.value));
+const builderCatalogs = computed(() => selectedGap.value ? catalogsFor(selectedGap.value) : []);
 const effectiveFormCode = (activity: Activity) => {
   if (['experiential', 'social'].includes(focusType(activity.methodKey)) && activity.developmentToolId) {
     return formCodeForActivity(activity);
@@ -366,8 +374,11 @@ const planStatusLabel = (plan: Plan | null) => ({
   revision_required: 'ตีกลับให้แก้ไข',
 }[plan?.status || ''] || 'ร่าง');
 
-const addActivity = (plan: Plan) => {
-  plan.activities.push(blankActivity());
+const openActivityBuilder = () => {
+  const availableFocus = (['experiential', 'social'] as BuilderFocus[])
+    .find((focus) => activeTools.value.some((tool) => tool.focusType === focus));
+  activityBuilderFocus.value = availableFocus || (builderCatalogs.value.length ? 'formal' : 'experiential');
+  activityBuilderOpen.value = true;
 };
 const removeActivity = (plan: Plan, clientKey: string) => {
   plan.activities = plan.activities.filter((activity) => activity.clientKey !== clientKey);
@@ -403,6 +414,22 @@ const chooseCatalog = (activity: Activity) => {
       cost: catalog?.cost ?? '',
     } : row),
   };
+};
+const addToolActivity = (plan: Plan, tool: DevelopmentTool) => {
+  const activity = blankActivity();
+  activity.methodKey = methodKeyForFocus(tool.focusType as BuilderFocus);
+  activity.developmentToolId = tool.id;
+  plan.activities.push(activity);
+  chooseTool(activity);
+  activityBuilderOpen.value = false;
+};
+const addCatalogActivity = (plan: Plan, catalog: Catalog) => {
+  const activity = blankActivity();
+  activity.methodKey = methodKeyForFocus('formal');
+  activity.learningCatalogId = catalog.id;
+  plan.activities.push(activity);
+  chooseCatalog(activity);
+  activityBuilderOpen.value = false;
 };
 const defaultPlanRows = (formCode: string) => {
   return [{}];
@@ -504,6 +531,9 @@ const requestPayload = () => ({
 const signature = () => JSON.stringify(requestPayload());
 
 watch(() => [props.gaps, props.idp], hydratePlans, { immediate: true });
+watch(selectedGapId, () => {
+  activityBuilderOpen.value = false;
+});
 
 const csrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
 
@@ -738,13 +768,13 @@ const submitSelectedPlan = () => {
   <section class="idp-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">INDIVIDUAL DEVELOPMENT PLAN</p>
         <h1>แผนพัฒนา IDP</h1>
         <p class="subtitle">หนึ่งสมรรถนะต่อหนึ่งแผน และเพิ่มกิจกรรมพัฒนาได้หลายรายการ</p>
       </div>
-      <div class="save-indicator" :class="saveState">
+      <div class="save-indicator" :class="hasIdpReviewerSteps ? saveState : 'error'">
         <span class="save-dot" />
-        <span v-if="selectedPlanLocked">{{ planStatusLabel(selectedPlan) }}</span>
+        <span v-if="!hasIdpReviewerSteps">ยังไม่พร้อมใช้งาน</span>
+        <span v-else-if="selectedPlanLocked">{{ planStatusLabel(selectedPlan) }}</span>
         <span v-else-if="saveState === 'saving'">กำลังบันทึก...</span>
         <span v-else-if="saveState === 'error'">บันทึกไม่สำเร็จ</span>
         <span v-else-if="lastSavedAt">บันทึกแล้ว {{ lastSavedAt }}</span>
@@ -752,7 +782,30 @@ const submitSelectedPlan = () => {
       </div>
     </header>
 
-    <div v-if="idpGaps.length === 0" class="empty-state">
+    <section v-if="!hasIdpReviewerSteps" class="idp-readiness-panel">
+      <header>
+        <span class="idp-readiness-symbol" aria-hidden="true">!</span>
+        <div>
+          <h2>ยังไม่สามารถจัดทำแผนพัฒนา IDP ได้</h2>
+          <p>ระบบยังไม่ได้กำหนดลำดับผู้อนุมัติ IDP สำหรับคุณ</p>
+        </div>
+        <div class="idp-readiness-count"><strong>0/1</strong><span>รายการพร้อม</span></div>
+      </header>
+      <div class="idp-readiness-row">
+        <span class="idp-readiness-state" aria-hidden="true">!</span>
+        <div>
+          <strong>ลำดับผู้อนุมัติแผน IDP</strong>
+          <small>ยังไม่ได้กำหนดลำดับ IDP</small>
+        </div>
+        <span class="idp-readiness-owner">รอ Admin</span>
+      </div>
+      <footer>
+        <strong>ต้องดำเนินการอย่างไร?</strong>
+        <span>ติดต่อผู้ดูแลระบบ (Admin) พร้อมแจ้งชื่อและตำแหน่ง เมื่อกำหนดลำดับแล้วหน้านี้จะเปิดให้ใช้งานอัตโนมัติ</span>
+      </footer>
+    </section>
+
+    <div v-else-if="idpGaps.length === 0" class="empty-state">
       <strong>ยังไม่มีสมรรถนะที่ต้องจัดทำ IDP</strong>
       <span>ระบบจะแสดงรายการเมื่อผลประเมินได้รับอนุมัติและมี Gap ติดลบ</span>
     </div>
@@ -794,9 +847,8 @@ const submitSelectedPlan = () => {
         <template v-else>
           <section class="competency-header">
             <div>
-              <span class="type-tag">{{ selectedGap.t || 'CC' }}</span>
-              <h2>{{ selectedGap.cd }} · {{ selectedGap.n }}</h2>
-              <p v-if="selectedGap.note">{{ selectedGap.note }}</p>
+              <span class="type-tag">{{ selectedGap.cd }}</span>
+              <h2>{{ selectedGap.n }}</h2>
             </div>
             <div class="score-row">
               <div><span>Expected</span><strong>{{ formatNumber(selectedGap.expected) }}</strong></div>
@@ -816,7 +868,7 @@ const submitSelectedPlan = () => {
                 <span class="section-number">01</span>
                 <div><h3>พฤติกรรมที่ต้องพัฒนา</h3><p>ข้อมูลจากผลประเมิน แก้ไขไม่ได้</p></div>
               </div>
-              <b class="section-badge">ล็อก · {{ missingIndicators(selectedGap).length }} ข้อ</b>
+              <b class="section-badge">ต้องพัฒนา · {{ missingIndicators(selectedGap).length }} ข้อ</b>
             </header>
             <div class="section-body indicator-list">
               <div v-for="indicator in missingIndicators(selectedGap)" :key="`${indicator.level}-${indicator.code}`" class="indicator-row">
@@ -962,8 +1014,77 @@ const submitSelectedPlan = () => {
                 </div>
               </article>
 
-              <button v-if="!selectedPlanLocked" class="add-activity" type="button" @click="addActivity(selectedPlan)">
-                <span>+</span> เพิ่มกิจกรรมพัฒนา
+              <div v-if="activityBuilderOpen && !selectedPlanLocked" class="activity-builder">
+                <header class="activity-builder-head">
+                  <div>
+                    <strong>เลือกเครื่องมือสำหรับกิจกรรม</strong>
+                    <span>รายการกำหนดโดยผู้ดูแลระบบ และจะเปิดแบบฟอร์มให้ตรงกับเครื่องมือที่เลือก</span>
+                  </div>
+                  <button type="button" aria-label="ปิดตัวเลือกกิจกรรม" @click="activityBuilderOpen = false">×</button>
+                </header>
+
+                <nav class="activity-builder-tabs" aria-label="ประเภทแนวทางการพัฒนา">
+                  <button
+                    v-for="focus in ([
+                      { key: 'experiential', label: 'Experiential', description: 'เรียนรู้จากการลงมือทำ', count: activeTools.filter((tool) => tool.focusType === 'experiential').length },
+                      { key: 'social', label: 'Social', description: 'เรียนรู้จากบุคคลและทีม', count: activeTools.filter((tool) => tool.focusType === 'social').length },
+                      { key: 'formal', label: 'Formal', description: 'หลักสูตรที่ตรงกับสมรรถนะ', count: builderCatalogs.length },
+                    ] as const)"
+                    :key="focus.key"
+                    type="button"
+                    :class="{ active: activityBuilderFocus === focus.key }"
+                    @click="activityBuilderFocus = focus.key"
+                  >
+                    <span>{{ focus.label }}</span>
+                    <small>{{ focus.description }}</small>
+                    <b>{{ focus.count }}</b>
+                  </button>
+                </nav>
+
+                <div v-if="activityBuilderFocus !== 'formal'" class="activity-builder-list">
+                  <button
+                    v-for="tool in builderTools"
+                    :key="tool.id"
+                    class="activity-choice"
+                    type="button"
+                    @click="addToolActivity(selectedPlan, tool)"
+                  >
+                    <span class="activity-choice-code">{{ tool.code || '—' }}</span>
+                    <span class="activity-choice-copy">
+                      <strong>{{ tool.title }}</strong>
+                      <small>{{ tool.formCode ? 'มีแบบฟอร์มประกอบตามเครื่องมือนี้' : 'กิจกรรมตามแนวทางที่ผู้ดูแลระบบกำหนด' }}</small>
+                    </span>
+                    <span class="activity-choice-add">เลือก</span>
+                  </button>
+                  <div v-if="builderTools.length === 0" class="activity-builder-empty">
+                    ผู้ดูแลระบบยังไม่ได้เปิดใช้เครื่องมือในหมวดนี้
+                  </div>
+                </div>
+
+                <div v-else class="activity-builder-list">
+                  <button
+                    v-for="catalog in builderCatalogs"
+                    :key="catalog.id"
+                    class="activity-choice"
+                    type="button"
+                    @click="addCatalogActivity(selectedPlan, catalog)"
+                  >
+                    <span class="activity-choice-code formal">{{ catalog.code || 'COURSE' }}</span>
+                    <span class="activity-choice-copy">
+                      <strong>{{ catalog.name }}</strong>
+                      <small>{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
+                    </span>
+                    <span class="activity-choice-add">เลือก</span>
+                  </button>
+                  <div v-if="builderCatalogs.length === 0" class="activity-builder-empty formal-empty">
+                    <strong>ยังไม่มีหลักสูตรสำหรับสมรรถนะนี้</strong>
+                    <span>ระบบแสดงเฉพาะหลักสูตรที่ผู้ดูแลระบบผูกกับ {{ selectedGap?.cd }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <button v-if="!selectedPlanLocked && !activityBuilderOpen" class="add-activity" type="button" @click="openActivityBuilder">
+                <span>+</span> เลือกเครื่องมือ / หลักสูตร
               </button>
             </div>
           </section>
@@ -1583,7 +1704,7 @@ const submitSelectedPlan = () => {
       </div>
     </div>
 
-    <footer v-if="idpGaps.length" class="submit-bar">
+    <footer v-if="hasIdpReviewerSteps && idpGaps.length" class="submit-bar">
       <div>
         <strong>{{ selectedPlan ? `${selectedGap?.cd} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
         <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
@@ -1602,6 +1723,26 @@ const submitSelectedPlan = () => {
 .eyebrow { margin: 0 0 5px; color: #28705f; font-size: 11px; font-weight: 900; }
 .page-header h1 { margin: 0; font-size: 24px; font-weight: 900; }
 .subtitle { margin: 6px 0 0; color: #68768a; font-size: 13px; }
+.idp-readiness-panel { overflow: hidden; border: 1px solid #d9dee5; border-radius: 10px; background: #fbfcfd; box-shadow: 0 12px 32px rgba(21, 25, 29, .07); }
+.idp-readiness-panel > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 15px; border-bottom: 1px solid #e2e6eb; padding: 20px 22px; }
+.idp-readiness-panel h2, .idp-readiness-panel p { margin: 0; }
+.idp-readiness-panel h2 { color: #172033; font-size: 18px; }
+.idp-readiness-panel p { margin-top: 5px; color: #7a8798; font-size: 12px; }
+.idp-readiness-panel header small { display: block; margin-bottom: 4px; color: #3979b7; font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.idp-readiness-symbol, .idp-readiness-state { display: grid; place-items: center; border-radius: 50%; background: #f7ded7; color: #a63824; font-weight: 900; }
+.idp-readiness-symbol { width: 38px; height: 38px; font-size: 17px; }
+.idp-readiness-count { display: grid; min-width: 88px; border: 1px solid #e0e4e9; border-radius: 8px; background: #f3f5f7; padding: 9px 12px; text-align: center; }
+.idp-readiness-count strong { color: #172033; font-size: 18px; }
+.idp-readiness-count span { color: #7a8798; font-size: 9px; font-weight: 800; }
+.idp-readiness-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 0 22px; padding: 15px 0; }
+.idp-readiness-state { width: 26px; height: 26px; font-size: 11px; }
+.idp-readiness-row > div { display: grid; gap: 3px; }
+.idp-readiness-row strong { color: #172033; font-size: 12px; }
+.idp-readiness-row small { color: #778391; font-size: 11px; }
+.idp-readiness-owner { border-radius: 999px; background: #fff0eb; color: #a63824; padding: 5px 9px; font-size: 10px; font-weight: 900; }
+.idp-readiness-panel > footer { display: grid; gap: 3px; border-top: 1px solid #e2e6eb; background: #f3f5f7; padding: 13px 22px; }
+.idp-readiness-panel > footer strong { color: #172033; font-size: 11px; }
+.idp-readiness-panel > footer span { color: #7a8798; font-size: 10px; line-height: 1.5; }
 .save-indicator { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 11px; border: 1px solid #d8e0e9; border-radius: 6px; background: #fff; color: #657287; font-size: 12px; font-weight: 800; }
 .save-dot { width: 7px; height: 7px; border-radius: 50%; background: #9aa7b7; }
 .save-indicator.saving .save-dot { background: #d97706; animation: pulse 1s infinite; }
@@ -1709,6 +1850,33 @@ select:disabled { cursor: not-allowed; }
 .activity-detail-action span.saved { color: #16835d; }
 .activity-detail-action button { border: 0; border-radius: 6px; background: #247260; padding: 9px 12px; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; white-space: nowrap; }
 .activity-detail-action button:disabled { background: #aab5c2; cursor: not-allowed; }
+.activity-builder { margin-top: 12px; overflow: hidden; border: 1px solid #a9cfc3; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(28, 78, 65, .08); }
+.activity-builder-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid #dbe9e4; background: #f3faf7; padding: 13px 14px; }
+.activity-builder-head strong, .activity-builder-head span { display: block; }
+.activity-builder-head strong { color: #174f41; font-size: 13px; }
+.activity-builder-head span { margin-top: 4px; color: #667085; font-size: 11px; font-weight: 700; }
+.activity-builder-head button { flex: 0 0 auto; width: 28px; height: 28px; border: 1px solid #c8d9d3; border-radius: 5px; background: #fff; color: #59677a; font-size: 18px; cursor: pointer; }
+.activity-builder-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-bottom: 1px solid #e2e8ef; padding: 10px 12px; }
+.activity-builder-tabs button { position: relative; display: grid; gap: 2px; min-width: 0; border: 1px solid #dbe2ea; border-radius: 7px; background: #fff; padding: 10px 38px 10px 11px; color: #344054; text-align: left; cursor: pointer; }
+.activity-builder-tabs button.active { border-color: #28745f; background: #edf8f4; box-shadow: inset 0 0 0 1px #28745f; color: #175c4a; }
+.activity-builder-tabs span { font-size: 12px; font-weight: 900; }
+.activity-builder-tabs small { overflow: hidden; color: #7a8798; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.activity-builder-tabs b { position: absolute; top: 50%; right: 10px; display: grid; place-items: center; min-width: 21px; height: 21px; border-radius: 999px; background: #edf1f5; color: #667085; font-size: 10px; transform: translateY(-50%); }
+.activity-builder-tabs button.active b { background: #28745f; color: #fff; }
+.activity-builder-list { display: grid; gap: 7px; padding: 12px; }
+.activity-choice { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; border: 1px solid #dce4eb; border-radius: 7px; background: #fff; padding: 9px 10px; color: #273142; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.activity-choice:hover { border-color: #75ad9d; background: #f8fcfa; }
+.activity-choice-code { display: grid; place-items: center; min-height: 34px; border-radius: 6px; background: #e5f2ee; color: #246b59; font-size: 10px; font-weight: 900; }
+.activity-choice-code.formal { background: #eef4ff; color: #315f9f; }
+.activity-choice-copy { min-width: 0; }
+.activity-choice-copy strong, .activity-choice-copy small { display: block; }
+.activity-choice-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.activity-choice-copy small { margin-top: 3px; color: #7a8798; font-size: 10px; font-weight: 700; }
+.activity-choice-add { border: 1px solid #9bc8bb; border-radius: 5px; padding: 6px 9px; color: #246b59; font-size: 10px; font-weight: 900; }
+.activity-builder-empty { padding: 22px 14px; border: 1px dashed #cbd5df; border-radius: 7px; background: #f8fafc; color: #667085; font-size: 11px; font-weight: 800; text-align: center; }
+.activity-builder-empty strong, .activity-builder-empty span { display: block; }
+.activity-builder-empty span { margin-top: 5px; font-weight: 700; }
+.formal-empty { background: #f8faff; }
 .add-activity { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; margin-top: 11px; border: 1px dashed #9dbbb3; border-radius: 6px; background: #f6fbf9; padding: 11px; color: #246b5a; font-size: 12px; font-weight: 900; cursor: pointer; }
 .add-activity span { font-size: 18px; }
 .error-box { margin-top: 12px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; color: #b42318; font-size: 12px; }
@@ -1854,6 +2022,10 @@ select:disabled { cursor: not-allowed; }
 @keyframes pulse { 50% { opacity: .35; } }
 @media (max-width: 900px) {
   .page-header, .competency-header, .submit-bar { align-items: stretch; flex-direction: column; }
+  .idp-readiness-panel > header { grid-template-columns: auto minmax(0, 1fr); padding: 17px; }
+  .idp-readiness-count { grid-column: 1 / -1; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: 5px; }
+  .idp-readiness-row { grid-template-columns: 28px minmax(0, 1fr); margin-right: 17px; margin-left: 17px; }
+  .idp-readiness-owner { grid-column: 2; justify-self: start; }
   .workspace { grid-template-columns: 1fr; }
   .plan-nav { border-right: 0; border-bottom: 1px solid #dfe5ed; }
   .goal-grid, .activity-form, .form-grid, .form-grid.three, .project-assignment-grid, .project-assignment-grid.training-form-grid, .coaching-timeline, .coaching-timeline.group-activity-timeline, .coaching-timeline.training-summary { grid-template-columns: 1fr; }
@@ -1867,6 +2039,8 @@ select:disabled { cursor: not-allowed; }
   .coaching-timeline-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
   .approach-help-card ul { grid-template-columns: 1fr; }
   .activity-form .wide { grid-column: span 1; }
+  .activity-builder-tabs { grid-template-columns: 1fr; }
+  .activity-choice { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .activity-detail-action, .form-title-band { align-items: stretch; flex-direction: column; }
   .form-title-band label { width: 100%; }
   .score-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }

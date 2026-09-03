@@ -148,7 +148,8 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
                     return $user
                         && $user['structureStatus'] === 'invalid'
-                        && ($user['structureIssues'][0] ?? null) === 'ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย';
+                        && ($user['structureIssues'][0] ?? null) === 'ยังไม่ได้กำหนดลำดับการประเมิน'
+                        && ($user['structureIssues'][1] ?? null) === 'ยังไม่ได้กำหนดลำดับ IDP';
                 })
             );
     }
@@ -311,6 +312,86 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             );
     }
 
+    public function test_dashboard_preserves_support_department_work_and_unit_path(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Admin User',
+            'role_id' => $this->roleId('admin'),
+        ]);
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ตำแหน่งสายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $departmentId = DB::table('support_departments')->insertGetId([
+            'name' => 'ฝ่ายบริหาร',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $workId = DB::table('support_works')->insertGetId([
+            'support_department_id' => $departmentId,
+            'name' => 'งานบุคคล',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $unitId = DB::table('support_units')->insertGetId([
+            'support_work_id' => $workId,
+            'name' => 'หน่วยพัฒนา',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $positionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $jobFamilyId,
+            'support_unit_id' => $unitId,
+            'name' => 'นักทรัพยากรบุคคล',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'job_family_id' => null,
+            'name' => 'ปฏิบัติการ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $reviewer = User::factory()->create([
+            'name' => 'Support Reviewer',
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $user = User::factory()->create([
+            'name' => 'ZZ Support Unit User',
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายสนับสนุน',
+            'department' => 'ข้อมูลเก่าที่ไม่ควรแสดง',
+            'position' => 'นักทรัพยากรบุคคล',
+            'level' => 'ปฏิบัติการ',
+            'position_id' => $positionId,
+            'level_id' => $levelId,
+        ]);
+        $this->assignReviewer($user, $reviewer);
+
+        $this->actingAs($admin)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Admin/Dashboard')
+                ->where('users', function ($users): bool {
+                    $user = collect($users)->firstWhere('n', 'ZZ Support Unit User');
+
+                    return $user
+                        && $user['d'] === 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา'
+                        && $user['structureStatus'] === 'ok'
+                        && $user['structureIssues'] === [];
+                })
+            );
+    }
+
     private function createValidStructure(): void
     {
         $worklineId = DB::table('worklines')->insertGetId([
@@ -341,14 +422,14 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
     private function assignReviewer(User $user, User $reviewer, int $step = 1): void
     {
-        DB::table('user_reviewer_steps')->insert([
+        DB::table('user_reviewer_steps')->insert(collect(['assessment', 'idp'])->map(fn (string $chainType): array => [
             'user_id' => $user->id,
             'reviewer_id' => $reviewer->id,
             'step_order' => $step,
-            'chain_type' => 'assessment',
+            'chain_type' => $chainType,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ])->all());
     }
 
     private function roleId(string $key): int

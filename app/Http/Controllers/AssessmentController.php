@@ -35,8 +35,17 @@ class AssessmentController extends Controller
             $savedAt = $this->persistSelfAssessment($request, $data, false);
         });
 
+        $status = DB::table('assessments')
+            ->leftJoin('competency_gaps', function ($join) {
+                $join->on('competency_gaps.assessment_id', '=', 'assessments.id')
+                    ->on('competency_gaps.competency_id', '=', 'assessments.competency_id');
+            })
+            ->where('assessments.user_id', $request->user()->id)
+            ->where('assessments.competency_id', $data['competency_id'])
+            ->value(DB::raw('COALESCE(competency_gaps.status, assessments.status)'));
+
         return response()->json([
-            'status' => 'draft',
+            'status' => $status ?: 'draft',
             'lastDraftSavedAt' => $savedAt?->toISOString(),
             'message' => 'บันทึกฉบับร่างแล้ว',
         ]);
@@ -84,6 +93,7 @@ class AssessmentController extends Controller
                 'lastDraftSavedAt' => null,
                 'locked' => false,
                 'reject_comment' => '',
+                'reject_reviewer_name' => '',
             ]);
         }
 
@@ -100,6 +110,9 @@ class AssessmentController extends Controller
             ->first();
         $gapStatus = $gap?->status;
         $status = $gapStatus ?? $assessment->status ?? 'draft';
+        $rejectReviewer = $gap?->rejected_by
+            ? User::query()->find($gap->rejected_by)
+            : null;
 
         return response()->json([
             'checked' => $indicators,
@@ -110,6 +123,9 @@ class AssessmentController extends Controller
             'lastDraftSavedAt' => $this->isoTimestamp($assessment->last_draft_saved_at),
             'locked' => ! in_array($status, ['draft', 'revision_required'], true),
             'reject_comment' => $gap?->reject_comment ?? '',
+            'reject_reviewer_name' => $rejectReviewer
+                ? trim(($rejectReviewer->title ?: '').($rejectReviewer->name ?: ''))
+                : '',
         ]);
     }
 
@@ -284,7 +300,7 @@ class AssessmentController extends Controller
         $isFcCompetency = DB::table('competencies')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('competencies.id', $competencyId)
-            ->where('competency_types.code', 'FC')
+            ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->exists();
 
         if (! $isFcCompetency) {
@@ -339,7 +355,9 @@ class AssessmentController extends Controller
         }
 
         $savedAt = now();
-        $submittedStatus = $submit ? $this->initialSubmittedStatusForUser($request->user()) : 'draft';
+        $submittedStatus = $submit
+            ? $this->initialSubmittedStatusForUser($request->user())
+            : ($existingStatus === 'revision_required' ? 'revision_required' : 'draft');
         $assessmentAttributes = [
             'user_id' => $userId,
             'competency_id' => $competencyId,

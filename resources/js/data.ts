@@ -3,6 +3,8 @@
   hr: { lbl: "งานทรัพยากรบุคคล", name: "คุณมาลี ดีเสมอ", av: "ม", pos: "งานทรัพยากรบุคคล", col: "#C7432B" },
   employee: { lbl: "บุคลากร", name: "สมชาย มีสุข", av: "ส", pos: "นักวิชาการศึกษา · สายสนับสนุน", col: "#D84A2F" },
   dept_head: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้าหน่วยสนับสนุนการศึกษาและวิชาการ", col: "#B93620" },
+  division_head: { lbl: "หัวหน้าฝ่าย", name: "หัวหน้าฝ่าย", av: "ฝ", pos: "หัวหน้าฝ่าย", col: "#B45309" },
+  academic_department_head: { lbl: "หัวหน้าภาควิชา", name: "หัวหน้าภาควิชา", av: "ภ", pos: "หัวหน้าภาควิชา", col: "#0E7490" },
   supervisor: { lbl: "หัวหน้าหน่วย", name: "ผศ.ดร.ธนพล ไชยรักษ์", av: "ธ", pos: "รองคณบดีฝ่ายบริหาร", col: "#C7432B" },
   manager_dept: { lbl: "หัวหน้างาน", name: "กัญญารัตน์ ศรีวิชา", av: "ก", pos: "หัวหน้าหน่วยสนับสนุนการศึกษาและวิชาการ", col: "#B93620" },
   manager: { lbl: "ผู้บริหารคณะ", name: "รศ.ดร.กิตติพงศ์ แสงทอง", av: "ก", pos: "คณบดี", col: "#A93420" }
@@ -56,6 +58,46 @@ export const NAV_CONFIG = {
       sec: "จัดการทีม",
       items: [
         { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
+      ]
+    }
+  ],
+  division_head: [
+    {
+      sec: "ของฉัน (บุคลากร)",
+      items: [
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+      ]
+    },
+    {
+      sec: "จัดการทีม",
+      items: [
+        { id: "dh-assess", ic: "", lb: "อนุมัติผลการประเมิน" },
+        { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
+        { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
+      ]
+    }
+  ],
+  academic_department_head: [
+    {
+      sec: "ของฉัน (บุคลากร)",
+      items: [
+        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
+        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
+        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
+        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+      ]
+    },
+    {
+      sec: "จัดการทีม",
+      items: [
+        { id: "dh-assess", ic: "", lb: "อนุมัติผลการประเมิน" },
+        { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
@@ -159,7 +201,7 @@ export const PAGE_TITLES = {
   "sup-assess": "ประเมินทีมงาน",
   "sup-gap": "Competency Gap ทีม",
   "sup-idp": "IDP & ติดตามทีม",
-  "dh-assess": "ประเมินทีมงาน",
+  "dh-assess": "อนุมัติผลการประเมิน",
   "dh-idp": "IDP & ติดตามทีม",
   "dept-monitor": "ภาพรวมหน่วยงาน (Department View)",
   "mgr-gap": "ภาพรวมองค์กร",

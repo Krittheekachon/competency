@@ -86,7 +86,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const [structureVersion, setStructureVersion] = useState(0);
     const addNameInput = ref<HTMLInputElement | null>(null);
     const dean = users.find((user) => user.r === "manager")?.n || "";
-    const deptManagers = users.filter((user) => ["dept_head", "manager_dept"].includes(user.r));
+    const deptManagers = users.filter((user) => ["dept_head", "manager_dept", "division_head", "academic_department_head"].includes(user.r));
     const supervisors = users.filter((user) => user.r === "supervisor");
     const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
     const getCompetencyTypeFullName = (item: any) => typeof item === "string" ? "" : item?.fullName || item?.label || "";

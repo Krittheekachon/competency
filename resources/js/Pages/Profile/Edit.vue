@@ -28,7 +28,7 @@ const normalizeRoleKey = (role) => role === 'manager_dept' ? 'dept_head' : role;
 const roleKey = computed(() => normalizeRoleKey(props.profileUser?.r || 'employee'));
 const roleData = computed(() => ROLES_CONFIG[roleKey.value] || ROLES_CONFIG.employee);
 const navSections = computed(() => {
-    if (roleKey.value === 'dept_head') return NAV_CONFIG.dept_head || NAV_CONFIG.manager_dept || [];
+    if (['dept_head', 'division_head', 'academic_department_head'].includes(roleKey.value)) return NAV_CONFIG[roleKey.value] || NAV_CONFIG.dept_head || NAV_CONFIG.manager_dept || [];
 
     return NAV_CONFIG[roleKey.value] || NAV_CONFIG.employee || [];
 });

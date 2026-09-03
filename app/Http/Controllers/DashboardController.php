@@ -20,6 +20,9 @@ class DashboardController extends Controller
     private array $worklineIdCache = [];
 
     private array $jobFamilyNameCache = [];
+    private array $supportUnitStructureCache = [];
+
+    private array $assessmentReviewerStepsCache = [];
 
     public function __construct(
         private ReviewerChainResolver $reviewerChainResolver,
@@ -59,6 +62,8 @@ class DashboardController extends Controller
             'source' => 'database',
         ];
         $approvedIdpActivities = $this->currentUserApprovedIdpActivities($currentUser);
+        $fcTopicApprovalModule = $this->fcTopicApprovalModuleForReviewer($currentUser);
+        $assessmentApprovalModule = $this->assessmentApprovalModuleForReviewer($currentUser);
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
@@ -78,24 +83,56 @@ class DashboardController extends Controller
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
-            'dept_head' => Inertia::render('Head/Dashboard', [
+            'dept_head' => Inertia::render('Super/Dashboard', [
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
                 'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
-            'employee' => Inertia::render('Employee/Dashboard', [
+            'division_head' => Inertia::render('Super/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'division_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
+            ]),
+            'academic_department_head' => Inertia::render('Super/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'academic_department_head',
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
+            ]),
+            'employee' => Inertia::render($assessmentApprovalModule['enabled'] ? 'Super/Dashboard' : 'Employee/Dashboard', [
+                'users' => $users,
+                'roleKey' => 'employee',
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
@@ -104,6 +141,7 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
+                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
@@ -188,11 +226,13 @@ class DashboardController extends Controller
     private function dashboardUserPayload(User $user): array
     {
         $department = $this->currentDepartmentForUser($user);
+        $approvalOrganization = $this->approvalOrganizationForUser($user, $department);
         $roleKey = $this->roleKeyForUser($user);
         $assignedCompetencies = $this->assignedCompetenciesForUser($user);
         $competencyGaps = $this->competencyGapsForUser($user);
         $evalStatus = $this->evaluationStatusFromGaps($competencyGaps);
-        $reviewerSteps = $this->reviewerChainResolver->payloadForUser($user);
+        $reviewerSteps = $this->assessmentReviewerStepsCache[$user->id]
+            ??= $this->reviewerChainResolver->payloadForUser($user);
         $idpReviewerSteps = $this->reviewerChainResolver->payloadForUser($user, 'idp');
         $structureIssues = $roleKey === 'admin'
             ? []
@@ -214,6 +254,7 @@ class DashboardController extends Controller
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $department,
+            'approvalOrg' => $approvalOrganization,
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'position_id' => $user->position_id,
@@ -315,6 +356,24 @@ class DashboardController extends Controller
 
     private function currentDepartmentForUser(User $user): string
     {
+        if ($this->usesSupportUnitStructure($user)) {
+            $supportDepartment = DB::table('positions')
+                ->join('support_units', 'positions.support_unit_id', '=', 'support_units.id')
+                ->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+                ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
+                ->where('positions.id', $user->position_id)
+                ->select('support_departments.name as department_name', 'support_works.name as work_name', 'support_units.name as unit_name')
+                ->first();
+
+            if ($supportDepartment) {
+                return implode(' > ', [
+                    $supportDepartment->department_name,
+                    $supportDepartment->work_name,
+                    $supportDepartment->unit_name,
+                ]);
+            }
+        }
+
         $currentJobFamily = $this->currentJobFamilyNameForUser($user);
 
         if (!$currentJobFamily) {
@@ -324,6 +383,20 @@ class DashboardController extends Controller
         $suffix = $this->departmentSuffix($user->department ?: '');
 
         return $currentJobFamily.$suffix;
+    }
+
+    private function approvalOrganizationForUser(User $user, ?string $department = null): string
+    {
+        $department ??= $this->currentDepartmentForUser($user);
+        $parts = array_values(array_filter(array_map('trim', explode(' > ', $department))));
+        $isSupport = $this->usesSupportUnitStructure($user)
+            || in_array($user->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
+
+        if ($isSupport) {
+            return $parts[array_key_last($parts)] ?? $department;
+        }
+
+        return $parts[0] ?? $department;
     }
 
     private function currentJobFamilyNameForUser(User $user): ?string
@@ -385,6 +458,10 @@ class DashboardController extends Controller
             return $issues;
         }
 
+        if ($this->usesSupportUnitStructure($user) || $this->isSupportDepartmentPath($user, $department)) {
+            return $this->supportStructureIssuesForUser($user, (int) $worklineId, $department);
+        }
+
         $jobFamilyName = $this->jobFamilyNameFromDepartment($department);
         $jobFamilyId = $jobFamilyName
             ? DB::table('job_families')
@@ -433,6 +510,80 @@ class DashboardController extends Controller
         return $issues;
     }
 
+    private function supportStructureIssuesForUser(User $user, int $worklineId, string $department): array
+    {
+        $issues = [];
+        $path = array_values(array_filter(array_map('trim', explode(' > ', $department))));
+        $supportUnitId = count($path) === 3
+            ? DB::table('support_units')
+                ->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+                ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
+                ->where('support_departments.name', $path[0])
+                ->where('support_works.name', $path[1])
+                ->where('support_units.name', $path[2])
+                ->value('support_units.id')
+            : null;
+
+        if (! $supportUnitId) {
+            $issues[] = 'ฝ่าย งาน หรือหน่วยนี้ไม่มีในโครงสร้างสายสนับสนุนปัจจุบัน';
+        }
+
+        if (! $user->position) {
+            $issues[] = 'ยังไม่ได้กำหนดตำแหน่ง';
+        } else {
+            $positionExists = $supportUnitId
+                ? DB::table('positions')
+                    ->where('support_unit_id', $supportUnitId)
+                    ->where('name', $user->position)
+                    ->when($user->position_id, fn ($query) => $query->where('id', $user->position_id))
+                    ->exists()
+                : false;
+
+            if (! $positionExists) {
+                $issues[] = 'ตำแหน่งนี้ไม่มีในหน่วยงานสายสนับสนุนปัจจุบัน';
+            }
+        }
+
+        if (! $user->level) {
+            $issues[] = 'ยังไม่ได้กำหนดระดับตำแหน่ง';
+        } else {
+            $levelExists = DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->where('name', $user->level)
+                ->whereNull('job_family_id')
+                ->exists();
+
+            if (! $levelExists) {
+                $issues[] = 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน';
+            }
+        }
+
+        return $issues;
+    }
+
+    private function usesSupportUnitStructure(User $user): bool
+    {
+        if (! in_array($user->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true) || ! $user->position_id) {
+            return false;
+        }
+
+        $cacheKey = (int) $user->position_id;
+        if (array_key_exists($cacheKey, $this->supportUnitStructureCache)) {
+            return $this->supportUnitStructureCache[$cacheKey];
+        }
+
+        return $this->supportUnitStructureCache[$cacheKey] = DB::table('positions')
+            ->where('id', $user->position_id)
+            ->whereNotNull('support_unit_id')
+            ->exists();
+    }
+
+    private function isSupportDepartmentPath(User $user, string $department): bool
+    {
+        return in_array($user->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true)
+            && count(array_filter(array_map('trim', explode(' > ', $department)))) === 3;
+    }
+
     private function jobFamilyNameFromDepartment(string $department): string
     {
         return trim(explode(' > ', $department)[0] ?? '');
@@ -446,9 +597,17 @@ class DashboardController extends Controller
             return [];
         }
 
-        $hasAnyEvaluator = $this->reviewerChainResolver->stepsForUser($user) !== [];
+        $issues = [];
 
-        return $hasAnyEvaluator ? [] : ['ยังไม่ได้กำหนดผู้ประเมินหรือหัวหน้าหน่วย'];
+        if ($this->reviewerChainResolver->stepsForUser($user, 'assessment') === []) {
+            $issues[] = 'ยังไม่ได้กำหนดลำดับการประเมิน';
+        }
+
+        if ($this->reviewerChainResolver->stepsForUser($user, 'idp') === []) {
+            $issues[] = 'ยังไม่ได้กำหนดลำดับ IDP';
+        }
+
+        return $issues;
     }
 
     private function evaluatorRoleIssuesForUser(User $user): array
@@ -764,7 +923,7 @@ class DashboardController extends Controller
             ->sortBy('code')
             ->unique('id')
             ->when($shouldFilterFc, fn ($items) => $items->filter(function (object $item) use ($selectedApprovedFcIds): bool {
-                if (($item->type_code ?? null) !== 'FC') {
+                if (! str_starts_with((string) ($item->type_code ?? ''), 'FC')) {
                     return true;
                 }
 
@@ -820,7 +979,7 @@ class DashboardController extends Controller
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('position_competencies.position_id', $positionId)
-            ->where('competency_types.code', 'FC')
+            ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->select(
                 'competencies.id',
                 'competencies.competency_type_id',
@@ -864,6 +1023,187 @@ class DashboardController extends Controller
             'reviewedBy' => $selection?->reviewed_by,
             'reviewComment' => $selection?->review_comment ?? '',
             'reviewedAt' => $selection?->reviewed_at ? \Carbon\Carbon::parse($selection->reviewed_at)->toISOString() : null,
+        ];
+    }
+
+    private function fcTopicApprovalModuleForReviewer(User $reviewer): array
+    {
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return ['enabled' => false, 'items' => []];
+        }
+
+        $stepQuery = DB::table('user_reviewer_steps')
+            ->where('reviewer_id', $reviewer->id)
+            ->where('step_order', 1);
+
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $stepQuery->where('chain_type', 'assessment');
+        }
+
+        $employeeIds = $stepQuery->pluck('user_id')->map(fn ($id) => (int) $id)->unique()->values();
+
+        if ($employeeIds->isEmpty()) {
+            return ['enabled' => false, 'items' => []];
+        }
+
+        if (! Schema::hasTable('fc_topic_selections')) {
+            return ['enabled' => true, 'items' => []];
+        }
+
+        $employees = User::query()->whereIn('id', $employeeIds)->get()->keyBy('id');
+        $selections = DB::table('fc_topic_selections')
+            ->whereIn('user_id', $employeeIds)
+            ->where('submitted_to', $reviewer->id)
+            ->where('status', 'submitted')
+            ->orderBy('submitted_at')
+            ->get();
+
+        $selectionIds = $selections->pluck('id');
+        $topicsBySelection = $selectionIds->isEmpty() || ! Schema::hasTable('fc_topic_selection_items')
+            ? collect()
+            : DB::table('fc_topic_selection_items')
+                ->join('competencies', 'fc_topic_selection_items.competency_id', '=', 'competencies.id')
+                ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+                ->whereIn('fc_topic_selection_items.fc_topic_selection_id', $selectionIds)
+                ->orderBy('competencies.code')
+                ->get([
+                    'fc_topic_selection_items.fc_topic_selection_id as selection_id',
+                    'competencies.id',
+                    'competencies.competency_type_id',
+                    'competencies.code',
+                    'competencies.name',
+                    'competencies.detail',
+                    'competency_types.code as type_code',
+                ])
+                ->groupBy('selection_id');
+
+        return [
+            'enabled' => true,
+            'items' => $selections->map(function (object $selection) use ($employees, $topicsBySelection): array {
+                $employee = $employees->get($selection->user_id);
+                $department = $employee ? $this->currentDepartmentForUser($employee) : '';
+                $departmentParts = array_values(array_filter(array_map('trim', explode(' > ', $department))));
+                $isSupport = $employee && ($this->usesSupportUnitStructure($employee)
+                    || in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true));
+                $departmentDisplay = $isSupport
+                    ? ($departmentParts[array_key_last($departmentParts)] ?? $department)
+                    : ($departmentParts[0] ?? $department);
+
+                return [
+                    'id' => (int) $selection->id,
+                    'employeeId' => (int) $selection->user_id,
+                    'employeeName' => $employee ? trim(($employee->title ?: '').$employee->name) : '-',
+                    'position' => $employee?->position ?: '-',
+                    'department' => $departmentDisplay ?: '-',
+                    'departmentLabel' => $isSupport ? 'หน่วยงาน' : 'ภาควิชา',
+                    'submittedAt' => $selection->submitted_at ? \Carbon\Carbon::parse($selection->submitted_at)->toISOString() : null,
+                    'topics' => collect($topicsBySelection->get($selection->id, []))->map(fn (object $topic): array => [
+                        'id' => (int) $topic->id,
+                        'code' => $topic->code,
+                        'name' => $topic->name,
+                        'detail' => $topic->detail ?: '',
+                        'type' => $topic->type_code ?: 'FC',
+                        'levels' => $this->competencyLevelsPayload((int) $topic->id),
+                    ])->values()->all(),
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private function assessmentApprovalModuleForReviewer(User $reviewer): array
+    {
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return ['enabled' => false, 'items' => [], 'pendingCount' => 0];
+        }
+
+        $stepQuery = DB::table('user_reviewer_steps')
+            ->where('reviewer_id', $reviewer->id)
+            ->orderBy('step_order');
+
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $stepQuery->where('chain_type', 'assessment');
+        }
+
+        $assignedSteps = $stepQuery->get(['user_id', 'step_order']);
+        if ($assignedSteps->isEmpty()) {
+            return ['enabled' => false, 'items' => [], 'pendingCount' => 0];
+        }
+
+        $employees = User::query()
+            ->whereIn('id', $assignedSteps->pluck('user_id')->unique())
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('id');
+
+        $items = $assignedSteps
+            ->map(function (object $assigned) use ($employees): ?array {
+                $employee = $employees->get($assigned->user_id);
+                if (! $employee) {
+                    return null;
+                }
+
+                $step = (int) $assigned->step_order;
+                $expectedStatus = $this->reviewerChainResolver->pendingStatusForStep($step);
+                $allCompetencies = collect($this->competencyGapsForUser($employee));
+                $competencies = $allCompetencies
+                    ->filter(fn (array $gap): bool => ($gap['status'] ?? 'draft') === $expectedStatus)
+                    ->values()
+                    ->all();
+                $reviewedStatuses = ['revision_required', 'approved'];
+                if ($step <= 1) {
+                    $reviewedStatuses = [...$reviewedStatuses, 'unit_evaluated', 'dept_evaluated'];
+                } elseif ($step === 2) {
+                    $reviewedStatuses[] = 'dept_evaluated';
+                }
+                for ($nextStep = max(4, $step + 1); $nextStep <= 12; $nextStep++) {
+                    $reviewedStatuses[] = 'review_step_'.$nextStep;
+                }
+                $reviewedCount = $allCompetencies
+                    ->filter(fn (array $gap): bool => in_array($gap['status'] ?? 'draft', $reviewedStatuses, true))
+                    ->count();
+                $totalCompetencies = $allCompetencies->count();
+                $hasRevision = $allCompetencies->contains(fn (array $gap): bool => ($gap['status'] ?? '') === 'revision_required');
+                $allApproved = $totalCompetencies > 0
+                    && $allCompetencies->every(fn (array $gap): bool => ($gap['status'] ?? '') === 'approved');
+                $nextStatus = $this->reviewerChainResolver->nextStatusAfterStep($employee, $step);
+                $hasForwarded = $allCompetencies->contains(fn (array $gap): bool => ($gap['status'] ?? '') === $nextStatus);
+
+                $department = $this->currentDepartmentForUser($employee);
+                $isSupport = $this->usesSupportUnitStructure($employee)
+                    || in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
+
+                return [
+                    'employeeId' => (int) $employee->id,
+                    'employeeName' => $this->displayNameForUser($employee),
+                    'position' => $employee->position ?: '-',
+                    'organizationLabel' => $isSupport ? 'หน่วย' : 'ภาควิชา',
+                    'organization' => $this->approvalOrganizationForUser($employee, $department) ?: '-',
+                    'reviewStep' => $step,
+                    'totalSteps' => count($this->reviewerChainResolver->stepsForUser($employee)),
+                    'submittedAt' => $allCompetencies->pluck('updatedAt')->filter()->max(),
+                    'competencies' => $competencies,
+                    'allCompetencies' => $allCompetencies->values()->all(),
+                    'statusLabel' => $totalCompetencies === 0
+                        ? 'ยังไม่ประเมิน'
+                        : 'ตรวจสอบแล้ว '.$reviewedCount.'/'.$totalCompetencies,
+                    'statusClass' => $hasRevision ? 'br' : ($reviewedCount >= $totalCompetencies ? 'bg' : 'by'),
+                    'isPending' => $competencies !== [],
+                    'isForwarded' => $hasForwarded,
+                    'isApproved' => $allApproved,
+                ];
+            })
+            ->filter()
+            ->sortByDesc(fn (array $item) => $item['submittedAt'] ?? '')
+            ->values()
+            ->all();
+
+        return [
+            'enabled' => true,
+            'items' => $items,
+            'pendingCount' => collect($items)->sum(fn (array $item): int => count($item['competencies'])),
+            'pendingPeopleCount' => collect($items)->where('isPending', true)->count(),
+            'forwardedCount' => collect($items)->where('isForwarded', true)->count(),
+            'approvedCount' => collect($items)->where('isApproved', true)->count(),
         ];
     }
 
@@ -993,6 +1333,7 @@ class DashboardController extends Controller
                     ->on('competency_gaps.competency_id', '=', 'assessments.competency_id');
             })
             ->leftJoin('scores as evaluator_scores', 'competency_gaps.supervisor_2_score_id', '=', 'evaluator_scores.id')
+            ->leftJoin('users as rejecting_reviewer', 'competency_gaps.rejected_by', '=', 'rejecting_reviewer.id')
             ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('assessments.user_id', $user->id)
             ->whereNotNull('assessments.last_draft_saved_at')
@@ -1011,6 +1352,9 @@ class DashboardController extends Controller
                 'competency_gaps.requires_idp',
                 'competency_gaps.status',
                 'competency_gaps.reject_comment',
+                'competency_gaps.rejected_by',
+                'rejecting_reviewer.title as reject_reviewer_title',
+                'rejecting_reviewer.name as reject_reviewer_name',
                 'assessments.note',
                 'evaluator_scores.comment as evaluator_comment',
                 'assessments.updated_at'
@@ -1033,6 +1377,12 @@ class DashboardController extends Controller
                     ? round($actual - (float) $expected, 2)
                     : ($gap->gap === null ? null : (float) $gap->gap);
 
+                $status = $gap->status === 'dean_approved' ? 'approved' : ($gap->status ?? 'draft');
+                $rejectReviewerName = trim(
+                    (string) ($gap->reject_reviewer_title ?? '')
+                    .(string) ($gap->reject_reviewer_name ?? '')
+                );
+
                 return [
                     'id' => (int) $gap->competency_gap_id,
                     'competencyId' => (int) $gap->competency_id,
@@ -1047,6 +1397,8 @@ class DashboardController extends Controller
                     'note' => $gap->note ?? '',
                     'reviewerComment' => $gap->evaluator_comment ?? '',
                     'rejectComment' => $gap->reject_comment ?? '',
+                    'rejectReviewerId' => $gap->rejected_by ? (int) $gap->rejected_by : null,
+                    'rejectReviewerName' => $rejectReviewerName,
                     'levels' => $this->competencyLevelsPayload((int) $gap->competency_id),
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
                     'checkedIndicatorCount' => count($checkedIndicatorKeys),
@@ -1057,12 +1409,97 @@ class DashboardController extends Controller
                     'missingIndicatorCount' => $gapValue !== null && $gapValue < 0
                         ? (int) ceil(abs($gapValue) / 0.25)
                         : 0,
-                    'status' => $gap->status === 'dean_approved' ? 'approved' : ($gap->status ?? 'draft'),
+                    'status' => $status,
+                    'workflow' => $this->assessmentWorkflowPayload(
+                        $user,
+                        $status,
+                        $gap->rejected_by ? (int) $gap->rejected_by : null,
+                        $rejectReviewerName,
+                    ),
                     'updatedAt' => $gap->updated_at,
                 ];
             })
             ->values()
             ->all();
+    }
+
+    private function assessmentWorkflowPayload(
+        User $user,
+        string $status,
+        ?int $rejectReviewerId = null,
+        string $rejectReviewerName = '',
+    ): array {
+        $status = $status === 'dean_approved' ? 'approved' : ($status ?: 'draft');
+        $reviewerSteps = $this->assessmentReviewerStepsCache[$user->id]
+            ??= $this->reviewerChainResolver->payloadForUser($user);
+        $currentReviewer = collect($reviewerSteps)->first(
+            fn (array $step): bool => $this->reviewerChainResolver->pendingStatusForStep((int) $step['step']) === $status
+        );
+        $rejectReviewer = $rejectReviewerId
+            ? collect($reviewerSteps)->first(fn (array $step): bool => (int) $step['id'] === $rejectReviewerId)
+            : null;
+        $rejectStep = $rejectReviewer ? (int) $rejectReviewer['step'] : null;
+
+        if ($status === 'draft') {
+            $key = 'self_pending';
+            $label = 'ยังไม่ประเมินตนเอง';
+        } elseif ($status === 'revision_required') {
+            $key = 'revision_required';
+            $label = $rejectReviewerName !== ''
+                ? 'ถูกส่งกลับโดย '.$rejectReviewerName
+                : 'ถูกส่งกลับแก้ไข';
+        } elseif ($status === 'approved') {
+            $key = 'approved';
+            $label = 'ผ่านครบทุกลำดับ';
+        } elseif ($currentReviewer) {
+            $key = 'pending_review';
+            $label = 'รอการประเมินลำดับที่ '.(int) $currentReviewer['step'].' · '.$currentReviewer['name'];
+        } else {
+            $key = 'pending_review';
+            $label = 'อยู่ระหว่างการประเมิน';
+        }
+
+        $timeline = [[
+            'kind' => 'self',
+            'step' => 0,
+            'label' => 'ประเมินตนเอง',
+            'name' => $this->displayNameForUser($user),
+            'state' => in_array($status, ['draft', 'revision_required'], true) ? 'active' : 'complete',
+        ]];
+
+        foreach ($reviewerSteps as $reviewerStep) {
+            $step = (int) $reviewerStep['step'];
+            $state = 'waiting';
+
+            if ($status === 'approved') {
+                $state = 'complete';
+            } elseif ($currentReviewer) {
+                $currentStep = (int) $currentReviewer['step'];
+                $state = $step < $currentStep ? 'complete' : ($step === $currentStep ? 'active' : 'waiting');
+            } elseif ($status === 'revision_required' && $rejectStep !== null) {
+                $state = $step < $rejectStep ? 'complete' : ($step === $rejectStep ? 'returned' : 'waiting');
+            }
+
+            $timeline[] = [
+                'kind' => 'reviewer',
+                'step' => $step,
+                'label' => 'ผู้ประเมินลำดับที่ '.$step,
+                'name' => $reviewerStep['name'],
+                'position' => $reviewerStep['position'] ?? '',
+                'reviewerId' => (int) $reviewerStep['id'],
+                'state' => $state,
+            ];
+        }
+
+        return [
+            'key' => $key,
+            'label' => $label,
+            'currentStep' => $currentReviewer ? (int) $currentReviewer['step'] : null,
+            'currentReviewerId' => $currentReviewer ? (int) $currentReviewer['id'] : null,
+            'currentReviewerName' => $currentReviewer['name'] ?? null,
+            'totalSteps' => count($reviewerSteps),
+            'timeline' => $timeline,
+        ];
     }
 
     private function missingIndicatorsForAssessment(int $assessmentId, int $competencyId, float $expectedLevel, float $actualLevel): array

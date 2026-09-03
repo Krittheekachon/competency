@@ -46,7 +46,7 @@
       </select>
 
       <select v-model="departmentFilter" class="sel department-select">
-        <option>ทุกกลุ่มงาน</option>
+        <option>ทุกหน่วยงาน/ภาควิชา</option>
         <option v-for="department in departmentOptions" :key="department" :value="department">
           {{ department }}
         </option>
@@ -91,7 +91,7 @@
             <th>ID</th>
             <th>ชื่อ-นามสกุล</th>
             <th>สายงาน</th>
-            <th>กลุ่มงาน</th>
+            <th>หน่วยงาน/ภาควิชา</th>
             <th>ตำแหน่ง</th>
             <th>ระดับตำแหน่ง</th>
             <th>บทบาทในระบบ</th>
@@ -130,9 +130,9 @@
             <td>
               <div
                 class="fs12 fw6 text-gray-700 whitespace-nowrap overflow-hidden truncate dept-cell"
-                :title="user.d || ''"
+                :title="organizationUnit(user)"
               >
-                {{ formatDept(user.d) }}
+                {{ organizationUnit(user) || '—' }}
               </div>
             </td>
             <td class="position-cell">
@@ -225,7 +225,7 @@ const props = defineProps<{
 const showImport = ref(false);
 const search = ref('');
 const worklineFilter = ref('ทุกสายงาน');
-const departmentFilter = ref('ทุกกลุ่มงาน');
+const departmentFilter = ref('ทุกหน่วยงาน/ภาควิชา');
 const positionFilter = ref('ทุกตำแหน่ง');
 const roleFilter = ref('ทุกบทบาท (Role)');
 const statusFilter = ref('ทุกสถานะ');
@@ -235,13 +235,22 @@ const roleOptions = [
   'บุคลากร',
   'หัวหน้าหน่วย',
   'หัวหน้างาน',
+  'หัวหน้าฝ่าย',
+  'หัวหน้าภาควิชา',
   'ผู้บริหารคณะ',
   'งานทรัพยากรบุคคล',
   'ผู้ดูแลระบบ',
 ];
 
 const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
-const formatDept = (dept?: string) => (dept ? dept.split(' > ').join(' > ') : '—');
+const organizationUnit = (user: User) => {
+  const parts = (user.d || '').split(' > ').map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) return '';
+
+  return user.w === 'สายสนับสนุน' || user.w === 'สายงานสนับสนุน'
+    ? parts[parts.length - 1]
+    : parts[0];
+};
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
 const openReviewerTemplateModal = (chainType?: string) => props.openReviewerTemplateModal(chainType);
@@ -257,12 +266,11 @@ const statusActionTitle = (user: User) => {
 };
 const hasInvalidStructure = (user: User) => user.structureStatus === 'invalid';
 const structureIssueText = (user: User) => (user.structureIssues || []).join('\n') || 'ข้อมูลโครงสร้างไม่ตรงกับ master data ปัจจุบัน';
-const topDepartment = (user: User) => (user.d || '').split(' > ')[0]?.trim() || '';
 const invalidStructureCount = computed(() => props.users.filter(hasInvalidStructure).length);
 const departmentOptions = computed(() => {
   const departments = props.users
     .filter((user) => worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value)
-    .map(topDepartment)
+    .map(organizationUnit)
     .filter(Boolean);
 
   return Array.from(new Set(departments)).sort((a, b) => a.localeCompare(b, 'th'));
@@ -270,7 +278,7 @@ const departmentOptions = computed(() => {
 const positionOptions = computed(() => {
   const positions = props.users
     .filter((user) => worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value)
-    .filter((user) => departmentFilter.value === 'ทุกกลุ่มงาน' || topDepartment(user) === departmentFilter.value)
+    .filter((user) => departmentFilter.value === 'ทุกหน่วยงาน/ภาควิชา' || organizationUnit(user) === departmentFilter.value)
     .map((user) => user.p || '')
     .filter(Boolean);
 
@@ -278,7 +286,7 @@ const positionOptions = computed(() => {
 });
 
 watch(worklineFilter, () => {
-  departmentFilter.value = 'ทุกกลุ่มงาน';
+  departmentFilter.value = 'ทุกหน่วยงาน/ภาควิชา';
   positionFilter.value = 'ทุกตำแหน่ง';
 });
 
@@ -287,8 +295,8 @@ watch(departmentFilter, () => {
 });
 
 watch(departmentOptions, (options) => {
-  if (departmentFilter.value !== 'ทุกกลุ่มงาน' && !options.includes(departmentFilter.value)) {
-    departmentFilter.value = 'ทุกกลุ่มงาน';
+  if (departmentFilter.value !== 'ทุกหน่วยงาน/ภาควิชา' && !options.includes(departmentFilter.value)) {
+    departmentFilter.value = 'ทุกหน่วยงาน/ภาควิชา';
   }
 });
 
@@ -320,6 +328,10 @@ const roleBadge = (role?: string): RoleBadge => {
     case 'dept_head':
     case 'manager_dept':
       return { label: 'หัวหน้างาน', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
+    case 'division_head':
+      return { label: 'หัวหน้าฝ่าย', className: 'bg', style: { background: '#fef3c7', color: '#b45309' } };
+    case 'academic_department_head':
+      return { label: 'หัวหน้าภาควิชา', className: 'bg', style: { background: '#ecfeff', color: '#0e7490' } };
     default:
       return { label: 'บุคลากร', className: 'bgr' };
   }
@@ -337,14 +349,17 @@ const filteredUsers = computed(() => {
       || name.toLowerCase().includes(keyword)
       || id.toLowerCase().includes(keyword);
     const matchesWorkline = worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value;
-    const matchesDepartment = departmentFilter.value === 'ทุกกลุ่มงาน' || topDepartment(user) === departmentFilter.value;
+    const matchesDepartment = departmentFilter.value === 'ทุกหน่วยงาน/ภาควิชา' || organizationUnit(user) === departmentFilter.value;
     const matchesPosition = positionFilter.value === 'ทุกตำแหน่ง' || user.p === positionFilter.value;
     const matchesRole = roleFilter.value === 'ทุกบทบาท (Role)' || roleName(user.r) === roleFilter.value;
     const matchesStatus = statusFilter.value === 'ทุกสถานะ'
       || (statusFilter.value === 'ปกติ / ใช้งาน' ? isActive(user) : !isActive(user));
 
     return matchesSearch && matchesWorkline && matchesDepartment && matchesPosition && matchesRole && matchesStatus;
-  }).sort((a, b) => Number(b.db_id || 0) - Number(a.db_id || 0));
+  }).sort((a, b) => String(b.sso || '').localeCompare(String(a.sso || ''), 'th', {
+    numeric: true,
+    sensitivity: 'base',
+  }));
 });
 
 const toggleStatus = (user: User) => {

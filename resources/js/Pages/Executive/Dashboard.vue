@@ -81,7 +81,6 @@ const currentPageTitle = computed(() => pageTitles[activePage.value]);
 const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
 const userId = computed(() => page.props.auth?.user?.id || 'manager');
-const cycleBadge = computed(() => props.activeCycleName || 'ยังไม่มีรอบประเมิน');
 
 const logout = () => router.post(route('logout'));
 </script>
@@ -130,7 +129,6 @@ const logout = () => router.post(route('logout'));
                     ☰
                 </button>
                 <div class="tb-title">{{ currentPageTitle }}</div>
-                <span class="tb-badge">{{ cycleBadge }}</span>
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
 
