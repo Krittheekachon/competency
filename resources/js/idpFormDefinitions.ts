@@ -88,7 +88,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'ผู้สอนงาน',
     detailFields: [
       { key: 'trainerType', label: 'ผู้สอนงาน', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'trainerSupervisorUserId', label: 'เลือกผู้บังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'trainerType', value: 'ผู้บังคับบัญชา' } },
       { key: 'trainerExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'trainerType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'รายละเอียดการฝึกปฏิบัติงาน',
@@ -109,7 +108,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'ผู้สอนงาน',
     detailFields: [
       { key: 'coachType', label: 'ผู้สอนงาน', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'coachSupervisorUserId', label: 'เลือกผู้บังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'coachType', value: 'ผู้บังคับบัญชา' } },
       { key: 'coachExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'coachType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'รายละเอียดหัวข้อการสอนงาน',
@@ -136,7 +134,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'ผู้สอนงาน',
     detailFields: [
       { key: 'mentorType', label: 'ผู้สอนงาน', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'mentorSupervisorUserId', label: 'เลือกผู้บังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'mentorType', value: 'ผู้บังคับบัญชา' } },
       { key: 'mentorExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'mentorType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'รายละเอียดหัวข้อที่ต้องการพัฒนา',
@@ -158,7 +155,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'ผู้อำนวยการ/ผู้นำกิจกรรม',
     detailFields: [
       { key: 'facilitatorType', label: 'ผู้อำนวยการ/ผู้นำกิจกรรม', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'facilitatorSupervisorUserId', label: 'เลือกผู้บังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'facilitatorType', value: 'ผู้บังคับบัญชา' } },
       { key: 'facilitatorExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'facilitatorType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'รายละเอียดกิจกรรม',
@@ -180,7 +176,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
     detailTitle: 'ผู้ให้ข้อมูล',
     detailFields: [
       { key: 'feedbackProviderType', label: 'ผู้ให้ข้อมูล', type: 'choice', choices: ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'] },
-      { key: 'feedbackSupervisorUserId', label: 'เลือกผู้บังคับบัญชา', type: 'supervisor-chain', showWhen: { key: 'feedbackProviderType', value: 'ผู้บังคับบัญชา' } },
       { key: 'feedbackExpertName', label: 'ชื่อผู้เชี่ยวชาญ', type: 'expert-name', showWhen: { key: 'feedbackProviderType', value: 'ผู้เชี่ยวชาญ' } },
     ],
     rowTitle: 'รายละเอียดหัวข้อการพัฒนา',

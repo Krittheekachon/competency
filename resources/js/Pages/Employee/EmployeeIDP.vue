@@ -92,6 +92,7 @@ const activeFormActivityKey = ref<string | null>(null);
 type BuilderFocus = 'experiential' | 'social' | 'formal';
 const activityBuilderOpen = ref(false);
 const activityBuilderFocus = ref<BuilderFocus>('experiential');
+const replacementActivityKey = ref<string | null>(null);
 const showCoachingApproachHelp = ref(false);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const lastSavedAt = ref('');
@@ -113,7 +114,7 @@ const idpApprovalSteps = computed<SupervisorChainOption[]>(() =>
 const hasIdpReviewerSteps = computed(() => idpApprovalSteps.value.length > 0);
 const selectedGap = computed(() => idpGaps.value.find((gap) => gap.id === selectedGapId.value) || null);
 const selectedPlan = computed(() => plans.value.find((plan) => plan.competencyGapId === selectedGapId.value) || null);
-const isReviewStatus = (status: string) => /^review_step_[123]$/.test(status);
+const isReviewStatus = (status: string) => /^review_step_\d+$/.test(status);
 const isPlanLocked = (plan: Plan | null) =>
   plan?.status === 'approved' || isReviewStatus(plan?.status || '');
 const selectedPlanLocked = computed(() => isPlanLocked(selectedPlan.value));
@@ -263,7 +264,6 @@ const focusType = (methodKey: string) => {
   if (normalized.includes('formal')) return 'formal';
   return normalized;
 };
-const toolsFor = (activity: Activity) => activeTools.value.filter((tool) => tool.focusType === focusType(activity.methodKey));
 const catalogsFor = (gap: Gap) => activeCatalogs.value.filter((catalog) =>
   (catalog.competencyIds || []).includes(gap.competencyId));
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
@@ -374,22 +374,22 @@ const planStatusLabel = (plan: Plan | null) => ({
   revision_required: 'ตีกลับให้แก้ไข',
 }[plan?.status || ''] || 'ร่าง');
 
-const openActivityBuilder = () => {
+const closeActivityBuilder = () => {
+  activityBuilderOpen.value = false;
+  replacementActivityKey.value = null;
+};
+const openActivityBuilder = (activity?: Activity) => {
+  if (activity && isFormSaved(activity) && !window.confirm('การเปลี่ยนเครื่องมือจะล้างรายละเอียดฟอร์มเดิม ต้องการดำเนินการต่อหรือไม่?')) {
+    return;
+  }
   const availableFocus = (['experiential', 'social'] as BuilderFocus[])
     .find((focus) => activeTools.value.some((tool) => tool.focusType === focus));
   activityBuilderFocus.value = availableFocus || (builderCatalogs.value.length ? 'formal' : 'experiential');
+  replacementActivityKey.value = activity?.clientKey || null;
   activityBuilderOpen.value = true;
 };
 const removeActivity = (plan: Plan, clientKey: string) => {
   plan.activities = plan.activities.filter((activity) => activity.clientKey !== clientKey);
-};
-const changeMethod = (activity: Activity) => {
-  activity.developmentToolId = null;
-  activity.learningCatalogId = null;
-  activity.activityName = '';
-  activity.activityDescription = '';
-  activity.formCode = '';
-  activity.formDetails = {};
 };
 const chooseTool = (activity: Activity) => {
   const tool = activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
@@ -415,21 +415,31 @@ const chooseCatalog = (activity: Activity) => {
     } : row),
   };
 };
+const placeSelectedActivity = (plan: Plan, activity: Activity) => {
+  const replacementIndex = replacementActivityKey.value
+    ? plan.activities.findIndex((item) => item.clientKey === replacementActivityKey.value)
+    : -1;
+  if (replacementIndex >= 0) {
+    activity.weightPercent = plan.activities[replacementIndex].weightPercent;
+    plan.activities.splice(replacementIndex, 1, activity);
+  } else {
+    plan.activities.push(activity);
+  }
+  closeActivityBuilder();
+};
 const addToolActivity = (plan: Plan, tool: DevelopmentTool) => {
   const activity = blankActivity();
   activity.methodKey = methodKeyForFocus(tool.focusType as BuilderFocus);
   activity.developmentToolId = tool.id;
-  plan.activities.push(activity);
   chooseTool(activity);
-  activityBuilderOpen.value = false;
+  placeSelectedActivity(plan, activity);
 };
 const addCatalogActivity = (plan: Plan, catalog: Catalog) => {
   const activity = blankActivity();
   activity.methodKey = methodKeyForFocus('formal');
   activity.learningCatalogId = catalog.id;
-  plan.activities.push(activity);
   chooseCatalog(activity);
-  activityBuilderOpen.value = false;
+  placeSelectedActivity(plan, activity);
 };
 const defaultPlanRows = (formCode: string) => {
   return [{}];
@@ -471,10 +481,12 @@ const normalizeFormDetails = (formCode: string, details?: FormDetails): FormDeta
   };
 };
 const openActivityForm = (activity: Activity) => {
-  if (!activity.formCode) {
-    activity.formCode = effectiveFormCode(activity);
+  if (!selectedPlanLocked.value) {
+    if (!activity.formCode) {
+      activity.formCode = effectiveFormCode(activity);
+    }
+    activity.formDetails = normalizeFormDetails(activity.formCode, activity.formDetails);
   }
-  activity.formDetails = normalizeFormDetails(activity.formCode, activity.formDetails);
   showCoachingApproachHelp.value = false;
   activeFormActivityKey.value = activity.clientKey;
 };
@@ -485,6 +497,7 @@ const closeActivityForm = () => {
 const activeFormActivity = computed(() =>
   selectedPlan.value?.activities.find((activity) => activity.clientKey === activeFormActivityKey.value) || null);
 const saveActivityForm = () => {
+  if (selectedPlanLocked.value) return;
   if (activeFormActivity.value) {
     if (isReworkedActivityForm(activeFormActivity.value)) {
       const rows = activeFormActivity.value.formDetails.planRows || [];
@@ -532,7 +545,7 @@ const signature = () => JSON.stringify(requestPayload());
 
 watch(() => [props.gaps, props.idp], hydratePlans, { immediate: true });
 watch(selectedGapId, () => {
-  activityBuilderOpen.value = false;
+  closeActivityBuilder();
 });
 
 const csrfToken = () => document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '';
@@ -589,7 +602,7 @@ const planIssue = (plan: Plan): string => {
   if (Math.round(weightTotal(plan) * 100) / 100 !== 100) return 'น้ำหนักกิจกรรมต้องรวม 100%';
 
   for (const activity of plan.activities) {
-    if (!activity.methodKey || !activity.activityName || activity.weightPercent === '' || (!isGroupActivityForm(activity) && (!activity.startDate || !activity.endDate))) {
+    if (!activity.methodKey || activity.weightPercent === '') {
       return 'ข้อมูลกิจกรรมยังไม่ครบ';
     }
     if (hasActivityForm(activity) && !isFormSaved(activity)) {
@@ -609,7 +622,6 @@ const planIssue = (plan: Plan): string => {
     if (isOjtForm(activity)) {
       const detail = activity.formDetails?.detail || {};
       if (!detail.trainerType
-        || (detail.trainerType === 'ผู้บังคับบัญชา' && !detail.trainerSupervisorUserId)
         || (detail.trainerType === 'ผู้เชี่ยวชาญ' && !String(detail.trainerExpertName || '').trim())) {
         return 'กรุณาระบุผู้สอนงานให้ครบ';
       }
@@ -626,7 +638,6 @@ const planIssue = (plan: Plan): string => {
     if (isCoachingForm(activity)) {
       const detail = activity.formDetails?.detail || {};
       if (!detail.coachType
-        || (detail.coachType === 'ผู้บังคับบัญชา' && !detail.coachSupervisorUserId)
         || (detail.coachType === 'ผู้เชี่ยวชาญ' && !String(detail.coachExpertName || '').trim())) {
         return 'กรุณาระบุผู้สอนงานให้ครบ';
       }
@@ -648,7 +659,6 @@ const planIssue = (plan: Plan): string => {
     if (isMentoringForm(activity)) {
       const detail = activity.formDetails?.detail || {};
       if (!detail.mentorType
-        || (detail.mentorType === 'ผู้บังคับบัญชา' && !detail.mentorSupervisorUserId)
         || (detail.mentorType === 'ผู้เชี่ยวชาญ' && !String(detail.mentorExpertName || '').trim())) {
         return 'กรุณาระบุผู้สอนงานให้ครบ';
       }
@@ -668,7 +678,6 @@ const planIssue = (plan: Plan): string => {
     if (isGroupActivityForm(activity)) {
       const detail = activity.formDetails?.detail || {};
       if (!detail.facilitatorType
-        || (detail.facilitatorType === 'ผู้บังคับบัญชา' && !detail.facilitatorSupervisorUserId)
         || (detail.facilitatorType === 'ผู้เชี่ยวชาญ' && !String(detail.facilitatorExpertName || '').trim())) {
         return 'กรุณาระบุผู้อำนวยการ/ผู้นำกิจกรรมให้ครบ';
       }
@@ -685,7 +694,6 @@ const planIssue = (plan: Plan): string => {
     if (isFeedbackForm(activity)) {
       const detail = activity.formDetails?.detail || {};
       if (!detail.feedbackProviderType
-        || (detail.feedbackProviderType === 'ผู้บังคับบัญชา' && !detail.feedbackSupervisorUserId)
         || (detail.feedbackProviderType === 'ผู้เชี่ยวชาญ' && !String(detail.feedbackExpertName || '').trim())) {
         return 'กรุณาระบุผู้ให้ข้อมูลให้ครบ';
       }
@@ -736,6 +744,9 @@ const planIssue = (plan: Plan): string => {
   }
   return '';
 };
+const selectedPlanIssue = computed(() => selectedPlan.value && !selectedPlanLocked.value
+  ? planIssue(selectedPlan.value)
+  : '');
 const submitSelectedPlan = () => {
   if (!selectedPlan.value || selectedPlanLocked.value) return;
   const issue = planIssue(selectedPlan.value);
@@ -826,6 +837,7 @@ const submitSelectedPlan = () => {
           :key="plan.competencyGapId"
           class="plan-nav-item"
           :class="{ active: selectedGapId === plan.competencyGapId }"
+          :aria-current="selectedGapId === plan.competencyGapId ? 'true' : undefined"
           type="button"
           @click="selectedGapId = plan.competencyGapId"
         >
@@ -855,6 +867,25 @@ const submitSelectedPlan = () => {
               <div><span>Actual</span><strong>{{ formatNumber(selectedGap.actual) }}</strong></div>
               <div class="negative"><span>Gap</span><strong>{{ formatNumber(selectedGap.gap) }}</strong></div>
             </div>
+          </section>
+
+          <section class="plan-review-route" aria-label="ลำดับอนุมัติ IDP">
+            <header>
+              <div><h3>ลำดับอนุมัติ IDP</h3><p>สถานะของ {{ selectedGap.cd }} · แต่ละสมรรถนะส่งอนุมัติแยกกัน</p></div>
+              <span>{{ planStatusLabel(selectedPlan) }}</span>
+            </header>
+            <ol>
+              <li v-for="step in idpApprovalSteps" :key="`${step.step}-${step.id}`"
+                :class="{ current: isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step) }">
+                <b>{{ step.step }}</b>
+                <div>
+                  <strong>{{ step.name }}</strong>
+                  <small>{{ step.position || step.label }}</small>
+                  <em v-if="isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step)">กำลังรออนุมัติ</em>
+                </div>
+              </li>
+            </ol>
+            <footer><strong>หมายเหตุ</strong><span>หากลำดับผู้อนุมัติไม่ถูกต้อง กรุณาติดต่อ Admin</span></footer>
           </section>
 
           <div v-if="selectedPlan.status === 'revision_required' && selectedPlan.rejectComment" class="revision-alert">
@@ -928,54 +959,12 @@ const submitSelectedPlan = () => {
                       <strong>{{ activity.activityName || 'กิจกรรมใหม่' }}</strong>
                     </div>
                   </div>
-                  <button v-if="!selectedPlanLocked" type="button" title="ลบกิจกรรม" @click="removeActivity(selectedPlan, activity.clientKey)">×</button>
+                  <div v-if="!selectedPlanLocked" class="activity-header-actions">
+                    <button class="change-tool" type="button" @click="openActivityBuilder(activity)">เปลี่ยนเครื่องมือ</button>
+                    <button class="remove-activity" type="button" title="ลบกิจกรรม" aria-label="ลบกิจกรรม" @click="removeActivity(selectedPlan, activity.clientKey)">×</button>
+                  </div>
                 </header>
                 <div class="activity-form">
-                <label>
-                  <span>รูปแบบการเรียนรู้</span>
-                  <select v-model="activity.methodKey" :disabled="selectedPlanLocked" @change="changeMethod(activity)">
-                    <option value="">เลือกจากรายการ: รูปแบบการเรียนรู้</option>
-                    <option v-for="method in methods" :key="method.key" :value="method.key">{{ method.label }}</option>
-                  </select>
-                </label>
-
-                <label v-if="['experiential', 'social'].includes(focusType(activity.methodKey))">
-                  <span>เครื่องมือพัฒนา</span>
-                  <select v-model.number="activity.developmentToolId" :disabled="selectedPlanLocked" @change="chooseTool(activity)">
-                    <option :value="null">เลือกจากรายการ: เครื่องมือพัฒนา</option>
-                    <option v-for="tool in toolsFor(activity)" :key="tool.id" :value="tool.id">
-                      {{ tool.code ? `${tool.code} · ` : '' }}{{ tool.title }}
-                    </option>
-                  </select>
-                </label>
-
-                <label v-else-if="focusType(activity.methodKey) === 'formal'">
-                  <span>Learning Catalog</span>
-                  <select v-model.number="activity.learningCatalogId" :disabled="selectedPlanLocked" @change="chooseCatalog(activity)">
-                    <option :value="null">เลือกจากรายการ: หลักสูตร</option>
-                    <option v-for="catalog in catalogsFor(selectedGap)" :key="catalog.id" :value="catalog.id">
-                      {{ catalog.code ? `${catalog.code} · ` : '' }}{{ catalog.name }}
-                    </option>
-                  </select>
-                </label>
-
-                <label v-else>
-                  <span>แหล่งกิจกรรม</span>
-                  <input disabled value="เลือกรูปแบบการเรียนรู้ก่อน" />
-                </label>
-
-                <label class="wide">
-                  <span>ชื่อกิจกรรม</span>
-                  <input v-model="activity.activityName" :disabled="selectedPlanLocked || focusType(activity.methodKey) === 'formal'" placeholder="ชื่อกิจกรรมที่ต้องดำเนินการ" />
-                </label>
-                <label v-if="!isReworkedActivityForm(activity)" class="document-reference-field">
-                  <span>เอกสารประกอบหมายเลข</span>
-                  <input
-                    v-model="activity.documentReferenceNumber"
-                    :disabled="selectedPlanLocked"
-                    maxlength="255"
-                  />
-                </label>
                 <label>
                   <span>สัดส่วนกิจกรรม (%)</span>
                   <input
@@ -988,14 +977,10 @@ const submitSelectedPlan = () => {
                     placeholder="เช่น 30"
                   />
                 </label>
-                <label v-if="!isGroupActivityForm(activity)">
-                  <span>วันที่เริ่ม</span>
-                  <input v-model="activity.startDate" :disabled="selectedPlanLocked" type="date" />
-                </label>
-                <label v-if="!isGroupActivityForm(activity)">
-                  <span>วันที่สิ้นสุด</span>
-                  <input v-model="activity.endDate" :disabled="selectedPlanLocked" type="date" />
-                </label>
+                <div class="activity-readonly-meta">
+                  <strong>{{ isFormSaved(activity) ? 'บันทึกรายละเอียดกิจกรรมแล้ว' : 'กรุณากรอกรายละเอียดกิจกรรม' }}</strong>
+                  <small>{{ isFormSaved(activity) ? 'ตรวจสอบรายละเอียดในแบบฟอร์มด้านล่าง' : 'กดปุ่มด้านล่างเพื่อกรอกแบบฟอร์มกิจกรรมให้ครบถ้วน' }}</small>
+                </div>
                 <div class="activity-detail-action wide">
                   <div>
                     <strong>{{ formDefinitionFor(activity)?.title || 'ยังไม่มีแบบฟอร์มรายละเอียดสำหรับหัวข้อนี้' }}</strong>
@@ -1005,10 +990,10 @@ const submitSelectedPlan = () => {
                   </div>
                   <button
                     type="button"
-                    :disabled="!hasActivityForm(activity) || selectedPlanLocked"
+                    :disabled="!hasActivityForm(activity)"
                     @click="openActivityForm(activity)"
                   >
-                    กรอกรายละเอียดฟอร์ม
+                    {{ selectedPlanLocked ? 'ดูรายละเอียดฟอร์ม' : 'กรอกรายละเอียดฟอร์ม' }}
                   </button>
                 </div>
                 </div>
@@ -1020,7 +1005,7 @@ const submitSelectedPlan = () => {
                     <strong>เลือกเครื่องมือสำหรับกิจกรรม</strong>
                     <span>รายการกำหนดโดยผู้ดูแลระบบ และจะเปิดแบบฟอร์มให้ตรงกับเครื่องมือที่เลือก</span>
                   </div>
-                  <button type="button" aria-label="ปิดตัวเลือกกิจกรรม" @click="activityBuilderOpen = false">×</button>
+                  <button type="button" aria-label="ปิดตัวเลือกกิจกรรม" @click="closeActivityBuilder">×</button>
                 </header>
 
                 <nav class="activity-builder-tabs" aria-label="ประเภทแนวทางการพัฒนา">
@@ -1083,7 +1068,7 @@ const submitSelectedPlan = () => {
                 </div>
               </div>
 
-              <button v-if="!selectedPlanLocked && !activityBuilderOpen" class="add-activity" type="button" @click="openActivityBuilder">
+              <button v-if="!selectedPlanLocked && !activityBuilderOpen" class="add-activity" type="button" @click="openActivityBuilder()">
                 <span>+</span> เลือกเครื่องมือ / หลักสูตร
               </button>
             </div>
@@ -1100,17 +1085,14 @@ const submitSelectedPlan = () => {
       <div class="form-modal">
         <header class="form-modal-top">
           <div>
-            <strong>กรอกรายละเอียดฟอร์มกิจกรรม</strong>
-            <span>แบบฟอร์มที่ {{ formDefinitionFor(activeFormActivity)?.number }} · {{ formDefinitionFor(activeFormActivity)?.title }}</span>
+            <strong>{{ selectedPlanLocked ? 'ดูรายละเอียดฟอร์มกิจกรรม (อ่านอย่างเดียว)' : 'กรอกรายละเอียดฟอร์มกิจกรรม' }}</strong>
           </div>
           <button type="button" @click="closeActivityForm">×</button>
         </header>
 
-        <div class="form-paper">
+        <fieldset class="form-paper" :disabled="selectedPlanLocked" aria-label="รายละเอียดฟอร์มกิจกรรม">
           <section class="form-title-band">
-            <div>
-              <h3>แบบฟอร์มที่ {{ formDefinitionFor(activeFormActivity)?.number }} {{ formDefinitionFor(activeFormActivity)?.title }}</h3>
-            </div>
+            <h3>{{ formDefinitionFor(activeFormActivity)?.title }}</h3>
           </section>
 
           <section class="form-block readonly-block">
@@ -1153,27 +1135,6 @@ const submitSelectedPlan = () => {
                 <input :value="formatNumber(selectedGap.gap)" disabled />
               </label>
             </div>
-          </section>
-
-          <section class="form-block readonly-block approval-route-block">
-            <header>
-              <h4>ลำดับการส่งแผน IDP</h4>
-              <span>ดึงจากระบบ</span>
-            </header>
-            <div v-if="idpApprovalSteps.length" class="approval-route-list">
-              <template v-for="(step, index) in idpApprovalSteps" :key="step.id">
-                <div class="approval-route-step">
-                  <span>{{ index + 1 }}</span>
-                  <div>
-                    <strong>{{ step.name }}</strong>
-                    <small>{{ step.position || step.label }}</small>
-                  </div>
-                </div>
-                <span v-if="index < idpApprovalSteps.length - 1" class="approval-route-arrow">→</span>
-              </template>
-            </div>
-            <div v-else class="approval-route-empty">ยังไม่ได้กำหนดลำดับผู้อนุมัติ IDP</div>
-            <p class="approval-route-notice">หากข้อมูลลำดับการส่งไม่ถูกต้อง กรุณาติดต่อ Admin</p>
           </section>
 
           <section v-if="hasDetailFields(activeFormActivity) && !shouldPlaceDetailAtBottom(activeFormActivity)" class="form-block">
@@ -1656,11 +1617,11 @@ const submitSelectedPlan = () => {
               </label>
             </div>
           </section>
-        </div>
+        </fieldset>
 
         <footer class="form-modal-footer">
-          <button type="button" @click="closeActivityForm">ยกเลิก</button>
-          <button type="button" class="primary" @click="saveActivityForm">บันทึกฟอร์ม</button>
+          <button type="button" @click="closeActivityForm">{{ selectedPlanLocked ? 'ปิด' : 'ยกเลิก' }}</button>
+          <button v-if="!selectedPlanLocked" type="button" class="primary" @click="saveActivityForm">บันทึกฟอร์ม</button>
         </footer>
       </div>
     </div>
@@ -1707,10 +1668,15 @@ const submitSelectedPlan = () => {
     <footer v-if="hasIdpReviewerSteps && idpGaps.length" class="submit-bar">
       <div>
         <strong>{{ selectedPlan ? `${selectedGap?.cd} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
+        <span v-if="selectedPlanIssue" id="idp-submit-reason" class="submit-reason" role="status">
+          ยังส่งไม่ได้: {{ selectedPlanIssue }}
+        </span>
+        <span v-else-if="saveState === 'saving'" id="idp-submit-reason" role="status">กำลังบันทึกข้อมูล กรุณารอสักครู่</span>
+        <span v-else-if="selectedPlan && !selectedPlanLocked" class="submit-ready" role="status">ข้อมูลครบแล้ว พร้อมส่งอนุมัติ</span>
         <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
         <span v-else>{{ selectedPlanLocked ? 'สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้' : 'ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก' }}</span>
       </div>
-      <button type="button" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!planIssue(selectedPlan)" @click="submitSelectedPlan">
+      <button type="button" :aria-describedby="selectedPlanIssue || saveState === 'saving' ? 'idp-submit-reason' : undefined" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!selectedPlanIssue" @click="submitSelectedPlan">
         {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : 'ส่งสมรรถนะนี้ให้หัวหน้า' }}
       </button>
     </footer>
@@ -1719,6 +1685,23 @@ const submitSelectedPlan = () => {
 
 <style scoped>
 .idp-page { display: grid; gap: 16px; color: #172033; }
+.plan-review-route { margin-top: 14px; border: 1px solid #d2dfda; border-radius: 8px; background: #fff; overflow: hidden; }
+.plan-review-route > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #e4ebe7; }
+.plan-review-route h3 { margin: 0; font-size: 14px; color: #245d4e; }
+.plan-review-route p { margin: 4px 0 0; font-size: 11px; color: #718096; }
+.plan-review-route header > span { font-size: 11px; font-weight: 800; color: #246b59; }
+.plan-review-route ol { display: flex; gap: 12px; list-style: none; margin: 0; padding: 16px; overflow-x: auto; }
+.plan-review-route li { display: flex; align-items: flex-start; gap: 10px; flex: 1 0 190px; padding: 12px; border-top: 3px solid #dce5e1; background: #f8faf9; }
+.plan-review-route li.current { border-color: #247260; background: #eaf5f0; }
+.plan-review-route li > b { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 50%; background: #e2e9e5; color: #60746c; font-size: 12px; }
+.plan-review-route li.current > b { background: #247260; color: #fff; }
+.plan-review-route li strong, .plan-review-route li small, .plan-review-route li em { display: block; }
+.plan-review-route li strong { font-size: 12px; }
+.plan-review-route li small { margin-top: 3px; color: #718096; font-size: 10px; }
+.plan-review-route li em { margin-top: 7px; color: #247260; font-size: 10px; font-style: normal; font-weight: 900; }
+.plan-review-route > footer { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 11px 16px; border-top: 1px solid #eee0c9; background: #fffaf0; color: #785b2c; font-size: 12px; line-height: 1.6; }
+.plan-review-route > footer strong { color: #80591f; font-weight: 800; }
+@media (max-width: 900px) { .plan-review-route > header { align-items: flex-start; flex-direction: column; } .plan-review-route ol { flex-direction: column; } .plan-review-route li { flex-basis: auto; } }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid #dfe5ed; }
 .eyebrow { margin: 0 0 5px; color: #28705f; font-size: 11px; font-weight: 900; }
 .page-header h1 { margin: 0; font-size: 24px; font-weight: 900; }
@@ -1756,14 +1739,16 @@ const submitSelectedPlan = () => {
 .person strong { font-size: 14px; }
 .nav-heading { display: flex; justify-content: space-between; align-items: center; padding: 16px 15px 9px; font-size: 12px; }
 .nav-heading span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #dfe8e5; color: #216b59; font-weight: 900; }
-.plan-nav-item { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; border: 0; border-left: 3px solid transparent; background: transparent; padding: 12px; text-align: left; cursor: pointer; }
-.plan-nav-item:hover { background: #eef3f5; }
-.plan-nav-item.active { border-left-color: #247260; background: #e4f0ec; }
+.plan-nav-item { width: calc(100% - 24px); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; margin: 0 12px 10px; border: 1px solid #dce3e9; border-left: 3px solid #dce3e9; border-radius: 7px; background: #fff; padding: 13px; text-align: left; cursor: pointer; }
+.plan-nav-item:hover { border-color: #9cbfb3; background: #f5faf8; }
+.plan-nav-item.active { border-color: #9cbfb3; border-left-color: #247260; background: #eaf5f0; }
+.plan-nav-item:focus-visible { outline: 2px solid #247260; outline-offset: 2px; }
 .competency-code { min-width: 51px; color: #247260; font-size: 11px; font-weight: 900; }
-.competency-copy { min-width: 0; }
-.competency-copy strong, .competency-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.competency-copy strong { font-size: 12px; }
-.competency-copy small { margin-top: 3px; color: #7a8798; font-size: 10px; }
+.competency-copy { min-width: 0; grid-column: 1 / -1; grid-row: 2; }
+.competency-copy strong, .competency-copy small { display: block; white-space: normal; overflow-wrap: anywhere; }
+.competency-copy strong { font-size: 12px; line-height: 1.65; color: #273142; }
+.competency-copy small { margin-top: 10px; padding-top: 8px; border-top: 1px solid #dce6e1; color: #657287; font-size: 10px; line-height: 1.5; }
+.plan-nav-item .completion-mark { grid-column: 2; grid-row: 1; }
 .completion-mark { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #fff1f2; color: #c2414b; font-size: 11px; font-weight: 900; }
 .completion-mark.ready { background: #dcfce7; color: #16835d; }
 .plan-content { min-width: 0; padding: 20px; background: #eef2f5; }
@@ -1840,9 +1825,15 @@ select:disabled { cursor: not-allowed; }
 .activity > header span, .activity > header strong { display: block; }
 .activity > header span { color: #247260; font-size: 10px; font-weight: 900; }
 .activity > header strong { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.activity > header button { width: 28px; height: 28px; border: 1px solid #e3c5c8; border-radius: 5px; background: #fff; color: #b42318; font-size: 18px; cursor: pointer; }
-.activity-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; padding: 13px; }
-.activity-form .wide { grid-column: span 3; }
+.activity-header-actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+.activity > header .change-tool { width: auto; height: 30px; border: 1px solid #a8cbbf; border-radius: 5px; background: #fff; padding: 0 10px; color: #246b59; font-size: 10px; font-weight: 900; cursor: pointer; }
+.activity > header .remove-activity { width: 30px; height: 30px; border: 1px solid #e3c5c8; border-radius: 5px; background: #fff; color: #b42318; font-size: 18px; cursor: pointer; }
+.activity-form { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 11px; padding: 13px; }
+.activity-form .wide { grid-column: 1 / -1; }
+.activity-readonly-meta { display: grid; align-content: center; gap: 3px; min-height: 58px; border: 1px solid #dce4eb; border-radius: 6px; background: #f8fafc; padding: 8px 11px; }
+.activity-readonly-meta span { color: #59677a; font-size: 11px; font-weight: 800; }
+.activity-readonly-meta strong { color: #273142; font-size: 12px; }
+.activity-readonly-meta small { color: #8793a3; font-size: 9px; font-weight: 700; }
 .activity-detail-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #d7e4ee; border-radius: 7px; background: #fbfdff; padding: 12px; }
 .activity-detail-action strong, .activity-detail-action span { display: block; }
 .activity-detail-action strong { color: #172033; font-size: 12px; }
@@ -1887,7 +1878,7 @@ select:disabled { cursor: not-allowed; }
 .form-modal-top strong { font-size: 16px; }
 .form-modal-top span { margin-top: 4px; color: #667085; font-size: 12px; font-weight: 800; }
 .form-modal-top button { width: 36px; height: 36px; border: 1px solid #d8e0e9; border-radius: 7px; background: #fff; color: #b42318; font-size: 22px; cursor: pointer; }
-.form-paper { overflow: auto; padding: 18px; }
+.form-paper { min-width: 0; min-height: 0; margin: 0; border: 0; overflow: auto; padding: 18px; }
 .form-title-band { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border: 1px solid #f3c8b7; border-radius: 8px; background: #fff1e8; padding: 13px 15px; }
 .form-title-band h3, .form-title-band p { margin: 0; }
 .form-title-band h3 { font-size: 20px; }
@@ -1938,7 +1929,7 @@ select:disabled { cursor: not-allowed; }
 .training-course-heading span { color: #667085; font-size: 11px; font-weight: 900; }
 .training-course-heading strong { color: #172033; font-size: 15px; line-height: 1.45; }
 .training-course-heading em { flex: 0 0 auto; border: 1px solid #cfe0f5; border-radius: 999px; background: #eff6ff; color: #2563eb; padding: 5px 10px; font-size: 11px; font-style: normal; font-weight: 900; }
-.training-catalog-summary > p { max-width: 72ch; margin: 0; color: #475467; font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.training-catalog-summary > p { min-width: 0; margin: 0; color: #475467; font-size: 12px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
 .training-catalog-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 0; border: 1px solid #e1e8f0; border-radius: 8px; background: #e1e8f0; }
 .training-catalog-summary dl > div { display: grid; gap: 3px; background: #fff; padding: 10px 12px; }
 .training-catalog-summary dt { color: #7a8798; font-size: 10px; font-weight: 800; }
@@ -2017,6 +2008,8 @@ select:disabled { cursor: not-allowed; }
 .submit-bar strong, .submit-bar span { display: block; }
 .submit-bar strong { font-size: 13px; }
 .submit-bar span { margin-top: 3px; color: #7a8798; font-size: 11px; }
+.submit-bar .submit-reason { color: #b42318; font-size: 12px; font-weight: 800; }
+.submit-bar .submit-ready { color: #247260; font-size: 12px; font-weight: 800; }
 .submit-bar button { min-width: 180px; border: 0; border-radius: 6px; background: #247260; padding: 11px 16px; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; }
 .submit-bar button:disabled { background: #aab5c2; cursor: not-allowed; }
 @keyframes pulse { 50% { opacity: .35; } }

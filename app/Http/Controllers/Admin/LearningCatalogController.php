@@ -68,7 +68,7 @@ class LearningCatalogController extends Controller
             'source_type' => ['required', Rule::in(['internal', 'external'])],
             'cost' => ['nullable', 'numeric', 'min:0'],
             'hours' => ['nullable', 'numeric', 'min:0'],
-            'expected_levels' => [Rule::requiredIf($request->input('delivery_type') === 'e_learning'), 'array', 'min:1'],
+            'expected_levels' => ['exclude_unless:delivery_type,e_learning', 'required', 'array', 'min:1'],
             'expected_levels.*' => ['integer', 'between:1,5'],
             'competency_ids' => ['required', 'array', 'size:1'],
             'competency_ids.*' => ['integer', Rule::exists('competencies', 'id')],

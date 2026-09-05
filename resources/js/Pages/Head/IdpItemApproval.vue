@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
+    tracking: { type: Boolean, default: false },
     items: {
         type: Array,
         default: () => [],
@@ -11,8 +12,15 @@ defineProps({
 
 const comments = ref({});
 const processingId = ref(null);
+const selectedId = ref(null);
+const visibleItems = computed(() => props.items.filter(item => props.tracking ? !item.canReview : item.canReview));
+const statusLabel = (item) => item.canReview ? `รอคุณอนุมัติ · ลำดับ ${item.currentReviewStep}`
+    : item.status === 'approved' ? 'อนุมัติครบแล้ว'
+    : item.status === 'revision_required' ? 'ถูกส่งกลับแก้ไข'
+    : /^review_step_/.test(item.status) ? `รอผู้อนุมัติลำดับ ${item.currentReviewStep}` : 'ร่าง';
 
 const approve = (item) => {
+    if (!item.canReview || props.tracking) return;
     processingId.value = item.id;
     router.post(route('idp-items.approve'), {
         idpItemId: item.id,
@@ -24,6 +32,7 @@ const approve = (item) => {
 };
 
 const reject = (item) => {
+    if (!item.canReview || props.tracking) return;
     const comment = String(comments.value[item.id] || '').trim();
     if (!comment) {
         window.alert('กรุณาระบุเหตุผลที่ตีกลับ');
@@ -45,15 +54,30 @@ const reject = (item) => {
     <section class="approval-panel">
         <header>
             <div>
-                <h2>แผนสมรรถนะที่รออนุมัติ</h2>
-                <p>ตรวจและดำเนินการแยกทีละสมรรถนะ</p>
+                <h2>{{ tracking ? 'ติดตามสถานะ' : 'รอคุณอนุมัติ' }}</h2>
+                <p>{{ tracking ? 'แผนที่ไม่ได้รอคุณอนุมัติขณะนี้ · เปิดดูรายละเอียดและประวัติแบบอ่านอย่างเดียว' : 'แผนที่มาถึงลำดับของคุณ · เลือกรายการเพื่อตรวจและอนุมัติทีละสมรรถนะ' }}</p>
             </div>
-            <span>{{ items.length }} รายการ</span>
+            <span>{{ visibleItems.length }} รายการ</span>
         </header>
 
-        <div v-if="items.length === 0" class="approval-empty">ยังไม่มีแผนสมรรถนะที่รออนุมัติ</div>
+        <div v-if="visibleItems.length === 0" class="approval-empty">{{ tracking ? 'ไม่มีแผนสมรรถนะที่ต้องติดตาม' : 'ยังไม่มีแผนสมรรถนะที่รอคุณอนุมัติ' }}</div>
 
-        <article v-for="item in items" :key="item.id" class="approval-card">
+        <div v-if="visibleItems.length" class="queue-table-wrap">
+            <table class="queue-table">
+                <thead><tr><th>ชื่อ-นามสกุล</th><th>สมรรถนะ</th><th>วันที่ส่งแผน</th><th>สถานะ</th></tr></thead>
+                <tbody>
+                    <tr v-for="item in visibleItems" :key="item.id" :class="{ selected: selectedId === item.id }">
+                        <td><button class="person-link" type="button" @click="selectedId = selectedId === item.id ? null : item.id" :aria-expanded="selectedId === item.id">{{ item.userName }}</button><small>{{ item.userPosition || item.userDepartment }}</small></td>
+                        <td><strong>{{ item.competencyCode }}</strong><small>{{ item.competencyName }}</small></td>
+                        <td>{{ item.submittedAt || '—' }}</td>
+                        <td><span class="queue-status">{{ statusLabel(item) }}</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <article v-for="item in visibleItems.filter((entry) => entry.id === selectedId)" :key="item.id" class="approval-card">
+            <div class="detail-heading"><strong>รายละเอียดแผนสมรรถนะ</strong><button type="button" @click="selectedId = null">ปิดรายละเอียด</button></div>
             <div class="approval-title">
                 <div>
                     <span>{{ item.userSso }}</span>
@@ -61,7 +85,7 @@ const reject = (item) => {
                     <small>{{ item.userPosition || item.userDepartment }}</small>
                 </div>
                 <div class="competency">
-                    <span class="review-step">รออนุมัติลำดับ {{ item.currentReviewStep }}</span>
+                    <span class="review-step">{{ statusLabel(item) }}</span>
                     <span>{{ item.competencyCode }}</span>
                     <strong>{{ item.competencyName }}</strong>
                 </div>
@@ -85,6 +109,7 @@ const reject = (item) => {
             </div>
 
             <textarea
+                v-if="!tracking && item.canReview"
                 v-model="comments[item.id]"
                 rows="2"
                 placeholder="ความคิดเห็นเพิ่มเติม (ไม่บังคับสำหรับอนุมัติ)"
@@ -106,7 +131,7 @@ const reject = (item) => {
                 </div>
             </details>
 
-            <footer>
+            <footer v-if="!tracking && item.canReview">
                 <button class="reject" type="button" :disabled="processingId === item.id" @click="reject(item)">ไม่อนุมัติ</button>
                 <button class="approve" type="button" :disabled="processingId === item.id" @click="approve(item)">อนุมัติ</button>
             </footer>
@@ -115,8 +140,20 @@ const reject = (item) => {
 </template>
 
 <style scoped>
-.approval-panel { margin-bottom: 20px; border: 1px solid #b8d7cb; border-radius: 8px; background: #f3faf7; overflow: hidden; }
-.approval-panel > header { display: flex; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid #cce2da; background: #e8f5f0; }
+.approval-panel { margin-bottom: 20px; border: 1px solid #dce3ea; border-radius: 8px; background: #fff; overflow: hidden; box-shadow: 0 2px 5px #17203308; }
+.approval-panel > header { display: flex; justify-content: space-between; gap: 16px; padding: 22px; border-bottom: 1px solid #e2e7ec; background: #fff; }
+.queue-table-wrap { overflow-x: auto; padding: 16px; }
+.queue-table { width: 100%; border: 1px solid #dce3ea; border-radius: 8px; border-spacing: 0; overflow: hidden; text-align: left; }
+.queue-table th { padding: 12px 16px; background: #f1f4f7; color: #657287; font-size: 12px; }
+.queue-table td { padding: 16px; border-top: 1px solid #e4e9ee; font-size: 12px; }
+.queue-table td:first-child { border-left: 3px solid #bed2c9; }
+.queue-table small { display: block; margin-top: 5px; color: #718096; font-size: 11px; }
+.queue-table tr.selected td, .queue-table tbody tr:hover td { background: #f0f7f4; }
+.person-link { border: 0; padding: 0; background: none; color: #263d35; text-align: left; }
+.queue-status { display: inline-block; padding: 5px 9px; border-radius: 20px; background: #fff8e8; color: #a7650c; font-weight: 800; white-space: nowrap; }
+.detail-heading { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; background: #edf6f2; color: #246b59; font-size: 13px; }
+.detail-heading button { border: 1px solid #c6d8cf; background: #fff; color: #246b59; }
+@media (max-width: 900px) { .queue-table { min-width: 680px; } }
 h2, p { margin: 0; }
 h2 { font-size: 16px; }
 header p { margin-top: 4px; color: #62756f; font-size: 12px; }

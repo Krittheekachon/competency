@@ -1689,32 +1689,11 @@ class DashboardController extends Controller
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
-            ->where(function ($query) use ($reviewer): void {
-                if (Schema::hasTable('user_reviewer_steps')) {
-                    $query->whereExists(function ($subQuery) use ($reviewer): void {
-                        $subQuery->selectRaw('1')
-                            ->from('user_reviewer_steps')
-                            ->whereColumn('user_reviewer_steps.user_id', 'users.id')
-                            ->where('user_reviewer_steps.reviewer_id', $reviewer->id)
-                            ->whereColumn('idp_items.current_review_step', 'user_reviewer_steps.step_order')
-                            ->whereRaw("idp_items.status = CONCAT('review_step_', user_reviewer_steps.step_order)");
-
-                        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
-                            $subQuery->where(function ($chainQuery): void {
-                                $chainQuery->where('user_reviewer_steps.chain_type', 'idp')
-                                    ->orWhere(function ($fallbackQuery): void {
-                                        $fallbackQuery->where('user_reviewer_steps.chain_type', 'assessment')
-                                            ->whereNotExists(function ($existsQuery): void {
-                                                $existsQuery->selectRaw('1')
-                                                    ->from('user_reviewer_steps as idp_steps')
-                                                    ->whereColumn('idp_steps.user_id', 'users.id')
-                                                    ->where('idp_steps.chain_type', 'idp');
-                                            });
-                                    });
-                            });
-                        }
-                    });
-                }
+            ->whereExists(function ($query) use ($reviewer): void {
+                $query->selectRaw('1')->from('user_reviewer_steps')
+                    ->whereColumn('user_reviewer_steps.user_id', 'users.id')
+                    ->where('user_reviewer_steps.reviewer_id', $reviewer->id)
+                    ->where('user_reviewer_steps.chain_type', 'idp');
             })
             ->select(
                 'idp_items.id',
@@ -1722,6 +1701,8 @@ class DashboardController extends Controller
                 'idp_items.success_criteria',
                 'idp_items.submission_version',
                 'idp_items.current_review_step',
+                'idp_items.status',
+                'idps.user_id as owner_id',
                 'idp_items.submitted_at',
                 'users.sso as user_sso',
                 'users.name as user_name',
@@ -1780,6 +1761,11 @@ class DashboardController extends Controller
             'successCriteria' => $item->success_criteria ?: '',
             'submissionVersion' => (int) $item->submission_version,
             'currentReviewStep' => (int) $item->current_review_step,
+            'status' => $item->status,
+            'canReview' => collect($this->reviewerChainResolver->stepsForUser((object) ['id' => $item->owner_id], 'idp'))
+                ->contains(fn (array $step): bool => $step['reviewer_id'] === $reviewer->id
+                    && $step['step'] === (int) $item->current_review_step
+                    && $item->status === 'review_step_'.$step['step']),
             'submittedAt' => $item->submitted_at,
             'activities' => ($activities[$item->id] ?? collect())
                 ->map(fn (object $activity): array => [

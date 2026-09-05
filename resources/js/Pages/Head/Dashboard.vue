@@ -1277,190 +1277,14 @@ const logout = () => router.post(route('logout'));
                 <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 
                 <template v-else-if="activePage === 'dh-idp'">
+                    <div class="team-page-head mb20"><div><div class="sec-t">IDP & ติดตามทีม</div><div class="sec-s">ตรวจและติดตามแผนแยกตามสมรรถนะในสาย IDP ของคุณ</div></div></div>
+                    <div class="idp-queue-summary mb20">
+                        <div><span>รอคุณอนุมัติ</span><strong>{{ props.idpReviewItems.filter(item => item.canReview).length }}</strong><small>แผนสมรรถนะ</small></div>
+                        <div><span>ติดตามสถานะ</span><strong>{{ props.idpReviewItems.filter(item => !item.canReview).length }}</strong><small>แผนสมรรถนะ</small></div>
+                        <div><span>อนุมัติครบแล้ว</span><strong>{{ props.idpReviewItems.filter(item => item.status === 'approved').length }}</strong><small>แผนสมรรถนะ</small></div>
+                    </div>
                     <IdpItemApproval :items="props.idpReviewItems" />
-                    <template v-if="!selectedIdpPerson">
-                        <div class="team-page-head mb20">
-                            <div>
-                                <div class="sec-t">ติดตาม IDP ทีม</div>
-                                <div class="sec-s">ตารางรวม Direct Reports ที่มี Competency Gap พร้อมสถานะปัจจุบันและ mirror view แบบอ่านอย่างเดียว</div>
-                            </div>
-                            <span class="b bb">{{ idpRequiredCount }} คนต้องทำ IDP</span>
-                        </div>
-
-                        <div class="card team-table-card">
-                            <div class="team-card-head">
-                                <div>
-                                    <div class="ct">Team Overview Table</div>
-                                    <div class="cs">คลิกดูรายละเอียดเพื่อดูแผน IDP แบบ read-only และฝาก coaching comment</div>
-                                </div>
-                            </div>
-                            <div class="team-table-wrap">
-                                <table class="team-table">
-                                    <thead>
-                                        <tr>
-                                            <th>บุคลากร</th>
-                                            <th>ตำแหน่ง</th>
-                                            <th>สมรรถนะที่ต้องทำ IDP</th>
-                                            <th>Current Status</th>
-                                            <th>อัปเดตล่าสุด</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="row in idpOverviewRows" :key="row.sso">
-                                            <td>
-                                                <div class="person-cell">
-                                                    <strong>{{ `${row.t || ''}${row.n}` }}</strong>
-                                                    <small>{{ row.d || row.p }}</small>
-                                                </div>
-                                            </td>
-                                            <td>{{ row.p }}</td>
-                                            <td>
-                                                <span class="b br">{{ row.missingCount || 0 }} สมรรถนะ</span>
-                                            </td>
-                                            <td>
-                                                <span class="b" :class="row.statusClass">{{ row.statusLabel }}</span>
-                                            </td>
-                                            <td>{{ row.updatedAt }}</td>
-                                            <td class="tr">
-                                                <button class="btn btn-s btn-sm" type="button" @click="openIdpDetail(row)">ดูรายละเอียด</button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div v-if="idpOverviewRows.length === 0" class="empty-card">
-                                ยังไม่มีข้อมูลบุคลากรในหน่วยงาน
-                            </div>
-                        </div>
-                    </template>
-
-                    <template v-else>
-                        <div class="idp-detail-nav mb20">
-                            <div class="flex ic g10">
-                                <button class="btn btn-s" type="button" @click="closeIdpDetail">กลับหน้าติดตามทีม</button>
-                                <span class="muted">/</span>
-                                <span class="fw8 fs15">{{ selectedIdpName }}</span>
-                            </div>
-                            <span class="b" :class="selectedIdpStatus.cls">{{ selectedIdpStatus.label }}</span>
-                        </div>
-
-                        <div class="card idp-profile-card mb18">
-                            <div class="flex ic g12">
-                                <div class="av idp-detail-avatar">{{ selectedIdpPerson.n[0] }}</div>
-                                <div>
-                                    <div class="fw8 fs16">{{ selectedIdpName }}</div>
-                                    <div class="muted fs12">{{ selectedIdpPerson.p }} · {{ selectedIdpPerson.p }}</div>
-                                </div>
-                            </div>
-                            <div v-if="selectedIdpPerson.sentAt" class="muted fs12">{{ selectedIdpPerson.sentAt }}</div>
-                        </div>
-
-                        <div v-if="allowIdpReview && selectedIdpPerson.phase === 'pending'" class="idp-review-space">
-                            <div v-for="row in selectedIdpGapRows" :key="row.id" class="card idp-review-card">
-                                <div class="idp-review-head">
-                                    <div class="flex ic g8">
-                                        <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                        <span class="fw8 fs16">{{ row.title }}</span>
-                                        <span class="muted fs12">คาดหวัง {{ row.expected }} · ได้ {{ row.headScore }} · <span class="rc fw8">Gap {{ row.gap }}</span></span>
-                                    </div>
-                                </div>
-                                <div class="idp-review-body">
-                                    <div class="fw8 fs13 mb8">เป้าหมายการพัฒนา</div>
-                                    <div class="idp-goal-box">{{ idpPlanFor(row).goal || 'ยังไม่ได้ระบุเป้าหมายการพัฒนา' }}</div>
-                                    <div class="flex g8 mt14" style="flex-wrap: wrap">
-                                        <span v-for="activity in idpPlanFor(row).activities || []" :key="activity" class="b bb">{{ activity }}</span>
-                                    </div>
-                                    <textarea
-                                        class="ta idp-feedback-input mt14"
-                                        :value="idpFeedbackFor(row)"
-                                        placeholder="ข้อเสนอแนะ / เหตุผลเมื่อแผนไม่ผ่าน"
-                                        @input="setIdpFeedback(row, $event.target.value)"
-                                    />
-                                    <div class="flex g8 mt12">
-                                        <button
-                                            class="btn btn-g btn-sm"
-                                            :class="{ selected: idpDecisionFor(row) === 'approved' }"
-                                            type="button"
-                                            @click="setIdpDecision(row, 'approved')"
-                                        >
-                                            ผ่านแผนนี้
-                                        </button>
-                                        <button
-                                            class="btn btn-r btn-sm"
-                                            :class="{ selected: idpDecisionFor(row) === 'rejected' }"
-                                            type="button"
-                                            @click="setIdpDecision(row, 'rejected')"
-                                        >
-                                            แผนไม่ผ่าน
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="idp-review-actions">
-                                <button class="btn btn-p" type="button" @click="completeIdpReview">ดำเนินการต่อ</button>
-                            </div>
-                        </div>
-
-                        <div v-else-if="selectedIdpPerson.phase === 'inprogress'" class="card idp-gap-detail-card">
-                            <div v-for="row in selectedIdpGapRows" :key="row.id" class="idp-progress-section">
-                                <div class="idp-progress-head">
-                                    <div class="flex ic g8">
-                                        <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                        <span class="fw8 fs16">{{ row.title }}</span>
-                                        <span class="muted fs12">{{ row.code }} · Gap {{ row.gap }}</span>
-                                    </div>
-                                    <span class="b bg">ระหว่างดำเนินการ</span>
-                                </div>
-                                <div
-                                    v-for="activity in idpPlanFor(row).activities || []"
-                                    :key="activity.title || activity"
-                                    class="idp-activity-card"
-                                >
-                                    <div class="idp-activity-head">
-                                        <div>
-                                            <span class="fw8 fs14">{{ activity.title || activity }}</span>
-                                            <span class="muted fs12 ml8">{{ activity.method }}</span>
-                                        </div>
-                                        <span class="b bg">{{ activity.status || 'รอดำเนินการ' }}</span>
-                                    </div>
-                                    <div v-for="event in activity.events || []" :key="`${activity.title}-${event.date}-${event.file}`" class="idp-event-row">
-                                        <div class="muted fs12">{{ event.date }}</div>
-                                        <div>
-                                            <div class="fs13" :class="{ 'gcc fw8': event.text.includes('ผ่าน') }">{{ event.text }}</div>
-                                            <span class="b bgr mt4">{{ event.file }}</span>
-                                        </div>
-                                        <div class="muted fs12 tr">by {{ event.by }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div v-else class="card idp-gap-detail-card">
-                            <div class="idp-gap-detail-head">
-                                <span class="fw8 fs16">{{ selectedIdpStatus.title }}</span>
-                                <span class="muted fs12">
-                                    {{ selectedIdpPerson.phase === 'rejected' ? 'บุคลากรต้องกลับไปแก้แผนที่ไม่ผ่านก่อนส่งใหม่' : 'แสดงเฉพาะ Competency Gap ที่ทำไว้แล้ว' }}
-                                </span>
-                            </div>
-                            <div class="idp-gap-list">
-                                <div v-for="row in selectedIdpGapRows" :key="row.id" class="idp-gap-row">
-                                    <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                    <div class="row-main">
-                                        <div class="fw8 fs14">{{ row.title }}</div>
-                                        <div class="muted fs12">ระดับคาดหวัง {{ row.expected }} · ระดับที่ได้ {{ row.headScore }}</div>
-                                        <div v-if="selectedIdpPerson.phase === 'rejected'" class="rc fs12 mt4">
-                                            เหตุผล: {{ idpFeedbackFor(row) || 'ยังไม่มีข้อเสนอแนะ' }}
-                                        </div>
-                                    </div>
-                                    <div class="rc fw8 fs14">Gap {{ row.gap }}</div>
-                                </div>
-                                <div v-if="selectedIdpGapRows.length === 0" class="empty-card">
-                                    ไม่มี Competency Gap
-                                </div>
-                            </div>
-                        </div>
-                    </template>
+                    <IdpItemApproval :items="props.idpReviewItems" tracking />
                 </template>
 
                 <template v-else-if="activePage === 'sup-gap'">
@@ -1659,7 +1483,7 @@ const logout = () => router.post(route('logout'));
                                         <tr v-for="person in fcTopicApprovalRows" :key="`fc-${person.sso}`">
                                             <td>
                                                 <div class="person-cell">
-                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <button class="review-person-link" type="button" @click.stop="openSupervisorApprovalModal(person)">{{ `${person.t || ''}${person.n}` }}</button>
                                                     <small>{{ approvalOrganizationFor(person) }}</small>
                                                 </div>
                                             </td>
@@ -1762,7 +1586,7 @@ const logout = () => router.post(route('logout'));
                                         >
                                             <td>
                                                 <div class="person-cell">
-                                                    <strong>{{ `${person.t || ''}${person.n}` }}</strong>
+                                                    <button class="review-person-link" type="button" @click.stop="openSupervisorApprovalModal(person)">{{ `${person.t || ''}${person.n}` }}</button>
                                                     <small>{{ approvalOrganizationFor(person) }}</small>
                                                 </div>
                                             </td>
@@ -3710,6 +3534,24 @@ const logout = () => router.post(route('logout'));
     cursor: not-allowed;
     opacity: 1 !important;
 }
+.supervisor-approval-card .approval-table-wrap { padding: 12px 16px 16px; }
+.supervisor-approval-card .approval-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 1px solid #dce3ea; border-radius: 8px; overflow: hidden; }
+.supervisor-approval-card .approval-table th { padding: 11px 16px; background: #f1f4f7; color: #657287; font-size: 12px; }
+.supervisor-approval-card .approval-table th:first-child { width: 32%; }
+.supervisor-approval-card .approval-table td { padding: 16px; background: #fff; vertical-align: middle; border-top: 1px solid #e4e9ee; }
+.supervisor-approval-card .approval-table tbody tr:nth-child(even) td { background: #fafbfc; }
+.supervisor-approval-card .approval-table tbody tr:hover td { background: #f0f7f4; }
+.supervisor-approval-card .approval-table td:first-child { border-left: 3px solid #bed2c9; }
+.supervisor-approval-card .person-cell small { margin-top: 5px; color: #718096; font-size: 12px; }
+.review-person-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 0; padding: 0; background: transparent; color: #263d35; text-align: left; font: inherit; font-weight: 800; cursor: pointer; }
+.review-person-link:focus-visible { outline: 2px solid #39725d; outline-offset: 4px; }
+@media (max-width: 900px) { .supervisor-approval-card .approval-table { min-width: 700px; } }
+.idp-queue-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.idp-queue-summary > div { display: grid; gap: 7px; border: 1px solid #dce3ea; border-radius: 8px; background: #fff; padding: 22px; }
+.idp-queue-summary span, .idp-queue-summary small { color: #718096; font-size: 12px; }
+.idp-queue-summary strong { color: #247260; font-size: 30px; }
+.idp-queue-summary > div:first-child strong { color: #d97706; }
+@media (max-width: 900px) { .idp-queue-summary { grid-template-columns: 1fr; } }
 .navy-top { border-top: 3px solid var(--navy); }
 .blue-top { border-top: 3px solid var(--blue); }
 .red-top { border-top: 3px solid var(--red); }

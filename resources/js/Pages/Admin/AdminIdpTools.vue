@@ -776,19 +776,6 @@ const deliveryTypeDisplay = (value) => {
               </div>
             </div>
 
-            <div class="preview-block readonly">
-              <header>
-                <h4>ลำดับการส่งแผน IDP</h4>
-                <span>ดึงจากระบบ</span>
-              </header>
-              <div class="preview-approval-route">
-                <div class="preview-approval-step"><span>1</span><div><strong>ผู้อนุมัติลำดับ 1</strong><small>ชื่อและตำแหน่งจะแสดงตามผู้ใช้</small></div></div>
-                <span class="preview-approval-arrow">→</span>
-                <div class="preview-approval-step"><span>2</span><div><strong>ผู้อนุมัติลำดับถัดไป</strong><small>จำนวนลำดับเป็นไปตามที่ Admin กำหนด</small></div></div>
-              </div>
-              <p class="preview-approval-notice">หากข้อมูลลำดับการส่งไม่ถูกต้อง กรุณาติดต่อ Admin</p>
-            </div>
-
             <div v-if="previewForm.detailFields.length" class="preview-block">
               <header>
                 <h4>{{ previewForm.detailTitle }}</h4>
@@ -803,13 +790,7 @@ const deliveryTypeDisplay = (value) => {
                     <option value="ผู้เชี่ยวชาญ">ผู้เชี่ยวชาญ</option>
                   </select>
                 </label>
-                <label v-if="previewCoachType === 'ผู้บังคับบัญชา'">
-                  <span>เลือกผู้บังคับบัญชา</span>
-                  <select disabled>
-                    <option>เลือกผู้บังคับบัญชา</option>
-                  </select>
-                </label>
-                <label v-else-if="previewCoachType === 'ผู้เชี่ยวชาญ'">
+                <label v-if="previewCoachType === 'ผู้เชี่ยวชาญ'">
                   <span>ชื่อผู้เชี่ยวชาญ</span>
                   <input placeholder="กรอกชื่อผู้เชี่ยวชาญ" />
                 </label>

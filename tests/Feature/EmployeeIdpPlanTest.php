@@ -38,6 +38,22 @@ class EmployeeIdpPlanTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $projectToolId = DB::table('idp_learning_methods')->insertGetId([
+            'code' => 'EXP-0001',
+            'focus_type' => 'experiential',
+            'title' => 'การมอบหมายงานโครงการ',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $rotationToolId = DB::table('idp_learning_methods')->insertGetId([
+            'code' => 'EXP-0002',
+            'focus_type' => 'experiential',
+            'title' => 'การหมุนเวียนงาน',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $this->actingAs($employee)
             ->post(route('employee.idp.draft'), [
@@ -48,9 +64,9 @@ class EmployeeIdpPlanTest extends TestCase
                     'activities' => [
                         [
                             'methodKey' => 'experiential-learning',
-                            'developmentToolId' => null,
+                            'developmentToolId' => $projectToolId,
                             'learningCatalogId' => null,
-                            'activityName' => 'Project Assignment',
+                            'activityName' => 'ชื่อที่ผู้ใช้แก้เองต้องไม่ถูกบันทึก',
                             'activityDescription' => 'ฝึกทำงานจริง',
                             'documentReferenceNumber' => 'กจ.01/2569',
                             'weightPercent' => 70,
@@ -59,9 +75,9 @@ class EmployeeIdpPlanTest extends TestCase
                         ],
                         [
                             'methodKey' => 'experiential-learning',
-                            'developmentToolId' => null,
+                            'developmentToolId' => $rotationToolId,
                             'learningCatalogId' => null,
-                            'activityName' => 'Job Rotation',
+                            'activityName' => 'ชื่อปลอมอีกรายการ',
                             'activityDescription' => 'หมุนเวียนงาน',
                             'weightPercent' => 30,
                             'startDate' => '2026-07-17',
@@ -84,13 +100,13 @@ class EmployeeIdpPlanTest extends TestCase
         $this->assertDatabaseCount('idp_items', 1);
         $this->assertDatabaseCount('idp_activities', 2);
         $this->assertDatabaseHas('idp_activities', [
-            'activity_name' => 'Project Assignment',
+            'activity_name' => 'EXP-0001 · การมอบหมายงานโครงการ',
             'method_type_id' => $methodTypeId,
             'document_reference_number' => 'กจ.01/2569',
             'weight_percent' => 70,
         ]);
         $this->assertDatabaseHas('idp_activities', [
-            'activity_name' => 'Job Rotation',
+            'activity_name' => 'EXP-0002 · การหมุนเวียนงาน',
             'weight_percent' => 30,
         ]);
     }
@@ -142,8 +158,6 @@ class EmployeeIdpPlanTest extends TestCase
                         'activityName' => '03 · การสอนงาน (Coaching)',
                         'documentReferenceNumber' => 'DOC-5',
                         'weightPercent' => 100,
-                        'startDate' => '2026-07-01',
-                        'endDate' => '2026-09-30',
                         'formCode' => 'form_5_coaching',
                         'formDetails' => [
                             '_saved' => true,
@@ -640,6 +654,38 @@ class EmployeeIdpPlanTest extends TestCase
             'goal' => 'เป้าหมายที่ส่งแล้ว',
             'status' => 'review_step_1',
         ]);
+    }
+
+    public function test_supervisor_type_needs_no_person_selection_in_all_activity_forms(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $gapId = $this->approvedGap($employee, $this->competencyId('CC-SUP-TYPE'));
+        DB::table('learning_method_types')->insert([
+            'key' => 'social-learning', 'label' => 'Social Learning',
+            'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        foreach ([
+            'form_4_ojt' => 'trainerType',
+            'form_5_coaching' => 'coachType',
+            'form_6_mentoring' => 'mentorType',
+            'form_7_group_activity' => 'facilitatorType',
+            'form_8_feedback' => 'feedbackProviderType',
+        ] as $formCode => $typeField) {
+            $toolId = DB::table('idp_learning_methods')->insertGetId([
+                'focus_type' => 'social', 'title' => $formCode, 'form_code' => $formCode,
+                'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            $payload = $this->completePlanPayload($gapId, $toolId);
+            $payload['activities'][0]['methodKey'] = 'social-learning';
+            $payload['activities'][0]['formCode'] = $formCode;
+            $payload['activities'][0]['formDetails'] = [
+                '_saved' => true, 'detail' => [$typeField => 'ผู้บังคับบัญชา'], 'planRows' => [],
+            ];
+            // Validation must proceed to the activity rows, without requiring a supervisor ID.
+            $this->actingAs($employee)->postJson(route('employee.idp.submit-item'), ['item' => $payload])
+                ->assertUnprocessable()
+                ->assertExactJsonStructure(['message', 'errors' => ['items.0.activities.0.formDetails.planRows']]);
+        }
     }
 
     private function approvedGap(User $employee, int $competencyId): int

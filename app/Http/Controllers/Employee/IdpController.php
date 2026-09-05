@@ -68,7 +68,7 @@ class IdpController extends Controller
             'items.*.activities.*.methodKey' => [$required, 'string', 'max:255'],
             'items.*.activities.*.developmentToolId' => ['nullable', 'integer', 'exists:idp_learning_methods,id'],
             'items.*.activities.*.learningCatalogId' => ['nullable', 'integer', 'exists:learning_catalogs,id'],
-            'items.*.activities.*.activityName' => [$required, 'string', 'max:255'],
+            'items.*.activities.*.activityName' => ['nullable', 'string', 'max:255'],
             'items.*.activities.*.activityDescription' => ['nullable', 'string'],
             'items.*.activities.*.documentReferenceNumber' => ['nullable', 'string', 'max:255'],
             'items.*.activities.*.weightPercent' => [$required, 'numeric', 'min:0', 'max:100'],
@@ -111,7 +111,7 @@ class IdpController extends Controller
         $methodIdsByKey = DB::table('learning_method_types')
             ->whereIn('key', $submittedMethodKeys)
             ->pluck('id', 'key');
-        $toolColumns = ['id', 'focus_type'];
+        $toolColumns = ['id', 'code', 'focus_type', 'title'];
         if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
             $toolColumns[] = 'form_code';
         }
@@ -127,6 +127,11 @@ class IdpController extends Controller
             ->get(['learning_catalog_competency.learning_catalog_id', 'learning_catalog_competency.competency_id'])
             ->groupBy('learning_catalog_id')
             ->map(fn ($rows) => $rows->pluck('competency_id')->map(fn ($id) => (int) $id));
+        $catalogsById = DB::table('learning_catalogs')
+            ->whereIn('id', $items->flatMap(fn (array $item) => $item['activities'] ?? [])->pluck('learningCatalogId')->filter()->unique())
+            ->where('is_active', true)
+            ->get(['id', 'name', 'description'])
+            ->keyBy('id');
 
         $this->validateActivities(
             $items,
@@ -140,7 +145,7 @@ class IdpController extends Controller
             ->where('id', auth()->id())
             ->first(['id']);
 
-        DB::transaction(function () use ($items, $status, $methodIdsByKey, $owner): void {
+        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner): void {
             $idpId = $this->currentUserIdpId();
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
@@ -204,12 +209,23 @@ class IdpController extends Controller
                 }
 
                 foreach ($item['activities'] ?? [] as $activity) {
+                    $tool = ! empty($activity['developmentToolId'])
+                        ? $toolsById->get($activity['developmentToolId'])
+                        : null;
+                    $catalog = ! empty($activity['learningCatalogId'])
+                        ? $catalogsById->get($activity['learningCatalogId'])
+                        : null;
+                    $activityName = $catalog?->name;
+                    if ($tool) {
+                        $activityName = trim(($tool->code ? $tool->code.' · ' : '').$tool->title);
+                    }
+
                     DB::table('idp_activities')->insert([
                         'idp_item_id' => $itemId,
                         'learning_catalog_id' => $activity['learningCatalogId'] ?? null,
                         'method_type_id' => $methodIdsByKey[$activity['methodKey'] ?? ''] ?? null,
                         'idp_learning_method_id' => $activity['developmentToolId'] ?? null,
-                        'activity_name' => $activity['activityName'] ?? null,
+                        'activity_name' => $activityName,
                         'weight_percent' => $activity['weightPercent'] ?? null,
                         'start_date' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
                             ? collect($activity['formDetails']['planRows'] ?? [])->pluck('developmentStart')->filter()->sort()->first()
@@ -217,7 +233,7 @@ class IdpController extends Controller
                         'end_date' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
                             ? collect($activity['formDetails']['planRows'] ?? [])->pluck('developmentEnd')->filter()->sort()->last()
                             : ($activity['endDate'] ?? null),
-                        'description' => $activity['activityDescription'] ?? null,
+                        'description' => $tool ? null : $catalog?->description,
                         'document_reference_number' => in_array(($activity['formCode'] ?? null), ['form_3_project_assignment', 'form_4_ojt', 'form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip', 'form_10_training'], true)
                             ? null
                             : ($activity['documentReferenceNumber'] ?? null),
@@ -278,14 +294,6 @@ class IdpController extends Controller
                 $toolId = $activity['developmentToolId'] ?? null;
                 $tool = $toolId ? $toolsById->get($toolId) : null;
 
-                if ($status === 'submitted'
-                    && ($activity['formCode'] ?? null) !== 'form_7_group_activity'
-                    && (blank($activity['startDate'] ?? null) || blank($activity['endDate'] ?? null))) {
-                    throw ValidationException::withMessages([
-                        "$prefix.startDate" => 'กรุณาระบุวันที่เริ่มต้นและวันที่สิ้นสุด',
-                    ]);
-                }
-
                 if ($methodKey !== '' && (! in_array($methodKey, self::CANONICAL_LEARNING_METHOD_KEYS, true) || ! $methodIdsByKey->has($methodKey))) {
                     throw ValidationException::withMessages([
                         "$prefix.methodKey" => 'ไม่พบประเภทการเรียนรู้ที่เลือก',
@@ -317,14 +325,6 @@ class IdpController extends Controller
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่ได้ผูกกับสมรรถนะที่ต้องพัฒนา',
                         ]);
                     }
-                }
-
-                if (! empty($activity['startDate'])
-                    && ! empty($activity['endDate'])
-                    && $activity['endDate'] < $activity['startDate']) {
-                    throw ValidationException::withMessages([
-                        "$prefix.endDate" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
-                    ]);
                 }
 
                 $requiresForm = $focusType === 'formal'
@@ -383,11 +383,6 @@ class IdpController extends Controller
                             "$prefix.formDetails.detail.trainerType" => 'กรุณาเลือกประเภทผู้สอนงาน',
                         ]);
                     }
-                    if ($trainerType === 'ผู้บังคับบัญชา' && blank($details['trainerSupervisorUserId'] ?? null)) {
-                        throw ValidationException::withMessages([
-                            "$prefix.formDetails.detail.trainerSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
-                        ]);
-                    }
                     if ($trainerType === 'ผู้เชี่ยวชาญ' && blank($details['trainerExpertName'] ?? null)) {
                         throw ValidationException::withMessages([
                             "$prefix.formDetails.detail.trainerExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
@@ -438,11 +433,6 @@ class IdpController extends Controller
                     if (! in_array($coachType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
                         throw ValidationException::withMessages([
                             "$prefix.formDetails.detail.coachType" => 'กรุณาเลือกประเภทผู้สอนงาน',
-                        ]);
-                    }
-                    if ($coachType === 'ผู้บังคับบัญชา' && blank($details['coachSupervisorUserId'] ?? null)) {
-                        throw ValidationException::withMessages([
-                            "$prefix.formDetails.detail.coachSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
                         ]);
                     }
                     if ($coachType === 'ผู้เชี่ยวชาญ' && blank($details['coachExpertName'] ?? null)) {
@@ -504,11 +494,6 @@ class IdpController extends Controller
                             "$prefix.formDetails.detail.mentorType" => 'กรุณาเลือกประเภทผู้สอนงาน',
                         ]);
                     }
-                    if ($mentorType === 'ผู้บังคับบัญชา' && blank($details['mentorSupervisorUserId'] ?? null)) {
-                        throw ValidationException::withMessages([
-                            "$prefix.formDetails.detail.mentorSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
-                        ]);
-                    }
                     if ($mentorType === 'ผู้เชี่ยวชาญ' && blank($details['mentorExpertName'] ?? null)) {
                         throw ValidationException::withMessages([
                             "$prefix.formDetails.detail.mentorExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
@@ -561,11 +546,6 @@ class IdpController extends Controller
                             "$prefix.formDetails.detail.facilitatorType" => 'กรุณาเลือกประเภทผู้อำนวยการ/ผู้นำกิจกรรม',
                         ]);
                     }
-                    if ($facilitatorType === 'ผู้บังคับบัญชา' && blank($details['facilitatorSupervisorUserId'] ?? null)) {
-                        throw ValidationException::withMessages([
-                            "$prefix.formDetails.detail.facilitatorSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
-                        ]);
-                    }
                     if ($facilitatorType === 'ผู้เชี่ยวชาญ' && blank($details['facilitatorExpertName'] ?? null)) {
                         throw ValidationException::withMessages([
                             "$prefix.formDetails.detail.facilitatorExpertName" => 'กรุณากรอกชื่อผู้เชี่ยวชาญ',
@@ -609,11 +589,6 @@ class IdpController extends Controller
                     if (! in_array($providerType, ['ผู้บังคับบัญชา', 'ผู้เชี่ยวชาญ'], true)) {
                         throw ValidationException::withMessages([
                             "$prefix.formDetails.detail.feedbackProviderType" => 'กรุณาเลือกประเภทผู้ให้ข้อมูล',
-                        ]);
-                    }
-                    if ($providerType === 'ผู้บังคับบัญชา' && blank($details['feedbackSupervisorUserId'] ?? null)) {
-                        throw ValidationException::withMessages([
-                            "$prefix.formDetails.detail.feedbackSupervisorUserId" => 'กรุณาเลือกผู้บังคับบัญชา',
                         ]);
                     }
                     if ($providerType === 'ผู้เชี่ยวชาญ' && blank($details['feedbackExpertName'] ?? null)) {

@@ -65,12 +65,13 @@ class AdminLearningCatalogTest extends TestCase
                 'provider' => 'หน่วยงานใหม่',
                 'cost' => null,
                 'hours' => '3.5',
-                'expected_levels' => [4],
+                'expected_levels' => [],
                 'competency_ids' => [$competencyId],
                 'description' => 'รายละเอียดใหม่',
                 'is_active' => false,
             ])
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('learning_catalogs', [
             'id' => $catalogId,
@@ -94,6 +95,30 @@ class AdminLearningCatalogTest extends TestCase
             ->assertRedirect();
 
         $this->assertDatabaseMissing('learning_catalogs', ['id' => $catalogId]);
+    }
+
+    public function test_in_class_catalog_can_be_created_with_empty_expected_levels(): void
+    {
+        $adminUser = $this->adminUser();
+        $this->createLearningMethod('formal', 'Formal Learning');
+        $competencyId = $this->createCompetency('CC-INCLASS', 'In-class competency');
+
+        $this->actingAs($adminUser)->post(route('admin.learning-catalogs.store'), [
+            'code' => 'TN001',
+            'name' => 'หลักสูตรในห้องเรียน',
+            'method_key' => 'formal',
+            'delivery_type' => 'in_class',
+            'source_type' => 'internal',
+            'expected_levels' => [],
+            'competency_ids' => [$competencyId],
+            'is_active' => true,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('learning_catalogs', [
+            'code' => 'TN001',
+            'delivery_type' => 'in_class',
+            'expected_levels' => null,
+        ]);
     }
 
     public function test_catalog_fields_are_required_by_delivery_type(): void
