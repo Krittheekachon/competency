@@ -48,6 +48,7 @@ class AssessmentReviewerChainTest extends TestCase
                     fn (array $user): bool => $user['db_id'] === $employee->id
                         && $user['d'] === 'ทดสอบฝ่าย > ทดสอบงาน > ทดสอบหน่วย'
                         && $user['approvalOrg'] === 'ทดสอบหน่วย'
+                        && $user['displayOrganization'] === 'ทดสอบหน่วย'
                 ))
             );
     }
@@ -239,6 +240,9 @@ class AssessmentReviewerChainTest extends TestCase
     {
         $reviewer = User::factory()->create([
             'role_id' => $this->roleId('supervisor'),
+            'title' => 'นาย',
+            'name' => 'หัวหน้าทดสอบ',
+            'position' => 'หัวหน้าหน่วย',
         ]);
         $employee = User::factory()->create([
             'role_id' => $this->roleId('employee'),
@@ -276,6 +280,19 @@ class AssessmentReviewerChainTest extends TestCase
             'comment' => $reviewerComment,
             'status' => 'approved',
         ]);
+
+        $firstAssessment->forceFill(['last_draft_saved_at' => now()])->save();
+
+        $this->actingAs($employee)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Employee/Dashboard')
+                ->where('currentUserCompetencyGaps.0.reviewerComments.0.reviewerName', 'นายหัวหน้าทดสอบ')
+                ->where('currentUserCompetencyGaps.0.reviewerComments.0.reviewerPosition', 'หัวหน้าหน่วย')
+                ->where('currentUserCompetencyGaps.0.reviewerComments.0.reviewStep', 1)
+                ->where('currentUserCompetencyGaps.0.reviewerComments.0.comment', $reviewerComment)
+            );
     }
 
     public function test_reviewer_can_reject_only_one_competency_without_touching_the_others(): void

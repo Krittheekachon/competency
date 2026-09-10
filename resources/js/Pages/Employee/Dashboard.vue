@@ -208,6 +208,7 @@ const logout = () => router.post(route('logout'));
                     :set-page="requestPageChange"
                     :gaps="competencyGaps"
                     :eval-status="currentProfileUser?.evalStatus"
+                    :user="currentProfileUser"
                 />
 
                 <EmployeeIDP

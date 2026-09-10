@@ -694,7 +694,7 @@ export const TeamGap = defineComponent({ name: "TeamGap", props: ["users", "curr
             </div>}
 
             <div class="mb20">
-                <div class="sec-t">Competency Gap ทีม</div>
+                <div class="sec-t">ผลการประเมินของทีม</div>
                 <div class="sec-s">วิเคราะห์ผลการประเมินและจุดอ่อนของทีม ({currentUser.d || "หน่วยงานในความดูแล"})</div>
             </div>
 

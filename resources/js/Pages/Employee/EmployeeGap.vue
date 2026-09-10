@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps<{
   setPage: (p: string) => void;
   gaps?: any[];
   evalStatus?: string;
+  user?: any;
 }>();
 
 const sourceRows = computed(() => (props.gaps || []).filter((row) => row.gap !== null && row.gap !== undefined));
@@ -14,10 +15,48 @@ const passedRows = computed(() => rows.value.filter((row) => Number(row.gap) >= 
 const failedRows = computed(() => rows.value
   .filter((row) => Number(row.gap) < 0)
   .sort((a, b) => Number(a.gap) - Number(b.gap)));
-const isFinalApproved = computed(() => rows.value.length > 0);
+const selectedRow = ref<any | null>(null);
+const rowKey = (row: any) => String(row.id ?? row.competencyId ?? row.cd);
+const openDetails = (row: any) => { selectedRow.value = row; };
+const closeDetails = () => { selectedRow.value = null; };
+const employeeName = computed(() => {
+  const name = `${props.user?.t || ''}${props.user?.n || ''}`.trim();
+  return name || 'ผู้รับการประเมิน';
+});
+const indicatorKey = (row: any, level: any, index: number) =>
+  `${row.competencyId}:${level.id || level.lvl}:${index}`;
+const isIndicatorChecked = (row: any, level: any, index: number) =>
+  new Set(row.checkedIndicatorKeys || []).has(indicatorKey(row, level, index));
+const selectedLevels = computed(() => {
+  if (!selectedRow.value) return [];
+
+  return (selectedRow.value.levels || []).map((level: any, levelIndex: number) => {
+    const levelNumber = Number(level.lvl ?? level.level ?? levelIndex + 1);
+    const indicators = (level.indicators || []).map((indicator: any, indicatorIndex: number) => ({
+      index: indicatorIndex,
+      text: typeof indicator === 'string' ? indicator : (indicator?.description || indicator?.text || ''),
+      checked: isIndicatorChecked(selectedRow.value, level, indicatorIndex),
+    }));
+
+    return {
+      id: level.id || levelNumber,
+      number: levelNumber,
+      indicators,
+      checkedCount: indicators.filter((indicator: any) => indicator.checked).length,
+    };
+  });
+});
+const reviewerComments = (row: any) => Array.isArray(row?.reviewerComments) ? row.reviewerComments : [];
+const formatCommentDate = (value: unknown) => {
+  if (!value) return '';
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+};
 const developmentStatusLabel = (row: any) => {
   if (Number(row.gap) >= 0) return 'ผ่านเกณฑ์';
-  return isFinalApproved.value ? 'ไม่ผ่านเกณฑ์' : 'รอผลอนุมัติ';
+  return 'ไม่ผ่านเกณฑ์';
 };
 
 const formatLevel = (value: unknown) => {
@@ -36,7 +75,6 @@ const formatGap = (value: unknown) => {
   return `${numberValue > 0 ? '+' : ''}${numberValue.toFixed(2).replace(/\.00$/, '')}`;
 };
 
-const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
 </script>
 
 <template>
@@ -67,78 +105,11 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
       </div>
     </div>
 
-    <section v-if="passedRows.length" class="result-section passed">
-      <div class="section-head">
-        <div>
-          <h2>สมรรถนะที่ผ่านเกณฑ์</h2>
-          <p>รายการที่คะแนนจริงเท่ากับหรือสูงกว่าคะแนนคาดหวัง</p>
-        </div>
-        <span>{{ passedRows.length }} รายการ</span>
-      </div>
-      <div class="competency-card-list">
-        <article v-for="row in passedRows" :key="row.id" class="competency-card">
-          <div class="competency-main">
-            <span class="type-tag">{{ row.t || '-' }}</span>
-            <div>
-              <strong>{{ row.cd }} · {{ row.n }}</strong>
-              <small>ระดับคาดหวัง {{ formatLevel(row.expected) }} · คาดหวัง {{ row.expectedIndicatorCount }} ข้อ · ทำได้ {{ formatLevel(row.actual) }} ข้อ</small>
-            </div>
-          </div>
-          <span class="gap-badge passed">Gap {{ formatGap(row.gap) }}</span>
-        </article>
-      </div>
-    </section>
-
-    <section v-if="failedRows.length" class="result-section failed">
-      <div class="section-head">
-        <div>
-          <h2>สมรรถนะที่ไม่ผ่านเกณฑ์</h2>
-          <p>{{ isFinalApproved ? 'เรียงจาก Gap ติดลบมากไปน้อย เพื่อส่งต่อไปสร้าง IDP' : 'แสดงรายการที่อาจต้องพัฒนา เมื่ออนุมัติครบทุกลำดับแล้วจึงจะจัดทำ IDP ได้' }}</p>
-        </div>
-        <span>{{ failedRows.length }} รายการ</span>
-      </div>
-
-      <div class="failed-card-list">
-        <article v-for="row in failedRows" :key="row.id" class="failed-card">
-          <div class="failed-card-head">
-            <div class="competency-main">
-              <span class="type-tag">{{ row.t || '-' }}</span>
-              <div>
-                <strong>{{ row.cd }} · {{ row.n }}</strong>
-                <small>Expected Level {{ formatLevel(row.expected) }} · Expected {{ row.expectedIndicatorCount }} indicators · Actual {{ formatLevel(row.actual) }}</small>
-              </div>
-            </div>
-            <span class="gap-badge failed">Gap {{ formatGap(row.gap) }}</span>
-          </div>
-
-          <div v-if="row.missingIndicators?.length" class="missing-block">
-            <div class="missing-title">พฤติกรรมที่ยังขาดทั้งหมด ({{ row.missingIndicatorCount || 0 }} ข้อ)</div>
-            <div class="level-blocks">
-              <section v-for="level in row.missingIndicators" :key="level.level" class="level-block">
-                <div class="level-head">
-                  <strong>{{ levelTitle(level) }}</strong>
-                  <span>{{ level.indicators?.length || 0 }} ข้อ</span>
-                </div>
-                <div class="indicator-lines">
-                  <div v-for="indicator in level.indicators" :key="indicator.code" class="indicator-line">
-                    <span>ข้อ {{ indicator.code }}</span>
-                    <p>{{ indicator.description }}</p>
-                  </div>
-                </div>
-              </section>
-            </div>
-          </div>
-
-          <div v-else class="missing-empty">ยังไม่พบรายการพฤติกรรมบ่งชี้ที่ขาดในระบบ</div>
-        </article>
-      </div>
-    </section>
-
     <section v-if="rows.length" class="table-section">
       <div class="section-head compact">
         <div>
-          <h2>ตารางผลการประเมินทั้งหมด</h2>
-          <p>ใช้ดูรายละเอียดคะแนนคาดหวัง คะแนนจริง และสถานะการพัฒนา</p>
+          <h2>ผลการประเมิน</h2>
+          <p>ดูรายละเอียดคะแนนคาดหวัง คะแนนจริง และสถานะการพัฒนา</p>
         </div>
       </div>
       <div class="result-table-wrap">
@@ -146,24 +117,33 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
           <thead>
             <tr>
               <th>สมรรถนะ</th>
-              <th>จำนวนข้อที่คาดหวัง</th>
-              <th>จำนวนข้อที่ประเมินได้</th>
-              <th>ผลการประเมิน</th>
+              <th>คะแนนที่คาดหวัง</th>
+              <th>คะแนนที่ได้</th>
+              <th>Gap</th>
               <th>สถานะ</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in rows" :key="`table-${row.id}`">
+            <tr
+              v-for="row in rows"
+              :key="`table-${rowKey(row)}`"
+              class="result-row"
+              tabindex="0"
+              role="button"
+              @click="openDetails(row)"
+              @keydown.enter.prevent="openDetails(row)"
+              @keydown.space.prevent="openDetails(row)"
+            >
               <td>
                 <div class="table-competency">
                   <span class="type-tag">{{ row.t || '-' }}</span>
-                  <div>
+                  <div class="competency-copy">
                     <strong>{{ row.cd }}</strong>
                     <small>{{ row.n }}</small>
                   </div>
                 </div>
               </td>
-              <td>{{ row.expectedIndicatorCount }}</td>
+              <td>{{ formatLevel(row.expected) }}</td>
               <td>{{ formatLevel(row.actual) }}</td>
               <td>
                 <span class="gap-pill" :class="{ negative: Number(row.gap) < 0, positive: Number(row.gap) >= 0 }">
@@ -180,6 +160,82 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
         </table>
       </div>
     </section>
+
+    <Teleport to="body">
+      <div v-if="selectedRow" class="competency-modal-backdrop" @click.self="closeDetails" @keydown.esc="closeDetails">
+        <section class="competency-modal" role="dialog" aria-modal="true" :aria-labelledby="`competency-title-${rowKey(selectedRow)}`">
+          <header class="competency-modal-head">
+            <div>
+              <div class="modal-code-line">
+                <span class="type-tag">{{ selectedRow.t || '-' }}</span>
+                <strong>{{ selectedRow.cd }}</strong>
+              </div>
+              <h2 :id="`competency-title-${rowKey(selectedRow)}`">{{ selectedRow.n }}</h2>
+              <p>{{ employeeName }} · ระดับความคาดหวัง {{ formatLevel(selectedRow.expected) }}</p>
+              <span class="workflow-complete">อนุมัติแล้ว</span>
+            </div>
+            <button class="btn btn-s btn-sm" type="button" @click="closeDetails">ปิด</button>
+          </header>
+
+          <div class="competency-modal-body">
+            <section class="modal-section competency-description">
+              <h3>คำอธิบายสมรรถนะ</h3>
+              <p>{{ selectedRow.det || 'ไม่มีคำอธิบายเพิ่มเติม' }}</p>
+            </section>
+
+            <section v-if="reviewerComments(selectedRow).length" class="modal-section reviewer-comment-section">
+              <div class="comment-section-head">
+                <h3>ความคิดเห็นจากผู้ประเมิน</h3>
+                <span>{{ reviewerComments(selectedRow).length }} คน</span>
+              </div>
+              <div class="comment-list">
+                <article v-for="(comment, index) in reviewerComments(selectedRow)" :key="`${comment.reviewerId || index}-${comment.reviewStep || index}`" class="comment-item">
+                  <div class="comment-head">
+                    <div>
+                      <strong>{{ comment.reviewerName || 'ผู้ประเมิน' }}</strong>
+                      <small>
+                        <template v-if="comment.reviewStep">ผู้ประเมินลำดับที่ {{ comment.reviewStep }}</template>
+                        <template v-if="comment.reviewStep && comment.reviewerPosition"> · </template>
+                        <template v-if="comment.reviewerPosition">{{ comment.reviewerPosition }}</template>
+                      </small>
+                    </div>
+                    <time v-if="formatCommentDate(comment.submittedAt)">{{ formatCommentDate(comment.submittedAt) }}</time>
+                  </div>
+                  <p>{{ comment.comment }}</p>
+                </article>
+              </div>
+            </section>
+
+            <article v-for="level in selectedLevels" :key="level.id" class="level-card">
+              <header>
+                <div>
+                  <strong>ระดับที่ {{ level.number }}</strong>
+                  <span>เลือกแล้ว {{ level.checkedCount }}/{{ level.indicators.length }} พฤติกรรม</span>
+                </div>
+                <b :class="{ complete: level.indicators.length > 0 && level.checkedCount === level.indicators.length, partial: level.checkedCount > 0 && level.checkedCount < level.indicators.length }">
+                  {{ level.checkedCount === 0 ? 'ยังไม่เลือก' : (level.checkedCount === level.indicators.length ? 'เลือกครบ' : 'เลือกบางส่วน') }}
+                </b>
+              </header>
+              <div class="indicator-list">
+                <div v-for="indicator in level.indicators" :key="indicator.index" :class="{ selected: indicator.checked }">
+                  <span>{{ indicator.checked ? '✓' : '' }}</span>
+                  <p><strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>{{ indicator.text }}</p>
+                </div>
+                <p v-if="level.indicators.length === 0" class="detail-empty">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</p>
+              </div>
+            </article>
+
+            <section v-if="selectedRow.note" class="modal-section">
+              <h3>ความคิดเห็นจากการประเมินตนเอง</h3>
+              <p>{{ selectedRow.note }}</p>
+            </section>
+
+          </div>
+
+          <footer class="competency-modal-foot">ดูได้อย่างเดียว · ผลการประเมินได้รับการอนุมัติแล้ว</footer>
+        </section>
+      </div>
+    </Teleport>
 
     <div v-if="!rows.length" class="empty-card">
       <div class="empty-title">{{ hasPendingResults ? 'ผลการประเมินอยู่ระหว่างการอนุมัติ' : 'ยังไม่มีผลการประเมิน' }}</div>
@@ -356,6 +412,157 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
   padding: 14px;
   vertical-align: middle;
 }
+.result-row { cursor: pointer; transition: background-color .16s ease, box-shadow .16s ease; }
+.result-row:hover { background: #f4faf8; }
+.result-row:focus-visible { background: #f4faf8; outline: 2px solid rgba(15, 118, 110, .24); outline-offset: -2px; }
+.competency-copy { min-width: 0; }
+.competency-modal-backdrop {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 20, 25, .7);
+}
+.competency-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, .34);
+}
+.competency-modal-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  padding: 20px 24px;
+}
+.modal-code-line { display: flex; align-items: center; gap: 10px; }
+.modal-code-line > strong { color: var(--text); font-size: 14px; font-weight: 900; }
+.competency-modal-head h2 { margin: 8px 0 2px; color: var(--text); font-size: 20px; line-height: 1.4; }
+.competency-modal-head p { margin: 0; color: var(--text3); font-size: 12px; }
+.workflow-complete {
+  display: inline-flex;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #15803d;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 900;
+}
+.competency-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: #f8fafc;
+  padding: 20px 24px;
+}
+.competency-modal-body > * + * { margin-top: 14px; }
+.modal-section {
+  border: 1px solid #dbe3ea;
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+}
+.modal-section h3 { margin: 0 0 7px; color: var(--text); font-size: 13px; font-weight: 900; }
+.modal-section > p,
+.comment-item > p { margin: 0; color: var(--text2); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.comment-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.comment-section-head h3 { margin: 0; }
+.comment-section-head > span {
+  border-radius: 999px;
+  background: var(--teal-lt);
+  color: var(--teal);
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 900;
+}
+.level-card {
+  overflow: hidden;
+  border: 1px solid #e1d8d2;
+  border-radius: 10px;
+  background: #fff;
+}
+.level-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 58px;
+  border-bottom: 1px solid #eadfd9;
+  background: #fff3ed;
+  padding: 12px 16px;
+}
+.level-card > header > div { display: grid; gap: 3px; }
+.level-card > header strong { color: #b93d28; font-size: 14px; }
+.level-card > header span { color: #8d817a; font-size: 11px; }
+.level-card > header b {
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.level-card > header b.complete { border-color: #bbf7d0; background: #ecfdf5; color: #047857; }
+.level-card > header b.partial { border-color: #fed7aa; background: #fff7ed; color: #b45309; }
+.indicator-list { display: grid; padding: 10px 12px; }
+.indicator-list > div {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid #edf0f2;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #8c949d;
+}
+.indicator-list > div + div { margin-top: 7px; }
+.indicator-list > div.selected { border-color: #f2b7a9; background: #fff8f5; color: #302b28; }
+.indicator-list > div > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #d6dbe0;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.indicator-list > div.selected > span { border-color: #c7432b; background: #c7432b; }
+.indicator-list p { margin: 0; font-size: 12px; line-height: 1.6; }
+.indicator-list p strong { display: inline-block; margin-right: 8px; color: inherit; }
+.comment-list { display: grid; gap: 8px; }
+.comment-item { border-top: 1px solid var(--border); padding-top: 12px; }
+.comment-item:first-child { border-top: 0; padding-top: 0; }
+.comment-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.comment-head strong { display: block; color: var(--text); font-size: 12px; font-weight: 900; }
+.comment-head small { display: block; margin-top: 2px; color: var(--text3); font-size: 11px; }
+.comment-head time { color: var(--text3); font-size: 10px; white-space: nowrap; }
+.detail-empty { margin: 0; color: var(--text3) !important; font-size: 12px; }
+.competency-modal-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  color: var(--text3);
+  padding: 14px 20px;
+  font-size: 11px;
+}
 .result-table th:not(:first-child),
 .result-table td:not(:first-child) { text-align: center; }
 .gap-pill,
@@ -391,9 +598,13 @@ const levelTitle = (level: any) => `ระดับ ${level?.level || '-'}`;
   .page-head,
   .competency-card,
   .failed-card-head { flex-direction: column; align-items: stretch; }
+  .competency-modal-backdrop { padding: 12px; }
+  .competency-modal { max-height: calc(100vh - 24px); }
 }
 @media (max-width: 560px) {
   .section-head { flex-direction: column; }
   .indicator-line { grid-template-columns: 1fr; }
+  .competency-modal-head,
+  .competency-modal-body { padding: 16px; }
 }
 </style>

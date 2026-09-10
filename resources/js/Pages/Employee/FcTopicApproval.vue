@@ -51,7 +51,6 @@ const formatDate = (value) => value
     <div class="approval-page">
         <header class="page-heading">
             <div>
-                <div class="eyebrow">FC TOPIC APPROVAL</div>
                 <h1>อนุมัติหัวข้อการประเมิน</h1>
                 <p>ตรวจสอบหัวข้อ FC ที่ส่งมาจากบุคลากรซึ่งคุณเป็นหัวหน้าลำดับแรก</p>
             </div>

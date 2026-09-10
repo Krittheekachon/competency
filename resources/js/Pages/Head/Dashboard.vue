@@ -333,6 +333,7 @@ const teamMembers = computed(() => {
     );
 });
 const approvalOrganizationFor = (person) => {
+    if (person?.displayOrganization) return person.displayOrganization;
     if (person?.approvalOrg) return person.approvalOrg;
 
     const department = String(person?.d || '');
@@ -453,6 +454,7 @@ const fallbackWorkflowFor = (person, row) => {
                 step: 0,
                 label: 'ประเมินตนเอง',
                 name: `${person?.t || ''}${person?.n || ''}`,
+                position: person?.p || '',
                 state: ['draft', 'revision_required'].includes(status) ? 'active' : 'complete',
             },
             ...steps.map((step) => ({
@@ -724,6 +726,23 @@ const selectedSupervisorApproval = computed(() =>
     supervisorApprovalRows.value.find((person) => person.sso === selectedSupervisorApprovalSso.value) || null,
 );
 const supervisorApprovalName = computed(() => selectedSupervisorApproval.value ? `${selectedSupervisorApproval.value.t || ''}${selectedSupervisorApproval.value.n}` : '');
+const supervisorApprovalExpectedLevel = computed(() => {
+    const levels = [...new Set((selectedSupervisorApproval.value?.results || [])
+        .map((row) => row.expected)
+        .filter((level) => level !== null && level !== undefined && level !== ''))];
+
+    return levels.length > 0 ? levels.join(', ') : '-';
+});
+const supervisorApprovalOrganization = computed(() => {
+    const person = selectedSupervisorApproval.value;
+    const organization = approvalOrganizationFor(person);
+    const isSupport = ['สายสนับสนุน', 'สายงานสนับสนุน'].includes(person?.w);
+    const isAcademic = ['สายวิชาการ', 'สายงานวิชาการ'].includes(person?.w);
+    const label = isSupport ? 'หน่วย' : (isAcademic ? 'ภาควิชา' : 'หน่วยงาน');
+
+    if (!organization || organization === '-') return `${label} -`;
+    return organization.startsWith(label) ? organization : `${label} ${organization}`;
+});
 const selectedSupervisorCompetency = computed(() => selectedSupervisorApproval.value?.results
     ?.find((row) => supervisorCompetencyKey(row) === openedSupervisorCompetencyId.value) || null);
 const selectedSupervisorLevels = computed(() => {
@@ -805,6 +824,7 @@ const gapResultRows = (person) => {
         levels: row.levels || [],
         checkedIndicatorKeys: [],
         checkedIndicatorCount: 0,
+        lastDraftSavedAt: row.lastDraftSavedAt || null,
         updatedAt: '',
         failed: false,
         status: assessmentStatusFromAssigned(row),
@@ -837,6 +857,7 @@ const gapResultRows = (person) => {
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                lastDraftSavedAt: row.lastDraftSavedAt || row.last_draft_saved_at || null,
                 updatedAt: row.updatedAt || row.updated_at || '',
                 failed: row.failed ?? row.requiresIdp ?? gap < 0,
                 status: normalizeAssessmentStatus(row.status),
@@ -877,19 +898,13 @@ const gapResultRows = (person) => {
 const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
-const teamHeatmapCompetencies = computed(() => {
-    const byCode = new Map();
-
-    teamMembers.value
-        .flatMap((person) => gapResultRows(person))
-        .forEach((row) => {
-            const code = row.code || row.title;
-            if (!code || byCode.has(code)) return;
-            byCode.set(code, { code, title: row.title });
-        });
-
-    return Array.from(byCode.values()).sort((left, right) => left.code.localeCompare(right.code, 'th'));
-});
+const teamGapSearch = ref('');
+const teamGapPage = ref(1);
+const teamGapPageSize = 10;
+const selectedGapSearch = ref('');
+const selectedGapCompetencyFilter = ref('all');
+const selectedGapPage = ref(1);
+const selectedGapPageSize = 10;
 const formatTeamGap = (value) => {
     if (value === null || value === undefined || value === '') return '-';
     const numberValue = Number(value);
@@ -906,34 +921,94 @@ const formatTeamGap = (value) => {
 };
 const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const resultRows = gapResultRows(person);
-    const assessed = resultRows.some((row) =>
-        row.hasAssessment || normalizeAssessmentStatus(row.status) !== 'draft',
+    const completed = resultRows.length > 0 && resultRows.every((row) =>
+        row.hasAssessment && normalizeAssessmentStatus(row.status) === 'approved',
     );
-    const scores = teamHeatmapCompetencies.value.map((comp) => {
-        const matching = resultRows.find((row) => row.code === comp.code || row.title === comp.title);
-        return assessed && matching ? Number(matching.gap ?? 0) : null;
-    });
-    const missingCount = assessed ? scores.filter((score) => Number(score) < 0).length : 0;
+    const started = resultRows.some((row) => row.hasAssessment || row.lastDraftSavedAt)
+        || normalizeAssessmentStatus(person.evalStatus) !== 'draft';
+    const missingCount = completed ? resultRows.filter((row) => Number(row.gap) < 0).length : 0;
+    const failedCompetencies = completed
+        ? resultRows
+            .filter((row) => Number(row.gap) < 0)
+            .sort((left, right) => Number(left.gap) - Number(right.gap))
+        : [];
 
     return {
         ...person,
-        scores,
-        assessed,
+        completed,
+        started,
+        assessed: completed,
+        assessmentProgress: completed
+            ? { key: 'completed', label: 'เสร็จสิ้น' }
+            : (started
+                ? { key: 'in-progress', label: 'กำลังดำเนินการ' }
+                : { key: 'not-started', label: 'ยังไม่เริ่ม' }),
         missingCount,
-        summary: assessed
-            ? (missingCount ? `ต้องพัฒนา ${missingCount} สมรรถนะ` : 'บุคลากรศักยภาพสูง')
-            : 'ยังไม่ประเมินตนเอง',
+        competencyCount: resultRows.length,
+        failedCompetencies,
+        summary: completed
+            ? (missingCount ? `ไม่ผ่าน ${missingCount} สมรรถนะ` : 'ผ่านทุกสมรรถนะ')
+            : 'การประเมินยังไม่เสร็จสิ้น',
     };
 }));
-const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.assessed));
+const filteredTeamGapRows = computed(() => {
+    const keyword = teamGapSearch.value.trim().toLocaleLowerCase('th');
+
+    return teamHeatmapRows.value.filter((row) => {
+        const matchesKeyword = !keyword || [row.t, row.n, row.p, row.d]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase('th')
+            .includes(keyword);
+        return matchesKeyword;
+    });
+});
+const teamGapPageCount = computed(() => Math.max(1, Math.ceil(filteredTeamGapRows.value.length / teamGapPageSize)));
+const paginatedTeamGapRows = computed(() => {
+    const safePage = Math.min(teamGapPage.value, teamGapPageCount.value);
+    const start = (safePage - 1) * teamGapPageSize;
+    return filteredTeamGapRows.value.slice(start, start + teamGapPageSize);
+});
+const updateTeamGapSearch = (value) => {
+    teamGapSearch.value = value;
+    teamGapPage.value = 1;
+};
+const filteredSelectedGapRows = computed(() => {
+    const keyword = selectedGapSearch.value.trim().toLocaleLowerCase('th');
+    return selectedGapRows.value.filter((row) => {
+        const matchesKeyword = !keyword || [row.code, row.title, row.group]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase('th')
+            .includes(keyword);
+        const matchesFilter = selectedGapCompetencyFilter.value === 'all'
+            || (selectedGapCompetencyFilter.value === 'gap' && Number(row.gap) < 0)
+            || (selectedGapCompetencyFilter.value === 'passed' && Number(row.gap) >= 0);
+
+        return matchesKeyword && matchesFilter;
+    });
+});
+const selectedGapPageCount = computed(() => Math.max(1, Math.ceil(filteredSelectedGapRows.value.length / selectedGapPageSize)));
+const paginatedSelectedGapRows = computed(() => {
+    const safePage = Math.min(selectedGapPage.value, selectedGapPageCount.value);
+    const start = (safePage - 1) * selectedGapPageSize;
+    return filteredSelectedGapRows.value.slice(start, start + selectedGapPageSize);
+});
+const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.completed));
+const teamFailedRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount > 0));
 const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
-const teamMetricStats = computed(() => teamHeatmapCompetencies.value.map((comp, index) => {
-    const values = teamAssessedRows.value.map((row) => Number(row.scores[index] ?? 0));
-    const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-    return { ...comp, average };
-}));
-const teamStrongest = computed(() => teamAssessedRows.value.length ? [...teamMetricStats.value].sort((a, b) => b.average - a.average)[0] : null);
-const teamWeakest = computed(() => teamAssessedRows.value.length ? [...teamMetricStats.value].sort((a, b) => a.average - b.average)[0] : null);
+const selectedGapSummary = computed(() => teamHeatmapRows.value.find((row) => row.sso === selectedGapPerson.value?.sso) || null);
+watchEffect(() => {
+    if (activePage.value !== 'sup-gap') return;
+
+    const selectionIsVisible = filteredTeamGapRows.value.some((row) => row.sso === selectedGapEmployee.value?.sso);
+    if (selectionIsVisible) return;
+
+    selectedGapEmployee.value = filteredTeamGapRows.value.find((row) => row.completed) || filteredTeamGapRows.value[0] || null;
+    selectedGapSearch.value = '';
+    selectedGapCompetencyFilter.value = 'all';
+    selectedGapPage.value = 1;
+});
 const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
     const gapCount = gapResultRows(person).filter((row) => row.failed).length || normalizeGaps(person).length;
     const phaseMeta = idpStatusFor(person.phase);
@@ -945,22 +1020,11 @@ const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
         updatedAt: person.updatedAt || person.sentDate || `2026-06-${String(10 + index).padStart(2, '0')}`,
     };
 }));
-const idpRequiredCount = computed(() => idpOverviewRows.value.filter((row) => row.missingCount > 0).length);
-
 const openGapDetail = (person) => {
-    if (person.pending) return;
+    selectedGapSearch.value = '';
+    selectedGapCompetencyFilter.value = 'all';
+    selectedGapPage.value = 1;
     selectedGapEmployee.value = person;
-};
-
-const closeGapDetail = () => {
-    selectedGapEmployee.value = null;
-};
-
-const moveGapDetail = (step) => {
-    const assessed = gapRows.value.filter((person) => !person.pending);
-    const currentIndex = assessed.findIndex((person) => person.sso === selectedGapPerson.value?.sso);
-    if (currentIndex < 0 || assessed.length === 0) return;
-    selectedGapEmployee.value = assessed[(currentIndex + step + assessed.length) % assessed.length];
 };
 
 const selectedIdpPerson = computed(() =>
@@ -1262,6 +1326,8 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :gaps="page.props.currentUserCompetencyGaps || []"
+                    :user="currentUser"
                 />
 
                 <EmployeeIDP
@@ -1290,8 +1356,8 @@ const logout = () => router.post(route('logout'));
                 <template v-else-if="activePage === 'sup-gap'">
                     <div class="team-page-head mb20">
                         <div>
-                            <div class="sec-t">Competency Gap ทีม</div>
-                            <div class="sec-s">Dashboard, Heatmap และการจัดกลุ่มพนักงานตามศักยภาพของ Direct Reports</div>
+                            <div class="sec-t">ผลการประเมินของทีม</div>
+                            <div class="sec-s">ดูภาพรวมและค้นหาบุคลากรที่ต้องพัฒนา โดยไม่ต้องไล่ดูสมรรถนะทีละคอลัมน์</div>
                         </div>
                     </div>
 
@@ -1300,132 +1366,130 @@ const logout = () => router.post(route('logout'));
                     </div>
 
                     <template v-else>
-                        <template v-if="!selectedGapPerson">
-                            <div class="g3 team-metrics mb20">
-                                <div class="sc">
-                                    <div class="sl">ประเมินเสร็จแล้ว</div>
-                                    <div class="sv bc">{{ teamAssessedRows.length }}/{{ teamHeatmapRows.length }}</div>
-                                    <div class="ss muted">เทียบกับลูกน้องทั้งหมด</div>
-                                </div>
-                                <div class="sc">
-                                    <div class="sl">จุดแข็งของทีม</div>
-                                    <div class="sv bc">{{ teamStrongest?.code || '-' }}</div>
-                                    <div class="ss muted">{{ teamTalentRows.length }} คนผ่านเกณฑ์</div>
-                                </div>
-                                <div class="sc">
-                                    <div class="sl">จุดอ่อนของทีม</div>
-                                    <div class="sv rc">{{ teamWeakest?.code || '-' }}</div>
-                                    <div class="ss muted">{{ idpRequiredCount }} คน Gap ติดลบ</div>
-                                </div>
+                        <div class="team-overview-strip mb20">
+                            <div class="team-overview-item primary">
+                                <span>ประเมินเสร็จแล้ว</span>
+                                <strong>{{ teamAssessedRows.length }}<small>/{{ teamHeatmapRows.length }} คน</small></strong>
+                                <p>อนุมัติครบทุกสมรรถนะและทุกลำดับ</p>
                             </div>
+                            <div class="team-overview-item failed">
+                                <span>ไม่ผ่านอย่างน้อย 1 สมรรถนะ</span>
+                                <strong>{{ teamFailedRows.length }}<small>คน</small></strong>
+                                <p>นับเฉพาะผู้ที่ประเมินเสร็จแล้ว</p>
+                            </div>
+                            <div class="team-overview-item passed">
+                                <span>ผ่านทุกสมรรถนะ</span>
+                                <strong>{{ teamTalentRows.length }}<small>คน</small></strong>
+                                <p>ไม่มีช่องว่างสมรรถนะติดลบ</p>
+                            </div>
+                        </div>
 
-                            <div class="card team-table-card">
-                                <div class="team-card-head">
+                        <div class="card team-gap-workspace">
+                            <aside class="team-member-panel">
+                                <div class="team-member-head">
                                     <div>
-                                        <div class="ct">Team Gap Heatmap</div>
-                                        <div class="cs">Gap = Actual Score - Expected Score, แดงคือต่ำกว่าความคาดหวัง เขียวคือผ่านเกณฑ์</div>
+                                        <div class="ct">บุคลากรในทีม</div>
+                                        <div class="cs">{{ filteredTeamGapRows.length }} คน</div>
                                     </div>
                                 </div>
-                                <div class="team-table-wrap">
-                                    <table class="team-table heatmap-table">
-                                        <thead>
-                                            <tr>
-                                                <th>บุคลากร</th>
-                                                <th v-for="comp in teamHeatmapCompetencies" :key="comp.code">{{ comp.code }}</th>
-                                                <th>สรุป</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr
-                                                v-for="row in teamHeatmapRows"
-                                                :key="row.sso"
-                                                :class="{ disabled: !row.assessed }"
-                                                @click="row.assessed && openGapDetail(row)"
-                                            >
-                                                <td>
-                                                    <div class="person-cell">
-                                                        <strong>{{ `${row.t || ''}${row.n}` }}</strong>
-                                                        <small>{{ row.p }}</small>
-                                                    </div>
-                                                </td>
-                                                <td v-for="(score, scoreIndex) in row.scores" :key="`${row.sso}-${scoreIndex}`">
-                                                    <span
-                                                        class="gap-chip"
-                                                        :class="{ ok: score !== null && Number(score) >= 0, bad: score !== null && Number(score) < 0 }"
-                                                    >
-                                                        {{ formatTeamGap(score) }}
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span class="b" :class="!row.assessed ? 'bgr' : (row.missingCount ? 'br' : 'bb')">{{ row.summary }}</span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                <div class="team-member-tools">
+                                    <label class="team-gap-search">
+                                        <span aria-hidden="true">⌕</span>
+                                        <input
+                                            :value="teamGapSearch"
+                                            type="search"
+                                            placeholder="ค้นหาชื่อหรือตำแหน่ง"
+                                            aria-label="ค้นหาบุคลากร"
+                                            @input="updateTeamGapSearch($event.target.value)"
+                                        >
+                                    </label>
                                 </div>
-                            </div>
-                        </template>
-
-                        <template v-else>
-                            <div class="card gap-detail-profile mb20">
-                                <div class="flex ic g12">
-                                    <div class="av gap-detail-avatar">{{ selectedGapPerson.n[0] }}</div>
+                                <div v-if="paginatedTeamGapRows.length" class="team-member-list">
+                                    <button
+                                        v-for="row in paginatedTeamGapRows"
+                                        :key="row.sso"
+                                        type="button"
+                                        class="team-member-row"
+                                        :class="{ selected: selectedGapPerson?.sso === row.sso }"
+                                        @click="openGapDetail(row)"
+                                    >
+                                        <span class="team-member-avatar">{{ row.n?.[0] || '?' }}</span>
+                                        <span class="team-member-copy">
+                                            <strong>{{ `${row.t || ''}${row.n}` }}</strong>
+                                            <small>{{ row.p || approvalOrganizationFor(row) }}</small>
+                                        </span>
+                                        <span class="team-member-status" :class="row.assessmentProgress.key">
+                                            {{ row.assessmentProgress.label }}
+                                        </span>
+                                    </button>
+                                </div>
+                                <div v-else class="team-gap-empty">ไม่พบบุคลากรตามตัวกรอง</div>
+                                <div v-if="filteredTeamGapRows.length > teamGapPageSize" class="team-pagination compact-pagination">
+                                    <span>{{ Math.min(teamGapPage, teamGapPageCount) }}/{{ teamGapPageCount }}</span>
                                     <div>
-                                        <div class="fw8 fs16">{{ `${selectedGapPerson.t || ''}${selectedGapPerson.n}` }}</div>
-                                        <div class="muted fs12">{{ selectedGapPerson.p }}</div>
-                                        <div class="b br mt6">ไม่ผ่าน {{ selectedGapFailedCount }} สมรรถนะ</div>
+                                        <button type="button" aria-label="หน้าก่อนหน้า" :disabled="teamGapPage <= 1" @click="teamGapPage -= 1">←</button>
+                                        <button type="button" aria-label="หน้าถัดไป" :disabled="teamGapPage >= teamGapPageCount" @click="teamGapPage += 1">→</button>
                                     </div>
                                 </div>
-                                <div class="flex ic g8">
-                                    <button class="btn btn-s btn-sm" type="button" @click="moveGapDetail(-1)">← ก่อนหน้า</button>
-                                    <button class="btn btn-s btn-sm" type="button" @click="moveGapDetail(1)">ถัดไป →</button>
-                                    <button class="btn btn-s btn-sm" type="button" @click="closeGapDetail">กลับรายการ</button>
-                                </div>
-                            </div>
+                            </aside>
 
-                            <div class="card gap-result-card mb20">
-                                <div class="ch"><div class="ct">ผลรายสมรรถนะ</div></div>
-                                <div class="gap-result-table">
-                                    <div class="gap-result-row gap-result-head">
-                                        <div>สมรรถนะ</div>
-                                        <div>ประเภท</div>
-                                        <div>คาดหวัง</div>
-                                        <div>ประเมินตนเอง</div>
-                                        <div>หัวหน้าหน่วยประเมิน</div>
-                                        <div>Gap</div>
-                                        <div>สถานะ</div>
-                                    </div>
-                                    <div v-for="row in selectedGapRows" :key="row.id" class="gap-result-row gap-result-body">
-                                        <div class="fw8">{{ row.title }}</div>
-                                        <div><span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span></div>
-                                        <div><span class="score-pill navy">{{ row.expected }}</span></div>
-                                        <div><span class="score-pill blue">{{ row.selfScore }}</span></div>
-                                        <div><span class="score-pill evaluator">{{ row.headScore }}</span></div>
-                                        <div>
-                                            <span class="gap-chip" :class="{ ok: Number(row.gap) >= 0, bad: Number(row.gap) < 0 }">
-                                                {{ formatTeamGap(row.gap) }}
-                                            </span>
+                            <section v-if="selectedGapPerson" class="team-competency-panel">
+                                <div class="team-competency-head">
+                                    <div>
+                                        <div class="team-selected-person">
+                                            <span>{{ `${selectedGapPerson.t || ''}${selectedGapPerson.n}` }}</span>
+                                            <em :class="selectedGapSummary?.completed ? (selectedGapFailedCount ? 'failed' : 'passed') : 'pending'">
+                                                {{ selectedGapSummary?.summary }}
+                                            </em>
                                         </div>
-                                        <div><span class="b" :class="row.failed ? 'br' : 'bb'">{{ row.failed ? 'ไม่ผ่าน' : 'ผ่าน' }}</span></div>
-                                    </div>
-                                    <div v-if="selectedGapRows.length === 0" class="empty-card">
-                                        ผ่านทุกสมรรถนะ
+                                        <div class="cs">{{ selectedGapPerson.p }}<template v-if="approvalOrganizationFor(selectedGapPerson) !== '-'"> · {{ approvalOrganizationFor(selectedGapPerson) }}</template></div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div class="card gap-suggestions">
-                                <div class="ch"><div class="ct">ข้อเสนอแนะ</div></div>
-                                <div class="suggestion-block head">
-                                    <div class="bc fw8 fs13">• หัวหน้าหน่วย</div>
-                                    <div class="suggestion-note">ยังไม่มีข้อเสนอแนะ</div>
+                                <template v-if="selectedGapSummary?.completed">
+                                    <div class="team-competency-tools">
+                                        <div class="team-gap-filters" aria-label="กรองผลสมรรถนะ">
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'all' }" @click="selectedGapCompetencyFilter = 'all'; selectedGapPage = 1">ทั้งหมด {{ selectedGapRows.length }}</button>
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'gap' }" @click="selectedGapCompetencyFilter = 'gap'; selectedGapPage = 1">ไม่ผ่าน {{ selectedGapFailedCount }}</button>
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'passed' }" @click="selectedGapCompetencyFilter = 'passed'; selectedGapPage = 1">ผ่าน {{ selectedGapRows.length - selectedGapFailedCount }}</button>
+                                        </div>
+                                        <label class="team-gap-search compact">
+                                            <span aria-hidden="true">⌕</span>
+                                            <input v-model="selectedGapSearch" type="search" placeholder="ค้นหาสมรรถนะ" aria-label="ค้นหาสมรรถนะ" @input="selectedGapPage = 1">
+                                        </label>
+                                    </div>
+
+                                    <div class="team-competency-list">
+                                        <div class="team-competency-list-head">
+                                            <span>สมรรถนะ</span><span>คาดหวัง</span><span>ผลจริง</span><span>Gap</span><span>ผล</span>
+                                        </div>
+                                        <div v-for="row in paginatedSelectedGapRows" :key="row.id" class="team-competency-row">
+                                            <div class="team-competency-name">
+                                                <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
+                                                <div><strong>{{ row.code || '-' }}</strong><small>{{ row.title }}</small></div>
+                                            </div>
+                                            <span>{{ row.expected }}</span>
+                                            <span>{{ row.headScore }}</span>
+                                            <strong :class="Number(row.gap) < 0 ? 'rc' : 'gcc'">{{ formatTeamGap(row.gap) }}</strong>
+                                            <span class="b" :class="Number(row.gap) < 0 ? 'br' : 'bg'">{{ Number(row.gap) < 0 ? 'ไม่ผ่าน' : 'ผ่าน' }}</span>
+                                        </div>
+                                        <div v-if="filteredSelectedGapRows.length === 0" class="team-gap-empty">ไม่พบสมรรถนะตามตัวกรอง</div>
+                                    </div>
+                                    <div v-if="filteredSelectedGapRows.length > selectedGapPageSize" class="team-pagination">
+                                        <span>หน้า {{ Math.min(selectedGapPage, selectedGapPageCount) }} จาก {{ selectedGapPageCount }}</span>
+                                        <div>
+                                            <button type="button" :disabled="selectedGapPage <= 1" @click="selectedGapPage -= 1">ก่อนหน้า</button>
+                                            <button type="button" :disabled="selectedGapPage >= selectedGapPageCount" @click="selectedGapPage += 1">ถัดไป</button>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div v-else class="team-assessment-pending">
+                                    <span class="team-pending-mark">…</span>
+                                    <strong>การประเมินยังไม่เสร็จสิ้น</strong>
+                                    <p>ผลจะนำมาคำนวณผู้ผ่านและไม่ผ่าน เมื่อสมรรถนะทุกข้อได้รับอนุมัติครบทุกลำดับแล้ว</p>
                                 </div>
-                                <div class="suggestion-block dept">
-                                    <div class="tc fw8 fs13">• หัวหน้าฝ่าย</div>
-                                    <div class="suggestion-note">ยังไม่มีข้อเสนอแนะ</div>
-                                </div>
-                            </div>
-                        </template>
+                            </section>
+                        </div>
                     </template>
                 </template>
 
@@ -1650,7 +1714,7 @@ const logout = () => router.post(route('logout'));
                                 <div class="approval-modal-head">
                                     <div>
                                         <div class="sec-t">ตรวจสอบผลประเมิน · {{ supervisorApprovalName }}</div>
-                                        <div class="sec-s">{{ selectedSupervisorApproval.p }} · Expected Level แสดงตามแต่ละสมรรถนะ · Checklist ถูกล็อก read-only</div>
+                                        <div class="sec-s">ตำแหน่ง {{ selectedSupervisorApproval.p || '-' }} · {{ supervisorApprovalOrganization }} · ระดับความคาดหวัง {{ supervisorApprovalExpectedLevel }}</div>
                                     </div>
                                     <button class="btn btn-s btn-sm" type="button" @click="closeSupervisorApprovalModal">ปิด</button>
                                 </div>
@@ -1775,8 +1839,8 @@ const logout = () => router.post(route('logout'));
                                             >
                                                 <span class="assessment-workflow-marker">{{ node.state === 'complete' ? '✓' : (node.step || 'ตนเอง') }}</span>
                                                 <div>
-                                                    <strong>{{ node.label }}</strong>
-                                                    <small>{{ node.name }}{{ node.position ? ` · ${node.position}` : '' }}</small>
+                                                    <strong>{{ node.name }}{{ node.position ? ` · ${node.position}` : '' }}</strong>
+                                                    <small>{{ node.label }}</small>
                                                 </div>
                                                 <b>{{ workflowNodeStateLabel(node.state) }}</b>
                                             </li>
@@ -1907,7 +1971,7 @@ const logout = () => router.post(route('logout'));
                                 <div class="av row-avatar">{{ person.n[0] }}</div>
                                 <div class="row-main">
                                     <div class="fw8 fs13">{{ `${person.t || ''}${person.n}` }}</div>
-                                    <div class="muted fs11">{{ person.p }} · {{ person.d }}</div>
+                                    <div class="muted fs11">{{ person.p }} · {{ approvalOrganizationFor(person) }}</div>
                                 </div>
                                 <span class="b" :class="person.evalStatus === 'unit_evaluated' ? 'bt' : person.evalStatus === 'self_submitted' ? 'by' : 'br'">
                                     {{ person.evalStatus === 'unit_evaluated' ? 'ส่งต่อแล้ว' : person.evalStatus === 'self_submitted' ? 'รอประเมิน' : 'ยังไม่ส่ง' }}
@@ -1919,7 +1983,7 @@ const logout = () => router.post(route('logout'));
                             <div class="flex ic jb mb12">
                                 <div>
                                     <div class="fw8 fs16">การประเมิน: {{ assessmentName }}</div>
-                                    <div class="muted fs12">{{ selectedAssessment.p }} · {{ selectedAssessment.d }}</div>
+                                    <div class="muted fs12">{{ selectedAssessment.p }} · {{ approvalOrganizationFor(selectedAssessment) }}</div>
                                 </div>
                                 <span class="b" :class="activeDraft.submitted ? 'bt' : 'bgr'">
                                     {{ activeDraft.submitted ? 'ส่งต่อหัวหน้างานแล้ว' : (assessmentSavedAt || 'ยังไม่มีการแก้ไขผลการประเมิน') }}
@@ -2071,6 +2135,480 @@ const logout = () => router.post(route('logout'));
 
 .team-table-card {
     overflow: hidden;
+}
+
+.team-overview-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid #dce3e8;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 3px 10px rgba(33, 50, 57, 0.05);
+}
+
+.team-overview-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 18px;
+    padding: 17px 20px 16px 38px;
+}
+
+.team-overview-item + .team-overview-item {
+    border-left: 1px solid #e3e8eb;
+}
+
+.team-overview-item::before {
+    position: absolute;
+    top: 23px;
+    left: 20px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4f7d70;
+    content: '';
+}
+
+.team-overview-item.failed::before { background: #c84a38; }
+.team-overview-item.passed::before { background: #229664; }
+
+.team-overview-item > span {
+    align-self: end;
+    color: #53616d;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.team-overview-item strong {
+    grid-row: span 2;
+    align-self: center;
+    color: #263b35;
+    font-size: 29px;
+    line-height: 1;
+}
+
+.team-overview-item.failed strong { color: #b93b2e; }
+.team-overview-item.passed strong { color: #21875e; }
+
+.team-overview-item strong small {
+    margin-left: 5px;
+    color: #677582;
+    font-size: 12px;
+}
+
+.team-overview-item p {
+    margin: 0;
+    color: #89949e;
+    font-size: 11px;
+}
+
+.team-gap-workspace {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.55fr);
+    min-height: 560px;
+    overflow: hidden;
+}
+
+.team-member-panel {
+    min-width: 0;
+    border-right: 1px solid #dde4e8;
+    background: #fbfcfc;
+}
+
+.team-member-head,
+.team-competency-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 76px;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #dde4e8;
+    background: #fff;
+}
+
+.team-member-tools {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border-bottom: 1px solid #e3e8eb;
+}
+
+.team-member-tools .team-gap-search {
+    width: 100%;
+}
+
+.member-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(max-content, 1fr));
+    overflow-x: auto;
+}
+
+.team-member-list {
+    padding: 8px;
+}
+
+.team-member-row {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 66px;
+    padding: 9px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 160ms ease-out, border-color 160ms ease-out;
+}
+
+.team-member-row + .team-member-row {
+    margin-top: 3px;
+}
+
+.team-member-row:hover {
+    background: #f0f6f4;
+}
+
+.team-member-row.selected {
+    border-color: #acd0c5;
+    background: #eaf5f1;
+}
+
+.team-member-row:focus-visible {
+    outline: 2px solid #39725d;
+    outline-offset: 1px;
+}
+
+.team-member-avatar {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 50%;
+    background: #dcebe6;
+    color: #245f50;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.team-member-copy {
+    min-width: 0;
+}
+
+.team-member-copy strong,
+.team-member-copy small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-member-copy strong {
+    color: #263b35;
+    font-size: 13px;
+}
+
+.team-member-copy small {
+    margin-top: 3px;
+    color: #84909b;
+    font-size: 11px;
+}
+
+.team-member-status {
+    min-width: 86px;
+    padding: 5px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 900;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.team-member-status.failed,
+.team-selected-person em.failed {
+    background: #fff0ee;
+    color: #b63b2f;
+}
+
+.team-member-status.passed,
+.team-selected-person em.passed {
+    background: #eaf7f1;
+    color: #207957;
+}
+
+.team-member-status.pending,
+.team-selected-person em.pending {
+    background: #f1f3f5;
+    color: #6e7b86;
+}
+
+.team-member-status.completed {
+    background: #eaf7f1;
+    color: #207957;
+}
+
+.team-member-status.in-progress {
+    background: #fff6e6;
+    color: #b56a13;
+}
+
+.team-member-status.not-started {
+    background: #f1f3f5;
+    color: #6e7b86;
+}
+
+.compact-pagination {
+    padding: 10px 14px;
+}
+
+.compact-pagination button {
+    min-width: 34px;
+}
+
+.team-competency-panel {
+    min-width: 0;
+    background: #fff;
+}
+
+.team-selected-person {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-wrap: wrap;
+    color: #253a34;
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.team-selected-person em {
+    padding: 5px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-style: normal;
+}
+
+.team-competency-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 18px;
+    border-bottom: 1px solid #e3e8eb;
+    background: #fbfcfc;
+}
+
+.team-competency-list {
+    overflow-x: auto;
+    padding: 0 18px;
+}
+
+.team-competency-list-head,
+.team-competency-row {
+    display: grid;
+    grid-template-columns: minmax(230px, 1fr) 72px 72px 76px 82px;
+    align-items: center;
+    gap: 10px;
+    min-width: 600px;
+}
+
+.team-competency-list-head {
+    min-height: 44px;
+    color: #7b8894;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.team-competency-row {
+    min-height: 64px;
+    border-top: 1px solid #e6eaed;
+    color: #33453f;
+    font-size: 12px;
+}
+
+.team-competency-row:hover {
+    background: #fbfdfc;
+}
+
+.team-competency-row > .b {
+    justify-self: start;
+    width: auto;
+    min-width: 0;
+    padding-inline: 10px;
+}
+
+.team-competency-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.team-competency-name > div {
+    min-width: 0;
+}
+
+.team-competency-name strong,
+.team-competency-name small {
+    display: block;
+}
+
+.team-competency-name strong {
+    color: #273b35;
+    font-size: 12px;
+}
+
+.team-competency-name small {
+    margin-top: 2px;
+    overflow: hidden;
+    color: #687681;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.team-assessment-pending {
+    display: grid;
+    justify-items: center;
+    max-width: 480px;
+    margin: 90px auto;
+    padding: 24px;
+    color: #596873;
+    text-align: center;
+}
+
+.team-pending-mark {
+    display: grid;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 16px;
+    place-items: center;
+    border-radius: 50%;
+    background: #eef2f2;
+    color: #71807c;
+    font-size: 24px;
+    font-weight: 900;
+}
+
+.team-assessment-pending strong {
+    color: #263b35;
+    font-size: 16px;
+}
+
+.team-assessment-pending p {
+    margin: 8px 0 0;
+    color: #83909a;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+.team-gap-search {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: min(390px, 100%);
+    min-height: 42px;
+    padding: 0 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text3);
+}
+
+.team-gap-search:focus-within {
+    border-color: #388a76;
+    box-shadow: 0 0 0 3px rgba(56, 138, 118, 0.12);
+}
+
+.team-gap-search input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+}
+
+.team-gap-search.compact {
+    width: min(320px, 100%);
+}
+
+.team-gap-filters {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #fff;
+}
+
+.team-gap-filters button,
+.team-pagination button {
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text2);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.team-gap-filters button {
+    padding: 7px 11px;
+}
+
+.team-gap-filters button:hover,
+.team-gap-filters button.active {
+    background: #edf7f3;
+    color: #216d5a;
+}
+
+.team-gap-empty {
+    padding: 50px 22px;
+    color: var(--text3);
+    font-size: 13px;
+    text-align: center;
+}
+
+.team-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 22px;
+    border-top: 1px solid var(--border);
+    color: var(--text3);
+    font-size: 12px;
+}
+
+.team-pagination > div {
+    display: flex;
+    gap: 6px;
+}
+
+.team-pagination button {
+    padding: 7px 11px;
+    border-color: var(--border);
+    background: #fff;
+}
+
+.team-pagination button:hover:not(:disabled) {
+    border-color: #9bc8bc;
+    color: #216d5a;
+}
+
+.team-pagination button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .team-card-head {
@@ -3557,4 +4095,55 @@ const logout = () => router.post(route('logout'));
 .red-top { border-top: 3px solid var(--red); }
 .yellow-top { border-top: 3px solid var(--yellow); }
 .green-top { border-top: 3px solid var(--green); }
+@media (max-width: 900px) {
+    .team-overview-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .team-overview-item + .team-overview-item {
+        border-left: 0;
+        border-top: 1px solid #e3e8eb;
+    }
+
+    .team-gap-workspace {
+        grid-template-columns: 1fr;
+    }
+
+    .team-member-panel {
+        border-right: 0;
+        border-bottom: 1px solid #dde4e8;
+    }
+
+    .team-competency-tools {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .team-gap-search,
+    .team-gap-search.compact {
+        width: 100%;
+    }
+
+    .team-gap-filters {
+        overflow-x: auto;
+    }
+
+    .team-gap-filters button {
+        flex: 0 0 auto;
+    }
+
+    .team-pagination {
+        padding-inline: 14px;
+    }
+
+    .team-competency-list {
+        overflow-x: auto;
+        padding-inline: 14px;
+    }
+
+    .team-competency-list-head,
+    .team-competency-row {
+        min-width: 650px;
+    }
+}
 </style>

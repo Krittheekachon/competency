@@ -262,6 +262,7 @@ class DashboardController extends Controller
             'r' => $roleKey,
             'reviewer_template_id' => $user->reviewer_template_id,
             'idp_reviewer_template_id' => $user->idp_reviewer_template_id ?? null,
+            'displayOrganization' => $approvalOrganization,
             'sup' => $reviewerSteps[0]['name'] ?? '',
             'evaluator2' => $reviewerSteps[1]['name'] ?? '',
             'evaluator3' => $reviewerSteps[2]['name'] ?? '',
@@ -1326,7 +1327,7 @@ class DashboardController extends Controller
     {
         $expectedLevelResolver = app(ExpectedLevelResolver::class);
 
-        return DB::table('assessments')
+        $gapRows = DB::table('assessments')
             ->join('competencies', 'assessments.competency_id', '=', 'competencies.id')
             ->leftJoin('competency_gaps', function ($join) {
                 $join->on('competency_gaps.assessment_id', '=', 'assessments.id')
@@ -1360,8 +1361,56 @@ class DashboardController extends Controller
                 'assessments.updated_at'
             )
             ->orderBy('competencies.code')
+            ->get();
+
+        $reviewerCommentsByAssessmentCompetency = DB::table('scores')
+            ->join('users as score_reviewers', 'scores.assessor_id', '=', 'score_reviewers.id')
+            ->whereIn('scores.assessment_id', $gapRows->pluck('assessment_id')->filter()->unique()->values())
+            ->where('scores.assessor_role', 'like', 'supervisor_%')
+            ->whereNotNull('scores.comment')
+            ->select(
+                'scores.assessment_id',
+                'scores.competency_id',
+                'scores.assessor_id',
+                'scores.assessor_role',
+                'scores.comment',
+                'scores.status',
+                'scores.submitted_at',
+                'scores.updated_at',
+                'score_reviewers.title as reviewer_title',
+                'score_reviewers.name as reviewer_name',
+                'score_reviewers.position as reviewer_position',
+            )
             ->get()
-            ->map(function (object $gap) use ($user, $expectedLevelResolver): array {
+            ->filter(fn (object $score): bool => trim((string) $score->comment) !== '')
+            ->groupBy(fn (object $score): string => $score->assessment_id.':'.$score->competency_id)
+            ->map(fn ($scores): array => $scores
+                ->map(function (object $score): array {
+                    preg_match('/^supervisor_(\d+)$/', (string) $score->assessor_role, $matches);
+
+                    return [
+                        'reviewerId' => (int) $score->assessor_id,
+                        'reviewerName' => trim(
+                            (string) ($score->reviewer_title ?? '')
+                            .(string) ($score->reviewer_name ?? '')
+                        ),
+                        'reviewerPosition' => $score->reviewer_position ?? '',
+                        'reviewStep' => isset($matches[1]) ? (int) $matches[1] : null,
+                        'comment' => trim((string) $score->comment),
+                        'decision' => $score->status,
+                        'submittedAt' => $score->submitted_at ?? $score->updated_at,
+                    ];
+                })
+                ->sortBy(fn (array $comment): string => sprintf(
+                    '%04d-%s',
+                    $comment['reviewStep'] ?? 9999,
+                    (string) $comment['submittedAt'],
+                ))
+                ->values()
+                ->all());
+
+        return $gapRows
+            ->map(function (object $gap) use ($user, $expectedLevelResolver, $reviewerCommentsByAssessmentCompetency): array {
                 $checkedIndicatorKeys = DB::table('assessment_indicator_results')
                     ->where('assessment_id', $gap->assessment_id)
                     ->where('competency_id', $gap->competency_id)
@@ -1396,6 +1445,8 @@ class DashboardController extends Controller
                     'gap' => $gapValue,
                     'note' => $gap->note ?? '',
                     'reviewerComment' => $gap->evaluator_comment ?? '',
+                    'reviewerComments' => $reviewerCommentsByAssessmentCompetency
+                        ->get($gap->assessment_id.':'.$gap->competency_id, []),
                     'rejectComment' => $gap->reject_comment ?? '',
                     'rejectReviewerId' => $gap->rejected_by ? (int) $gap->rejected_by : null,
                     'rejectReviewerName' => $rejectReviewerName,
@@ -1464,6 +1515,7 @@ class DashboardController extends Controller
             'step' => 0,
             'label' => 'ประเมินตนเอง',
             'name' => $this->displayNameForUser($user),
+            'position' => $user->position ?: '',
             'state' => in_array($status, ['draft', 'revision_required'], true) ? 'active' : 'complete',
         ]];
 

@@ -38,7 +38,7 @@ export const NAV_CONFIG = {
       sec: "จัดการทีม",
       items: [
         { id: "dh-assess", ic: "", lb: "ประเมินลูกน้อง" },
-        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
@@ -57,7 +57,7 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
@@ -116,7 +116,7 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "sup-gap", ic: "", lb: "Competency Gap ทีม" },
+        { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
     }
@@ -199,7 +199,7 @@ export const PAGE_TITLES = {
   "emp-progress": "อัปเดตความก้าวหน้า",
   "emp-idp-detail": "รายละเอียด IDP",
   "sup-assess": "ประเมินทีมงาน",
-  "sup-gap": "Competency Gap ทีม",
+  "sup-gap": "ผลการประเมินของทีม",
   "sup-idp": "IDP & ติดตามทีม",
   "dh-assess": "อนุมัติผลการประเมิน",
   "dh-idp": "IDP & ติดตามทีม",
