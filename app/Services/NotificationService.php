@@ -224,8 +224,19 @@ class NotificationService
             return false;
         }
 
+        $roundId = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('id');
+
+        if (! $roundId) {
+            return false;
+        }
+
         if (Schema::hasColumn('users', 'position_id') && $user->position_id) {
             return ! DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
                 ->where('position_id', $user->position_id)
                 ->exists();
         }
@@ -239,7 +250,10 @@ class NotificationService
             ->value('id');
 
         return $positionId
-            ? ! DB::table('position_competencies')->where('position_id', $positionId)->exists()
+            ? ! DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
+                ->where('position_id', $positionId)
+                ->exists()
             : false;
     }
 

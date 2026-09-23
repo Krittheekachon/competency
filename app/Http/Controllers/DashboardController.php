@@ -5,21 +5,33 @@ namespace App\Http\Controllers;
 use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\ExpectedLevelResolver;
+use App\Services\FacultyAnalyticsService;
 use App\Services\ReviewerChainResolver;
 use App\Services\ReviewerTemplateResolver;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Inertia\Inertia; 
-use Inertia\Response;
+use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
+    private const SELF_ASSESSMENT_ROLE_KEYS = [
+        'employee',
+        'supervisor',
+        'dept_head',
+        'division_head',
+        'academic_department_head',
+        'hr',
+    ];
+
     private ?array $competencyLevelsByCompetency = null;
 
     private array $worklineIdCache = [];
 
     private array $jobFamilyNameCache = [];
+
     private array $supportUnitStructureCache = [];
 
     private array $assessmentReviewerStepsCache = [];
@@ -27,14 +39,13 @@ class DashboardController extends Controller
     public function __construct(
         private ReviewerChainResolver $reviewerChainResolver,
         private ReviewerTemplateResolver $reviewerTemplateResolver,
-    )
-    {
-    }
+        private FacultyAnalyticsService $facultyAnalyticsService,
+    ) {}
 
     /**
      * จัดการหน้า Dashboard ตาม Role ID
      */
-    public function index()
+    public function index(Request $request)
     {
         $currentUser = auth()->user()->loadMissing('role');
         $role = $this->roleKeyForUser($currentUser);
@@ -49,7 +60,14 @@ class DashboardController extends Controller
             ->orderByDesc('id')
             ->get()
             ->map(fn (User $user) => $this->dashboardUserPayload($user));
-        $activeCycleName = 'รอบประเมินปัจจุบัน';
+        $facultyAnalytics = in_array($role, ['hr', 'dean'], true)
+            ? $this->facultyAnalyticsService->build($request->integer('assessment_round_id') ?: null)
+            : null;
+        $activeCycleName = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('name') ?? 'รอบประเมินปัจจุบัน';
         $learningMethods = $this->canonicalLearningMethods();
         $managerSummary = [
             'totalUsers' => User::count(),
@@ -61,12 +79,63 @@ class DashboardController extends Controller
             'pendingIdpApprovals' => 0,
             'source' => 'database',
         ];
-        $approvedIdpActivities = $this->currentUserApprovedIdpActivities($currentUser);
+        $activeRoundId = $this->activeRoundId();
+        $approvedIdpActivities = $this->currentUserApprovedIdpActivities($currentUser, $activeRoundId);
+        $idpReviewItems = $this->idpReviewItemsForReviewer($currentUser, $activeRoundId);
+        $idpProgressReviewItems = $this->idpActivityProgressReviewItems($currentUser, null, $activeRoundId);
+        $idpReviewModule = $this->idpReviewModuleForReviewer($currentUser);
+        $teamIdpAnalytics = null;
+        if ($idpReviewModule['enabled'] ?? false) {
+            $teamIdpRoundId = $request->integer('assessment_round_id') ?: $activeRoundId;
+            $teamUserIds = collect([
+                ...$this->reviewerChainResolver->userIdsForReviewer($currentUser, 'assessment'),
+                ...$this->reviewerChainResolver->userIdsForReviewer($currentUser, 'idp'),
+            ])->map(fn ($id): int => (int) $id)->unique()->values()->all();
+            $teamIdpDetails = $this->idpActivityProgressReviewItems(
+                $currentUser,
+                $teamUserIds,
+                $teamIdpRoundId,
+            );
+            $teamIdpAnalytics = $this->facultyAnalyticsService->build($teamIdpRoundId, $teamUserIds);
+            $teamIdpAnalytics['idpDetails'] = $teamIdpDetails;
+        }
+        if ($facultyAnalytics && isset($facultyAnalytics['round']['id'])) {
+            $facultyUserIds = collect($facultyAnalytics['heatmap'] ?? [])
+                ->flatMap(fn (array $row): array => $row['faculty']['people'] ?? [])
+                ->pluck('userId')
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+            $facultyAnalytics['idpDetails'] = $this->idpActivityProgressReviewItems(
+                $currentUser,
+                $facultyUserIds,
+                (int) $facultyAnalytics['round']['id'],
+            );
+        }
         $fcTopicApprovalModule = $this->fcTopicApprovalModuleForReviewer($currentUser);
         $assessmentApprovalModule = $this->assessmentApprovalModuleForReviewer($currentUser);
+        $selfServicePayload = [
+            'activeCycleName' => $activeCycleName,
+            'currentUser' => $this->dashboardUserPayload($currentUser),
+            'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+            'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+            'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
+            'currentUserIdp' => $this->currentUserIdpPayload($currentUser),
+            'learningMethods' => $learningMethods,
+            'hrCatalogItems' => $this->learningCatalogItems(),
+            'idpLearningMethods' => $this->idpLearningMethods(),
+            'idpReviewItems' => $idpReviewItems,
+            'idpReviewModule' => $idpReviewModule,
+            'idpProgressReviewItems' => $idpProgressReviewItems,
+            'teamIdpAnalytics' => $teamIdpAnalytics,
+            'fcTopicApprovalModule' => $fcTopicApprovalModule,
+            'assessmentApprovalModule' => $assessmentApprovalModule,
+        ];
 
         return match ($role) {
             'admin' => Inertia::render('Admin/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roles' => $this->rolesPayload(),
                 'reviewerChainTemplates' => $this->reviewerTemplateResolver->payload(),
@@ -80,6 +149,7 @@ class DashboardController extends Controller
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'supervisor',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
@@ -88,10 +158,12 @@ class DashboardController extends Controller
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'idpReviewItems' => $idpReviewItems,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dept_head' => Inertia::render('Super/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'dept_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
@@ -100,10 +172,12 @@ class DashboardController extends Controller
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'idpReviewItems' => $idpReviewItems,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'division_head' => Inertia::render('Super/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'division_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
@@ -112,10 +186,12 @@ class DashboardController extends Controller
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'idpReviewItems' => $idpReviewItems,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'academic_department_head' => Inertia::render('Super/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'academic_department_head',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
@@ -124,10 +200,12 @@ class DashboardController extends Controller
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
                 'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'idpReviewItems' => $idpReviewItems,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
-            'employee' => Inertia::render($assessmentApprovalModule['enabled'] ? 'Super/Dashboard' : 'Employee/Dashboard', [
+            'employee' => Inertia::render('Employee/Dashboard', [
+                ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'employee',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
@@ -141,10 +219,12 @@ class DashboardController extends Controller
                 'learningMethods' => $learningMethods,
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'idpLearningMethods' => $this->idpLearningMethods(),
-                'idpReviewItems' => $this->idpReviewItemsForReviewer($currentUser),
+                'idpReviewItems' => $idpReviewItems,
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'hr' => Inertia::render('HR/Dashboard', [
+                ...$selfServicePayload,
+                'facultyAnalytics' => $facultyAnalytics,
                 'hrSummary' => [
                     'totalUsers' => User::count(),
                     'hrUsers' => User::where('role_id', $this->roleIdByKey('hr'))->count(),
@@ -160,6 +240,7 @@ class DashboardController extends Controller
                 'competencies' => $competencies,
                 'learningMethods' => $learningMethods,
                 'activeCycleName' => $activeCycleName,
+                'assessmentRounds' => $this->assessmentRoundsPayload(),
                 'hrCatalogItems' => $this->learningCatalogItems(),
                 'overviewUsers' => User::query()
                     ->select(['name', 'email'])
@@ -177,7 +258,13 @@ class DashboardController extends Controller
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
+                'facultyAnalytics' => $facultyAnalytics,
                 'users' => $users,
+                'currentUser' => $this->dashboardUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
+                'idpReviewModule' => $idpReviewModule,
+                'idpReviewItems' => $idpReviewItems,
                 'managerSummary' => $managerSummary,
                 'activeCycleName' => $activeCycleName,
                 'departmentRows' => [],
@@ -187,7 +274,7 @@ class DashboardController extends Controller
                 'trainingNeedRows' => [],
                 'assessmentApprovals' => [],
                 'idpApprovals' => [],
-                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
             ]),
             default => Inertia::render('Dashboard'),
         };
@@ -212,6 +299,58 @@ class DashboardController extends Controller
                 'desc' => 'การเรียนรู้อย่างเป็นทางการ มีแบบแผน หรือการเรียนในห้องเรียน',
             ],
         ];
+    }
+
+    private function assessmentRoundsPayload(): array
+    {
+        $eligibleUserCount = DB::table('users')
+            ->join('roles', 'users.role_id', '=', 'roles.id')
+            ->where('users.is_active', true)
+            ->whereIn('roles.key', self::SELF_ASSESSMENT_ROLE_KEYS)
+            ->count('users.id');
+
+        $submittedUsersByRound = DB::table('assessments')
+            ->join('users', 'assessments.user_id', '=', 'users.id')
+            ->join('roles', 'users.role_id', '=', 'roles.id')
+            ->where('users.is_active', true)
+            ->whereIn('roles.key', self::SELF_ASSESSMENT_ROLE_KEYS)
+            ->whereNotNull('assessments.self_submitted_at')
+            ->select([
+                'assessments.assessment_round_id',
+                DB::raw('COUNT(DISTINCT assessments.user_id) as submitted_user_count'),
+            ])
+            ->groupBy('assessments.assessment_round_id');
+
+        return DB::table('assessment_rounds')
+            ->leftJoinSub($submittedUsersByRound, 'submitted_users', function ($join): void {
+                $join->on('assessment_rounds.id', '=', 'submitted_users.assessment_round_id');
+            })
+            ->select([
+                'assessment_rounds.id',
+                'assessment_rounds.name',
+                'assessment_rounds.year',
+                'assessment_rounds.self_assess_start',
+                'assessment_rounds.self_assess_end',
+                'assessment_rounds.supervisor_assess_end',
+                'assessment_rounds.is_active',
+                DB::raw('COALESCE(submitted_users.submitted_user_count, 0) as submitted_user_count'),
+            ])
+            ->orderByDesc('assessment_rounds.is_active')
+            ->orderByDesc('assessment_rounds.year')
+            ->orderByDesc('assessment_rounds.id')
+            ->get()
+            ->map(fn (object $round): array => [
+                'id' => (int) $round->id,
+                'name' => $round->name,
+                'year' => (int) $round->year,
+                'selfAssessStart' => $round->self_assess_start,
+                'selfAssessEnd' => $round->self_assess_end,
+                'supervisorAssessEnd' => $round->supervisor_assess_end,
+                'isActive' => (bool) $round->is_active,
+                'submittedUserCount' => (int) $round->submitted_user_count,
+                'eligibleUserCount' => (int) $eligibleUserCount,
+            ])
+            ->all();
     }
 
     private function normalizeRoleKey(string $roleKey): string
@@ -251,6 +390,7 @@ class DashboardController extends Controller
             'fe' => $user->first_name_en ?: '',
             'le' => $user->last_name_en ?: '',
             'em' => $user->email,
+            'username' => $user->username ?: '',
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $department,
@@ -355,6 +495,15 @@ class DashboardController extends Controller
         return is_array($decoded) ? $decoded : [];
     }
 
+    private function isoUtcTimestamp(mixed $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        return Carbon::parse((string) $value, 'UTC')->utc()->toISOString();
+    }
+
     private function currentDepartmentForUser(User $user): string
     {
         if ($this->usesSupportUnitStructure($user)) {
@@ -377,7 +526,7 @@ class DashboardController extends Controller
 
         $currentJobFamily = $this->currentJobFamilyNameForUser($user);
 
-        if (!$currentJobFamily) {
+        if (! $currentJobFamily) {
             return $user->department ?: '';
         }
 
@@ -417,7 +566,7 @@ class DashboardController extends Controller
                 ->value('job_families.name');
         }
 
-        if (!$user->workline || !$user->position) {
+        if (! $user->workline || ! $user->position) {
             return $this->jobFamilyNameCache[$cacheKey] = null;
         }
 
@@ -446,14 +595,14 @@ class DashboardController extends Controller
     {
         $issues = [];
 
-        if (!$user->workline) {
+        if (! $user->workline) {
             $issues[] = 'ยังไม่ได้กำหนดสายงาน';
 
             return $issues;
         }
 
         $worklineId = DB::table('worklines')->where('name', $user->workline)->value('id');
-        if (!$worklineId) {
+        if (! $worklineId) {
             $issues[] = 'สายงานนี้ไม่มีในโครงสร้างปัจจุบัน';
 
             return $issues;
@@ -471,7 +620,7 @@ class DashboardController extends Controller
                 ->value('id')
             : null;
 
-        if (!$jobFamilyId) {
+        if (! $jobFamilyId) {
             $issues[] = 'กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน';
         }
 
@@ -487,7 +636,7 @@ class DashboardController extends Controller
                 && $jobFamilyName !== ''
                 && $user->position === $jobFamilyName;
 
-            if (!$positionExists && !$usesJobFamilyAsPosition) {
+            if (! $positionExists && ! $usesJobFamilyAsPosition) {
                 $issues[] = 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน';
             }
         } else {
@@ -501,7 +650,7 @@ class DashboardController extends Controller
                 ->whereNull('job_family_id')
                 ->exists();
 
-            if (!$levelExists) {
+            if (! $levelExists) {
                 $issues[] = 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน';
             }
         } else {
@@ -765,20 +914,23 @@ class DashboardController extends Controller
         unset($structure['levelExpectationsByWorkline']);
 
         $structure['positionCompetencies'] = DB::table('position_competencies')
-            ->select('position_id', 'competency_id')
+            ->select('assessment_round_id', 'position_id', 'competency_id')
             ->orderBy('competency_id')
             ->get()
-            ->groupBy('position_id')
-            ->map(fn ($items) => $items->pluck('competency_id')->values())
+            ->groupBy('assessment_round_id')
+            ->map(fn ($roundItems) => $roundItems
+                ->groupBy('position_id')
+                ->map(fn ($items) => $items->pluck('competency_id')->values()))
             ->all();
 
         $structure['positionFcSelectionRules'] = Schema::hasTable('position_fc_selection_rules')
             ? DB::table('position_fc_selection_rules')
-                ->select('position_id', 'required_fc_count')
+                ->select('assessment_round_id', 'position_id', 'required_fc_count')
                 ->get()
-                ->mapWithKeys(fn (object $rule) => [
+                ->groupBy('assessment_round_id')
+                ->map(fn ($roundRules) => $roundRules->mapWithKeys(fn (object $rule) => [
                     $rule->position_id => (int) $rule->required_fc_count,
-                ])
+                ]))
                 ->all()
             : [];
 
@@ -821,6 +973,11 @@ class DashboardController extends Controller
 
     private function assignedCompetenciesForUser(User $user): array
     {
+        $activeRoundId = $this->activeRoundId();
+        if (! $activeRoundId) {
+            return [];
+        }
+
         $levelIds = collect();
         $positionIds = $this->positionIdsForUser($user);
 
@@ -884,6 +1041,7 @@ class DashboardController extends Controller
                 ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
                 ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
                 ->whereIn('hr_expectations.level_id', $levelIds)
+                ->when($activeRoundId, fn ($query) => $query->where('hr_expectations.assessment_round_id', $activeRoundId))
                 ->when($jobFamilyIds->isNotEmpty(), fn ($query) => $query->whereIn('hr_expectations.job_family_id', $jobFamilyIds))
                 ->select(
                     'competencies.id',
@@ -902,6 +1060,7 @@ class DashboardController extends Controller
                 ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
                 ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
                 ->whereIn('position_competencies.position_id', $positionIds)
+                ->when($activeRoundId, fn ($query) => $query->where('position_competencies.assessment_round_id', $activeRoundId))
                 ->select(
                     'competencies.id',
                     'competencies.competency_type_id',
@@ -930,13 +1089,14 @@ class DashboardController extends Controller
 
                 return $selectedApprovedFcIds->contains((int) $item->id);
             }))
-            ->map(function (object $item) use ($user, $expectedLevelResolver): array {
+            ->map(function (object $item) use ($user, $expectedLevelResolver, $activeRoundId): array {
                 $payload = $this->compactCompetencyPayload($item);
                 $payload['expectedLevel'] = $payload['expectedLevel']
                     ?? $expectedLevelResolver->forUserCompetency($user, (int) $item->id);
                 $assessment = DB::table('assessments')
                     ->where('user_id', $user->id)
                     ->where('competency_id', $item->id)
+                    ->when($activeRoundId, fn ($query) => $query->where('assessment_round_id', $activeRoundId))
                     ->select('id', 'status', 'last_draft_saved_at')
                     ->first();
                 $gapStatus = $assessment
@@ -949,7 +1109,7 @@ class DashboardController extends Controller
                 $payload['assessmentStatus'] = $gapStatus ?? $assessment?->status ?? 'draft';
                 $lastDraftSavedAt = $assessment?->last_draft_saved_at;
                 $payload['lastDraftSavedAt'] = $lastDraftSavedAt
-                    ? \Carbon\Carbon::parse($lastDraftSavedAt)->toISOString()
+                    ? Carbon::parse($lastDraftSavedAt)->toISOString()
                     : null;
 
                 return $payload;
@@ -961,8 +1121,9 @@ class DashboardController extends Controller
     private function fcTopicSelectionPayloadForUser(User $user): array
     {
         $positionId = (int) ($user->position_id ?? 0);
+        $roundId = $this->activeRoundId();
 
-        if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
+        if (! $roundId || $positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
             return [
                 'requiredCount' => 0,
                 'status' => 'not_required',
@@ -974,12 +1135,14 @@ class DashboardController extends Controller
 
         $requiredCount = (int) DB::table('position_fc_selection_rules')
             ->where('position_id', $positionId)
+            ->when($roundId, fn ($query) => $query->where('assessment_round_id', $roundId))
             ->value('required_fc_count');
 
         $availableCompetencies = DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('position_competencies.position_id', $positionId)
+            ->when($roundId, fn ($query) => $query->where('position_competencies.assessment_round_id', $roundId))
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->select(
                 'competencies.id',
@@ -1000,6 +1163,7 @@ class DashboardController extends Controller
             ? DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
                 ->where('position_id', $positionId)
+                ->when($roundId, fn ($query) => $query->where('assessment_round_id', $roundId))
                 ->first()
             : null;
 
@@ -1020,15 +1184,42 @@ class DashboardController extends Controller
             'availableCompetencies' => $availableCompetencies,
             'selectedCompetencyIds' => $selectedIds,
             'submittedTo' => $selection?->submitted_to,
-            'submittedAt' => $selection?->submitted_at ? \Carbon\Carbon::parse($selection->submitted_at)->toISOString() : null,
+            'submittedAt' => $selection?->submitted_at ? Carbon::parse($selection->submitted_at)->toISOString() : null,
             'reviewedBy' => $selection?->reviewed_by,
             'reviewComment' => $selection?->review_comment ?? '',
-            'reviewedAt' => $selection?->reviewed_at ? \Carbon\Carbon::parse($selection->reviewed_at)->toISOString() : null,
+            'reviewedAt' => $selection?->reviewed_at ? Carbon::parse($selection->reviewed_at)->toISOString() : null,
+        ];
+    }
+
+    private function idpReviewModuleForReviewer(User $reviewer): array
+    {
+        if (! Schema::hasTable('user_reviewer_steps')) {
+            return ['enabled' => false, 'assignmentCount' => 0];
+        }
+
+        $query = DB::table('user_reviewer_steps')
+            ->where('reviewer_id', $reviewer->id);
+
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $query->where('chain_type', 'idp');
+        }
+
+        $assignmentCount = $query->distinct()->count('user_id');
+
+        return [
+            'enabled' => $assignmentCount > 0,
+            'assignmentCount' => $assignmentCount,
         ];
     }
 
     private function fcTopicApprovalModuleForReviewer(User $reviewer): array
     {
+        $roundId = $this->activeRoundId();
+
+        if (! $roundId) {
+            return ['enabled' => false, 'items' => []];
+        }
+
         if (! Schema::hasTable('user_reviewer_steps')) {
             return ['enabled' => false, 'items' => []];
         }
@@ -1056,6 +1247,7 @@ class DashboardController extends Controller
             ->whereIn('user_id', $employeeIds)
             ->where('submitted_to', $reviewer->id)
             ->where('status', 'submitted')
+            ->where('assessment_round_id', $roundId)
             ->orderBy('submitted_at')
             ->get();
 
@@ -1097,7 +1289,7 @@ class DashboardController extends Controller
                     'position' => $employee?->position ?: '-',
                     'department' => $departmentDisplay ?: '-',
                     'departmentLabel' => $isSupport ? 'หน่วยงาน' : 'ภาควิชา',
-                    'submittedAt' => $selection->submitted_at ? \Carbon\Carbon::parse($selection->submitted_at)->toISOString() : null,
+                    'submittedAt' => $selection->submitted_at ? Carbon::parse($selection->submitted_at)->toISOString() : null,
                     'topics' => collect($topicsBySelection->get($selection->id, []))->map(fn (object $topic): array => [
                         'id' => (int) $topic->id,
                         'code' => $topic->code,
@@ -1208,7 +1400,7 @@ class DashboardController extends Controller
         ];
     }
 
-    private function positionIdsForUser(User $user): \Illuminate\Support\Collection
+    private function positionIdsForUser(User $user): Collection
     {
         $positionIds = collect();
 
@@ -1326,6 +1518,8 @@ class DashboardController extends Controller
     private function competencyGapsForUser(User $user): array
     {
         $expectedLevelResolver = app(ExpectedLevelResolver::class);
+        $roundId = $this->activeRoundId()
+            ?? (int) DB::table('assessment_rounds')->orderByDesc('year')->orderByDesc('id')->value('id');
 
         $gapRows = DB::table('assessments')
             ->join('competencies', 'assessments.competency_id', '=', 'competencies.id')
@@ -1337,6 +1531,7 @@ class DashboardController extends Controller
             ->leftJoin('users as rejecting_reviewer', 'competency_gaps.rejected_by', '=', 'rejecting_reviewer.id')
             ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('assessments.user_id', $user->id)
+            ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
             ->whereNotNull('assessments.last_draft_saved_at')
             ->select(
                 'assessments.id as assessment_id',
@@ -1363,11 +1558,11 @@ class DashboardController extends Controller
             ->orderBy('competencies.code')
             ->get();
 
-        $reviewerCommentsByAssessmentCompetency = DB::table('scores')
+        $reviewHistoryByAssessmentCompetency = DB::table('scores')
             ->join('users as score_reviewers', 'scores.assessor_id', '=', 'score_reviewers.id')
             ->whereIn('scores.assessment_id', $gapRows->pluck('assessment_id')->filter()->unique()->values())
             ->where('scores.assessor_role', 'like', 'supervisor_%')
-            ->whereNotNull('scores.comment')
+            ->whereIn('scores.status', ['approved', 'rejected'])
             ->select(
                 'scores.assessment_id',
                 'scores.competency_id',
@@ -1382,7 +1577,6 @@ class DashboardController extends Controller
                 'score_reviewers.position as reviewer_position',
             )
             ->get()
-            ->filter(fn (object $score): bool => trim((string) $score->comment) !== '')
             ->groupBy(fn (object $score): string => $score->assessment_id.':'.$score->competency_id)
             ->map(fn ($scores): array => $scores
                 ->map(function (object $score): array {
@@ -1410,7 +1604,7 @@ class DashboardController extends Controller
                 ->all());
 
         return $gapRows
-            ->map(function (object $gap) use ($user, $expectedLevelResolver, $reviewerCommentsByAssessmentCompetency): array {
+            ->map(function (object $gap) use ($user, $expectedLevelResolver, $reviewHistoryByAssessmentCompetency): array {
                 $checkedIndicatorKeys = DB::table('assessment_indicator_results')
                     ->where('assessment_id', $gap->assessment_id)
                     ->where('competency_id', $gap->competency_id)
@@ -1445,8 +1639,13 @@ class DashboardController extends Controller
                     'gap' => $gapValue,
                     'note' => $gap->note ?? '',
                     'reviewerComment' => $gap->evaluator_comment ?? '',
-                    'reviewerComments' => $reviewerCommentsByAssessmentCompetency
+                    'reviewHistory' => $reviewHistoryByAssessmentCompetency
                         ->get($gap->assessment_id.':'.$gap->competency_id, []),
+                    'reviewerComments' => collect($reviewHistoryByAssessmentCompetency
+                        ->get($gap->assessment_id.':'.$gap->competency_id, []))
+                        ->filter(fn (array $review): bool => $review['comment'] !== '')
+                        ->values()
+                        ->all(),
                     'rejectComment' => $gap->reject_comment ?? '',
                     'rejectReviewerId' => $gap->rejected_by ? (int) $gap->rejected_by : null,
                     'rejectReviewerName' => $rejectReviewerName,
@@ -1615,14 +1814,30 @@ class DashboardController extends Controller
 
     private function currentUserIdpPayload(User $user): ?array
     {
-        $year = (int) (DB::table('assessment_rounds')
+        $round = DB::table('assessment_rounds')
             ->where('is_active', true)
-            ->orderByDesc('year')
-            ->value('year') ?: ((int) now()->format('Y') + 543));
+            ->orderByDesc('id')
+            ->first(['id', 'year']);
+        $roundId = $round?->id ? (int) $round->id : null;
 
         $idp = DB::table('idps')
             ->where('user_id', $user->id)
-            ->where('year', $year)
+            ->when($roundId, function ($query) use ($roundId): void {
+                $query->where(function ($roundQuery) use ($roundId): void {
+                    $roundQuery->where('assessment_round_id', $roundId)
+                        ->orWhere(function ($legacy) use ($roundId): void {
+                            $legacy->whereNull('assessment_round_id')
+                                ->whereExists(function ($linkedAssessment) use ($roundId): void {
+                                    $linkedAssessment->selectRaw('1')
+                                        ->from('idp_items')
+                                        ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+                                        ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
+                                        ->whereColumn('idp_items.idp_id', 'idps.id')
+                                        ->where('assessments.assessment_round_id', $roundId);
+                                });
+                        });
+                });
+            })
             ->orderByDesc('id')
             ->first();
 
@@ -1646,6 +1861,22 @@ class DashboardController extends Controller
             )
             ->orderBy('idp_items.id')
             ->get();
+        $latestRejectionsByItem = DB::table('idp_item_reviews')
+            ->join('users', 'idp_item_reviews.reviewer_id', '=', 'users.id')
+            ->whereIn('idp_item_reviews.idp_item_id', $items->pluck('id'))
+            ->where('idp_item_reviews.decision', 'rejected')
+            ->select(
+                'idp_item_reviews.id',
+                'idp_item_reviews.idp_item_id',
+                'idp_item_reviews.submission_version',
+                'users.name as reviewer_name',
+                'users.title as reviewer_title'
+            )
+            ->orderByDesc('idp_item_reviews.submission_version')
+            ->orderByDesc('idp_item_reviews.id')
+            ->get()
+            ->unique('idp_item_id')
+            ->keyBy('idp_item_id');
         $activityColumns = [
             'idp_activities.id',
             'idp_activities.idp_item_id',
@@ -1678,26 +1909,27 @@ class DashboardController extends Controller
 
         $payloadItems = $items
             ->groupBy('competency_gap_id')
-            ->map(function ($legacyItems) use ($activitiesByItem): array {
-                $first = $legacyItems->first();
-                $goal = $legacyItems->pluck('goal')->first(fn ($value) => filled($value)) ?? '';
-                $successCriteria = $legacyItems->pluck('success_criteria')->first(fn ($value) => filled($value)) ?? '';
+            ->map(function ($legacyItems) use ($activitiesByItem, $latestRejectionsByItem): array {
+                $latest = $legacyItems->sortByDesc('id')->first();
+                $latestRejection = $latestRejectionsByItem->get($latest->id);
 
                 return [
-                    'id' => (int) $first->id,
-                    'competencyGapId' => (int) $first->competency_gap_id,
-                    'goal' => $goal,
-                    'successCriteria' => $successCriteria,
-                    'status' => $first->status ?? 'draft',
-                    'submissionVersion' => (int) ($first->submission_version ?? 0),
-                    'currentReviewStep' => $first->current_review_step
-                        ? (int) $first->current_review_step
+                    'id' => (int) $latest->id,
+                    'competencyGapId' => (int) $latest->competency_gap_id,
+                    'goal' => $latest->goal ?? '',
+                    'successCriteria' => $latest->success_criteria ?? '',
+                    'status' => $latest->status ?? 'draft',
+                    'submissionVersion' => (int) ($latest->submission_version ?? 0),
+                    'currentReviewStep' => $latest->current_review_step
+                        ? (int) $latest->current_review_step
                         : null,
-                    'submittedAt' => $first->submitted_at,
-                    'approvedAt' => $first->approved_at,
-                    'rejectComment' => $first->reject_comment ?? '',
-                    'activities' => $legacyItems
-                        ->flatMap(fn (object $item) => $activitiesByItem[$item->id] ?? collect())
+                    'submittedAt' => $latest->submitted_at,
+                    'approvedAt' => $latest->approved_at,
+                    'rejectComment' => $latest->reject_comment ?? '',
+                    'rejectReviewerName' => $latestRejection
+                        ? trim(($latestRejection->reviewer_title ?: '').$latestRejection->reviewer_name)
+                        : '',
+                    'activities' => collect($activitiesByItem[$latest->id] ?? [])
                         ->map(fn (object $activity): array => [
                             'id' => (int) $activity->id,
                             'methodKey' => $activity->method_key ?? '',
@@ -1734,13 +1966,19 @@ class DashboardController extends Controller
         ];
     }
 
-    private function idpReviewItemsForReviewer(User $reviewer): array
+    private function idpReviewItemsForReviewer(User $reviewer, ?int $assessmentRoundId): array
     {
+        if (! $assessmentRoundId) {
+            return [];
+        }
+
         $items = DB::table('idp_items')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->where('assessments.assessment_round_id', $assessmentRoundId)
             ->whereExists(function ($query) use ($reviewer): void {
                 $query->selectRaw('1')->from('user_reviewer_steps')
                     ->whereColumn('user_reviewer_steps.user_id', 'users.id')
@@ -1762,7 +2000,8 @@ class DashboardController extends Controller
                 'users.position as user_position',
                 'users.department as user_department',
                 'competencies.code as competency_code',
-                'competencies.name as competency_name'
+                'competencies.name as competency_name',
+                'competency_gaps.gap'
             )
             ->orderBy('idp_items.submitted_at')
             ->get();
@@ -1778,6 +2017,8 @@ class DashboardController extends Controller
                 'idp_activities.start_date',
                 'idp_activities.end_date',
                 'idp_activities.document_reference_number',
+                'idp_activities.form_code',
+                'idp_activities.form_details',
                 'learning_method_types.label as method_label'
             )
             ->orderBy('idp_activities.id')
@@ -1801,96 +2042,470 @@ class DashboardController extends Controller
             ->get()
             ->groupBy('idp_item_id');
 
-        return $items->map(fn (object $item): array => [
-            'id' => (int) $item->id,
-            'userSso' => $item->user_sso ?: '',
-            'userName' => trim(($item->user_title ?: '').$item->user_name),
-            'userPosition' => $item->user_position ?: '',
-            'userDepartment' => $item->user_department ?: '',
-            'competencyCode' => $item->competency_code,
-            'competencyName' => $item->competency_name,
-            'goal' => $item->goal ?: '',
-            'successCriteria' => $item->success_criteria ?: '',
-            'submissionVersion' => (int) $item->submission_version,
-            'currentReviewStep' => (int) $item->current_review_step,
-            'status' => $item->status,
-            'canReview' => collect($this->reviewerChainResolver->stepsForUser((object) ['id' => $item->owner_id], 'idp'))
-                ->contains(fn (array $step): bool => $step['reviewer_id'] === $reviewer->id
-                    && $step['step'] === (int) $item->current_review_step
-                    && $item->status === 'review_step_'.$step['step']),
-            'submittedAt' => $item->submitted_at,
-            'activities' => ($activities[$item->id] ?? collect())
-                ->map(fn (object $activity): array => [
-                    'id' => (int) $activity->id,
-                    'name' => $activity->activity_name ?: '',
-                    'methodLabel' => $activity->method_label ?: '',
-                    'weightPercent' => (float) ($activity->weight_percent ?? 0),
-                    'startDate' => $activity->start_date ?: '',
-                    'endDate' => $activity->end_date ?: '',
-                    'documentReferenceNumber' => $activity->document_reference_number ?: '',
-                ])
-                ->values()
-                ->all(),
-            'reviewHistory' => ($history[$item->id] ?? collect())
-                ->map(fn (object $review): array => [
+        $reviewerStepsByOwner = User::query()
+            ->whereIn('id', $items->pluck('owner_id')->unique())
+            ->get()
+            ->mapWithKeys(fn (User $owner): array => [
+                $owner->id => $this->reviewerChainResolver->payloadForUser($owner, 'idp'),
+            ]);
+
+        return $items->map(function (object $item) use ($activities, $history, $reviewer, $reviewerStepsByOwner): array {
+            $reviewerSteps = collect($reviewerStepsByOwner->get((int) $item->owner_id, []));
+            $currentReviewer = $reviewerSteps->firstWhere('step', (int) $item->current_review_step);
+            $latestRejection = ($history[$item->id] ?? collect())
+                ->first(fn (object $review): bool => $review->decision === 'rejected');
+
+            return [
+                'id' => (int) $item->id,
+                'userId' => (int) $item->owner_id,
+                'userSso' => $item->user_sso ?: '',
+                'userName' => trim(($item->user_title ?: '').$item->user_name),
+                'userPosition' => $item->user_position ?: '',
+                'userDepartment' => $item->user_department ?: '',
+                'competencyCode' => $item->competency_code,
+                'competencyName' => $item->competency_name,
+                'gap' => $item->gap === null ? null : (float) $item->gap,
+                'goal' => $item->goal ?: '',
+                'successCriteria' => $item->success_criteria ?: '',
+                'submissionVersion' => (int) $item->submission_version,
+                'currentReviewStep' => (int) $item->current_review_step,
+                'currentReviewerId' => $currentReviewer ? (int) $currentReviewer['id'] : null,
+                'currentReviewerName' => $currentReviewer['name'] ?? null,
+                'rejectReviewerName' => $latestRejection
+                    ? trim(($latestRejection->reviewer_title ?: '').$latestRejection->reviewer_name)
+                    : null,
+                'status' => $item->status,
+                'canReview' => $reviewerSteps
+                    ->contains(fn (array $step): bool => (int) $step['id'] === $reviewer->id
+                        && $step['step'] === (int) $item->current_review_step
+                        && $item->status === 'review_step_'.$step['step']),
+                'submittedAt' => $item->submitted_at,
+                'activities' => ($activities[$item->id] ?? collect())
+                    ->map(fn (object $activity): array => [
+                        'id' => (int) $activity->id,
+                        'name' => $activity->activity_name ?: '',
+                        'methodLabel' => $activity->method_label ?: '',
+                        'weightPercent' => (float) ($activity->weight_percent ?? 0),
+                        'startDate' => $activity->start_date ?: '',
+                        'endDate' => $activity->end_date ?: '',
+                        'documentReferenceNumber' => $activity->document_reference_number ?: '',
+                        'formCode' => $activity->form_code ?: '',
+                        'formDetails' => $this->decodeJsonObject($activity->form_details ?? null),
+                    ])
+                    ->values()
+                    ->all(),
+                'reviewHistory' => ($history[$item->id] ?? collect())
+                    ->map(fn (object $review): array => [
+                        'submissionVersion' => (int) $review->submission_version,
+                        'reviewStep' => (int) $review->review_step,
+                        'reviewerName' => trim(($review->reviewer_title ?: '').$review->reviewer_name),
+                        'decision' => $review->decision,
+                        'comment' => $review->comment ?: '',
+                        'decidedAt' => $review->decided_at,
+                    ])
+                    ->values()
+                    ->all(),
+            ];
+        })->values()->all();
+    }
+
+    private function idpActivityProgressReviewItems(
+        User $reviewer,
+        ?array $visibleUserIds = null,
+        ?int $assessmentRoundId = null,
+    ): array
+    {
+        $assessmentRoundId ??= $this->activeRoundId();
+        if (! $assessmentRoundId) {
+            return [];
+        }
+
+        $assignments = $visibleUserIds === null
+            ? DB::table('user_reviewer_steps')
+                ->where('reviewer_id', $reviewer->id)
+                ->where('chain_type', 'idp')
+                ->pluck('step_order', 'user_id')
+            : collect();
+        $userIds = $visibleUserIds === null
+            ? $assignments->keys()->map(fn ($id): int => (int) $id)->values()
+            : collect($visibleUserIds)->map(fn ($id): int => (int) $id)->unique()->values();
+        if ($userIds->isEmpty()) {
+            return [];
+        }
+
+        $latestItemIds = DB::table('idp_items')
+            ->whereNotNull('competency_gap_id')
+            ->selectRaw('competency_gap_id, MAX(id) as item_id')
+            ->groupBy('competency_gap_id');
+
+        $items = DB::table('competency_gaps')
+            ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
+            ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->join('users', 'assessments.user_id', '=', 'users.id')
+            ->leftJoinSub($latestItemIds, 'latest_idp_items', function ($join): void {
+                $join->on('latest_idp_items.competency_gap_id', '=', 'competency_gaps.id');
+            })
+            ->leftJoin('idp_items', 'latest_idp_items.item_id', '=', 'idp_items.id')
+            ->leftJoin('idp_item_completion_submissions', 'idp_items.id', '=', 'idp_item_completion_submissions.idp_item_id')
+            ->whereIn('assessments.user_id', $userIds)
+            ->when($assessmentRoundId, fn ($query) => $query->where('assessments.assessment_round_id', $assessmentRoundId))
+            ->where('competency_gaps.requires_idp', true)
+            ->where('competency_gaps.gap', '<', 0)
+            ->whereIn('competency_gaps.status', ['approved', 'dean_approved'])
+            ->whereIn('assessments.status', ['approved', 'dean_approved'])
+            ->select(
+                'competency_gaps.id as gap_id',
+                'idp_items.id as item_id',
+                'idp_items.status as plan_status',
+                'idp_items.goal',
+                'idp_items.success_criteria',
+                'competencies.code as competency_code',
+                'competencies.name as competency_name',
+                'users.id as user_id',
+                'users.title as user_title',
+                'users.name as user_name',
+                'users.position as user_position',
+                'users.department as user_department',
+                'idp_item_completion_submissions.public_id as completion_public_id',
+                'idp_item_completion_submissions.status as completion_status',
+                'idp_item_completion_submissions.result as completion_result',
+                'idp_item_completion_submissions.current_review_step',
+                'idp_item_completion_submissions.submission_version',
+                'idp_item_completion_submissions.submitted_at',
+                'idp_item_completion_submissions.updated_at as completion_updated_at'
+            )
+            ->orderBy('users.name')
+            ->orderBy('competencies.code')
+            ->get();
+
+        $approvedItemIds = $items
+            ->filter(fn (object $item): bool => $item->item_id !== null && $item->plan_status === 'approved')
+            ->pluck('item_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $activities = $this->progressActivitiesForItems($approvedItemIds, false);
+
+        $completionIds = DB::table('idp_item_completion_submissions')
+            ->whereIn('idp_item_id', $items->pluck('item_id')->filter())
+            ->pluck('id', 'idp_item_id');
+        $history = DB::table('idp_item_completion_reviews')
+            ->leftJoin('users', 'idp_item_completion_reviews.reviewer_id', '=', 'users.id')
+            ->whereIn('idp_item_completion_reviews.completion_submission_id', $completionIds->values())
+            ->select(
+                'idp_item_completion_reviews.completion_submission_id',
+                'idp_item_completion_reviews.submission_version',
+                'idp_item_completion_reviews.review_step',
+                'idp_item_completion_reviews.decision',
+                'idp_item_completion_reviews.comment',
+                'idp_item_completion_reviews.review_data',
+                'idp_item_completion_reviews.decided_at',
+                'users.title as reviewer_title',
+                'users.name as reviewer_name'
+            )
+            ->orderBy('idp_item_completion_reviews.id')
+            ->get()
+            ->groupBy('completion_submission_id');
+
+        $reviewerStepsByOwner = User::query()
+            ->whereIn('id', $items->pluck('user_id')->unique())
+            ->get()
+            ->mapWithKeys(fn (User $owner): array => [
+                $owner->id => $this->reviewerChainResolver->payloadForUser($owner, 'idp'),
+            ]);
+
+        return $items->map(function (object $item) use ($assignments, $activities, $completionIds, $history, $reviewerStepsByOwner, $visibleUserIds): array {
+            $itemId = $item->item_id ? (int) $item->item_id : null;
+            $completionId = $itemId ? ($completionIds[$itemId] ?? null) : null;
+            $itemActivities = $itemId ? ($activities[$itemId] ?? []) : [];
+            $completionStatus = $item->completion_status ?: 'in_progress';
+            $schedule = $this->idpSchedulePayload($itemActivities, $completionStatus, $item->submitted_at);
+            $reviewerStep = (int) ($assignments[(int) $item->user_id] ?? 0);
+            $firstReviewerStep = (int) (collect($reviewerStepsByOwner->get((int) $item->user_id, []))->min('step') ?? 0);
+            $currentReviewer = $item->current_review_step
+                ? collect($reviewerStepsByOwner->get((int) $item->user_id, []))
+                    ->firstWhere('step', (int) $item->current_review_step)
+                : null;
+
+            return [
+                'id' => $itemId ?? 'gap-'.(int) $item->gap_id,
+                'itemId' => $itemId,
+                'competencyGapId' => (int) $item->gap_id,
+                'planStatus' => $item->plan_status ?: 'not_started',
+                'completionPublicId' => $item->completion_public_id,
+                'completionStatus' => $completionStatus,
+                'completionResult' => $item->completion_result,
+                'submissionVersion' => (int) ($item->submission_version ?? 0),
+                'currentReviewStep' => $item->current_review_step ? (int) $item->current_review_step : null,
+                'currentReviewerName' => $currentReviewer['name'] ?? null,
+                'canReview' => $visibleUserIds === null
+                    && filled($item->completion_public_id)
+                    && $reviewerStep === $firstReviewerStep
+                    && $item->completion_status === 'review_step_'.$reviewerStep,
+                'userId' => (int) $item->user_id,
+                'userName' => trim(($item->user_title ?: '').$item->user_name),
+                'userPosition' => $item->user_position ?: $item->user_department ?: '',
+                'competencyCode' => $item->competency_code,
+                'competencyName' => $item->competency_name,
+                'goal' => $item->goal ?? '',
+                'successCriteria' => $item->success_criteria ?? '',
+                'submittedAt' => $this->isoUtcTimestamp($item->submitted_at),
+                'completionUpdatedAt' => $this->isoUtcTimestamp($item->completion_updated_at),
+                ...$schedule,
+                'activities' => $itemActivities,
+                'reviewHistory' => ($completionId ? ($history[$completionId] ?? collect()) : collect())->map(fn (object $review): array => [
                     'submissionVersion' => (int) $review->submission_version,
                     'reviewStep' => (int) $review->review_step,
                     'reviewerName' => trim(($review->reviewer_title ?: '').$review->reviewer_name),
                     'decision' => $review->decision,
-                    'comment' => $review->comment ?: '',
-                    'decidedAt' => $review->decided_at,
-                ])
-                ->values()
-                ->all(),
-        ])->values()->all();
+                    'comment' => $review->comment ?? '',
+                    'reviewData' => $this->decodeJsonObject($review->review_data ?? null),
+                    'decidedAt' => $this->isoUtcTimestamp($review->decided_at),
+                ])->values()->all(),
+            ];
+        })->sort(function (array $left, array $right): int {
+            if ($left['isOverdue'] !== $right['isOverdue']) {
+                return $left['isOverdue'] ? -1 : 1;
+            }
+
+            return [$left['dueDate'] ?: '9999-12-31', $left['userName'], $left['competencyCode']]
+                <=> [$right['dueDate'] ?: '9999-12-31', $right['userName'], $right['competencyCode']];
+        })->values()->all();
     }
 
-    private function currentUserApprovedIdpActivities(User $user): array
+    private function idpSchedulePayload(array $activities, string $completionStatus, ?string $submittedAt): array
     {
-        $latestUpdateIds = DB::table('idp_activity_updates')
-            ->selectRaw('MAX(id) as id, activity_id')
-            ->groupBy('activity_id');
+        $dueDate = collect($activities)
+            ->pluck('endDate')
+            ->filter(fn ($date): bool => filled($date))
+            ->map(fn ($date): string => substr((string) $date, 0, 10))
+            ->sort()
+            ->last();
 
-        return DB::table('idp_activities')
+        if (! $dueDate) {
+            return [
+                'dueDate' => null,
+                'isOverdue' => false,
+                'daysOverdue' => 0,
+                'submittedLateByDays' => 0,
+            ];
+        }
+
+        $timezone = config('app.timezone', 'Asia/Bangkok');
+        $deadline = Carbon::createFromFormat('Y-m-d', $dueDate, $timezone)->startOfDay();
+        $today = Carbon::today($timezone);
+        $isWaitingForReview = preg_match('/^review_step_\d+$/', $completionStatus) === 1;
+        $employeeStillOwnsAction = ! $isWaitingForReview && $completionStatus !== 'approved';
+        $isOverdue = $employeeStillOwnsAction && $today->greaterThan($deadline);
+        $submittedDate = $submittedAt ? Carbon::parse($submittedAt)->setTimezone($timezone)->startOfDay() : null;
+
+        return [
+            'dueDate' => $dueDate,
+            'isOverdue' => $isOverdue,
+            'daysOverdue' => $isOverdue ? $deadline->diffInDays($today) : 0,
+            'submittedLateByDays' => $submittedDate?->greaterThan($deadline)
+                ? $deadline->diffInDays($submittedDate)
+                : 0,
+        ];
+    }
+
+    private function currentUserApprovedIdpActivities(User $user, ?int $assessmentRoundId): array
+    {
+        if (! $assessmentRoundId) {
+            return [];
+        }
+
+        $activityRows = DB::table('idp_activities')
             ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
             ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
-            ->leftJoinSub($latestUpdateIds, 'latest_update_ids', function ($join): void {
-                $join->on('idp_activities.id', '=', 'latest_update_ids.activity_id');
-            })
-            ->leftJoin('idp_activity_updates', 'latest_update_ids.id', '=', 'idp_activity_updates.id')
             ->where('idps.user_id', $user->id)
+            ->where('assessments.assessment_round_id', $assessmentRoundId)
             ->where('idp_items.status', 'approved')
             ->select(
                 'idp_activities.id',
+                'idp_activities.idp_item_id',
                 'idp_activities.activity_name',
+                'idp_activities.weight_percent',
                 'idp_activities.start_date',
                 'idp_activities.end_date',
+                'idp_activities.document_reference_number',
+                'idp_activities.form_code',
+                'idp_activities.form_details',
+                'idp_activities.status as activity_status',
+                'idp_items.goal',
+                'idp_items.success_criteria',
+                'competency_gaps.expected_level',
+                'competency_gaps.actual_level',
+                'competency_gaps.gap',
                 'competencies.code as competency_code',
-                'competencies.name as competency_name',
-                'idp_activity_updates.progress_note',
-                'idp_activity_updates.percent_complete',
-                'idp_activity_updates.evidence_url',
-                'idp_activity_updates.evidence_description'
+                'competencies.name as competency_name'
             )
             ->orderBy('competencies.code')
             ->orderBy('idp_activities.id')
-            ->get()
-            ->map(fn (object $activity): array => [
+            ->get();
+
+        $progress = $this->progressActivitiesForItems(
+            $activityRows->pluck('idp_item_id')->unique()->map(fn ($id): int => (int) $id)->all(),
+            false
+        );
+        $progressByActivity = collect($progress)->flatten(1)->keyBy('id');
+
+        return $activityRows->map(function (object $activity) use ($progressByActivity): array {
+            $activityProgress = $progressByActivity[(int) $activity->id] ?? [];
+
+            return [
                 'id' => (int) $activity->id,
+                'idpItemId' => (int) $activity->idp_item_id,
                 'competencyCode' => $activity->competency_code,
                 'competencyName' => $activity->competency_name,
                 'name' => $activity->activity_name,
+                'weightPercent' => (float) ($activity->weight_percent ?? 0),
                 'startDate' => $activity->start_date,
                 'endDate' => $activity->end_date,
-                'latestProgressNote' => $activity->progress_note ?? '',
-                'latestPercentComplete' => (int) ($activity->percent_complete ?? 0),
-                'latestEvidenceUrl' => $activity->evidence_url ?? '',
-                'latestEvidenceDescription' => $activity->evidence_description ?? '',
-            ])
-            ->values()
-            ->all();
+                'documentReferenceNumber' => $activity->document_reference_number ?? '',
+                'formCode' => $activity->form_code ?? '',
+                'planDetails' => $this->decodeJsonObject($activity->form_details ?? null),
+                'activityStatus' => $activity->activity_status ?? 'planned',
+                'goal' => $activity->goal ?? '',
+                'successCriteria' => $activity->success_criteria ?? '',
+                'expectedLevel' => (float) ($activity->expected_level ?? 0),
+                'actualLevel' => (float) ($activity->actual_level ?? 0),
+                'gap' => (float) ($activity->gap ?? 0),
+                'updates' => $activityProgress['updates'] ?? [],
+                'completion' => $activityProgress['completion'] ?? null,
+            ];
+        })->values()->all();
+    }
+
+    private function progressActivitiesForItems(array $itemIds, bool $includeDrafts): array
+    {
+        if ($itemIds === []) {
+            return [];
+        }
+
+        $activities = DB::table('idp_activities')->whereIn('idp_item_id', $itemIds)
+            ->orderBy('id')->get(['id', 'idp_item_id', 'activity_name', 'form_code', 'form_details', 'start_date', 'end_date']);
+        $activityIds = $activities->pluck('id');
+        $updatesQuery = DB::table('idp_activity_updates')->whereIn('activity_id', $activityIds);
+        if (! $includeDrafts) {
+            $updatesQuery->where('status', 'submitted');
+        }
+        $updates = $updatesQuery->orderBy('period_start')->orderBy('id')->get();
+
+        $evidences = DB::table('idp_activity_update_evidences')
+            ->whereIn('activity_update_id', $updates->pluck('id'))->orderBy('id')->get()->groupBy('activity_update_id');
+        $completions = DB::table('idp_item_completion_submissions')
+            ->whereIn('idp_item_id', $itemIds)->get()->keyBy('idp_item_id');
+        $completionReviewRows = DB::table('idp_item_completion_reviews')
+            ->leftJoin('users', 'idp_item_completion_reviews.reviewer_id', '=', 'users.id')
+            ->whereIn('idp_item_completion_reviews.completion_submission_id', $completions->pluck('id'))
+            ->select(
+                'idp_item_completion_reviews.id',
+                'idp_item_completion_reviews.completion_submission_id',
+                'idp_item_completion_reviews.submission_version',
+                'idp_item_completion_reviews.review_step',
+                'idp_item_completion_reviews.decision',
+                'idp_item_completion_reviews.comment',
+                'idp_item_completion_reviews.review_data',
+                'idp_item_completion_reviews.decided_at',
+                'users.title as reviewer_title',
+                'users.name as reviewer_name'
+            )
+            ->orderByDesc('idp_item_completion_reviews.id')
+            ->get();
+        $completionReviews = $completionReviewRows
+            ->unique('completion_submission_id')
+            ->keyBy('completion_submission_id');
+        $completionReviewHistory = $completionReviewRows
+            ->groupBy('completion_submission_id')
+            ->map(fn ($reviews) => $reviews->reverse()->values());
+        $ownerIdsByItem = DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->whereIn('idp_items.id', $itemIds)
+            ->pluck('idps.user_id', 'idp_items.id');
+        $reviewerStepsByOwner = User::query()
+            ->whereIn('id', $ownerIdsByItem->values()->unique())
+            ->get()
+            ->mapWithKeys(fn (User $owner): array => [
+                $owner->id => $this->reviewerChainResolver->payloadForUser($owner, 'idp'),
+            ]);
+
+        return $activities->groupBy('idp_item_id')->map(function ($itemActivities, $itemId) use ($updates, $evidences, $completions, $completionReviews, $completionReviewHistory, $ownerIdsByItem, $reviewerStepsByOwner): array {
+            $completion = $completions[$itemId] ?? null;
+            $completionReview = $completion ? ($completionReviews[$completion->id] ?? null) : null;
+            $reviewData = $completionReview ? $this->decodeJsonObject($completionReview->review_data ?? null) : [];
+            $ownerId = (int) ($ownerIdsByItem[$itemId] ?? 0);
+            $currentReviewer = $completion
+                ? collect($reviewerStepsByOwner->get($ownerId, []))->firstWhere('step', (int) $completion->current_review_step)
+                : null;
+
+            $reviewHistory = $completion
+                ? ($completionReviewHistory[$completion->id] ?? collect())
+                : collect();
+
+            return $itemActivities->map(function (object $activity) use ($updates, $evidences, $completion, $completionReview, $reviewData, $currentReviewer, $reviewHistory): array {
+                return [
+                    'id' => (int) $activity->id,
+                    'name' => $activity->activity_name ?: 'กิจกรรมพัฒนา',
+                    'formCode' => $activity->form_code ?: '',
+                    'planDetails' => $this->decodeJsonObject($activity->form_details ?? null),
+                    'startDate' => $activity->start_date ?: '',
+                    'endDate' => $activity->end_date ?: '',
+                    'updates' => $updates->where('activity_id', $activity->id)->map(function (object $update) use ($evidences): array {
+                        return [
+                            'publicId' => $update->public_id,
+                            'topicIndex' => (int) ($update->topic_index ?? 0),
+                            'periodStart' => $update->period_start ?: '',
+                            'periodEnd' => $update->period_end ?: '',
+                            'progressNote' => $update->progress_note ?: '',
+                            'status' => $update->status,
+                            'submittedAt' => $this->isoUtcTimestamp($update->submitted_at),
+                            'evidences' => ($evidences[$update->id] ?? collect())->map(fn (object $evidence): array => [
+                                'publicId' => $evidence->public_id,
+                                'kind' => $evidence->kind,
+                                'name' => $evidence->original_name ?: ($evidence->description ?: 'หลักฐานประกอบ'),
+                                'description' => $evidence->description ?: '',
+                                'url' => $evidence->kind === 'link'
+                                    ? $evidence->url
+                                    : route('idp-progress.evidence.show', ['evidence' => $evidence->public_id]),
+                            ])->values()->all(),
+                        ];
+                    })->values()->all(),
+                    'completion' => $completion ? [
+                        'publicId' => $completion->public_id,
+                        'status' => $completion->status,
+                        'result' => $completion->result,
+                        'currentReviewStep' => $completion->current_review_step ? (int) $completion->current_review_step : null,
+                        'currentReviewerName' => $currentReviewer['name'] ?? null,
+                        'submissionVersion' => (int) $completion->submission_version,
+                        'submittedAt' => $this->isoUtcTimestamp($completion->submitted_at),
+                        'approvedAt' => $this->isoUtcTimestamp($completion->approved_at),
+                        'updatedAt' => $this->isoUtcTimestamp($completion->updated_at),
+                        'reviewHistory' => $reviewHistory->map(fn (object $review): array => [
+                            'submissionVersion' => (int) $review->submission_version,
+                            'reviewStep' => (int) $review->review_step,
+                            'reviewerName' => trim(($review->reviewer_title ?: '').$review->reviewer_name),
+                            'decision' => $review->decision,
+                            'comment' => $review->comment ?: '',
+                            'reviewData' => $this->decodeJsonObject($review->review_data ?? null),
+                            'decidedAt' => $this->isoUtcTimestamp($review->decided_at),
+                        ])->values()->all(),
+                        'review' => $completionReview ? [
+                            'reviewerName' => trim(($completionReview->reviewer_title ?: '').$completionReview->reviewer_name),
+                            'decision' => $completionReview->decision,
+                            'comment' => $completionReview->comment ?: '',
+                            'operationStatus' => $reviewData['operationStatus'] ?? null,
+                            'operationReason' => $reviewData['operationReason'] ?? '',
+                            'achievementStatus' => $reviewData['achievementStatus'] ?? null,
+                            'achievementNote' => $reviewData['achievementNote'] ?? '',
+                            'decidedAt' => $this->isoUtcTimestamp($completionReview->decided_at),
+                        ] : null,
+                    ] : null,
+                ];
+            })->values()->all();
+        })->all();
     }
 
     private function activeRoundId(): ?int
@@ -1993,7 +2608,9 @@ class DashboardController extends Controller
 
     private function decodeExpectedLevels($levels): array
     {
-        if (!$levels) return [];
+        if (! $levels) {
+            return [];
+        }
 
         $decoded = is_string($levels) ? json_decode($levels, true) : $levels;
 
@@ -2008,7 +2625,7 @@ class DashboardController extends Controller
 
     private function idpLearningMethods()
     {
-        $columns = ['id', 'code', 'focus_type', 'title', 'template_file_name', 'is_active'];
+        $columns = ['id', 'focus_type', 'title', 'template_file_name', 'is_active'];
         if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
             $columns[] = 'form_code';
         }
@@ -2022,7 +2639,6 @@ class DashboardController extends Controller
             ->get()
             ->map(fn (object $item) => [
                 'id' => $item->id,
-                'code' => $item->code ?? '',
                 'focusType' => $item->focus_type,
                 'title' => $item->title,
                 'formCode' => $item->form_code ?? '',
@@ -2048,7 +2664,7 @@ class DashboardController extends Controller
             ],
         ];
 
-        if (!Schema::hasTable('learning_catalog_delivery_types')) {
+        if (! Schema::hasTable('learning_catalog_delivery_types')) {
             return array_values($defaults);
         }
 

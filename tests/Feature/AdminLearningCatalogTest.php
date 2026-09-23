@@ -12,6 +12,20 @@ class AdminLearningCatalogTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_non_admin_cannot_manage_learning_catalog(): void
+    {
+        $roleId = DB::table('roles')->where('key', 'hr')->value('id')
+            ?: DB::table('roles')->insertGetId([
+                'key' => 'hr', 'name_th' => 'ทรัพยากรบุคคล', 'name_en' => 'HR',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        $hr = User::factory()->create(['role_id' => $roleId, 'role_key' => 'hr']);
+
+        $this->actingAs($hr)
+            ->postJson(route('admin.learning-catalogs.store'), [])
+            ->assertForbidden();
+    }
+
     public function test_admin_can_create_update_and_delete_learning_catalog(): void
     {
         $adminUser = $this->adminUser();

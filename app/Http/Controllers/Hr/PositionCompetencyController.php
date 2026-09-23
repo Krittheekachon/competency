@@ -19,6 +19,7 @@ class PositionCompetencyController extends Controller
     {
         $data = $request->validate([
             'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'competency_id' => ['nullable', 'integer', 'exists:competencies,id'],
             'competency_ids' => ['nullable', 'array'],
             'competency_ids.*' => ['integer', 'exists:competencies,id'],
@@ -37,6 +38,7 @@ class PositionCompetencyController extends Controller
         $now = now();
 
         $rows = $competencyIds->map(fn (int $competencyId) => [
+            'assessment_round_id' => $data['assessment_round_id'],
             'position_id' => $data['position_id'],
             'competency_id' => $competencyId,
             'created_at' => $now,
@@ -44,7 +46,7 @@ class PositionCompetencyController extends Controller
         ])->all();
 
         DB::table('position_competencies')->insertOrIgnore($rows);
-        $this->syncUsersForPosition((int) $data['position_id']);
+        $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
 
         return back()->with('success', 'ผูกสมรรถนะกับตำแหน่งเรียบร้อยแล้ว');
     }
@@ -53,14 +55,16 @@ class PositionCompetencyController extends Controller
     {
         $data = $request->validate([
             'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
         ]);
 
         DB::table('position_competencies')
             ->where('position_id', $data['position_id'])
             ->where('competency_id', $data['competency_id'])
+            ->where('assessment_round_id', $data['assessment_round_id'])
             ->delete();
-        $this->syncUsersForPosition((int) $data['position_id']);
+        $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
 
         return back()->with('success', 'ลบสมรรถนะออกจากตำแหน่งเรียบร้อยแล้ว');
     }
@@ -69,6 +73,7 @@ class PositionCompetencyController extends Controller
     {
         $data = $request->validate([
             'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'required_fc_count' => ['required', 'integer', 'min:0'],
         ]);
 
@@ -76,6 +81,7 @@ class PositionCompetencyController extends Controller
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('position_competencies.position_id', $data['position_id'])
+            ->where('position_competencies.assessment_round_id', $data['assessment_round_id'])
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->count();
 
@@ -86,7 +92,10 @@ class PositionCompetencyController extends Controller
         }
 
         DB::table('position_fc_selection_rules')->updateOrInsert(
-            ['position_id' => $data['position_id']],
+            [
+                'assessment_round_id' => $data['assessment_round_id'],
+                'position_id' => $data['position_id'],
+            ],
             [
                 'required_fc_count' => (int) $data['required_fc_count'],
                 'updated_at' => now(),
@@ -95,6 +104,69 @@ class PositionCompetencyController extends Controller
         );
 
         return back()->with('success', 'บันทึกจำนวน FC ที่ต้องเลือกเรียบร้อยแล้ว');
+    }
+
+    public function copyFromRound(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'source_round_id' => ['required', 'integer', 'exists:assessment_rounds,id', 'different:target_round_id'],
+            'target_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
+        ]);
+
+        $now = now();
+        $sourceRows = DB::table('position_competencies')
+            ->where('assessment_round_id', $data['source_round_id'])
+            ->get(['position_id', 'competency_id']);
+        $sourceRules = DB::table('position_fc_selection_rules')
+            ->where('assessment_round_id', $data['source_round_id'])
+            ->get(['position_id', 'required_fc_count']);
+
+        DB::transaction(function () use ($data, $sourceRows, $sourceRules, $now): void {
+            DB::table('position_competencies')
+                ->where('assessment_round_id', $data['target_round_id'])
+                ->delete();
+            DB::table('position_fc_selection_rules')
+                ->where('assessment_round_id', $data['target_round_id'])
+                ->delete();
+
+            if ($sourceRows->isNotEmpty()) {
+                DB::table('position_competencies')->insert($sourceRows->map(fn (object $row): array => [
+                    'assessment_round_id' => $data['target_round_id'],
+                    'position_id' => $row->position_id,
+                    'competency_id' => $row->competency_id,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])->all());
+            }
+
+            foreach ($sourceRules as $rule) {
+                DB::table('position_fc_selection_rules')->insert([
+                    'assessment_round_id' => $data['target_round_id'],
+                    'position_id' => $rule->position_id,
+                    'required_fc_count' => $rule->required_fc_count,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+        });
+
+        if ($this->isActiveRound((int) $data['target_round_id'])) {
+            $this->competencyAssessmentSync->syncAllActiveUsers();
+        }
+
+        return back()->with('success', "นำเข้าสมรรถนะประจำตำแหน่ง {$sourceRows->count()} รายการเรียบร้อยแล้ว");
+    }
+
+    private function syncUsersForPositionIfActive(int $positionId, int $roundId): void
+    {
+        if ($this->isActiveRound($roundId)) {
+            $this->syncUsersForPosition($positionId);
+        }
+    }
+
+    private function isActiveRound(int $roundId): bool
+    {
+        return DB::table('assessment_rounds')->where('id', $roundId)->where('is_active', true)->exists();
     }
 
     private function syncUsersForPosition(int $positionId): void

@@ -28,8 +28,9 @@ class ExpectedLevelResolver
 
         $levelIds = $this->levelIdsForUser($user);
         $jobFamilyIds = $this->jobFamilyIdsForUser($user);
+        $roundId = $this->activeRoundId();
 
-        if ($levelIds->isEmpty()) {
+        if (! $roundId || $levelIds->isEmpty()) {
             return $this->expectedLevelCache[$cacheKey] = null;
         }
 
@@ -38,6 +39,7 @@ class ExpectedLevelResolver
             : DB::table('hr_expectations')
                 ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
                 ->where('hr_expectations.competency_id', $competencyId)
+                ->where('hr_expectations.assessment_round_id', $roundId)
                 ->whereIn('hr_expectations.level_id', $levelIds)
                 ->whereIn('hr_expectations.job_family_id', $jobFamilyIds)
                 ->selectRaw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
@@ -54,6 +56,7 @@ class ExpectedLevelResolver
             && DB::table('position_competencies')
                 ->whereIn('position_id', $positionIds)
                 ->where('competency_id', $competencyId)
+                ->where('assessment_round_id', $roundId)
                 ->exists();
 
         if (! $hasPositionCompetency) {
@@ -214,5 +217,12 @@ class ExpectedLevelResolver
     private function userCacheKey(User $user): string
     {
         return (string) ($user->getKey() ?? spl_object_id($user));
+    }
+
+    private function activeRoundId(): ?int
+    {
+        $id = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
+
+        return $id ? (int) $id : null;
     }
 }

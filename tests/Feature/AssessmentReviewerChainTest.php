@@ -16,6 +16,12 @@ class AssessmentReviewerChainTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->assessmentRoundId();
+    }
+
     public function test_employee_role_reviewer_sees_assessment_approval_module_from_runtime_chain(): void
     {
         $reviewer = User::factory()->create([
@@ -35,7 +41,7 @@ class AssessmentReviewerChainTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Super/Dashboard')
+                ->component('Employee/Dashboard')
                 ->where('roleKey', 'employee')
                 ->where('assessmentApprovalModule.enabled', true)
                 ->where('assessmentApprovalModule.pendingCount', 1)
@@ -50,6 +56,83 @@ class AssessmentReviewerChainTest extends TestCase
                         && $user['approvalOrg'] === 'ทดสอบหน่วย'
                         && $user['displayOrganization'] === 'ทดสอบหน่วย'
                 ))
+            );
+    }
+
+    public function test_employee_assigned_only_to_idp_chain_keeps_employee_dashboard_and_sees_idp_review_module(): void
+    {
+        $reviewer = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $reviewer->id,
+            'step_order' => 1,
+            'chain_type' => 'idp',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($reviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Employee/Dashboard')
+                ->where('roleKey', 'employee')
+                ->where('assessmentApprovalModule.enabled', false)
+                ->where('idpReviewModule.enabled', true)
+                ->where('idpReviewModule.assignmentCount', 1)
+            );
+    }
+
+    public function test_reviewer_assignment_keeps_each_non_head_role_on_its_own_dashboard(): void
+    {
+        $cases = [
+            'admin' => 'Admin/Dashboard',
+            'hr' => 'HR/Dashboard',
+        ];
+
+        foreach ($cases as $roleKey => $component) {
+            $reviewer = User::factory()->create([
+                'role_id' => $this->roleId($roleKey),
+            ]);
+            $employee = User::factory()->create([
+                'role_id' => $this->roleId('employee'),
+            ]);
+            $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+            $competencyId = $this->competencyId('CC-'.strtoupper($roleKey).'-REVIEWER');
+            $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
+            $assessment->forceFill(['last_draft_saved_at' => now()])->save();
+
+            $this->actingAs($reviewer)
+                ->get(route('dashboard'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component($component)
+                    ->where('assessmentApprovalModule.enabled', true)
+                    ->where('assessmentApprovalModule.items.0.employeeId', $employee->id)
+                );
+        }
+    }
+
+    public function test_head_without_runtime_assignment_does_not_receive_review_modules(): void
+    {
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+
+        $this->actingAs($supervisor)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Super/Dashboard')
+                ->where('assessmentApprovalModule.enabled', false)
+                ->where('fcTopicApprovalModule.enabled', false)
+                ->where('idpReviewModule.enabled', false)
             );
     }
 
@@ -78,7 +161,7 @@ class AssessmentReviewerChainTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Super/Dashboard')
+                ->component('Employee/Dashboard')
                 ->where('assessmentApprovalModule.enabled', true)
                 ->where('assessmentApprovalModule.pendingCount', 0)
                 ->where('assessmentApprovalModule.items.0.reviewStep', 2)
@@ -160,6 +243,18 @@ class AssessmentReviewerChainTest extends TestCase
             'competency_id' => $competencyId,
             'status' => 'dept_evaluated',
         ]);
+
+        $assessment->forceFill(['last_draft_saved_at' => now()])->save();
+
+        $this->actingAs($employee)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.reviewerId', $firstReviewer->id)
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.reviewStep', 1)
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.decision', 'approved')
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.comment', '')
+            );
     }
 
     public function test_third_evaluator_approval_completes_assessment(): void
@@ -292,6 +387,12 @@ class AssessmentReviewerChainTest extends TestCase
                 ->where('currentUserCompetencyGaps.0.reviewerComments.0.reviewerPosition', 'หัวหน้าหน่วย')
                 ->where('currentUserCompetencyGaps.0.reviewerComments.0.reviewStep', 1)
                 ->where('currentUserCompetencyGaps.0.reviewerComments.0.comment', $reviewerComment)
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.reviewerName', 'นายหัวหน้าทดสอบ')
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.reviewerPosition', 'หัวหน้าหน่วย')
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.reviewStep', 1)
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.decision', 'approved')
+                ->where('currentUserCompetencyGaps.0.reviewHistory.0.comment', $reviewerComment)
+                ->has('currentUserCompetencyGaps.0.reviewHistory.0.submittedAt')
             );
     }
 
@@ -543,6 +644,11 @@ class AssessmentReviewerChainTest extends TestCase
 
     private function assessmentRoundId(): int
     {
+        $existing = DB::table('assessment_rounds')->where('is_active', true)->value('id');
+        if ($existing) {
+            return (int) $existing;
+        }
+
         return (int) DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ',
             'year' => 2568,

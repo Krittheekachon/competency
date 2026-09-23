@@ -82,10 +82,15 @@ class CompetencyAssessmentSyncService
             ? $this->activeAssessmentRoundId()
             : null;
 
+        if (Schema::hasColumn('assessments', 'assessment_round_id') && ! $assessmentRoundId) {
+            return;
+        }
+
         foreach ($competencyIds as $competencyId) {
             $attributes = [
                     'user_id' => $userId,
                     'competency_id' => $competencyId,
+                    'assessment_round_id' => $assessmentRoundId,
                     'status' => 'draft',
                     'score' => 0,
                     'note' => '',
@@ -93,15 +98,12 @@ class CompetencyAssessmentSyncService
                     'updated_at' => $now,
             ];
 
-            if ($assessmentRoundId) {
-                $attributes['assessment_round_id'] = $assessmentRoundId;
-            }
-
             DB::table('assessments')->insertOrIgnore($attributes);
         }
 
         DB::table('assessments')
             ->where('user_id', $userId)
+            ->when($assessmentRoundId, fn ($query) => $query->where('assessment_round_id', $assessmentRoundId))
             ->when($competencyIds->isNotEmpty(), fn ($query) => $query->whereNotIn('competency_id', $competencyIds))
             ->where('status', 'draft')
             ->where(function ($query) {
@@ -118,7 +120,7 @@ class CompetencyAssessmentSyncService
             ->delete();
     }
 
-    private function activeAssessmentRoundId(): int
+    private function activeAssessmentRoundId(): ?int
     {
         $roundId = DB::table('assessment_rounds')
             ->where('is_active', true)
@@ -126,21 +128,16 @@ class CompetencyAssessmentSyncService
             ->orderByDesc('id')
             ->value('id');
 
-        if ($roundId) {
-            return (int) $roundId;
-        }
-
-        return (int) DB::table('assessment_rounds')->insertGetId([
-            'name' => 'รอบประเมินปัจจุบัน',
-            'year' => (int) now()->format('Y') + 543,
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        return $roundId ? (int) $roundId : null;
     }
 
     private function competencyIdsForUser(User $user): Collection
     {
+        $roundId = $this->activeAssessmentRoundId();
+        if (! $roundId) {
+            return collect();
+        }
+
         $levelIds = $this->levelIdsForUser($user);
         $positionIds = $this->positionIdsForUser($user);
 
@@ -153,6 +150,7 @@ class CompetencyAssessmentSyncService
         $expectationIds = ($levelIds->isEmpty() || $jobFamilyIds->isEmpty())
             ? collect()
             : DB::table('hr_expectations')
+                ->where('assessment_round_id', $roundId)
                 ->whereIn('level_id', $levelIds)
                 ->whereIn('job_family_id', $jobFamilyIds)
                 ->pluck('competency_id');
@@ -160,6 +158,7 @@ class CompetencyAssessmentSyncService
         $mappedPositionIds = $positionIds->isEmpty()
             ? collect()
             : DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
                 ->whereIn('position_id', $positionIds)
                 ->pluck('position_id')
                 ->unique()
@@ -175,6 +174,7 @@ class CompetencyAssessmentSyncService
         $positionCompetencyIds = $positionIds->isEmpty()
             ? collect()
             : DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
                 ->whereIn('position_id', $positionIds)
                 ->pluck('competency_id');
 

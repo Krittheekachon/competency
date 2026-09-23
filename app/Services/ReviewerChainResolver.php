@@ -85,6 +85,29 @@ class ReviewerChainResolver
         return null;
     }
 
+    public function userIdsForReviewer(object $reviewer, string $chainType = 'assessment'): array
+    {
+        $reviewerId = (int) ($reviewer->reviewer_id ?? $reviewer->id ?? 0);
+
+        if ($reviewerId <= 0 || ! Schema::hasTable('user_reviewer_steps')) {
+            return [];
+        }
+
+        $query = DB::table('user_reviewer_steps')
+            ->where('reviewer_id', $reviewerId);
+
+        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+            $query->where('chain_type', $chainType);
+        }
+
+        return $query
+            ->distinct()
+            ->orderBy('user_id')
+            ->pluck('user_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+    }
+
     public function pendingStatusForStep(int $step): string
     {
         return match ($step) {

@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
@@ -32,7 +33,7 @@ class UserController extends Controller
         DB::transaction(function () use ($data, &$user): void {
             $user = User::create([
                 ...$this->userAttributes($data),
-                'password' => Hash::make(Str::password(32)),
+                'password' => Hash::make($data['password'] ?? Str::password(32)),
             ]);
 
             $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
@@ -46,10 +47,18 @@ class UserController extends Controller
 
     public function update(Request $request, User $user): RedirectResponse
     {
+        $usernameProvided = $request->exists('username');
         $data = $this->validatedData($request, $user);
 
-        DB::transaction(function () use ($user, $data): void {
-            $user->update($this->userAttributes($data));
+        DB::transaction(function () use ($user, $data, $usernameProvided): void {
+            $attributes = $this->userAttributes($data);
+            if (! $usernameProvided) {
+                unset($attributes['username']);
+            }
+            if (filled($data['password'] ?? null)) {
+                $attributes['password'] = Hash::make($data['password']);
+            }
+            $user->update($attributes);
             $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
             $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
         });
@@ -87,6 +96,7 @@ class UserController extends Controller
     {
         $request->merge([
             'r' => $this->normalizeRoleKey((string) $request->input('r', '')),
+            'username' => Str::lower(trim((string) $request->input('username', ''))),
         ]);
 
         $roleKeys = DB::table('roles')->pluck('key')->all();
@@ -108,6 +118,21 @@ class UserController extends Controller
                 'email',
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user?->id),
+            ],
+            'username' => [
+                'nullable',
+                Rule::requiredIf(fn (): bool => ! $user && $request->filled('password')),
+                'string',
+                'min:3',
+                'max:50',
+                'regex:/^[a-z0-9._-]+$/',
+                Rule::unique('users', 'username')->ignore($user?->id),
+            ],
+            'password' => [
+                'nullable',
+                Rule::requiredIf(fn (): bool => ! $user && $request->filled('username')),
+                'confirmed',
+                Password::min(8),
             ],
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => ['required', 'string', 'max:120'],
@@ -178,6 +203,7 @@ class UserController extends Controller
         $name = trim($data['fn'].' '.$data['ln']);
         $attributes = [
             'sso' => $data['sso'],
+            'username' => $data['username'] ?: null,
             'name' => $name,
             'title' => $data['t'] ?? null,
             'first_name_th' => $data['fn'],

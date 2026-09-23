@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Assessment;
 use App\Models\User;
+use App\Services\AssessmentRoundWindow;
 use App\Services\ExpectedLevelResolver;
 use App\Services\NotificationService;
 use App\Services\ReviewerChainResolver;
@@ -19,6 +20,7 @@ class AssessmentController extends Controller
         private ExpectedLevelResolver $expectedLevelResolver,
         private NotificationService $notifications,
         private ReviewerChainResolver $reviewerChainResolver,
+        private AssessmentRoundWindow $assessmentRoundWindow,
     )
     {
     }
@@ -26,11 +28,13 @@ class AssessmentController extends Controller
     public function draft(Request $request)
     {
         $data = $this->validatedAssessmentPayload($request);
+        $this->assessmentRoundWindow->assertSelfAssessmentOpen();
 
         $this->assertCanSelfAssess($request->user());
         $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         $savedAt = null;
+        $roundId = $this->activeAssessmentRoundId();
         DB::transaction(function () use ($request, $data, &$savedAt): void {
             $savedAt = $this->persistSelfAssessment($request, $data, false);
         });
@@ -42,6 +46,7 @@ class AssessmentController extends Controller
             })
             ->where('assessments.user_id', $request->user()->id)
             ->where('assessments.competency_id', $data['competency_id'])
+            ->where('assessments.assessment_round_id', $roundId)
             ->value(DB::raw('COALESCE(competency_gaps.status, assessments.status)'));
 
         return response()->json([
@@ -54,6 +59,7 @@ class AssessmentController extends Controller
     public function save(Request $request)
     {
         $data = $this->validatedAssessmentPayload($request);
+        $this->assessmentRoundWindow->assertSelfAssessmentOpen();
 
         $this->assertCanSelfAssess($request->user());
         $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
@@ -79,8 +85,10 @@ class AssessmentController extends Controller
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
         ]);
 
+        $roundId = $this->activeAssessmentRoundId();
         $assessment = Assessment::where('user_id', auth()->id())
             ->where('competency_id', $request->query('competency_id'))
+            ->where('assessment_round_id', $roundId)
             ->first();
 
         if (! $assessment) {
@@ -136,6 +144,7 @@ class AssessmentController extends Controller
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
             'comment' => ['nullable', 'string'],
         ]);
+        $this->assessmentRoundWindow->assertSupervisorAssessmentOpen();
         $comment = trim((string) ($data['comment'] ?? ''));
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
@@ -145,6 +154,7 @@ class AssessmentController extends Controller
         DB::transaction(function () use ($data, $decision, $request, $comment): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
+                ->where('assessment_round_id', $this->activeAssessmentRoundId())
                 ->pluck('id');
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
@@ -198,6 +208,7 @@ class AssessmentController extends Controller
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
             'comment' => ['required', 'string', 'min:1'],
         ]);
+        $this->assessmentRoundWindow->assertSupervisorAssessmentOpen();
         $comment = trim((string) $data['comment']);
         if ($comment === '') {
             throw ValidationException::withMessages([
@@ -211,6 +222,7 @@ class AssessmentController extends Controller
         DB::transaction(function () use ($data, $decision, $request, $comment): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
+                ->where('assessment_round_id', $this->activeAssessmentRoundId())
                 ->pluck('id');
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
@@ -272,12 +284,14 @@ class AssessmentController extends Controller
     private function assertFcTopicsApprovedForAssessment($user, int $competencyId): void
     {
         $positionId = (int) ($user->position_id ?? 0);
+        $roundId = $this->activeAssessmentRoundId();
         if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
             return;
         }
 
         $requiredCount = (int) DB::table('position_fc_selection_rules')
             ->where('position_id', $positionId)
+            ->where('assessment_round_id', $roundId)
             ->value('required_fc_count');
 
         if ($requiredCount <= 0) {
@@ -288,6 +302,7 @@ class AssessmentController extends Controller
             ? DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
                 ->where('position_id', $positionId)
+                ->where('assessment_round_id', $roundId)
                 ->first()
             : null;
 
@@ -333,12 +348,14 @@ class AssessmentController extends Controller
     {
         $userId = auth()->id();
         $competencyId = (int) $data['competency_id'];
+        $roundId = $this->activeAssessmentRoundId();
         $checkedIndicators = collect($data['checked_indicators'])
             ->filter()
             ->filter(fn ($checked, string $key): bool => str_starts_with($key, $competencyId.':'))
             ->all();
         $existingAssessment = Assessment::where('user_id', $userId)
             ->where('competency_id', $competencyId)
+            ->where('assessment_round_id', $roundId)
             ->first();
         $existingGapStatus = $existingAssessment
             ? DB::table('competency_gaps')
@@ -361,6 +378,7 @@ class AssessmentController extends Controller
         $assessmentAttributes = [
             'user_id' => $userId,
             'competency_id' => $competencyId,
+            'assessment_round_id' => $roundId,
         ];
         $assessmentValues = [
             'score' => $data['score'],
@@ -369,10 +387,6 @@ class AssessmentController extends Controller
             'last_draft_saved_at' => $savedAt,
             'self_submitted_at' => $submit ? $savedAt : $existingAssessment?->self_submitted_at,
         ];
-
-        if (Schema::hasColumn('assessments', 'assessment_round_id')) {
-            $assessmentValues['assessment_round_id'] = $this->activeAssessmentRoundId();
-        }
 
         $assessment = Assessment::updateOrCreate($assessmentAttributes, $assessmentValues);
 
@@ -421,26 +435,7 @@ class AssessmentController extends Controller
 
     private function activeAssessmentRoundId(): int
     {
-        $existingId = DB::table('assessment_rounds')
-            ->where('is_active', true)
-            ->orderByDesc('id')
-            ->value('id')
-            ?: DB::table('assessment_rounds')
-                ->orderByDesc('year')
-                ->orderByDesc('id')
-                ->value('id');
-
-        if ($existingId) {
-            return (int) $existingId;
-        }
-
-        return DB::table('assessment_rounds')->insertGetId([
-            'name' => 'รอบประเมิน',
-            'year' => (int) now()->format('Y'),
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        return (int) $this->assessmentRoundWindow->activeRound()->id;
     }
 
     private function normalizeRoleKey(string $roleKey): string

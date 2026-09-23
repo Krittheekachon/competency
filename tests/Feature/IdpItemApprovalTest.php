@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class IdpItemApprovalTest extends TestCase
@@ -62,6 +63,47 @@ class IdpItemApprovalTest extends TestCase
         ]);
     }
 
+    public function test_assigned_idp_reviewer_can_load_latest_activity_form_details(): void
+    {
+        [$supervisor, $itemId] = $this->submittedItem();
+        $activityId = DB::table('idp_activities')->insertGetId([
+            'idp_item_id' => $itemId,
+            'activity_name' => '03 · การสอนงาน (Coaching)',
+            'form_code' => 'form_5_coaching',
+            'form_details' => json_encode([
+                'detail' => ['coachType' => 'ผู้บังคับบัญชา'],
+                'planRows' => [['topic' => 'ฝึกการให้บริการ', 'sessionCount' => 4]],
+            ], JSON_UNESCAPED_UNICODE),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($supervisor)
+            ->getJson(route('idp-activities.review-detail', ['activity' => $activityId]))
+            ->assertOk()
+            ->assertJsonPath('formCode', 'form_5_coaching')
+            ->assertJsonPath('formDetails.detail.coachType', 'ผู้บังคับบัญชา')
+            ->assertJsonPath('formDetails.planRows.0.topic', 'ฝึกการให้บริการ');
+    }
+
+    public function test_unassigned_user_cannot_load_activity_form_details(): void
+    {
+        [, $itemId] = $this->submittedItem();
+        $activityId = DB::table('idp_activities')->insertGetId([
+            'idp_item_id' => $itemId,
+            'activity_name' => 'กิจกรรมทดสอบ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $otherUser = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+
+        $this->actingAs($otherUser)
+            ->getJson(route('idp-activities.review-detail', ['activity' => $activityId]))
+            ->assertForbidden();
+    }
+
     public function test_assigned_supervisor_must_include_comment_when_rejecting(): void
     {
         [$supervisor, $itemId] = $this->submittedItem();
@@ -104,6 +146,10 @@ class IdpItemApprovalTest extends TestCase
     public function test_rejection_records_history_and_returns_item_to_employee(): void
     {
         [$supervisor, $itemId] = $this->submittedItem();
+        $supervisor->forceFill([
+            'title' => 'นาย',
+            'name' => 'หัวหน้าทดสอบ',
+        ])->save();
 
         $this->actingAs($supervisor)
             ->post(route('idp-items.reject'), [
@@ -125,6 +171,18 @@ class IdpItemApprovalTest extends TestCase
             'reviewer_id' => $supervisor->id,
             'decision' => 'rejected',
         ]);
+
+        $employee = User::query()->findOrFail((int) DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idp_items.id', $itemId)
+            ->value('idps.user_id'));
+
+        $this->actingAs($employee)
+            ->get(route('dashboard'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentUserIdp.items.0.status', 'revision_required')
+                ->where('currentUserIdp.items.0.rejectComment', 'แก้ช่วงเวลาดำเนินการ')
+                ->where('currentUserIdp.items.0.rejectReviewerName', 'นายหัวหน้าทดสอบ'));
     }
 
     public function test_migration_backfills_submitted_item_to_first_configured_reviewer_slot(): void

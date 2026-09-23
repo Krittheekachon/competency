@@ -17,6 +17,7 @@ import EmployeeGap from '../Employee/EmployeeGap.vue';
 import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
+import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
     pageTitle: {
@@ -97,6 +98,9 @@ const userForm = ref({
     fe: '',
     le: '',
     em: '',
+    username: '',
+    password: '',
+    password_confirmation: '',
     ph: '',
     w: '',
     d: '',
@@ -168,6 +172,7 @@ const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาก
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
 const hrCatalogItems = computed(() => page.props.hrCatalogItems || []);
+const currentUserIdp = computed(() => page.props.currentUserIdp || null);
 const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const idpDeliveryTypeSettings = computed(() => page.props.idpDeliveryTypeSettings || []);
 const roleLabelsByKey = {
@@ -256,23 +261,37 @@ const legacyLevelOption = computed(() => {
 });
 const currentPageTitle = computed(() => PAGE_TITLES[activePage.value] || props.pageTitle);
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
+const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
+const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [] });
+const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
 const visibleAdminPageIds = new Set([
     'admin-users',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
+    'admin-fc-topic-review',
+    'admin-assessment-review',
+    'admin-idp-review',
 ]);
 const currentNavConfig = computed(() => {
     const sections = NAV_CONFIG[currentRole.value] || [];
 
     if (currentRole.value !== 'admin') return sections;
 
-    return sections
+    const visibleSections = sections
         .map((section) => ({
             ...section,
             items: (section.items || []).filter((item) => visibleAdminPageIds.has(item.id)),
         }))
         .filter((section) => section.items.length > 0);
+    const assignedItems = [
+        ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled) ? [{ id: 'admin-assessment-review', ic: '', lb: 'อนุมัติการประเมิน' }] : []),
+        ...(idpReviewModule.value.enabled ? [{ id: 'admin-idp-review', ic: '', lb: 'อนุมัติแผนและผล IDP' }] : []),
+    ];
+
+    return assignedItems.length
+        ? [...visibleSections, { sec: 'งานที่ได้รับมอบหมาย', items: assignedItems }]
+        : visibleSections;
 });
 const implementedAdminPages = new Set([
     'emp-assess',
@@ -284,6 +303,9 @@ const implementedAdminPages = new Set([
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
+    'admin-fc-topic-review',
+    'admin-assessment-review',
+    'admin-idp-review',
 ]);
 
 watchEffect(() => {
@@ -349,7 +371,8 @@ watchEffect(() => {
     }
 });
 const currentProfileUser = computed(() =>
-    users.value.find((user) => user.r === currentRole.value)
+    page.props.currentUser
+    || users.value.find((user) => user.r === currentRole.value)
     || users.value[0]
     || {
         n: page.props.auth?.user?.name || currentRoleData.value.name,
@@ -1161,6 +1184,9 @@ const resetUserForm = (data = null) => {
         fe: data?.fe || '',
         le: data?.le || '',
         em: data?.em || '',
+        username: data?.username || '',
+        password: '',
+        password_confirmation: '',
         ph: data?.ph || '',
         w: data?.w || worklines.value[0] || '',
         d: data?.d || '',
@@ -1216,6 +1242,16 @@ const saveUser = () => {
         return;
     }
 
+    if (!form.db_id && (!form.username.trim() || !form.password)) {
+        alert('กรุณากำหนด Username และ Password สำหรับเข้าสู่ระบบ');
+        return;
+    }
+
+    if (form.password && form.password !== form.password_confirmation) {
+        alert('Password และการยืนยัน Password ไม่ตรงกัน');
+        return;
+    }
+
     const missingOrganization = !form.w
         || !form.job
         || (isSupportWorkline.value && (!form.dept || !form.unit));
@@ -1254,6 +1290,9 @@ const saveUser = () => {
         fe: form.fe.trim(),
         le: form.le.trim(),
         em: form.em.trim(),
+        username: form.username.trim().toLowerCase(),
+        password: form.password,
+        password_confirmation: form.password_confirmation,
         ph: form.ph.trim(),
         t: form.t.trim(),
         w: form.w.trim(),
@@ -1384,16 +1423,48 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :competencies="page.props.currentUserCompetencies || []"
+                    :gaps="page.props.currentUserCompetencyGaps || []"
+                    :user="currentProfileUser"
                 />
 
                 <EmployeeIDP
                     v-else-if="activePage === 'emp-idp'"
                     :learning-methods="learningMethods"
+                    :idp-learning-methods="idpLearningMethods"
+                    :learning-catalogs="hrCatalogItems"
+                    :gaps="page.props.currentUserCompetencyGaps || []"
+                    :idp="currentUserIdp"
+                    :user="currentProfileUser"
                 />
 
                 <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'admin-fc-topic-review' && fcTopicApprovalModule.enabled"
+                    embedded
+                    embedded-page="dh-fc-topic-approval"
+                    role-key="admin"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'admin-assessment-review' && (fcTopicApprovalModule.enabled || assessmentApprovalModule.enabled)"
+                    embedded
+                    embedded-page="dh-assess"
+                    role-key="admin"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'admin-idp-review' && idpReviewModule.enabled"
+                    embedded
+                    embedded-page="dh-idp"
+                    role-key="admin"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
 
                 <AdminUsers
                     v-else-if="activePage === 'admin-users'"
@@ -1507,6 +1578,44 @@ const logout = () => router.post(route('logout'));
                 <div class="fg">
                     <label class="lbl req">ID</label>
                     <input v-model="userForm.sso" class="inp modal-input" placeholder="เช่น 64XXXX หรือ stu_XXXXXXX" />
+                </div>
+
+                <div class="modal-section-label">ข้อมูลเข้าสู่ระบบ</div>
+                <div class="admin-user-note login-account-note">
+                    Username ใช้เข้าสู่ระบบแทนอีเมล{{ userForm.db_id ? ' · หากไม่ต้องการเปลี่ยนรหัสผ่าน ให้เว้นช่อง Password ไว้' : '' }}
+                </div>
+                <div class="modal-grid">
+                    <div class="fg">
+                        <label class="lbl" :class="{ req: !userForm.db_id }">Username</label>
+                        <input
+                            v-model="userForm.username"
+                            autocomplete="off"
+                            class="inp modal-input"
+                            placeholder="เช่น somchai.k"
+                        />
+                    </div>
+                    <div class="fg">
+                        <label class="lbl" :class="{ req: !userForm.db_id }">Password</label>
+                        <input
+                            v-model="userForm.password"
+                            autocomplete="new-password"
+                            class="inp modal-input"
+                            :placeholder="userForm.db_id ? 'เว้นว่างเพื่อใช้รหัสเดิม' : 'อย่างน้อย 8 ตัวอักษร'"
+                            type="password"
+                        />
+                    </div>
+                </div>
+                <div class="modal-grid single-col">
+                    <div class="fg">
+                        <label class="lbl" :class="{ req: !userForm.db_id }">ยืนยัน Password</label>
+                        <input
+                            v-model="userForm.password_confirmation"
+                            autocomplete="new-password"
+                            class="inp modal-input"
+                            placeholder="กรอก Password อีกครั้ง"
+                            type="password"
+                        />
+                    </div>
                 </div>
 
                 <div class="modal-grid">

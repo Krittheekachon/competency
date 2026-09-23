@@ -2,6 +2,8 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import AssessmentSummaryBand from '../../Components/AssessmentSummaryBand.vue';
+import FacultyOverview from '../Analytics/FacultyOverview.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
 import EmployeeGap from '../Employee/EmployeeGap.vue';
@@ -9,11 +11,14 @@ import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
 import IdpItemApproval from './IdpItemApproval.vue';
+import IdpActivityProgressReview from './IdpActivityProgressReview.vue';
 import FcTopicApproval from '../Employee/FcTopicApproval.vue';
 const selectedEmployee = ref(null);
 const props = defineProps({
     roleKey: { type: String, default: null },
     idpReviewItems: { type: Array, default: () => [] },
+    embedded: { type: Boolean, default: false },
+    embeddedPage: { type: String, default: '' },
 });
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -24,9 +29,25 @@ const normalizeRoleKey = (role) => ({
     manager_dept: 'dept_head',
     manager: 'dean',
 }[role] || role || 'dept_head');
-const defaultPageForRole = () => 'dh-assess';
+const defaultPageForRole = () => 'emp-assess';
 
 const page = usePage();
+const activeCycleName = computed(() => page.props.activeCycleName || 'รอบประเมินปัจจุบัน');
+const idpTeamTab = ref('approval');
+const uniqueIdpPersonCount = (items) => new Set(items.map((item) => String(item.userId || item.userSso || item.userName))).size;
+const idpApprovalCount = computed(() => uniqueIdpPersonCount(props.idpReviewItems.filter((item) => item.canReview)));
+const idpProgressItems = computed(() => page.props.idpProgressReviewItems || []);
+const teamIdpAnalytics = computed(() => page.props.teamIdpAnalytics || null);
+const idpTrackingCount = computed(() => Number(
+    teamIdpAnalytics.value?.idpSummary?.requiredEmployees
+    ?? uniqueIdpPersonCount(idpProgressItems.value),
+));
+const idpOverdueCount = computed(() => uniqueIdpPersonCount(
+    (teamIdpAnalytics.value?.idpDetails || idpProgressItems.value).filter((item) => item.isOverdue),
+));
+const idpPendingProgressReviewCount = computed(() => uniqueIdpPersonCount(
+    idpProgressItems.value.filter((item) => item.canReview),
+));
 const users = ref(clone(page.props.users || []));
 const requestedPage = ref(typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('page')
@@ -34,7 +55,6 @@ const requestedPage = ref(typeof window !== 'undefined'
 const initialRoleKey = normalizeRoleKey(props.roleKey || page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || 'dept_head');
 const rememberedHeadState = useRemember({
     showSidebar: true,
-    activePage: requestedPage.value || defaultPageForRole(initialRoleKey),
 }, 'UnifiedReviewerDashboardV2');
 
 const showSidebar = computed({
@@ -43,12 +63,7 @@ const showSidebar = computed({
         rememberedHeadState.value.showSidebar = value;
     },
 });
-const activePage = computed({
-    get: () => rememberedHeadState.value.activePage || defaultPageForRole(initialRoleKey),
-    set: (value) => {
-        rememberedHeadState.value.activePage = value;
-    },
-});
+const activePage = ref(props.embeddedPage || requestedPage.value || defaultPageForRole(initialRoleKey));
 
 const learningMethods = ref([
     {
@@ -74,10 +89,11 @@ const learningMethods = ref([
 const authRoleKey = computed(() => normalizeRoleKey(props.roleKey || page.props.roleKey || page.props.currentUser?.r || page.props.auth?.user?.role_key || initialRoleKey));
 const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
 const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [], pendingCount: 0 });
+const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
+const assessmentHubTab = ref(fcTopicApprovalModule.value.enabled ? 'topics' : 'results');
 const currentRoleData = computed(() => ROLES_CONFIG[authRoleKey.value] || ROLES_CONFIG.dept_head || ROLES_CONFIG.supervisor);
 const navSections = computed(() => {
-    const sections = [
-    {
+    const sections = [{
         sec: 'ของฉัน (บุคลากร)',
         items: [
             { id: 'emp-assess', ic: '', lb: 'ประเมินตนเอง' },
@@ -86,34 +102,27 @@ const navSections = computed(() => {
             { id: 'emp-progress', ic: '', lb: 'อัปเดตความก้าวหน้า' },
             { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
         ],
-    },
-    {
-        sec: 'จัดการทีม',
-        items: [
-            { id: 'sup-gap', ic: '', lb: 'ผลการประเมินของทีม' },
-            { id: 'dh-idp', ic: '', lb: 'IDP & ติดตามทีม' },
-        ],
-    },
+    }];
+    const isHeadRole = ['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey.value);
+
+    const assignedItems = [
+        ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled)
+            ? [{ id: 'dh-assess', ic: '', lb: 'อนุมัติการประเมิน' }]
+            : []),
+        ...(isHeadRole ? [{ id: 'sup-gap', ic: '', lb: 'ผลการประเมินของทีม' }] : []),
+        ...(idpReviewModule.value.enabled ? [{ id: 'dh-idp', ic: '', lb: 'อนุมัติแผนและผล IDP' }] : []),
     ];
 
-    const usesSupervisorApprovalUi = ['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey.value)
-        || assessmentApprovalModule.value.enabled;
+    if (assignedItems.length) {
+        sections.push({ sec: 'งานที่ได้รับมอบหมาย', items: assignedItems });
+    }
 
-    if (!usesSupervisorApprovalUi) return sections;
-
-    return sections.map((section, index) => index === 1
-        ? {
-            ...section,
-            items: [
-                ...(fcTopicApprovalModule.value.enabled ? [{ id: 'dh-fc-topic-approval', ic: '', lb: 'อนุมัติหัวข้อการประเมิน' }] : []),
-                { id: 'dh-assess', ic: '', lb: 'อนุมัติผลการประเมิน' },
-                ...section.items,
-            ],
-        }
-        : section);
+    return sections;
 });
 const pageTitle = computed(() => ({
-    'dh-fc-topic-approval': 'อนุมัติหัวข้อการประเมิน',
+    'dh-fc-topic-approval': 'พิจารณาหัวข้อการประเมิน',
+    'dh-assess': 'อนุมัติการประเมิน',
+    'dh-idp': 'อนุมัติแผนและผล IDP',
 }[activePage.value] || PAGE_TITLES[activePage.value] || activePage.value));
 const authUserId = computed(() => page.props.auth?.user?.id ? String(page.props.auth.user.id) : '');
 const authUserName = computed(() => page.props.auth?.user?.name || '');
@@ -897,8 +906,14 @@ const gapResultRows = (person) => {
 
 const selectedGapPerson = computed(() => selectedGapEmployee.value);
 const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
-const selectedGapFailedCount = computed(() => selectedGapRows.value.filter((row) => row.failed).length);
+const isCompetencyApproved = (row) => row?.hasAssessment !== false
+    && normalizeAssessmentStatus(row.status) === 'approved';
+const selectedGapApprovedRows = computed(() => selectedGapRows.value.filter(isCompetencyApproved));
+const selectedGapFailedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) < 0).length);
+const selectedGapPassedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) >= 0).length);
+const selectedGapPendingCount = computed(() => selectedGapRows.value.length - selectedGapApprovedRows.value.length);
 const teamGapSearch = ref('');
+const teamGapFilter = ref('all');
 const teamGapPage = ref(1);
 const teamGapPageSize = 10;
 const selectedGapSearch = ref('');
@@ -921,9 +936,7 @@ const formatTeamGap = (value) => {
 };
 const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const resultRows = gapResultRows(person);
-    const completed = resultRows.length > 0 && resultRows.every((row) =>
-        row.hasAssessment && normalizeAssessmentStatus(row.status) === 'approved',
-    );
+    const completed = resultRows.length > 0 && resultRows.every(isCompetencyApproved);
     const started = resultRows.some((row) => row.hasAssessment || row.lastDraftSavedAt)
         || normalizeAssessmentStatus(person.evalStatus) !== 'draft';
     const missingCount = completed ? resultRows.filter((row) => Number(row.gap) < 0).length : 0;
@@ -939,7 +952,9 @@ const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
         started,
         assessed: completed,
         assessmentProgress: completed
-            ? { key: 'completed', label: 'เสร็จสิ้น' }
+            ? (missingCount
+                ? { key: 'needs-development', label: `ต้องพัฒนา ${missingCount}` }
+                : { key: 'passed-all', label: 'ผ่านทั้งหมด' })
             : (started
                 ? { key: 'in-progress', label: 'กำลังดำเนินการ' }
                 : { key: 'not-started', label: 'ยังไม่เริ่ม' }),
@@ -948,9 +963,19 @@ const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
         failedCompetencies,
         summary: completed
             ? (missingCount ? `ไม่ผ่าน ${missingCount} สมรรถนะ` : 'ผ่านทุกสมรรถนะ')
-            : 'การประเมินยังไม่เสร็จสิ้น',
+            : (started ? 'กำลังดำเนินการ' : 'ยังไม่เริ่มประเมิน'),
     };
 }));
+const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.completed));
+const teamFailedRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount > 0));
+const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
+const teamPendingRows = computed(() => teamHeatmapRows.value.filter((row) => !row.completed));
+const teamGapFilterOptions = computed(() => [
+    { key: 'all', label: 'ทั้งหมด', count: teamHeatmapRows.value.length },
+    { key: 'needs-development', label: 'ต้องพัฒนา', count: teamFailedRows.value.length },
+    { key: 'passed', label: 'ผ่านครบ', count: teamTalentRows.value.length },
+    { key: 'pending', label: 'ยังไม่เสร็จ', count: teamPendingRows.value.length },
+]);
 const filteredTeamGapRows = computed(() => {
     const keyword = teamGapSearch.value.trim().toLocaleLowerCase('th');
 
@@ -960,7 +985,22 @@ const filteredTeamGapRows = computed(() => {
             .join(' ')
             .toLocaleLowerCase('th')
             .includes(keyword);
-        return matchesKeyword;
+        const matchesStatus = teamGapFilter.value === 'all'
+            || (teamGapFilter.value === 'needs-development' && row.completed && row.missingCount > 0)
+            || (teamGapFilter.value === 'passed' && row.completed && row.missingCount === 0)
+            || (teamGapFilter.value === 'pending' && !row.completed);
+
+        return matchesKeyword && matchesStatus;
+    }).sort((left, right) => {
+        const priority = (row) => {
+            if (row.completed && row.missingCount > 0) return 0;
+            if (!row.completed && row.started) return 1;
+            if (!row.started) return 2;
+            return 3;
+        };
+
+        return priority(left) - priority(right)
+            || String(left.n || '').localeCompare(String(right.n || ''), 'th');
     });
 });
 const teamGapPageCount = computed(() => Math.max(1, Math.ceil(filteredTeamGapRows.value.length / teamGapPageSize)));
@@ -973,6 +1013,21 @@ const updateTeamGapSearch = (value) => {
     teamGapSearch.value = value;
     teamGapPage.value = 1;
 };
+const updateTeamGapFilter = (value) => {
+    teamGapFilter.value = value;
+    teamGapPage.value = 1;
+};
+const competencyResultMeta = (row) => {
+    const status = normalizeAssessmentStatus(row?.status);
+    if (isCompetencyApproved(row)) {
+        return Number(row.gap) < 0
+            ? { key: 'failed', label: 'ต้องพัฒนา' }
+            : { key: 'passed', label: 'ผ่าน' };
+    }
+    if (status === 'revision_required') return { key: 'revision', label: 'ส่งกลับแก้ไข' };
+    if (status === 'draft') return { key: 'not-started', label: row?.lastDraftSavedAt ? 'บันทึกร่างแล้ว' : 'ยังไม่เริ่ม' };
+    return { key: 'pending', label: 'อยู่ระหว่างตรวจ' };
+};
 const filteredSelectedGapRows = computed(() => {
     const keyword = selectedGapSearch.value.trim().toLocaleLowerCase('th');
     return selectedGapRows.value.filter((row) => {
@@ -981,9 +1036,11 @@ const filteredSelectedGapRows = computed(() => {
             .join(' ')
             .toLocaleLowerCase('th')
             .includes(keyword);
+        const approved = isCompetencyApproved(row);
         const matchesFilter = selectedGapCompetencyFilter.value === 'all'
-            || (selectedGapCompetencyFilter.value === 'gap' && Number(row.gap) < 0)
-            || (selectedGapCompetencyFilter.value === 'passed' && Number(row.gap) >= 0);
+            || (selectedGapCompetencyFilter.value === 'gap' && approved && Number(row.gap) < 0)
+            || (selectedGapCompetencyFilter.value === 'passed' && approved && Number(row.gap) >= 0)
+            || (selectedGapCompetencyFilter.value === 'pending' && !approved);
 
         return matchesKeyword && matchesFilter;
     });
@@ -994,9 +1051,6 @@ const paginatedSelectedGapRows = computed(() => {
     const start = (safePage - 1) * selectedGapPageSize;
     return filteredSelectedGapRows.value.slice(start, start + selectedGapPageSize);
 });
-const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.completed));
-const teamFailedRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount > 0));
-const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
 const selectedGapSummary = computed(() => teamHeatmapRows.value.find((row) => row.sso === selectedGapPerson.value?.sso) || null);
 watchEffect(() => {
     if (activePage.value !== 'sup-gap') return;
@@ -1247,12 +1301,30 @@ const submitApprovalDecision = () => {
 };
 
 watchEffect(() => {
+    if (props.embeddedPage && implementedPages.has(props.embeddedPage)) {
+        activePage.value = props.embeddedPage;
+    }
+
     if (requestedPage.value && implementedPages.has(requestedPage.value)) {
         activePage.value = requestedPage.value;
         requestedPage.value = null;
     }
 
     if (!implementedPages.has(activePage.value)) {
+        activePage.value = defaultPageForRole(authRoleKey.value);
+    }
+
+    if (activePage.value === 'dh-fc-topic-approval' && !fcTopicApprovalModule.value.enabled) {
+        activePage.value = defaultPageForRole(authRoleKey.value);
+    }
+    if (activePage.value === 'dh-assess' && !fcTopicApprovalModule.value.enabled && !assessmentApprovalModule.value.enabled) {
+        activePage.value = defaultPageForRole(authRoleKey.value);
+    }
+    if (activePage.value === 'dh-assess') {
+        if (assessmentHubTab.value === 'topics' && !fcTopicApprovalModule.value.enabled) assessmentHubTab.value = 'results';
+        if (assessmentHubTab.value === 'results' && !assessmentApprovalModule.value.enabled) assessmentHubTab.value = 'topics';
+    }
+    if (activePage.value === 'dh-idp' && !idpReviewModule.value.enabled) {
         activePage.value = defaultPageForRole(authRoleKey.value);
     }
 
@@ -1270,10 +1342,10 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Head - CIDP" />
+    <Head v-if="!props.embedded" title="Head - CIDP" />
 
-    <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
-        <div v-if="showSidebar" class="sidebar">
+    <div class="shell" :class="{ 'sidebar-hidden': !showSidebar && !props.embedded, 'embedded-reviewer-shell': props.embedded }">
+        <div v-if="showSidebar && !props.embedded" class="sidebar">
             <SidebarBrand />
 
             <button class="sb-user on" type="button" @click="goProfile">
@@ -1304,7 +1376,7 @@ const logout = () => router.post(route('logout'));
         </div>
 
         <div class="main">
-            <div class="topbar">
+            <div v-if="!props.embedded" class="topbar">
                 <button class="btn btn-s btn-sm menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
                 <div class="tb-title">{{ pageTitle }}</div>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
@@ -1312,7 +1384,7 @@ const logout = () => router.post(route('logout'));
                 </button>
             </div>
 
-            <div class="content">
+            <div class="content" :class="{ 'embedded-reviewer-content': props.embedded }">
                 <EmployeeAssess
                     v-if="activePage === 'emp-assess'"
                     :user="currentUser"
@@ -1326,13 +1398,19 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :competencies="page.props.currentUserCompetencies || []"
                     :gaps="page.props.currentUserCompetencyGaps || []"
                     :user="currentUser"
                 />
 
                 <EmployeeIDP
                     v-else-if="activePage === 'emp-idp'"
-                    :learning-methods="learningMethods"
+                    :learning-methods="page.props.learningMethods || learningMethods"
+                    :idp-learning-methods="page.props.idpLearningMethods || []"
+                    :learning-catalogs="page.props.hrCatalogItems || []"
+                    :gaps="page.props.currentUserCompetencyGaps || []"
+                    :idp="page.props.currentUserIdp || null"
+                    :user="currentUser"
                 />
 
                 <EmployeeProgress
@@ -1340,56 +1418,141 @@ const logout = () => router.post(route('logout'));
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
 
-                <template v-else-if="activePage === 'dh-idp'">
-                    <div class="team-page-head mb20"><div><div class="sec-t">IDP & ติดตามทีม</div><div class="sec-s">ตรวจและติดตามแผนแยกตามสมรรถนะในสาย IDP ของคุณ</div></div></div>
-                    <div class="idp-queue-summary mb20">
-                        <div><span>รอคุณอนุมัติ</span><strong>{{ props.idpReviewItems.filter(item => item.canReview).length }}</strong><small>แผนสมรรถนะ</small></div>
-                        <div><span>ติดตามสถานะ</span><strong>{{ props.idpReviewItems.filter(item => !item.canReview).length }}</strong><small>แผนสมรรถนะ</small></div>
-                        <div><span>อนุมัติครบแล้ว</span><strong>{{ props.idpReviewItems.filter(item => item.status === 'approved').length }}</strong><small>แผนสมรรถนะ</small></div>
+                <template v-else-if="activePage === 'dh-idp' && idpReviewModule.enabled">
+                    <div class="team-page-head idp-team-head">
+                        <div>
+                            <div class="sec-t">IDP ของทีม</div>
+                            <div class="sec-s">ตรวจแผนและติดตามการพัฒนาของบุคลากรในสาย IDP</div>
+                        </div>
                     </div>
-                    <IdpItemApproval :items="props.idpReviewItems" />
-                    <IdpItemApproval :items="props.idpReviewItems" tracking />
+
+                    <div class="idp-workspace">
+                        <nav class="idp-mode-tabs" role="tablist" aria-label="งาน IDP ของทีม">
+                            <button
+                                id="idp-approval-tab"
+                                type="button"
+                                role="tab"
+                                :aria-selected="idpTeamTab === 'approval'"
+                                aria-controls="idp-approval-panel"
+                                :class="{ active: idpTeamTab === 'approval' }"
+                                @click="idpTeamTab = 'approval'"
+                            >
+                                <span class="idp-tab-copy">
+                                    <strong>อนุมัติแผน</strong>
+                                    <small>ตรวจแผนที่มาถึงลำดับของคุณ</small>
+                                </span>
+                                <span class="idp-tab-count">{{ idpApprovalCount }} คน</span>
+                            </button>
+                            <button
+                                id="idp-completion-tab"
+                                type="button"
+                                role="tab"
+                                :aria-selected="idpTeamTab === 'completion'"
+                                aria-controls="idp-completion-panel"
+                                :class="{ active: idpTeamTab === 'completion' }"
+                                @click="idpTeamTab = 'completion'"
+                            >
+                                <span class="idp-tab-copy">
+                                    <strong>ตรวจผลการพัฒนา</strong>
+                                    <small>ตรวจผลและหลักฐานที่มาถึงลำดับของคุณ</small>
+                                </span>
+                                <span class="idp-tab-count" :class="{ pending: idpPendingProgressReviewCount > 0 }">{{ idpPendingProgressReviewCount }} คน</span>
+                            </button>
+                            <button
+                                id="idp-tracking-tab"
+                                type="button"
+                                role="tab"
+                                :aria-selected="idpTeamTab === 'tracking'"
+                                aria-controls="idp-tracking-panel"
+                                :class="{ active: idpTeamTab === 'tracking' }"
+                                @click="idpTeamTab = 'tracking'"
+                            >
+                                <span class="idp-tab-copy">
+                                    <strong>ติดตามสถานะ</strong>
+                                    <small>ดูความก้าวหน้าและสถานะ IDP ของทีม</small>
+                                </span>
+                                <span class="idp-tab-meta">
+                                    <span v-if="idpOverdueCount" class="idp-tab-overdue">{{ idpOverdueCount }} ล่าช้า</span>
+                                    <span class="idp-tab-count">{{ idpTrackingCount }} คน</span>
+                                </span>
+                            </button>
+                        </nav>
+
+                        <div
+                            v-if="idpTeamTab === 'approval'"
+                            id="idp-approval-panel"
+                            class="idp-tab-panel"
+                            role="tabpanel"
+                            aria-labelledby="idp-approval-tab"
+                        >
+                            <IdpItemApproval :items="props.idpReviewItems" />
+                        </div>
+                        <div
+                            v-else-if="idpTeamTab === 'completion'"
+                            id="idp-completion-panel"
+                            class="idp-tab-panel"
+                            role="tabpanel"
+                            aria-labelledby="idp-completion-tab"
+                        >
+                            <IdpActivityProgressReview mode="review" :items="idpProgressItems" />
+                        </div>
+                        <div
+                            v-else
+                            id="idp-tracking-panel"
+                            class="idp-tab-panel idp-tracking-dashboard-panel"
+                            role="tabpanel"
+                            aria-labelledby="idp-tracking-tab"
+                        >
+                            <FacultyOverview
+                                :analytics="teamIdpAnalytics"
+                                module="idp"
+                                reload-prop="teamIdpAnalytics"
+                                title="การติดตาม IDP ของทีม"
+                                description="ติดตามการจัดทำแผน ความก้าวหน้า และบุคลากรในสาย IDP ของคุณ"
+                                hide-heading-copy
+                                hide-workline-breakdown
+                            />
+                        </div>
+                    </div>
                 </template>
 
                 <template v-else-if="activePage === 'sup-gap'">
-                    <div class="team-page-head mb20">
-                        <div>
-                            <div class="sec-t">ผลการประเมินของทีม</div>
-                            <div class="sec-s">ดูภาพรวมและค้นหาบุคลากรที่ต้องพัฒนา โดยไม่ต้องไล่ดูสมรรถนะทีละคอลัมน์</div>
+                    <header class="team-dashboard-head">
+                        <div class="team-dashboard-copy">
+                            <span>TEAM ASSESSMENT</span>
+                            <h1>ผลการประเมินของทีม</h1>
+                            <p>ติดตามความคืบหน้าและค้นหาบุคลากรที่ต้องพัฒนาในมุมมองเดียว</p>
                         </div>
-                    </div>
-
-                    <div v-if="teamHeatmapRows.length === 0" class="card empty-card">
-                        ยังไม่ได้รับผลการประเมินจากผู้ใต้บังคับบัญชา
-                    </div>
-
-                    <template v-else>
-                        <div class="team-overview-strip mb20">
-                            <div class="team-overview-item primary">
-                                <span>ประเมินเสร็จแล้ว</span>
-                                <strong>{{ teamAssessedRows.length }}<small>/{{ teamHeatmapRows.length }} คน</small></strong>
-                                <p>อนุมัติครบทุกสมรรถนะและทุกลำดับ</p>
-                            </div>
-                            <div class="team-overview-item failed">
-                                <span>ไม่ผ่านอย่างน้อย 1 สมรรถนะ</span>
-                                <strong>{{ teamFailedRows.length }}<small>คน</small></strong>
-                                <p>นับเฉพาะผู้ที่ประเมินเสร็จแล้ว</p>
-                            </div>
-                            <div class="team-overview-item passed">
-                                <span>ผ่านทุกสมรรถนะ</span>
-                                <strong>{{ teamTalentRows.length }}<small>คน</small></strong>
-                                <p>ไม่มีช่องว่างสมรรถนะติดลบ</p>
+                        <div class="team-round-context" aria-label="รอบประเมินที่กำลังแสดง">
+                            <span aria-hidden="true"></span>
+                            <div>
+                                <small>รอบประเมิน</small>
+                                <strong>{{ activeCycleName }}</strong>
                             </div>
                         </div>
+                    </header>
 
-                        <div class="card team-gap-workspace">
+                    <AssessmentSummaryBand
+                        class="team-summary-band"
+                        :total="teamHeatmapRows.length"
+                        :assessed="teamAssessedRows.length"
+                        :passed="teamTalentRows.length"
+                        :with-gap="teamFailedRows.length"
+                    />
+
+                    <div v-if="teamHeatmapRows.length === 0" class="card team-dashboard-empty">
+                        <span aria-hidden="true">—</span>
+                        <strong>ยังไม่มีบุคลากรในสายประเมิน</strong>
+                        <p>เมื่อมีการกำหนดสายประเมิน รายชื่อและสถานะของทีมจะแสดงในส่วนนี้</p>
+                    </div>
+
+                    <div v-else class="card team-gap-workspace">
                             <aside class="team-member-panel">
                                 <div class="team-member-head">
                                     <div>
-                                        <div class="ct">บุคลากรในทีม</div>
-                                        <div class="cs">{{ filteredTeamGapRows.length }} คน</div>
+                                        <div class="ct">รายชื่อทีม</div>
                                     </div>
                                 </div>
                                 <div class="team-member-tools">
@@ -1403,6 +1566,18 @@ const logout = () => router.post(route('logout'));
                                             @input="updateTeamGapSearch($event.target.value)"
                                         >
                                     </label>
+                                    <div class="team-member-filter" aria-label="กรองสถานะบุคลากร">
+                                        <button
+                                            v-for="option in teamGapFilterOptions"
+                                            :key="option.key"
+                                            type="button"
+                                            :class="{ active: teamGapFilter === option.key }"
+                                            :aria-pressed="teamGapFilter === option.key"
+                                            @click="updateTeamGapFilter(option.key)"
+                                        >
+                                            {{ option.label }} <span>{{ option.count }}</span>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div v-if="paginatedTeamGapRows.length" class="team-member-list">
                                     <button
@@ -1416,7 +1591,7 @@ const logout = () => router.post(route('logout'));
                                         <span class="team-member-avatar">{{ row.n?.[0] || '?' }}</span>
                                         <span class="team-member-copy">
                                             <strong>{{ `${row.t || ''}${row.n}` }}</strong>
-                                            <small>{{ row.p || approvalOrganizationFor(row) }}</small>
+                                            <small>{{ row.p || '-' }}<template v-if="approvalOrganizationFor(row) !== '-'"> · {{ approvalOrganizationFor(row) }}</template></small>
                                         </span>
                                         <span class="team-member-status" :class="row.assessmentProgress.key">
                                             {{ row.assessmentProgress.label }}
@@ -1444,14 +1619,21 @@ const logout = () => router.post(route('logout'));
                                         </div>
                                         <div class="cs">{{ selectedGapPerson.p }}<template v-if="approvalOrganizationFor(selectedGapPerson) !== '-'"> · {{ approvalOrganizationFor(selectedGapPerson) }}</template></div>
                                     </div>
+                                    <div class="team-selected-metrics" aria-label="สรุปสมรรถนะของบุคลากร">
+                                        <span><small>ทั้งหมด</small><strong>{{ selectedGapRows.length }}</strong></span>
+                                        <span class="passed"><small>ผ่าน</small><strong>{{ selectedGapPassedCount }}</strong></span>
+                                        <span class="failed"><small>ต้องพัฒนา</small><strong>{{ selectedGapFailedCount }}</strong></span>
+                                        <span v-if="selectedGapPendingCount" class="pending"><small>รอดำเนินการ</small><strong>{{ selectedGapPendingCount }}</strong></span>
+                                    </div>
                                 </div>
 
-                                <template v-if="selectedGapSummary?.completed">
+                                <template v-if="selectedGapRows.length">
                                     <div class="team-competency-tools">
                                         <div class="team-gap-filters" aria-label="กรองผลสมรรถนะ">
                                             <button type="button" :class="{ active: selectedGapCompetencyFilter === 'all' }" @click="selectedGapCompetencyFilter = 'all'; selectedGapPage = 1">ทั้งหมด {{ selectedGapRows.length }}</button>
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'gap' }" @click="selectedGapCompetencyFilter = 'gap'; selectedGapPage = 1">ไม่ผ่าน {{ selectedGapFailedCount }}</button>
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'passed' }" @click="selectedGapCompetencyFilter = 'passed'; selectedGapPage = 1">ผ่าน {{ selectedGapRows.length - selectedGapFailedCount }}</button>
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'gap' }" @click="selectedGapCompetencyFilter = 'gap'; selectedGapPage = 1">ต้องพัฒนา {{ selectedGapFailedCount }}</button>
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'passed' }" @click="selectedGapCompetencyFilter = 'passed'; selectedGapPage = 1">ผ่าน {{ selectedGapPassedCount }}</button>
+                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'pending' }" @click="selectedGapCompetencyFilter = 'pending'; selectedGapPage = 1">รอดำเนินการ {{ selectedGapPendingCount }}</button>
                                         </div>
                                         <label class="team-gap-search compact">
                                             <span aria-hidden="true">⌕</span>
@@ -1463,15 +1645,20 @@ const logout = () => router.post(route('logout'));
                                         <div class="team-competency-list-head">
                                             <span>สมรรถนะ</span><span>คาดหวัง</span><span>ผลจริง</span><span>Gap</span><span>ผล</span>
                                         </div>
-                                        <div v-for="row in paginatedSelectedGapRows" :key="row.id" class="team-competency-row">
+                                        <div
+                                            v-for="row in paginatedSelectedGapRows"
+                                            :key="row.id"
+                                            class="team-competency-row"
+                                            :class="{ pending: !isCompetencyApproved(row) }"
+                                        >
                                             <div class="team-competency-name">
                                                 <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
                                                 <div><strong>{{ row.code || '-' }}</strong><small>{{ row.title }}</small></div>
                                             </div>
                                             <span>{{ row.expected }}</span>
-                                            <span>{{ row.headScore }}</span>
-                                            <strong :class="Number(row.gap) < 0 ? 'rc' : 'gcc'">{{ formatTeamGap(row.gap) }}</strong>
-                                            <span class="b" :class="Number(row.gap) < 0 ? 'br' : 'bg'">{{ Number(row.gap) < 0 ? 'ไม่ผ่าน' : 'ผ่าน' }}</span>
+                                            <span>{{ isCompetencyApproved(row) ? row.headScore : '-' }}</span>
+                                            <strong :class="isCompetencyApproved(row) ? (Number(row.gap) < 0 ? 'rc' : 'gcc') : ''">{{ isCompetencyApproved(row) ? formatTeamGap(row.gap) : '-' }}</strong>
+                                            <span class="team-result-status" :class="competencyResultMeta(row).key">{{ competencyResultMeta(row).label }}</span>
                                         </div>
                                         <div v-if="filteredSelectedGapRows.length === 0" class="team-gap-empty">ไม่พบสมรรถนะตามตัวกรอง</div>
                                     </div>
@@ -1485,45 +1672,80 @@ const logout = () => router.post(route('logout'));
                                 </template>
                                 <div v-else class="team-assessment-pending">
                                     <span class="team-pending-mark">…</span>
-                                    <strong>การประเมินยังไม่เสร็จสิ้น</strong>
-                                    <p>ผลจะนำมาคำนวณผู้ผ่านและไม่ผ่าน เมื่อสมรรถนะทุกข้อได้รับอนุมัติครบทุกลำดับแล้ว</p>
+                                    <strong>ยังไม่มีสมรรถนะในรอบนี้</strong>
+                                    <p>รายการสมรรถนะจะปรากฏเมื่อ HR กำหนดสมรรถนะให้ตำแหน่งของบุคลากร</p>
                                 </div>
                             </section>
-                        </div>
-                    </template>
+                            <section v-else class="team-competency-panel team-no-selection">
+                                <strong>เลือกบุคลากรเพื่อดูรายละเอียด</strong>
+                            </section>
+                    </div>
                 </template>
 
-                <FcTopicApproval
-                    v-else-if="activePage === 'dh-fc-topic-approval' && fcTopicApprovalModule.enabled"
-                    :module="fcTopicApprovalModule"
-                />
+                <section
+                    v-else-if="(activePage === 'dh-fc-topic-approval' || (activePage === 'dh-assess' && assessmentHubTab === 'topics')) && fcTopicApprovalModule.enabled"
+                    class="assessment-approval-hub"
+                >
+                    <template v-if="activePage === 'dh-assess'">
+                        <header class="assessment-hub-header">
+                            <div class="assessment-hub-copy">
+                                <span>งานที่ได้รับมอบหมาย</span>
+                                <h1>อนุมัติการประเมิน</h1>
+                                <p>พิจารณาหัวข้อก่อนเริ่มประเมิน และตรวจผลตามลำดับผู้บังคับบัญชา</p>
+                            </div>
+                            <div class="assessment-queue-status" :class="{ clear: (fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length === 0 }">
+                                <span aria-hidden="true"></span>
+                                <strong>{{ (fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length === 0 ? 'ไม่มีงานรอดำเนินการ' : `มี ${(fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length} รายการรอดำเนินการ` }}</strong>
+                            </div>
+                        </header>
+                        <nav v-if="assessmentApprovalModule.enabled" class="assessment-hub-tabs" aria-label="ประเภทงานอนุมัติ">
+                            <button type="button" class="active" aria-current="page"><i aria-hidden="true">1</i><span><strong>หัวข้อการประเมิน</strong><small>ตรวจก่อนเปิดแบบประเมิน</small></span><b>{{ fcTopicApprovalModule.items?.length || 0 }}</b></button>
+                            <button v-if="assessmentApprovalModule.enabled" type="button" @click="assessmentHubTab = 'results'"><i aria-hidden="true">2</i><span><strong>ผลการประเมิน</strong><small>ตรวจผลและส่งต่อ</small></span><b>{{ supervisorPendingRows.length }}</b></button>
+                        </nav>
+                    </template>
+                    <FcTopicApproval :module="fcTopicApprovalModule" :compact="activePage === 'dh-assess'" />
+                </section>
 
-                <template v-else-if="activePage === 'dh-assess'">
-                    <template v-if="['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey) || assessmentApprovalModule.enabled">
-                        <div class="team-page-head mb20">
+                <template v-else-if="activePage === 'dh-assess' && assessmentHubTab === 'results' && assessmentApprovalModule.enabled">
+                    <header class="assessment-hub-header">
+                        <div class="assessment-hub-copy">
+                            <span>งานที่ได้รับมอบหมาย</span>
+                            <h1>อนุมัติการประเมิน</h1>
+                            <p>พิจารณาหัวข้อก่อนเริ่มประเมิน และตรวจผลตามลำดับผู้บังคับบัญชา</p>
+                        </div>
+                        <div class="assessment-queue-status" :class="{ clear: (fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length === 0 }">
+                            <span aria-hidden="true"></span>
+                            <strong>{{ (fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length === 0 ? 'ไม่มีงานรอดำเนินการ' : `มี ${(fcTopicApprovalModule.items?.length || 0) + supervisorPendingRows.length} รายการรอดำเนินการ` }}</strong>
+                        </div>
+                    </header>
+                    <nav v-if="fcTopicApprovalModule.enabled" class="assessment-hub-tabs" aria-label="ประเภทงานอนุมัติ">
+                        <button v-if="fcTopicApprovalModule.enabled" type="button" @click="assessmentHubTab = 'topics'"><i aria-hidden="true">1</i><span><strong>หัวข้อการประเมิน</strong><small>ตรวจก่อนเปิดแบบประเมิน</small></span><b>{{ fcTopicApprovalModule.items?.length || 0 }}</b></button>
+                        <button type="button" class="active" aria-current="page"><i aria-hidden="true">2</i><span><strong>ผลการประเมิน</strong><small>ตรวจผลและส่งต่อ</small></span><b>{{ supervisorPendingRows.length }}</b></button>
+                    </nav>
+                    <template v-if="assessmentApprovalModule.enabled">
+                        <section class="assessment-results-overview">
                             <div>
-                                <div class="sec-t">ตรวจประเมินลูกน้อง</div>
-                                <div class="sec-s">{{ approvalRoleLabel }}ตรวจผลก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</div>
+                                <h2>ผลการประเมิน</h2>
+                                <p>{{ approvalRoleLabel }}ตรวจผลก่อนอนุมัติและส่งต่อไปยังขั้นตอนถัดไป</p>
                             </div>
-                        </div>
-
-                        <div class="g3 supervisor-approval-summary mb16">
-                            <div class="sc">
-                                <div class="sl">รอตรวจ</div>
-                                <div class="sv yc">{{ supervisorPendingRows.length }}</div>
-                                <div class="ss muted">รอ{{ approvalRoleLabel }}ประเมิน</div>
-                            </div>
-                            <div class="sc">
-                                <div class="sl">{{ approvalForwardLabel }}</div>
-                                <div class="sv bc">{{ supervisorForwardedRows.length }}</div>
-                                <div class="ss muted">ดำเนินการในขั้นนี้แล้ว</div>
-                            </div>
-                            <div class="sc">
-                                <div class="sl">อนุมัติครบแล้ว</div>
-                                <div class="sv gcc">{{ supervisorApprovedRows.length }}</div>
-                                <div class="ss muted">คน</div>
-                            </div>
-                        </div>
+                            <dl class="assessment-status-summary">
+                                <div class="pending">
+                                    <dt>รอตรวจ</dt>
+                                    <dd>{{ supervisorPendingRows.length }}</dd>
+                                    <small>รายการ</small>
+                                </div>
+                                <div>
+                                    <dt>{{ approvalForwardLabel }}</dt>
+                                    <dd>{{ supervisorForwardedRows.length }}</dd>
+                                    <small>รายการ</small>
+                                </div>
+                                <div class="complete">
+                                    <dt>อนุมัติครบแล้ว</dt>
+                                    <dd>{{ supervisorApprovedRows.length }}</dd>
+                                    <small>คน</small>
+                                </div>
+                            </dl>
+                        </section>
 
                         <div v-if="activePage === 'dh-fc-topic-approval'" class="card supervisor-approval-card mb16">
                             <div class="team-card-head">
@@ -1623,15 +1845,19 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
 
-                        <div class="card supervisor-approval-card mb16">
-                            <div class="team-card-head">
+                        <section class="assessment-list-section">
+                            <header class="assessment-list-head">
                                 <div>
-                                    <div class="ct">รอคุณประเมิน</div>
-                                    <div class="cs">สมรรถนะที่มาถึงลำดับของคุณและดำเนินการได้ทันที</div>
+                                    <h3>รอคุณประเมิน</h3>
+                                    <p>รายการที่มาถึงลำดับของคุณและดำเนินการได้ทันที</p>
                                 </div>
-                                <span class="b by">{{ supervisorPendingRows.length }} รายการ</span>
+                                <span>{{ supervisorPendingRows.length }} รายการ</span>
+                            </header>
+                            <div v-if="supervisorPendingRows.length === 0" class="assessment-empty-state">
+                                <span aria-hidden="true">✓</span>
+                                <div><strong>ไม่มีผลการประเมินรอตรวจ</strong><p>เมื่อมีรายการมาถึงลำดับของคุณ ระบบจะแสดงที่นี่</p></div>
                             </div>
-                            <div class="team-table-wrap approval-table-wrap">
+                            <div v-else class="team-table-wrap approval-table-wrap">
                                 <table class="team-table approval-table">
                                     <thead>
                                         <tr>
@@ -1639,6 +1865,7 @@ const logout = () => router.post(route('logout'));
                                             <th>ตำแหน่ง</th>
                                             <th>วันที่ส่งประเมิน</th>
                                             <th>สถานะ</th>
+                                            <th><span class="sr-only">ดำเนินการ</span></th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1657,24 +1884,26 @@ const logout = () => router.post(route('logout'));
                                             <td>{{ person.p || '-' }}</td>
                                             <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
                                             <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
-                                        </tr>
-                                        <tr v-if="supervisorPendingRows.length === 0">
-                                            <td colspan="4" class="muted ac py20">ขณะนี้ไม่มีสมรรถนะที่รอคุณประเมิน</td>
+                                            <td><button class="assessment-row-action" type="button" @click.stop="openSupervisorApprovalModal(person)">ตรวจผล</button></td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </section>
 
-                        <div class="card supervisor-approval-card mb16">
-                            <div class="team-card-head">
+                        <section class="assessment-list-section secondary">
+                            <header class="assessment-list-head">
                                 <div>
-                                    <div class="ct">ติดตามสถานะ</div>
-                                    <div class="cs">ดูความคืบหน้าของสมรรถนะที่ยังไม่ถึงลำดับคุณ ถูกส่งกลับ หรืออนุมัติครบแล้ว</div>
+                                    <h3>ติดตามสถานะ</h3>
+                                    <p>รายการที่ดำเนินการแล้ว ถูกส่งกลับ หรือกำลังรอผู้พิจารณาลำดับอื่น</p>
                                 </div>
-                                <span class="b bgr">{{ supervisorTrackingRows.length }} รายการ</span>
+                                <span>{{ supervisorTrackingRows.length }} รายการ</span>
+                            </header>
+                            <div v-if="supervisorTrackingRows.length === 0" class="assessment-empty-state muted-state">
+                                <span aria-hidden="true">–</span>
+                                <div><strong>ยังไม่มีรายการติดตาม</strong><p>รายการที่ผ่านการดำเนินการจะแสดงพร้อมสถานะล่าสุดที่นี่</p></div>
                             </div>
-                            <div class="team-table-wrap approval-table-wrap">
+                            <div v-else class="team-table-wrap approval-table-wrap">
                                 <table class="team-table approval-table">
                                     <thead>
                                         <tr>
@@ -1682,6 +1911,7 @@ const logout = () => router.post(route('logout'));
                                             <th>ตำแหน่ง</th>
                                             <th>วันที่อัปเดต</th>
                                             <th>สถานะปัจจุบัน</th>
+                                            <th><span class="sr-only">ดำเนินการ</span></th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1700,14 +1930,12 @@ const logout = () => router.post(route('logout'));
                                             <td>{{ person.p || '-' }}</td>
                                             <td>{{ person.hasSubmittedAssessment ? person.submittedAt : '-' }}</td>
                                             <td><span class="b" :class="person.statusMeta.cls">{{ person.statusMeta.label }}</span></td>
-                                        </tr>
-                                        <tr v-if="supervisorTrackingRows.length === 0">
-                                            <td colspan="4" class="muted ac py20">ไม่มีรายการที่ต้องติดตาม</td>
+                                            <td><button class="assessment-row-action secondary" type="button" @click.stop="openSupervisorApprovalModal(person)">ดูรายละเอียด</button></td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </section>
 
                         <div v-if="selectedSupervisorApproval?.hasReviewableCompetencies" class="approval-modal-backdrop" @click.self="closeSupervisorApprovalModal">
                             <div class="approval-modal">
@@ -1846,6 +2074,35 @@ const logout = () => router.post(route('logout'));
                                             </li>
                                         </ol>
                                     </section>
+
+                                    <details
+                                        v-if="selectedSupervisorCompetency.reviewHistory?.length"
+                                        class="assessment-review-history"
+                                        open
+                                    >
+                                        <summary>
+                                            ประวัติการพิจารณา {{ selectedSupervisorCompetency.reviewHistory.length }} รายการ
+                                        </summary>
+                                        <div
+                                            v-for="review in selectedSupervisorCompetency.reviewHistory"
+                                            :key="`${review.reviewerId}-${review.reviewStep}-${review.submittedAt}`"
+                                            class="assessment-history-row"
+                                        >
+                                            <strong>
+                                                {{ review.reviewerName || 'ไม่พบชื่อผู้พิจารณา' }}
+                                                <span
+                                                    class="assessment-review-decision"
+                                                    :class="review.decision === 'approved' ? 'is-approved' : 'is-returned'"
+                                                >
+                                                    {{ review.decision === 'approved' ? 'อนุมัติ' : 'ส่งกลับ' }}
+                                                </span>
+                                            </strong>
+                                            <span>
+                                                ผู้พิจารณาลำดับที่ {{ review.reviewStep || '-' }} · {{ review.submittedAt || '-' }}
+                                            </span>
+                                            <p v-if="review.comment">{{ review.comment }}</p>
+                                        </div>
+                                    </details>
 
                                     <article v-for="level in selectedSupervisorLevels" :key="level.id" class="detail-level-card">
                                         <header>
@@ -2100,6 +2357,26 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.embedded-reviewer-shell {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    background: transparent;
+}
+
+.embedded-reviewer-shell > .main {
+    width: 100%;
+    min-height: 0;
+    overflow: visible;
+}
+
+.embedded-reviewer-content {
+    overflow: visible;
+    padding: 0;
+}
+
 .menu-btn {
     padding: 8px;
     min-width: 40px;
@@ -2127,6 +2404,108 @@ const logout = () => router.post(route('logout'));
     align-items: flex-start;
     justify-content: space-between;
     gap: 14px;
+}
+
+.team-dashboard-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 18px;
+}
+
+.team-dashboard-copy > span {
+    display: block;
+    margin-bottom: 6px;
+    color: oklch(48% 0.1 165);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.14em;
+}
+
+.team-dashboard-copy h1 {
+    margin: 0;
+    color: oklch(31% 0.025 165);
+    font-size: 24px;
+    line-height: 1.25;
+}
+
+.team-dashboard-copy p {
+    margin: 6px 0 0;
+    color: oklch(58% 0.02 165);
+    font-size: 12px;
+}
+
+.team-round-context {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 220px;
+    padding: 11px 14px;
+    border: 1px solid oklch(86% 0.02 165);
+    border-radius: 10px;
+    background: oklch(98.5% 0.006 165);
+}
+
+.team-round-context > span {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: oklch(55% 0.13 165);
+    box-shadow: 0 0 0 4px oklch(92% 0.04 165);
+}
+
+.team-round-context small,
+.team-round-context strong {
+    display: block;
+}
+
+.team-round-context small {
+    color: oklch(59% 0.018 165);
+    font-size: 10px;
+}
+
+.team-round-context strong {
+    margin-top: 2px;
+    color: oklch(34% 0.035 165);
+    font-size: 12px;
+}
+
+.team-summary-band {
+    margin-bottom: 16px;
+}
+
+.team-dashboard-empty {
+    display: grid;
+    min-height: 360px;
+    place-items: center;
+    align-content: center;
+    color: oklch(57% 0.02 165);
+    text-align: center;
+}
+
+.team-dashboard-empty > span {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    margin-bottom: 14px;
+    place-items: center;
+    border-radius: 50%;
+    background: oklch(94% 0.02 165);
+    color: oklch(48% 0.08 165);
+    font-weight: 900;
+}
+
+.team-dashboard-empty strong {
+    color: oklch(32% 0.025 165);
+    font-size: 15px;
+}
+
+.team-dashboard-empty p {
+    max-width: 52ch;
+    margin: 7px 0 0;
+    font-size: 11px;
 }
 
 .team-metrics {
@@ -2205,7 +2584,7 @@ const logout = () => router.post(route('logout'));
 
 .team-gap-workspace {
     display: grid;
-    grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.55fr);
+    grid-template-columns: minmax(320px, 0.76fr) minmax(0, 1.55fr);
     min-height: 560px;
     overflow: hidden;
 }
@@ -2233,6 +2612,56 @@ const logout = () => router.post(route('logout'));
     gap: 10px;
     padding: 14px;
     border-bottom: 1px solid #e3e8eb;
+}
+
+.team-member-filter {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.team-member-filter button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid oklch(89% 0.012 165);
+    border-radius: 7px;
+    background: oklch(98.5% 0.005 165);
+    color: oklch(50% 0.025 165);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.team-member-filter button:hover,
+.team-member-filter button.active {
+    border-color: oklch(75% 0.07 165);
+    background: oklch(94% 0.035 165);
+    color: oklch(42% 0.1 165);
+}
+
+.team-member-filter button:focus-visible {
+    outline: 2px solid oklch(55% 0.12 165);
+    outline-offset: 1px;
+}
+
+.team-member-filter button span {
+    display: grid;
+    min-width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 999px;
+    background: oklch(91% 0.015 165);
+    color: oklch(48% 0.03 165);
+    font-size: 10px;
+}
+
+.team-member-filter button.active span {
+    background: oklch(55% 0.12 165);
+    color: oklch(98% 0.01 165);
 }
 
 .team-member-tools .team-gap-search {
@@ -2364,6 +2793,16 @@ const logout = () => router.post(route('logout'));
     color: #6e7b86;
 }
 
+.team-member-status.needs-development {
+    background: oklch(95% 0.035 30);
+    color: oklch(50% 0.17 30);
+}
+
+.team-member-status.passed-all {
+    background: oklch(95% 0.035 155);
+    color: oklch(45% 0.13 155);
+}
+
 .compact-pagination {
     padding: 10px 14px;
 }
@@ -2375,6 +2814,13 @@ const logout = () => router.post(route('logout'));
 .team-competency-panel {
     min-width: 0;
     background: #fff;
+}
+
+.team-no-selection {
+    display: grid;
+    place-items: center;
+    color: oklch(58% 0.02 165);
+    font-size: 13px;
 }
 
 .team-selected-person {
@@ -2393,6 +2839,43 @@ const logout = () => router.post(route('logout'));
     font-size: 10px;
     font-style: normal;
 }
+
+.team-selected-metrics {
+    display: flex;
+    align-items: stretch;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border: 1px solid oklch(89% 0.012 165);
+    border-radius: 9px;
+    background: oklch(98.5% 0.004 165);
+}
+
+.team-selected-metrics > span {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    gap: 7px;
+    padding: 9px 11px;
+}
+
+.team-selected-metrics > span + span {
+    border-left: 1px solid oklch(89% 0.012 165);
+}
+
+.team-selected-metrics small {
+    color: oklch(59% 0.018 165);
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.team-selected-metrics strong {
+    color: oklch(32% 0.025 165);
+    font-size: 14px;
+}
+
+.team-selected-metrics .passed strong { color: oklch(47% 0.13 155); }
+.team-selected-metrics .failed strong { color: oklch(52% 0.17 30); }
+.team-selected-metrics .pending strong { color: oklch(50% 0.13 75); }
 
 .team-competency-tools {
     display: flex;
@@ -2436,6 +2919,11 @@ const logout = () => router.post(route('logout'));
     background: #fbfdfc;
 }
 
+.team-competency-row.pending {
+    background: oklch(98% 0.005 165);
+    color: oklch(57% 0.018 165);
+}
+
 .team-competency-row > .b {
     justify-self: start;
     width: auto;
@@ -2471,6 +2959,36 @@ const logout = () => router.post(route('logout'));
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.team-result-status {
+    justify-self: start;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.team-result-status.failed,
+.team-result-status.revision {
+    background: oklch(95% 0.035 30);
+    color: oklch(50% 0.17 30);
+}
+
+.team-result-status.passed {
+    background: oklch(95% 0.035 155);
+    color: oklch(45% 0.13 155);
+}
+
+.team-result-status.pending {
+    background: oklch(95% 0.035 75);
+    color: oklch(48% 0.12 75);
+}
+
+.team-result-status.not-started {
+    background: oklch(94% 0.008 165);
+    color: oklch(51% 0.02 165);
 }
 
 .team-assessment-pending {
@@ -2848,6 +3366,71 @@ const logout = () => router.post(route('logout'));
     border-radius: 10px;
     background: #fff;
     padding: 16px;
+}
+
+.assessment-review-history {
+    border: 1px solid #d9e3ec;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 12px 16px;
+}
+
+.assessment-review-history summary {
+    color: #344054;
+    font-size: 15px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.assessment-history-row {
+    display: grid;
+    gap: 5px;
+    padding: 14px 0;
+    border-top: 1px solid #e2e7ec;
+}
+
+.assessment-history-row:first-of-type {
+    margin-top: 12px;
+}
+
+.assessment-history-row strong {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--text);
+    font-size: 15px;
+}
+
+.assessment-history-row > span,
+.assessment-history-row p {
+    margin: 0;
+    color: var(--text3);
+    font-size: 14px;
+}
+
+.assessment-review-decision {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 10px;
+    border: 1px solid;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.assessment-review-decision.is-approved {
+    border-color: #abefc6;
+    background: #ecfdf3;
+    color: #067647;
+}
+
+.assessment-review-decision.is-returned {
+    border-color: #fecdca;
+    background: #fef3f2;
+    color: #b42318;
 }
 
 .assessment-workflow-title {
@@ -4079,23 +4662,376 @@ const logout = () => router.post(route('logout'));
 .supervisor-approval-card .approval-table td { padding: 16px; background: #fff; vertical-align: middle; border-top: 1px solid #e4e9ee; }
 .supervisor-approval-card .approval-table tbody tr:nth-child(even) td { background: #fafbfc; }
 .supervisor-approval-card .approval-table tbody tr:hover td { background: #f0f7f4; }
-.supervisor-approval-card .approval-table td:first-child { border-left: 3px solid #bed2c9; }
 .supervisor-approval-card .person-cell small { margin-top: 5px; color: #718096; font-size: 12px; }
 .review-person-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 0; padding: 0; background: transparent; color: #263d35; text-align: left; font: inherit; font-weight: 800; cursor: pointer; }
 .review-person-link:focus-visible { outline: 2px solid #39725d; outline-offset: 4px; }
 @media (max-width: 900px) { .supervisor-approval-card .approval-table { min-width: 700px; } }
-.idp-queue-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.idp-queue-summary > div { display: grid; gap: 7px; border: 1px solid #dce3ea; border-radius: 8px; background: #fff; padding: 22px; }
-.idp-queue-summary span, .idp-queue-summary small { color: #718096; font-size: 12px; }
-.idp-queue-summary strong { color: #247260; font-size: 30px; }
-.idp-queue-summary > div:first-child strong { color: #d97706; }
-@media (max-width: 900px) { .idp-queue-summary { grid-template-columns: 1fr; } }
+.idp-team-head { margin-bottom: 14px; }
+.idp-workspace { overflow: hidden; border: 1px solid #d5dfdb; border-radius: 12px; background: #fff; box-shadow: 0 5px 20px rgba(35, 67, 57, .05); }
+.idp-mode-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-bottom: 1px solid #dce5e1; background: #f6f8f7; }
+.idp-mode-tabs button { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 76px; border: 0; background: transparent; padding: 14px 22px; color: #65736d; font: inherit; text-align: left; cursor: pointer; transition: background-color .18s ease, color .18s ease; }
+.idp-mode-tabs button + button { border-left: 1px solid #dce5e1; }
+.idp-mode-tabs button::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 3px; background: transparent; content: ''; }
+.idp-mode-tabs button:hover { background: #eef5f2; color: #2d5145; }
+.idp-mode-tabs button.active { background: #fff; color: #1f6956; }
+.idp-mode-tabs button.active::after { background: #247b66; }
+.idp-mode-tabs button:focus-visible { z-index: 1; outline: 3px solid rgba(36, 123, 102, .24); outline-offset: -3px; }
+.idp-tab-copy { display: grid; gap: 3px; }
+.idp-tab-copy strong { font-size: 16px; line-height: 1.35; }
+.idp-tab-copy small { color: #7a8782; font-size: 12px; font-weight: 600; line-height: 1.45; }
+.idp-tab-meta { display: flex; align-items: center; gap: 8px; }
+.idp-tab-pending { border-radius: 16px; background: #fff0cf; padding: 6px 9px; color: #925b08; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.idp-tab-overdue { border-radius: 16px; background: #fff0ed; padding: 6px 9px; color: #ad3929; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.idp-tab-count { display: grid; flex: 0 0 auto; place-items: center; min-width: 32px; height: 32px; border-radius: 16px; background: #e5ebe8; padding: 0 9px; color: #5f6d67; font-size: 13px; font-weight: 900; }
+.idp-tab-count.pending { background: #fff0cf; color: #925b08; }
+.idp-mode-tabs button.active .idp-tab-count { background: #dff1ea; color: #176d57; }
+.idp-mode-tabs button.active .idp-tab-count.pending { background: #ffedc2; color: #8b5405; }
+.idp-tab-panel { padding: 16px; background: #f8faf9; }
+.idp-tab-panel > :first-child { margin-top: 0; }
+.idp-tab-panel > :last-child { margin-bottom: 0; }
+.assessment-approval-hub {
+    display: block;
+}
+.assessment-hub-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 8px 2px 22px;
+    border-bottom: 1px solid oklch(88% .012 165);
+}
+.assessment-hub-copy > span {
+    display: block;
+    margin-bottom: 4px;
+    color: oklch(49% .09 165);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .04em;
+}
+.assessment-hub-copy h1 {
+    margin: 0;
+    color: oklch(29% .018 165);
+    font-size: 26px;
+    line-height: 1.3;
+}
+.assessment-hub-copy p {
+    max-width: 68ch;
+    margin: 5px 0 0;
+    color: oklch(57% .018 165);
+    font-size: 14px;
+}
+.assessment-queue-status {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 9px;
+    min-height: 38px;
+    border: 1px solid oklch(86% .04 75);
+    border-radius: 999px;
+    background: oklch(97% .025 80);
+    padding: 8px 13px;
+    color: oklch(46% .09 67);
+    font-size: 12px;
+}
+.assessment-queue-status > span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: oklch(68% .15 67);
+    box-shadow: 0 0 0 4px oklch(92% .06 75);
+}
+.assessment-queue-status.clear {
+    border-color: oklch(86% .035 155);
+    background: oklch(97% .025 155);
+    color: oklch(44% .075 155);
+}
+.assessment-queue-status.clear > span {
+    background: oklch(62% .13 155);
+    box-shadow: 0 0 0 4px oklch(91% .05 155);
+}
+.assessment-hub-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0 0 22px;
+    border: 1px solid oklch(87% .014 165);
+    border-radius: 12px;
+    background: oklch(95.5% .012 165);
+    padding: 6px;
+}
+.assessment-hub-tabs button {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 11px;
+    min-height: 66px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    padding: 10px 12px;
+    color: oklch(52% .015 165);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .18s cubic-bezier(.25, 1, .5, 1), background-color .18s cubic-bezier(.25, 1, .5, 1), box-shadow .18s cubic-bezier(.25, 1, .5, 1), color .18s cubic-bezier(.25, 1, .5, 1);
+}
+.assessment-hub-tabs button:hover {
+    background: oklch(97.5% .01 165);
+    color: oklch(38% .055 165);
+}
+.assessment-hub-tabs button.active {
+    border-color: oklch(82% .045 165);
+    background: oklch(99% .004 165);
+    box-shadow: 0 3px 10px oklch(32% .025 165 / .08);
+    color: oklch(42% .095 165);
+}
+.assessment-hub-tabs button:focus-visible {
+    outline: 3px solid oklch(76% .08 165 / .38);
+    outline-offset: 2px;
+}
+.assessment-hub-tabs button > i {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 8px;
+    background: oklch(90.5% .012 165);
+    color: oklch(53% .02 165);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 900;
+}
+.assessment-hub-tabs button.active > i {
+    background: oklch(50% .105 165);
+    color: oklch(98% .004 165);
+}
+.assessment-hub-tabs button > span {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+.assessment-hub-tabs button strong {
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.assessment-hub-tabs button b {
+    display: grid;
+    min-width: 32px;
+    height: 32px;
+    place-items: center;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: oklch(90.5% .012 165);
+    color: oklch(52% .018 165);
+    font-size: 12px;
+}
+.assessment-hub-tabs button.active b {
+    background: oklch(91.5% .05 165);
+    color: oklch(42% .095 165);
+}
+.assessment-hub-tabs button small {
+    color: oklch(62% .014 165);
+    font-size: 11px;
+    font-weight: 600;
+}
+.assessment-results-overview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+    margin-bottom: 18px;
+    border: 1px solid oklch(88% .012 165);
+    border-radius: 12px;
+    background: oklch(98% .008 165);
+    padding: 16px 20px;
+}
+.assessment-results-overview h2 {
+    margin: 0;
+    color: oklch(31% .018 165);
+    font-size: 17px;
+}
+.assessment-results-overview p {
+    margin: 4px 0 0;
+    color: oklch(59% .014 165);
+    font-size: 12px;
+}
+.assessment-status-summary {
+    display: flex;
+    flex: 0 0 auto;
+    margin: 0;
+}
+.assessment-status-summary > div {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    min-width: 125px;
+    padding: 2px 18px;
+    border-left: 1px solid oklch(88% .012 165);
+}
+.assessment-status-summary dt {
+    grid-column: 1 / -1;
+    color: oklch(58% .016 165);
+    font-size: 11px;
+    font-weight: 800;
+}
+.assessment-status-summary dd {
+    margin: 2px 5px 0 0;
+    color: oklch(42% .04 165);
+    font-size: 21px;
+    font-weight: 900;
+    line-height: 1;
+}
+.assessment-status-summary small {
+    color: oklch(62% .014 165);
+    font-size: 10px;
+}
+.assessment-status-summary .pending dd { color: oklch(55% .13 67); }
+.assessment-status-summary .complete dd { color: oklch(49% .11 150); }
+.assessment-list-section {
+    overflow: hidden;
+    margin-bottom: 16px;
+    border: 1px solid oklch(87% .012 165);
+    border-radius: 12px;
+    background: oklch(99% .004 165);
+}
+.assessment-list-section.secondary { background: oklch(98% .006 165); }
+.assessment-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 15px 18px;
+    border-bottom: 1px solid oklch(88% .012 165);
+}
+.assessment-list-head h3 { margin: 0; color: oklch(31% .018 165); font-size: 15px; }
+.assessment-list-head p { margin: 3px 0 0; color: oklch(61% .014 165); font-size: 11px; }
+.assessment-list-head > span {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: oklch(94% .012 165);
+    padding: 5px 9px;
+    color: oklch(49% .025 165);
+    font-size: 10px;
+    font-weight: 900;
+}
+.assessment-list-section .approval-table-wrap { padding: 0; }
+.assessment-list-section .approval-table { min-width: 760px; table-layout: fixed; border-collapse: collapse; }
+.assessment-list-section .approval-table th { background: oklch(96.5% .008 165); color: oklch(55% .015 165); font-size: 11px; }
+.assessment-list-section .approval-table th:first-child { width: 30%; }
+.assessment-list-section .approval-table th:last-child { width: 118px; }
+.assessment-list-section .approval-table td { background: transparent; padding-block: 15px; }
+.assessment-list-section .approval-table tbody tr:hover td { background: oklch(97% .02 165); }
+.assessment-list-section .person-cell small { margin-top: 4px; color: oklch(61% .014 165); font-size: 11px; }
+.assessment-row-action {
+    min-height: 36px;
+    border: 1px solid oklch(55% .09 165);
+    border-radius: 7px;
+    background: oklch(50% .105 165);
+    padding: 7px 12px;
+    color: oklch(98% .004 165);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 900;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color .18s cubic-bezier(.25, 1, .5, 1), border-color .18s cubic-bezier(.25, 1, .5, 1);
+}
+.assessment-row-action:hover { border-color: oklch(43% .1 165); background: oklch(43% .1 165); }
+.assessment-row-action.secondary { border-color: oklch(82% .02 165); background: oklch(98% .004 165); color: oklch(43% .065 165); }
+.assessment-row-action.secondary:hover { border-color: oklch(62% .055 165); background: oklch(96% .02 165); }
+.assessment-row-action:focus-visible { outline: 3px solid oklch(76% .08 165 / .38); outline-offset: 2px; }
+.assessment-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 13px;
+    min-height: 110px;
+    padding: 22px;
+    text-align: left;
+}
+.assessment-empty-state > span {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 50%;
+    background: oklch(92% .045 155);
+    color: oklch(47% .1 155);
+    font-weight: 900;
+}
+.assessment-empty-state strong { color: oklch(36% .018 165); font-size: 13px; }
+.assessment-empty-state p { margin: 3px 0 0; color: oklch(62% .014 165); font-size: 11px; }
+.assessment-empty-state.muted-state > span { background: oklch(93% .01 165); color: oklch(58% .015 165); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+@media (max-width: 900px) {
+    .assessment-hub-header {
+        align-items: flex-start;
+        padding-top: 2px;
+    }
+    .assessment-results-overview {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 14px;
+    }
+    .assessment-status-summary {
+        border-top: 1px solid oklch(88% .012 165);
+        padding-top: 14px;
+    }
+    .assessment-status-summary > div:first-child { border-left: 0; padding-left: 0; }
+    .assessment-list-section .approval-table { min-width: 720px; }
+    .assessment-hub-tabs {
+        gap: 5px;
+    }
+    .idp-mode-tabs button { min-height: 68px; padding: 12px 14px; }
+    .idp-tab-copy strong { font-size: 15px; }
+    .idp-tab-copy small { display: none; }
+    .idp-tab-pending { padding: 5px 7px; font-size: 10px; }
+    .idp-tab-panel { padding: 10px; }
+}
+@media (max-width: 620px) {
+    .assessment-hub-header {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 16px;
+    }
+    .assessment-queue-status { align-self: flex-start; }
+    .assessment-hub-tabs { grid-template-columns: 1fr; }
+    .assessment-status-summary { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .assessment-status-summary > div { min-width: 0; padding-inline: 10px; }
+    .assessment-list-head { align-items: flex-start; }
+    .idp-mode-tabs { grid-template-columns: none; grid-auto-columns: minmax(185px, 72vw); grid-auto-flow: column; overflow-x: auto; }
+    .idp-mode-tabs button + button { border-left: 1px solid #dce5e1; }
+}
 .navy-top { border-top: 3px solid var(--navy); }
 .blue-top { border-top: 3px solid var(--blue); }
 .red-top { border-top: 3px solid var(--red); }
 .yellow-top { border-top: 3px solid var(--yellow); }
 .green-top { border-top: 3px solid var(--green); }
+@media (max-width: 1200px) {
+    .team-competency-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .team-selected-metrics {
+        max-width: 100%;
+    }
+}
 @media (max-width: 900px) {
+    .team-dashboard-head {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .team-round-context {
+        width: 100%;
+        min-width: 0;
+    }
+
     .team-overview-strip {
         grid-template-columns: 1fr;
     }
@@ -4112,6 +5048,11 @@ const logout = () => router.post(route('logout'));
     .team-member-panel {
         border-right: 0;
         border-bottom: 1px solid #dde4e8;
+    }
+
+    .team-member-list {
+        max-height: 340px;
+        overflow-y: auto;
     }
 
     .team-competency-tools {
@@ -4144,6 +5085,30 @@ const logout = () => router.post(route('logout'));
     .team-competency-list-head,
     .team-competency-row {
         min-width: 650px;
+    }
+}
+@media (max-width: 620px) {
+    .team-dashboard-copy h1 {
+        font-size: 21px;
+    }
+
+    .team-selected-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .team-selected-metrics > span:nth-child(odd) {
+        border-left: 0;
+    }
+
+    .team-selected-metrics > span:nth-child(n + 3) {
+        border-top: 1px solid oklch(89% 0.012 165);
+    }
+
+    .team-member-filter {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+        overflow-x: auto;
     }
 }
 </style>

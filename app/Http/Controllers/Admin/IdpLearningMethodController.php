@@ -18,7 +18,6 @@ class IdpLearningMethodController extends Controller
         DB::transaction(function () use ($data): void {
             $values = [
                 'focus_type' => $data['focus_type'],
-                'code' => null,
                 'title' => $data['title'],
                 'sort_order' => (int) DB::table('idp_learning_methods')
                     ->where('focus_type', $data['focus_type'])
@@ -31,12 +30,7 @@ class IdpLearningMethodController extends Controller
                 $values['form_code'] = $data['form_code'] ?? null;
             }
 
-            $methodId = DB::table('idp_learning_methods')->insertGetId($values);
-            $prefix = $data['focus_type'] === 'experiential' ? 'EXP' : 'SOC';
-
-            DB::table('idp_learning_methods')
-                ->where('id', $methodId)
-                ->update(['code' => sprintf('%s-%04d', $prefix, $methodId)]);
+            DB::table('idp_learning_methods')->insert($values);
         });
 
         return back()->with('success', 'เพิ่มหัวข้อแนวทาง IDP เรียบร้อยแล้ว');

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AssessmentRoundWindow;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +10,10 @@ use Illuminate\Validation\ValidationException;
 
 class FcTopicSelectionApprovalController extends Controller
 {
+    public function __construct(private AssessmentRoundWindow $assessmentRoundWindow)
+    {
+    }
+
     public function approve(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -63,8 +68,12 @@ class FcTopicSelectionApprovalController extends Controller
     private function selectionForReviewer(Request $request, int $selectionId): object
     {
         $selection = DB::table('fc_topic_selections')->where('id', $selectionId)->first();
+        $activeRoundId = $this->assessmentRoundWindow->assertSupervisorAssessmentOpen()->id;
 
-        if (! $selection || (int) $selection->submitted_to !== (int) $request->user()->id) {
+        if (! $selection
+            || ! $activeRoundId
+            || (int) $selection->assessment_round_id !== (int) $activeRoundId
+            || (int) $selection->submitted_to !== (int) $request->user()->id) {
             throw ValidationException::withMessages([
                 'selection' => 'คุณไม่มีสิทธิ์อนุมัติหัวข้อ FC รายการนี้',
             ]);

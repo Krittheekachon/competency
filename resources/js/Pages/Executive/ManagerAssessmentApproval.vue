@@ -454,6 +454,26 @@ const submitReject = () => {
                 <strong>Comment จากผู้ประเมินตนเอง</strong>
                 <span>{{ row.note || 'ไม่มี Note' }}</span>
               </div>
+              <details v-if="row.reviewHistory?.length" class="assessment-review-history" open>
+                <summary>ประวัติการพิจารณา {{ row.reviewHistory.length }} รายการ</summary>
+                <div
+                  v-for="review in row.reviewHistory"
+                  :key="`${review.reviewerId}-${review.reviewStep}-${review.submittedAt}`"
+                  class="assessment-history-row"
+                >
+                  <strong>
+                    {{ review.reviewerName || 'ไม่พบชื่อผู้พิจารณา' }}
+                    <span
+                      class="assessment-review-decision"
+                      :class="review.decision === 'approved' ? 'is-approved' : 'is-returned'"
+                    >
+                      {{ review.decision === 'approved' ? 'อนุมัติ' : 'ส่งกลับ' }}
+                    </span>
+                  </strong>
+                  <span>ผู้พิจารณาลำดับที่ {{ review.reviewStep || '-' }} · {{ review.submittedAt || '-' }}</span>
+                  <p v-if="review.comment">{{ review.comment }}</p>
+                </div>
+              </details>
             </div>
           </article>
 
@@ -1003,6 +1023,71 @@ const submitReject = () => {
   background: #fff;
   color: var(--text2);
   font-size: 12px;
+}
+
+.assessment-review-history {
+  border: 1px solid #d9e3ec;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
+.assessment-review-history summary {
+  color: #344054;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.assessment-history-row {
+  display: grid;
+  gap: 5px;
+  padding: 14px 0;
+  border-top: 1px solid #e2e7ec;
+}
+
+.assessment-history-row:first-of-type {
+  margin-top: 12px;
+}
+
+.assessment-history-row strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.assessment-history-row > span,
+.assessment-history-row p {
+  margin: 0;
+  color: var(--text3);
+  font-size: 14px;
+}
+
+.assessment-review-decision {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.assessment-review-decision.is-approved {
+  border-color: #abefc6;
+  background: #ecfdf3;
+  color: #067647;
+}
+
+.assessment-review-decision.is-returned {
+  border-color: #fecdca;
+  background: #fef3f2;
+  color: #b42318;
 }
 
 .approval-empty {

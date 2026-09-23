@@ -1052,7 +1052,6 @@ const deliveryTypeDisplay = (value) => {
                   </tbody>
                 </table>
               </div>
-              <div v-if="previewForm.note" class="preview-note">{{ previewForm.note }}</div>
             </div>
 
             <div v-if="!['3', '4', '5', '6', '7', '8', '9', '10'].includes(previewForm.number)" class="preview-block result">
@@ -1342,7 +1341,6 @@ const deliveryTypeDisplay = (value) => {
 .preview-fixed-topic { display: grid; gap: 10px; min-width: 260px; }
 .preview-fixed-topic strong { font-weight: 900; line-height: 1.45; }
 .preview-fixed-topic label { display: grid; gap: 4px; }
-.preview-note { margin: 10px 12px 12px; border-left: 4px solid #f59e0b; background: #fffbeb; color: #92400e; font-size: 12px; font-weight: 800; line-height: 1.5; padding: 10px 12px; }
 .preview-option { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 12px; width: 100%; border: 1px solid var(--border); border-radius: 9px; background: #fff; color: var(--text); padding: 11px 14px; text-align: left; cursor: pointer; }
 .preview-option:hover { border-color: #9fc0fb; background: #eff6ff; }
 .preview-option strong { font-size: 13px; font-weight: 900; }

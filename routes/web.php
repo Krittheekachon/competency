@@ -20,7 +20,10 @@ use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicS
 use App\Http\Controllers\FcTopicSelectionApprovalController;
 use App\Http\Controllers\MockSsoController;
 use App\Http\Controllers\Hr\PositionCompetencyController as HrPositionCompetencyController;
+use App\Http\Controllers\Hr\AssessmentRoundController as HrAssessmentRoundController;
 use App\Http\Controllers\IdpApprovalController;
+use App\Http\Controllers\IdpCompletionReviewController;
+use App\Http\Controllers\IdpProgressEvidenceController;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Cache;
 
@@ -105,18 +108,37 @@ Route::middleware('auth')->group(function () {
     Route::post('/employee/idp/submit-item', [EmployeeIdpController::class, 'submitItem'])->name('employee.idp.submit-item');
     Route::post('/employee/idp-activities/progress', [IdpActivityUpdateController::class, 'store'])
         ->name('employee.idp-activities.update-progress');
+    Route::post('/employee/idp-items/submit-completion', [IdpActivityUpdateController::class, 'submitCompletion'])
+        ->name('employee.idp-items.submit-completion');
+    Route::get('/idp-progress/evidence/{evidence}', [IdpProgressEvidenceController::class, 'show'])
+        ->whereUuid('evidence')
+        ->name('idp-progress.evidence.show');
+    Route::post('/idp-completions/approve', [IdpCompletionReviewController::class, 'approve'])
+        ->name('idp-completions.approve');
+    Route::post('/idp-completions/reject', [IdpCompletionReviewController::class, 'reject'])
+        ->name('idp-completions.reject');
     Route::post('/idp-items/approve', [IdpApprovalController::class, 'approve'])->name('idp-items.approve');
     Route::post('/idp-items/reject', [IdpApprovalController::class, 'reject'])->name('idp-items.reject');
-    Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
-    Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
-    Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');
-    Route::put('/admin/idp-delivery-type-settings', [AdminIdpDeliveryTypeSettingController::class, 'update'])->name('admin.idp-delivery-type-settings.update');
-    Route::post('/admin/learning-catalogs', [AdminLearningCatalogController::class, 'store'])->name('admin.learning-catalogs.store');
-    Route::put('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'update'])->name('admin.learning-catalogs.update');
-    Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
-    Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
-    Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
-    Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
+    Route::get('/idp-activities/{activity}/review-detail', [IdpApprovalController::class, 'activityDetail'])
+        ->name('idp-activities.review-detail');
+    Route::middleware('role:admin')->group(function () {
+        Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
+        Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
+        Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');
+        Route::put('/admin/idp-delivery-type-settings', [AdminIdpDeliveryTypeSettingController::class, 'update'])->name('admin.idp-delivery-type-settings.update');
+        Route::post('/admin/learning-catalogs', [AdminLearningCatalogController::class, 'store'])->name('admin.learning-catalogs.store');
+        Route::put('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'update'])->name('admin.learning-catalogs.update');
+        Route::delete('/admin/learning-catalogs/{catalog}', [AdminLearningCatalogController::class, 'destroy'])->name('admin.learning-catalogs.destroy');
+    });
+    Route::middleware('role:hr')->group(function () {
+        Route::post('/hr/position-competencies', [HrPositionCompetencyController::class, 'store'])->name('hr.position-competencies.store');
+        Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
+        Route::post('/hr/position-competencies/copy-round', [HrPositionCompetencyController::class, 'copyFromRound'])->name('hr.position-competencies.copy-round');
+        Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
+        Route::post('/hr/assessment-rounds', [HrAssessmentRoundController::class, 'store'])->name('hr.assessment-rounds.store');
+        Route::put('/hr/assessment-rounds/{round}', [HrAssessmentRoundController::class, 'update'])->name('hr.assessment-rounds.update');
+        Route::patch('/hr/assessment-rounds/{round}/activate', [HrAssessmentRoundController::class, 'activate'])->name('hr.assessment-rounds.activate');
+    });
     Route::post('/hr/remind-assess', function (NotificationService $notifications) {
         $notifications->remindPendingEmployees();
 
