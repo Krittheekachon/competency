@@ -115,6 +115,9 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
-    'dev_to' => env('MAIL_DEV_TO', 'krittheekachon.s@kkumail.com'),
+    'dev_to' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('MAIL_DEV_TO', 'krittheekachon.s@kkumail.com')),
+    ))),
 
 ];
