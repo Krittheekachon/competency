@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
     module: { type: Object, default: () => ({ enabled: false, items: [] }) },
+    compact: { type: Boolean, default: false },
 });
 
 const selected = ref(null);
@@ -49,7 +50,7 @@ const formatDate = (value) => value
 
 <template>
     <div class="approval-page">
-        <header class="page-heading">
+        <header v-if="!compact" class="page-heading">
             <div>
                 <h1>อนุมัติหัวข้อการประเมิน</h1>
                 <p>ตรวจสอบหัวข้อ FC ที่ส่งมาจากบุคลากรซึ่งคุณเป็นหัวหน้าลำดับแรก</p>

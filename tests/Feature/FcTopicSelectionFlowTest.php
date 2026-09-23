@@ -15,6 +15,14 @@ class FcTopicSelectionFlowTest extends TestCase
 
     public function test_employee_assigned_as_first_reviewer_sees_fc_topic_approval_module(): void
     {
+        DB::table('assessment_rounds')->insert([
+            'name' => 'รอบทดสอบผู้อนุมัติ FC',
+            'year' => 2569,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $reviewer = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'is_active' => true,
@@ -37,7 +45,7 @@ class FcTopicSelectionFlowTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Super/Dashboard')
+                ->component('Employee/Dashboard')
                 ->where('roleKey', 'employee')
                 ->where('fcTopicApprovalModule.enabled', true)
                 ->has('fcTopicApprovalModule.items', 0));
@@ -47,9 +55,18 @@ class FcTopicSelectionFlowTest extends TestCase
     {
         Mail::fake();
 
-        [$positionId, $ccId, $selectedFcId, $otherFcId] = $this->positionWithCompetencies();
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบทดสอบ FC',
+            'year' => 2569,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$positionId, $ccId, $selectedFcId, $otherFcId] = $this->positionWithCompetencies($roundId);
 
         DB::table('position_fc_selection_rules')->insert([
+            'assessment_round_id' => $roundId,
             'position_id' => $positionId,
             'required_fc_count' => 1,
             'created_at' => now(),
@@ -94,6 +111,7 @@ class FcTopicSelectionFlowTest extends TestCase
 
         $this->assertDatabaseHas('fc_topic_selections', [
             'id' => $selectionId,
+            'assessment_round_id' => $roundId,
             'user_id' => $employee->id,
             'position_id' => $positionId,
             'status' => 'submitted',
@@ -167,7 +185,7 @@ class FcTopicSelectionFlowTest extends TestCase
             ->assertSessionHasErrors('assessment');
     }
 
-    private function positionWithCompetencies(): array
+    private function positionWithCompetencies(int $roundId): array
     {
         $worklineId = DB::table('worklines')->insertGetId([
             'name' => 'สายทดสอบ FC',
@@ -217,6 +235,7 @@ class FcTopicSelectionFlowTest extends TestCase
 
         foreach ([$ccId, $selectedFcId, $otherFcId] as $competencyId) {
             DB::table('position_competencies')->insert([
+                'assessment_round_id' => $roundId,
                 'position_id' => $positionId,
                 'competency_id' => $competencyId,
                 'created_at' => now(),

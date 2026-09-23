@@ -2,15 +2,8 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
-import ManagerGap from './ManagerGap.vue';
-import ManagerIDP from './ManagerIDP.vue';
-import ManagerAssessmentApproval from './ManagerAssessmentApproval.vue';
-import ManagerIDPApproval from './ManagerIDPApproval.vue';
-import EmployeeAssess from '../Employee/EmployeeAssess.vue';
-import EmployeeGap from '../Employee/EmployeeGap.vue';
-import EmployeeIDP from '../Employee/EmployeeIDP.vue';
-import EmployeeProgress from '../Employee/EmployeeProgress.vue';
-import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
+import FacultyOverview from '../Analytics/FacultyOverview.vue';
+import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
     users: {
@@ -32,55 +25,52 @@ const props = defineProps({
             pendingIdpApprovals: 0,
         }),
     },
+    facultyAnalytics: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 
 const page = usePage();
 const isSidebarOpen = ref(true);
-const activePage = ref('manager-competency-overview');
+const activePage = ref('faculty-assessment-overview');
+const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
+const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [] });
+const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
 
-const sections = [
-    {
-        title: 'ของฉัน (บุคลากร)',
-        items: [
-            { id: 'employee-assess', icon: '', label: 'ประเมินตนเอง' },
-            { id: 'employee-gap', icon: '', label: 'ผลการประเมิน' },
-            { id: 'employee-idp', icon: '', label: 'IDP ของฉัน' },
-            { id: 'employee-progress', icon: '', label: 'อัปเดตความก้าวหน้า' },
-            { id: 'employee-idp-detail', icon: '', label: 'รายละเอียด IDP' },
-        ],
-    },
+const sections = computed(() => {
+    const result = [
     {
         title: 'ภาพรวมคณะ',
         items: [
-            { id: 'manager-competency-overview', icon: '', label: 'Competency Gap คณะ' },
-            { id: 'manager-idp-overview', icon: '', label: 'ติดตาม IDP ภาพรวม' },
+            { id: 'faculty-assessment-overview', icon: '', label: 'ภาพรวมการประเมิน' },
+            { id: 'faculty-idp-tracking', icon: '', label: 'การติดตาม IDP' },
         ],
     },
-    {
-        title: 'การอนุมัติ',
-        items: [
-            { id: 'manager-assessment-approval', icon: '', label: 'อนุมัติผลการประเมิน' },
-            { id: 'manager-idp-approval', icon: '', label: 'อนุมัติแผน IDP' },
-        ],
-    },
-];
+    ];
+    const assignedItems = [
+        ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled) ? [{ id: 'manager-assessment-approval', icon: '', label: 'อนุมัติการประเมิน' }] : []),
+        ...(idpReviewModule.value.enabled ? [{ id: 'manager-idp-approval', icon: '', label: 'แผนและผล IDP' }] : []),
+    ];
+
+    if (assignedItems.length) {
+        result.push({ title: 'รายการที่ต้องพิจารณา', items: assignedItems });
+    }
+
+    return result;
+});
 
 const pageTitles = {
-    'employee-assess': 'ประเมินตนเอง',
-    'employee-gap': 'ผลการประเมิน',
-    'employee-idp': 'IDP ของฉัน',
-    'employee-progress': 'อัปเดตความก้าวหน้า',
-    'employee-idp-detail': 'รายละเอียด IDP',
-    'manager-competency-overview': 'Competency Gap คณะ',
-    'manager-idp-overview': 'ติดตาม IDP ภาพรวม',
-    'manager-assessment-approval': 'อนุมัติผลการประเมิน',
-    'manager-idp-approval': 'อนุมัติแผน IDP',
+    'faculty-assessment-overview': 'ภาพรวมการประเมิน',
+    'faculty-idp-tracking': 'การติดตาม IDP',
+    'manager-fc-topic-approval': 'พิจารณาหัวข้อการประเมิน',
+    'manager-assessment-approval': 'อนุมัติการประเมิน',
+    'manager-idp-approval': 'อนุมัติแผนและผล IDP',
 };
 
 const currentPageTitle = computed(() => pageTitles[activePage.value]);
 const userName = computed(() => page.props.auth?.user?.name || 'Manager User');
 const userInitial = computed(() => userName.value?.[0] || 'M');
-const userId = computed(() => page.props.auth?.user?.id || 'manager');
 
 const logout = () => router.post(route('logout'));
 </script>
@@ -133,39 +123,37 @@ const logout = () => router.post(route('logout'));
             </header>
 
             <main class="content">
-                <ManagerGap
-                    v-if="activePage === 'manager-competency-overview'"
-                    :users="props.users"
-                    :active-cycle-name="props.activeCycleName"
+                <FacultyOverview
+                    v-if="activePage === 'faculty-assessment-overview'"
+                    :analytics="props.facultyAnalytics"
+                    module="assessment"
                 />
-                <ManagerIDP
-                    v-else-if="activePage === 'manager-idp-overview'"
-                    :users="props.users"
-                    :disable-mock-data="false"
+                <FacultyOverview
+                    v-else-if="activePage === 'faculty-idp-tracking'"
+                    :analytics="props.facultyAnalytics"
+                    module="idp"
                 />
-                <ManagerAssessmentApproval
-                    v-else-if="activePage === 'manager-assessment-approval'"
-                    :users="props.users"
+                <HeadDashboard
+                    v-else-if="activePage === 'manager-fc-topic-approval' && fcTopicApprovalModule.enabled"
+                    embedded
+                    embedded-page="dh-fc-topic-approval"
+                    role-key="dean"
+                    :idp-review-items="page.props.idpReviewItems || []"
                 />
-                <ManagerIDPApproval
-                    v-else-if="activePage === 'manager-idp-approval'"
-                    :users="props.users"
+                <HeadDashboard
+                    v-else-if="activePage === 'manager-assessment-approval' && (fcTopicApprovalModule.enabled || assessmentApprovalModule.enabled)"
+                    embedded
+                    embedded-page="dh-assess"
+                    role-key="dean"
+                    :idp-review-items="page.props.idpReviewItems || []"
                 />
-                <EmployeeAssess
-                    v-else-if="activePage === 'employee-assess'"
-                    :user="{ sso: userId }"
-                    :set-users="() => {}"
+                <HeadDashboard
+                    v-else-if="activePage === 'manager-idp-approval' && idpReviewModule.enabled"
+                    embedded
+                    embedded-page="dh-idp"
+                    role-key="dean"
+                    :idp-review-items="page.props.idpReviewItems || []"
                 />
-                <EmployeeGap
-                    v-else-if="activePage === 'employee-gap'"
-                    :set-page="(pageId) => (activePage = pageId)"
-                />
-                <EmployeeIDP v-else-if="activePage === 'employee-idp'" />
-                <EmployeeProgress
-                    v-else-if="activePage === 'employee-progress'"
-                    :activities="page.props.currentUserApprovedIdpActivities || []"
-                />
-                <EmployeeIDPDetail v-else-if="activePage === 'employee-idp-detail'" />
             </main>
         </section>
     </div>

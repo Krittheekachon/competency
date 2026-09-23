@@ -3,18 +3,45 @@ import { computed, ref } from 'vue';
 
 const props = defineProps<{
   setPage: (p: string) => void;
+  competencies?: any[];
   gaps?: any[];
   evalStatus?: string;
   user?: any;
 }>();
 
-const sourceRows = computed(() => (props.gaps || []).filter((row) => row.gap !== null && row.gap !== undefined));
-const rows = computed(() => sourceRows.value.filter((row) => ['approved', 'dean_approved'].includes(row.status || '')));
-const hasPendingResults = computed(() => sourceRows.value.some((row) => !['approved', 'dean_approved'].includes(row.status || '')));
-const passedRows = computed(() => rows.value.filter((row) => Number(row.gap) >= 0));
-const failedRows = computed(() => rows.value
-  .filter((row) => Number(row.gap) < 0)
-  .sort((a, b) => Number(a.gap) - Number(b.gap)));
+const approvedStatuses = ['approved', 'dean_approved'];
+const competencyKey = (row: any) => String(row?.competencyId ?? row?.id ?? row?.cd ?? '');
+const rows = computed(() => {
+  const assigned = Array.isArray(props.competencies) ? props.competencies : [];
+  const gaps = Array.isArray(props.gaps) ? props.gaps : [];
+  const gapsByCompetency = new Map(gaps.map((row) => [competencyKey(row), row]));
+  const assignedKeys = new Set(assigned.map((row) => competencyKey(row)));
+
+  const assignedRows = assigned.map((competency) => {
+    const result = gapsByCompetency.get(competencyKey(competency));
+    const status = competency.assessmentStatus || result?.status || 'draft';
+
+    return {
+      ...competency,
+      ...(result || {}),
+      competencyId: result?.competencyId ?? competency.id,
+      expected: result?.expected ?? competency.expectedLevel ?? null,
+      actual: result?.actual ?? null,
+      gap: result?.gap ?? null,
+      status,
+      lastDraftSavedAt: competency.lastDraftSavedAt || result?.updatedAt || null,
+    };
+  });
+  const unassignedResults = gaps.filter((row) => !assignedKeys.has(competencyKey(row)));
+
+  return [...assignedRows, ...unassignedResults].sort((a, b) => String(a.cd || '').localeCompare(String(b.cd || '')));
+});
+const isApproved = (row: any) => approvedStatuses.includes(row?.status || '');
+const hasFinalResult = (row: any) => isApproved(row) && row.gap !== null && row.gap !== undefined;
+const completedRows = computed(() => rows.value.filter((row) => hasFinalResult(row)));
+const pendingRows = computed(() => rows.value.filter((row) => !hasFinalResult(row)));
+const passedRows = computed(() => completedRows.value.filter((row) => Number(row.gap) >= 0));
+const failedRows = computed(() => completedRows.value.filter((row) => Number(row.gap) < 0));
 const selectedRow = ref<any | null>(null);
 const rowKey = (row: any) => String(row.id ?? row.competencyId ?? row.cd);
 const openDetails = (row: any) => { selectedRow.value = row; };
@@ -55,8 +82,29 @@ const formatCommentDate = (value: unknown) => {
   return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
 const developmentStatusLabel = (row: any) => {
-  if (Number(row.gap) >= 0) return 'ผ่านเกณฑ์';
-  return 'ไม่ผ่านเกณฑ์';
+  const status = row?.status || 'draft';
+
+  if (hasFinalResult(row)) return Number(row.gap) >= 0 ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์';
+  if (isApproved(row)) return 'อนุมัติแล้ว';
+  if (status === 'revision_required') return 'ถูกส่งกลับให้แก้ไข';
+  if (status === 'self_submitted') return 'รอผู้ประเมินลำดับที่ 1';
+  if (status === 'unit_evaluated') return 'รอผู้ประเมินลำดับที่ 2';
+  if (status === 'dept_evaluated') return 'รอผู้ประเมินลำดับที่ 3';
+
+  const reviewStep = String(status).match(/^review_step_(\d+)$/)?.[1];
+  if (reviewStep) return `รอผู้ประเมินลำดับที่ ${reviewStep}`;
+  if (status === 'draft' && row?.lastDraftSavedAt) return 'บันทึกร่างแล้ว';
+
+  return 'ยังไม่เริ่มประเมิน';
+};
+
+const statusTone = (row: any) => {
+  if (hasFinalResult(row)) return Number(row.gap) >= 0 ? 'passed' : 'failed';
+  if (isApproved(row)) return 'pending';
+  if (row?.status === 'revision_required') return 'revision';
+  if (row?.status === 'draft' && !row?.lastDraftSavedAt) return 'not-started';
+  if (row?.status === 'draft') return 'draft';
+  return 'pending';
 };
 
 const formatLevel = (value: unknown) => {
@@ -91,7 +139,12 @@ const formatGap = (value: unknown) => {
       <div class="summary-card">
         <div class="summary-label">สมรรถนะทั้งหมด</div>
         <div class="summary-value">{{ rows.length }}</div>
-        <div class="summary-copy">รายการที่ประเมิน</div>
+        <div class="summary-copy">รายการที่ต้องประเมิน</div>
+      </div>
+      <div class="summary-card pending">
+        <div class="summary-label">ยังไม่เสร็จสิ้น</div>
+        <div class="summary-value">{{ pendingRows.length }}</div>
+        <div class="summary-copy">ยังไม่เริ่ม ร่าง หรือรอตรวจ</div>
       </div>
       <div class="summary-card success">
         <div class="summary-label">ผ่านเกณฑ์</div>
@@ -109,7 +162,7 @@ const formatGap = (value: unknown) => {
       <div class="section-head compact">
         <div>
           <h2>ผลการประเมิน</h2>
-          <p>ดูรายละเอียดคะแนนคาดหวัง คะแนนจริง และสถานะการพัฒนา</p>
+          <p>แสดงสมรรถนะที่ได้รับมอบหมายทั้งหมด พร้อมคะแนนและสถานะล่าสุด</p>
         </div>
       </div>
       <div class="result-table-wrap">
@@ -128,11 +181,12 @@ const formatGap = (value: unknown) => {
               v-for="row in rows"
               :key="`table-${rowKey(row)}`"
               class="result-row"
-              tabindex="0"
-              role="button"
-              @click="openDetails(row)"
-              @keydown.enter.prevent="openDetails(row)"
-              @keydown.space.prevent="openDetails(row)"
+              :class="{ 'is-clickable': hasFinalResult(row) }"
+              :tabindex="hasFinalResult(row) ? 0 : undefined"
+              :role="hasFinalResult(row) ? 'button' : undefined"
+              @click="hasFinalResult(row) && openDetails(row)"
+              @keydown.enter.prevent="hasFinalResult(row) && openDetails(row)"
+              @keydown.space.prevent="hasFinalResult(row) && openDetails(row)"
             >
               <td>
                 <div class="table-competency">
@@ -144,14 +198,15 @@ const formatGap = (value: unknown) => {
                 </div>
               </td>
               <td>{{ formatLevel(row.expected) }}</td>
-              <td>{{ formatLevel(row.actual) }}</td>
+              <td>{{ hasFinalResult(row) ? formatLevel(row.actual) : '—' }}</td>
               <td>
-                <span class="gap-pill" :class="{ negative: Number(row.gap) < 0, positive: Number(row.gap) >= 0 }">
+                <span v-if="hasFinalResult(row)" class="gap-pill" :class="{ negative: Number(row.gap) < 0, positive: Number(row.gap) >= 0 }">
                   {{ formatGap(row.gap) }}
                 </span>
+                <span v-else class="empty-value">—</span>
               </td>
               <td>
-                <span class="status-pill" :class="{ failed: Number(row.gap) < 0, passed: Number(row.gap) >= 0 }">
+                <span class="status-pill" :class="statusTone(row)">
                   {{ developmentStatusLabel(row) }}
                 </span>
               </td>
@@ -238,14 +293,10 @@ const formatGap = (value: unknown) => {
     </Teleport>
 
     <div v-if="!rows.length" class="empty-card">
-      <div class="empty-title">{{ hasPendingResults ? 'ผลการประเมินอยู่ระหว่างการอนุมัติ' : 'ยังไม่มีผลการประเมิน' }}</div>
-      <div class="empty-copy">
-        {{ hasPendingResults
-          ? 'ระบบจะแสดงคะแนนและ Gap เมื่อผู้ประเมินอนุมัติครบทุกลำดับแล้ว'
-          : 'เมื่อส่งแบบประเมินและได้รับอนุมัติครบทุกลำดับแล้ว ผลการประเมินจะแสดงในหน้านี้' }}
-      </div>
+      <div class="empty-title">ยังไม่มีสมรรถนะที่ต้องประเมิน</div>
+      <div class="empty-copy">เมื่อ HR กำหนดสมรรถนะสำหรับตำแหน่งแล้ว รายการจะปรากฏในหน้านี้</div>
       <button class="btn btn-t btn-sm" type="button" @click="setPage('emp-assess')">
-        {{ hasPendingResults ? 'ดูสถานะการประเมิน' : 'เริ่มประเมินตนเอง' }}
+        กลับไปหน้าประเมินตนเอง
       </button>
     </div>
   </section>
@@ -256,7 +307,7 @@ const formatGap = (value: unknown) => {
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
 .page-head p { margin: 6px 0 0; color: var(--text3); font-size: 13px; }
-.summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .summary-card,
 .result-section,
 .table-section {
@@ -267,6 +318,7 @@ const formatGap = (value: unknown) => {
   overflow: hidden;
 }
 .summary-card { padding: 18px 20px; }
+.summary-card.pending .summary-value { color: #b7791f; }
 .summary-card.success .summary-value { color: #059669; }
 .summary-card.danger .summary-value { color: #dc2626; }
 .summary-label { color: var(--text3); font-size: 12px; font-weight: 800; }
@@ -412,8 +464,9 @@ const formatGap = (value: unknown) => {
   padding: 14px;
   vertical-align: middle;
 }
-.result-row { cursor: pointer; transition: background-color .16s ease, box-shadow .16s ease; }
-.result-row:hover { background: #f4faf8; }
+.result-row { transition: background-color .16s ease, box-shadow .16s ease; }
+.result-row.is-clickable { cursor: pointer; }
+.result-row.is-clickable:hover { background: #f4faf8; }
 .result-row:focus-visible { background: #f4faf8; outline: 2px solid rgba(15, 118, 110, .24); outline-offset: -2px; }
 .competency-copy { min-width: 0; }
 .competency-modal-backdrop {
@@ -580,6 +633,11 @@ const formatGap = (value: unknown) => {
 .status-pill.failed { background: #fef2f2; color: #dc2626; }
 .gap-pill.positive,
 .status-pill.passed { background: #ecfdf5; color: #047857; }
+.status-pill.pending { background: #fffbeb; color: #a16207; }
+.status-pill.revision { background: #fff7ed; color: #c2410c; }
+.status-pill.draft { background: #eff6ff; color: #1d4ed8; }
+.status-pill.not-started { background: #f1f5f9; color: #64748b; }
+.empty-value { color: var(--text3); }
 .empty-card {
   display: grid;
   place-items: center;

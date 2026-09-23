@@ -12,6 +12,10 @@ export default {
 
 theme: {
         extend: {
+            fontSize: {
+                xs: ['0.8125rem', { lineHeight: '1.25rem' }],
+                sm: ['0.9375rem', { lineHeight: '1.5rem' }],
+            },
             colors: {
                 "on-background": "#1b1c1c",
                 "primary-fixed-dim": "#ffb4ab",

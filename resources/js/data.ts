@@ -37,7 +37,7 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "dh-assess", ic: "", lb: "ประเมินลูกน้อง" },
+        { id: "dh-assess", ic: "", lb: "อนุมัติการประเมิน" },
         { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
@@ -76,7 +76,7 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "dh-assess", ic: "", lb: "อนุมัติผลการประเมิน" },
+        { id: "dh-assess", ic: "", lb: "อนุมัติการประเมิน" },
         { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
@@ -96,7 +96,7 @@ export const NAV_CONFIG = {
     {
       sec: "จัดการทีม",
       items: [
-        { id: "dh-assess", ic: "", lb: "อนุมัติผลการประเมิน" },
+        { id: "dh-assess", ic: "", lb: "อนุมัติการประเมิน" },
         { id: "sup-gap", ic: "", lb: "ผลการประเมินของทีม" },
         { id: "dh-idp", ic: "", lb: "IDP & ติดตามทีม" }
       ]
@@ -123,22 +123,33 @@ export const NAV_CONFIG = {
   ],
   manager: [
     {
-      sec: "ของฉัน (บุคลากร)",
+      sec: "ภาพรวมคณะ",
       items: [
-        { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
-        { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
-        { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "faculty-assessment-overview", ic: "", lb: "ภาพรวมการประเมิน" },
+        { id: "faculty-idp-tracking", ic: "", lb: "การติดตาม IDP" },
       ]
     },
     {
+      sec: "รายการที่ต้องพิจารณา",
+      items: [
+        { id: "mgr-assessment-approval", ic: "", lb: "อนุมัติการประเมิน" },
+        { id: "mgr-idp-approval", ic: "", lb: "แผนและผล IDP" }
+      ]
+    }
+  ],
+  dean: [
+    {
       sec: "ภาพรวมคณะ",
       items: [
-        { id: "mgr-gap", ic: "", lb: "Competency Gap คณะ" },
-        { id: "mgr-idp", ic: "", lb: "ติดตาม IDP ภาพรวม" },
-        { id: "mgr-assessment-approval", ic: "", lb: "อนุมัติผลการประเมิน" },
-        { id: "mgr-idp-approval", ic: "", lb: "อนุมัติแผน IDP" }
+        { id: "faculty-assessment-overview", ic: "", lb: "ภาพรวมการประเมิน" },
+        { id: "faculty-idp-tracking", ic: "", lb: "การติดตาม IDP" }
+      ]
+    },
+    {
+      sec: "รายการที่ต้องพิจารณา",
+      items: [
+        { id: "mgr-assessment-approval", ic: "", lb: "อนุมัติการประเมิน" },
+        { id: "mgr-idp-approval", ic: "", lb: "แผนและผล IDP" }
       ]
     }
   ],
@@ -156,16 +167,16 @@ export const NAV_CONFIG = {
     {
       sec: "HR",
       items: [
-        { id: "hr-position-competencies", ic: "", lb: "กำหนดสมรรถนะประจำตำแหน่ง" },
         { id: "hr-cycle", ic: "", lb: "รอบการประเมิน" },
+        { id: "hr-position-competencies", ic: "", lb: "กำหนดสมรรถนะประจำตำแหน่ง" },
         { id: "hr-template", ic: "", lb: "กำหนดความคาดหวัง" }
       ]
     },
     {
       sec: "ภาพรวมคณะ",
       items: [
-        { id: "hr-comp-overview", ic: "", lb: "ภาพรวม Competency คณะ" },
-        { id: "hr-idp-overview", ic: "", lb: "ภาพรวม IDP คณะ" }
+        { id: "faculty-assessment-overview", ic: "", lb: "ภาพรวมการประเมิน" },
+        { id: "faculty-idp-tracking", ic: "", lb: "การติดตาม IDP" }
       ]
     }
   ],
@@ -201,17 +212,22 @@ export const PAGE_TITLES = {
   "sup-assess": "ประเมินทีมงาน",
   "sup-gap": "ผลการประเมินของทีม",
   "sup-idp": "IDP & ติดตามทีม",
-  "dh-assess": "อนุมัติผลการประเมิน",
+  "dh-assess": "อนุมัติการประเมิน",
   "dh-idp": "IDP & ติดตามทีม",
   "dept-monitor": "ภาพรวมหน่วยงาน (Department View)",
   "mgr-gap": "ภาพรวมองค์กร",
   "mgr-idp": "ติดตาม IDP ภาพรวม",
-  "mgr-assessment-approval": "อนุมัติผลการประเมิน",
-  "mgr-idp-approval": "อนุมัติแผน IDP",
+  "mgr-assessment-approval": "อนุมัติการประเมิน",
+  "mgr-idp-approval": "อนุมัติแผนและผล IDP",
+  "admin-fc-topic-review": "พิจารณาหัวข้อการประเมิน",
+  "admin-assessment-review": "อนุมัติการประเมิน",
+  "admin-idp-review": "อนุมัติแผนและผล IDP",
   "hr-cycle": "รอบการประเมิน",
   "hr-template": "กำหนดความคาดหวัง",
   "hr-position-competencies": "กำหนดสมรรถนะ",
   "hr-monitor": "ติดตามภาพรวม",
+  "faculty-assessment-overview": "ภาพรวมการประเมิน",
+  "faculty-idp-tracking": "การติดตาม IDP",
   "hr-comp-overview": "ภาพรวม Competency คณะ",
   "hr-idp-overview": "ภาพรวม IDP คณะ",
   "admin-users": "จัดการผู้ใช้งาน",

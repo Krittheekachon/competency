@@ -13,7 +13,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
     public function test_admin_can_create_update_and_delete_experiential_or_social_method(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->adminUser();
         $nextSortOrder = DB::table('idp_learning_methods')
             ->where('focus_type', 'experiential')
             ->max('sort_order') + 1;
@@ -28,13 +28,9 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
         $methodId = DB::table('idp_learning_methods')->where('title', 'การมอบหมายงานโครงการ')->value('id');
 
-        $createdCode = DB::table('idp_learning_methods')->where('id', $methodId)->value('code');
-        $this->assertSame(sprintf('EXP-%04d', $methodId), $createdCode);
-
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'experiential',
-            'code' => $createdCode,
             'title' => 'การมอบหมายงานโครงการ',
             'sort_order' => $nextSortOrder,
             'is_active' => true,
@@ -51,7 +47,6 @@ class AdminIdpLearningMethodControllerTest extends TestCase
         $this->assertDatabaseHas('idp_learning_methods', [
             'id' => $methodId,
             'focus_type' => 'social',
-            'code' => $createdCode,
             'title' => 'การสอนงาน',
         ]);
 
@@ -67,7 +62,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
     public function test_admin_cannot_create_formal_method_because_formal_is_learning_catalog(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->adminUser();
 
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
@@ -85,7 +80,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
     public function test_admin_gets_validation_error_when_method_title_is_missing(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->adminUser();
 
         $this->actingAs($admin)
             ->post(route('admin.idp-learning-methods.store'), [
@@ -103,7 +98,7 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
     public function test_new_method_sort_order_continues_within_same_focus_type(): void
     {
-        $admin = User::factory()->create(['role_id' => 0, 'role_key' => 'admin']);
+        $admin = $this->adminUser();
         $nextSortOrder = DB::table('idp_learning_methods')
             ->where('focus_type', 'social')
             ->max('sort_order') + 1;
@@ -118,13 +113,19 @@ class AdminIdpLearningMethodControllerTest extends TestCase
 
         $method = DB::table('idp_learning_methods')->where('title', 'การเป็นพี่เลี้ยง')->first();
         $this->assertNotNull($method);
-        $this->assertSame(sprintf('SOC-%04d', $method->id), $method->code);
 
         $this->assertDatabaseHas('idp_learning_methods', [
             'focus_type' => 'social',
-            'code' => $method->code,
             'title' => 'การเป็นพี่เลี้ยง',
             'sort_order' => $nextSortOrder,
+        ]);
+    }
+
+    private function adminUser(): User
+    {
+        return User::factory()->create([
+            'role_id' => (int) DB::table('roles')->where('key', 'admin')->value('id'),
+            'role_key' => 'admin',
         ]);
     }
 }

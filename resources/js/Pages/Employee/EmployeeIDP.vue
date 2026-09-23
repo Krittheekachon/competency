@@ -30,7 +30,7 @@ type Gap = {
 };
 
 type Method = { key: string; label: string; desc?: string };
-type DevelopmentTool = { id: number; code?: string; focusType: string; title: string; formCode?: string; isActive?: boolean };
+type DevelopmentTool = { id: number; focusType: string; title: string; formCode?: string; isActive?: boolean };
 type Catalog = {
   id: number;
   code?: string;
@@ -41,6 +41,7 @@ type Catalog = {
   description?: string;
   hours?: number | string | null;
   cost?: number | string | null;
+  expectedLevels?: number[];
   isActive?: boolean;
 };
 type SupervisorChainOption = {
@@ -73,6 +74,7 @@ type Plan = {
   submissionVersion: number;
   currentReviewStep: number | null;
   rejectComment: string;
+  rejectReviewerName: string;
   activities: Activity[];
 };
 
@@ -95,7 +97,6 @@ const activityBuilderFocus = ref<BuilderFocus>('experiential');
 const replacementActivityKey = ref<string | null>(null);
 const showCoachingApproachHelp = ref(false);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
-const lastSavedAt = ref('');
 const lastSavedSignature = ref('');
 const queuedSave = ref(false);
 let activitySequence = 0;
@@ -230,12 +231,19 @@ const hydratePlans = () => {
       submissionVersion: item?.submissionVersion || 0,
       currentReviewStep: item?.currentReviewStep || null,
       rejectComment: item?.rejectComment || '',
-      activities: (item?.activities || []).map((activity) => ({
-        ...activity,
-        clientKey: nextClientKey(),
-        formCode: activity.formCode || '',
-        formDetails: normalizeFormDetails(activity.formCode || '', activity.formDetails || {}),
-      })),
+      rejectReviewerName: item?.rejectReviewerName || '',
+      activities: (item?.activities || [])
+        .map((activity) => {
+          const normalizedActivity = {
+          ...activity,
+          clientKey: nextClientKey(),
+          formCode: activity.formCode || '',
+          formDetails: normalizeFormDetails(activity.formCode || '', activity.formDetails || {}),
+          };
+          return ['draft', 'revision_required'].includes(item?.status || 'draft')
+            ? syncCatalogSnapshot(normalizedActivity)
+            : normalizedActivity;
+        }),
     };
   });
   if (!selectedGapId.value || !plans.value.some((plan) => plan.competencyGapId === selectedGapId.value)) {
@@ -246,6 +254,13 @@ const hydratePlans = () => {
 
 const gapForPlan = (plan: Plan) => idpGaps.value.find((gap) => gap.id === plan.competencyGapId);
 const weightTotal = (plan: Plan) => plan.activities.reduce((sum, item) => sum + Number(item.weightPercent || 0), 0);
+const updateActivityWeight = (activity: Activity, event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const digits = input.value.replace(/\D/g, '');
+  const normalized = digits === '' ? '' : String(Math.min(Number(digits), 100));
+  input.value = normalized;
+  activity.weightPercent = normalized === '' ? '' : Number(normalized);
+};
 const missingIndicators = (gap: Gap) => (gap.missingIndicators || []).flatMap((group) =>
   group.indicators.map((indicator) => ({ ...indicator, level: group.level })));
 const formatNumber = (value: unknown) => {
@@ -266,26 +281,45 @@ const focusType = (methodKey: string) => {
 };
 const catalogsFor = (gap: Gap) => activeCatalogs.value.filter((catalog) =>
   (catalog.competencyIds || []).includes(gap.competencyId));
+const catalogMatchesExpectedLevel = (catalog: Catalog, gap: Gap | null) => {
+  const levels = catalog.expectedLevels || [];
+  return !levels.length || !gap?.expected || levels.includes(Number(gap.expected));
+};
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
 const toolFor = (activity: Activity) => activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
 const catalogFor = (activity: Activity) => activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
-const normalizeCode = (code?: string) => String(code || '').trim().padStart(2, '0');
+const syncCatalogSnapshot = (activity: Activity): Activity => {
+  if (!activity.learningCatalogId) return activity;
+  const catalog = activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
+  if (!catalog) return activity;
+  const details = normalizeFormDetails(activity.formCode || catalog.formCode || 'form_10_training', activity.formDetails);
+  const currentRow = details.planRows?.[0] || {};
+  return {
+    ...activity,
+    activityName: catalog.name,
+    activityDescription: catalog.description || '',
+    formCode: catalog.formCode || 'form_10_training',
+    formDetails: {
+      ...details,
+      planRows: [{
+        ...currentRow,
+        trainingType: catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning',
+        courseCode: catalog.code || '',
+        courseName: catalog.name || '',
+        courseDescription: catalog.description || '',
+        hours: catalog.hours ?? null,
+        cost: catalog.cost ?? null,
+      }],
+    },
+  };
+};
 const formCodeForActivity = (activity: Activity) => {
   if (['experiential', 'social'].includes(focusType(activity.methodKey))) {
     const tool = toolFor(activity);
     if (tool && typeof tool.formCode === 'string') {
       return tool.formCode;
     }
-    const code = normalizeCode(toolFor(activity)?.code);
-    return ({
-      '01': 'form_3_project_assignment',
-      '02': 'form_4_ojt',
-      '03': 'form_5_coaching',
-      '04': 'form_6_mentoring',
-      '05': 'form_7_group_activity',
-      '06': 'form_8_feedback',
-      '07': 'form_9_field_trip',
-    } as Record<string, string>)[code] || '';
+    return activity.formCode || '';
   }
 
   if (focusType(activity.methodKey) === 'formal') {
@@ -366,13 +400,28 @@ const handleDetailChoiceChange = (fieldKey: string) => {
       detail[field.key] = '';
     });
 };
-const planStatusLabel = (plan: Plan | null) => ({
-  review_step_1: 'รอผู้อนุมัติลำดับ 1',
-  review_step_2: 'รอผู้อนุมัติลำดับ 2',
-  review_step_3: 'รอผู้อนุมัติลำดับ 3',
-  approved: 'อนุมัติครบทุกลำดับแล้ว',
-  revision_required: 'ตีกลับให้แก้ไข',
-}[plan?.status || ''] || 'ร่าง');
+const reviewStepForPlan = (plan: Plan | null) => {
+  if (!plan || !isReviewStatus(plan.status || '')) return null;
+  return Number(plan.currentReviewStep || plan.status.match(/^review_step_(\d+)$/)?.[1] || 0) || null;
+};
+const reviewerForPlan = (plan: Plan | null) => {
+  const step = reviewStepForPlan(plan);
+  return step ? idpApprovalSteps.value.find((reviewer) => Number(reviewer.step) === step) : null;
+};
+const planStatusLabel = (plan: Plan | null) => {
+  if (!plan) return 'ร่าง';
+  if (plan.status === 'approved') return 'อนุมัติครบทุกลำดับแล้ว';
+  if (plan.status === 'revision_required') {
+    return plan.rejectReviewerName ? `ส่งกลับโดย ${plan.rejectReviewerName}` : 'ส่งกลับให้แก้ไข';
+  }
+  if (isReviewStatus(plan.status || '')) {
+    const reviewer = reviewerForPlan(plan);
+    return reviewer?.name
+      ? `รอ ${reviewer.name} อนุมัติ`
+      : `รอผู้อนุมัติลำดับ ${reviewStepForPlan(plan) || '-'}`;
+  }
+  return 'ร่าง';
+};
 
 const closeActivityBuilder = () => {
   activityBuilderOpen.value = false;
@@ -393,7 +442,7 @@ const removeActivity = (plan: Plan, clientKey: string) => {
 };
 const chooseTool = (activity: Activity) => {
   const tool = activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
-  activity.activityName = tool ? `${tool.code ? `${tool.code} · ` : ''}${tool.title}` : '';
+  activity.activityName = tool?.title || '';
   activity.formCode = formCodeForActivity(activity);
   activity.formDetails = defaultFormDetails(activity.formCode);
 };
@@ -496,8 +545,83 @@ const closeActivityForm = () => {
 };
 const activeFormActivity = computed(() =>
   selectedPlan.value?.activities.find((activity) => activity.clientKey === activeFormActivityKey.value) || null);
+const activityUserFormIssue = (activity: Activity | null): string => {
+  if (!activity) return 'ไม่พบกิจกรรม';
+  const rows = Array.isArray(activity.formDetails?.planRows) ? activity.formDetails.planRows : [];
+  if (!rows.length) return 'กรุณาเพิ่มรายละเอียดกิจกรรมอย่างน้อย 1 รายการ';
+  const detail = activity.formDetails?.detail || {};
+  const missingInRows = (keys: string[]) => rows.some((row: Record<string, any>) =>
+    keys.some((key) => !String(row[key] ?? '').trim()));
+  const invalidDateOrder = rows.some((row: Record<string, any>) =>
+    row.developmentStart && row.developmentEnd && row.developmentEnd < row.developmentStart);
+
+  if (isProjectAssignmentForm(activity)
+    && missingInRows(['assignmentTopic', 'developmentGoal', 'developmentApproach', 'developmentStart', 'developmentEnd'])) {
+    return 'กรุณากรอกรายละเอียดงาน เป้าหมาย วิธีดำเนินการ และวันที่ให้ครบ';
+  }
+  if (isOjtForm(activity)) {
+    if (!detail.trainerType || (detail.trainerType === 'ผู้เชี่ยวชาญ' && !String(detail.trainerExpertName || '').trim())) {
+      return 'กรุณาระบุผู้สอนงานให้ครบ';
+    }
+    if (missingInRows(['skillTopic', 'developmentGoal', 'developmentApproach', 'developmentStart', 'developmentEnd', 'hours'])) {
+      return 'กรุณากรอกหัวข้อ เป้าหมาย วิธีการ ช่วงเวลา และจำนวนชั่วโมงให้ครบ';
+    }
+    if (rows.some((row: Record<string, any>) => !Number.isFinite(Number(row.hours)) || Number(row.hours) <= 0)) {
+      return 'จำนวนชั่วโมงต้องมากกว่า 0';
+    }
+  }
+  if (isCoachingForm(activity)) {
+    if (!detail.coachType || (detail.coachType === 'ผู้เชี่ยวชาญ' && !String(detail.coachExpertName || '').trim())) {
+      return 'กรุณาระบุผู้สอนงานให้ครบ';
+    }
+    if (missingInRows(['topic', 'developmentGoal', 'developmentApproach', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration'])
+      || rows.some((row: Record<string, any>) => !Array.isArray(row.coachingApproaches) || !row.coachingApproaches.length)) {
+      return 'กรุณากรอกหัวข้อ เป้าหมาย วิธีการ แนวทาง และระยะเวลาให้ครบ';
+    }
+  }
+  if (isMentoringForm(activity)) {
+    if (!detail.mentorType || (detail.mentorType === 'ผู้เชี่ยวชาญ' && !String(detail.mentorExpertName || '').trim())) {
+      return 'กรุณาระบุผู้สอนงานให้ครบ';
+    }
+    if (missingInRows(['skillTopic', 'developmentGoal', 'technique', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration'])) {
+      return 'กรุณากรอกหัวข้อ เป้าหมาย เทคนิค และระยะเวลาให้ครบ';
+    }
+  }
+  if (isGroupActivityForm(activity)) {
+    if (!detail.facilitatorType || (detail.facilitatorType === 'ผู้เชี่ยวชาญ' && !String(detail.facilitatorExpertName || '').trim())) {
+      return 'กรุณาระบุผู้อำนวยการหรือผู้นำกิจกรรมให้ครบ';
+    }
+    if (missingInRows(['learningTopic', 'developmentGoal', 'technique', 'assessmentTools', 'developmentStart', 'developmentEnd'])) {
+      return 'กรุณากรอกหัวข้อ เป้าหมาย เทคนิค การประเมิน และวันที่ให้ครบ';
+    }
+  }
+  if (isFeedbackForm(activity)) {
+    if (!detail.feedbackProviderType || (detail.feedbackProviderType === 'ผู้เชี่ยวชาญ' && !String(detail.feedbackExpertName || '').trim())) {
+      return 'กรุณาระบุผู้ให้ข้อมูลให้ครบ';
+    }
+    if (missingInRows(['skillTopic', 'developmentGoal', 'feedbackSource', 'developmentStart', 'developmentEnd', 'sessionCount', 'sessionDuration'])) {
+      return 'กรุณากรอกหัวข้อ เป้าหมาย แหล่งข้อมูล และระยะเวลาให้ครบ';
+    }
+  }
+  if (isFieldTripForm(activity)
+    && missingInRows(['skillTopic', 'developmentGoal', 'learningPlace', 'assessmentTools', 'developmentStart', 'developmentEnd'])) {
+    return 'กรุณากรอกหัวข้อ เป้าหมาย สถานที่ การประเมิน และวันที่ให้ครบ';
+  }
+  if (isTrainingForm(activity)
+    && missingInRows(['developmentGoal', 'developmentStart', 'developmentEnd'])) {
+    return 'กรุณากรอกเป้าหมายและวันที่ที่ต้องการเข้าร่วมให้ครบ';
+  }
+  if ([isCoachingForm(activity), isMentoringForm(activity), isFeedbackForm(activity)].some(Boolean)
+    && rows.some((row: Record<string, any>) => !Number.isInteger(Number(row.sessionCount)) || Number(row.sessionCount) < 1)) {
+    return 'จำนวนครั้งต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป';
+  }
+  if (invalidDateOrder) return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+  return '';
+};
+const activeFormUserIssue = computed(() => activityUserFormIssue(activeFormActivity.value));
 const saveActivityForm = () => {
   if (selectedPlanLocked.value) return;
+  if (activeFormUserIssue.value) return;
   if (activeFormActivity.value) {
     if (isReworkedActivityForm(activeFormActivity.value)) {
       const rows = activeFormActivity.value.formDetails.planRows || [];
@@ -528,6 +652,11 @@ const formRows = (activity: Activity) => {
     activity.formDetails.planRows = [{}];
   }
   return activity.formDetails.planRows;
+};
+const enforceDateOrder = (row: Record<string, any>) => {
+  if (row.developmentStart && row.developmentEnd && row.developmentEnd < row.developmentStart) {
+    row.developmentEnd = '';
+  }
 };
 
 const requestPayload = () => ({
@@ -576,7 +705,6 @@ const performAutoSave = async () => {
     }
 
     lastSavedSignature.value = nextSignature;
-    lastSavedAt.value = new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date());
     saveState.value = 'saved';
   } catch {
     saveState.value = 'error';
@@ -601,8 +729,8 @@ const planIssue = (plan: Plan): string => {
   if (plan.activities.length === 0) return 'ยังไม่มีกิจกรรม';
   if (Math.round(weightTotal(plan) * 100) / 100 !== 100) return 'น้ำหนักกิจกรรมต้องรวม 100%';
 
-  for (const activity of plan.activities) {
-    if (!activity.methodKey || activity.weightPercent === '') {
+  for (const [activityIndex, activity] of plan.activities.entries()) {
+    if (!activity.methodKey || activity.weightPercent === '' || Number(activity.weightPercent) < 1) {
       return 'ข้อมูลกิจกรรมยังไม่ครบ';
     }
     if (hasActivityForm(activity) && !isFormSaved(activity)) {
@@ -723,16 +851,22 @@ const planIssue = (plan: Plan): string => {
     }
     if (isTrainingForm(activity)) {
       const rows = activity.formDetails?.planRows || [];
-      if (!rows.length || rows.some((row: Record<string, any>) =>
-        !['trainingType', 'courseName', 'developmentStart', 'developmentEnd', 'hours', 'developmentGoal']
-          .every((key) => String(row[key] || '').trim()))) {
-        return 'กรุณากรอกแบบฟอร์มการฝึกอบรมให้ครบ';
+      if (!rows.length) {
+        return `กิจกรรมที่ ${activityIndex + 1} · ${activity.activityName || 'Formal Learning'} ยังไม่มีรายละเอียดหลักสูตร`;
+      }
+      const requiredTrainingFields = [
+        ['developmentStart', 'วันที่เริ่มต้น'],
+        ['developmentEnd', 'วันที่สิ้นสุด'],
+        ['developmentGoal', 'เป้าหมายในการพัฒนา'],
+      ];
+      const missingFields = requiredTrainingFields
+        .filter(([key]) => rows.some((row: Record<string, any>) => !String(row[key] || '').trim()))
+        .map(([, label]) => label);
+      if (missingFields.length) {
+        return `กิจกรรมที่ ${activityIndex + 1} · ${activity.activityName || 'Formal Learning'} ยังขาด: ${missingFields.join(', ')}`;
       }
       if (rows.some((row: Record<string, any>) => row.developmentEnd < row.developmentStart)) {
         return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
-      }
-      if (rows.some((row: Record<string, any>) => Number(row.hours) <= 0)) {
-        return 'จำนวนชั่วโมงต้องมากกว่า 0';
       }
     }
     if (['experiential', 'social'].includes(focusType(activity.methodKey)) && !activity.developmentToolId) {
@@ -743,6 +877,19 @@ const planIssue = (plan: Plan): string => {
     }
   }
   return '';
+};
+const planNavStatus = (plan: Plan) => {
+  if (plan.status === 'approved') return { label: 'อนุมัติแล้ว', tone: 'approved' };
+  if (isReviewStatus(plan.status || '')) return { label: 'รออนุมัติ', tone: 'review' };
+  if (plan.status === 'revision_required') return { label: 'ส่งกลับ', tone: 'returned' };
+  if (planIssue(plan)) return { label: 'ข้อมูลไม่ครบ', tone: 'incomplete' };
+  return { label: 'พร้อมส่ง', tone: 'ready' };
+};
+const planNavDetail = (plan: Plan) => {
+  if (plan.status === 'approved' || plan.status === 'revision_required' || isReviewStatus(plan.status || '')) {
+    return planStatusLabel(plan);
+  }
+  return planIssue(plan) || 'ข้อมูลครบแล้ว พร้อมส่งอนุมัติ';
 };
 const selectedPlanIssue = computed(() => selectedPlan.value && !selectedPlanLocked.value
   ? planIssue(selectedPlan.value)
@@ -782,15 +929,6 @@ const submitSelectedPlan = () => {
         <h1>แผนพัฒนา IDP</h1>
         <p class="subtitle">หนึ่งสมรรถนะต่อหนึ่งแผน และเพิ่มกิจกรรมพัฒนาได้หลายรายการ</p>
       </div>
-      <div class="save-indicator" :class="hasIdpReviewerSteps ? saveState : 'error'">
-        <span class="save-dot" />
-        <span v-if="!hasIdpReviewerSteps">ยังไม่พร้อมใช้งาน</span>
-        <span v-else-if="selectedPlanLocked">{{ planStatusLabel(selectedPlan) }}</span>
-        <span v-else-if="saveState === 'saving'">กำลังบันทึก...</span>
-        <span v-else-if="saveState === 'error'">บันทึกไม่สำเร็จ</span>
-        <span v-else-if="lastSavedAt">บันทึกแล้ว {{ lastSavedAt }}</span>
-        <span v-else>บันทึกร่างอัตโนมัติ</span>
-      </div>
     </header>
 
     <section v-if="!hasIdpReviewerSteps" class="idp-readiness-panel">
@@ -823,31 +961,37 @@ const submitSelectedPlan = () => {
 
     <div v-else class="workspace">
       <aside class="plan-nav">
-        <div class="person">
-          <span>{{ props.user?.sso || '-' }}</span>
-          <strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong>
-          <small>{{ props.user?.p || props.user?.d || '-' }}</small>
+        <div class="plan-nav-meta">
+          <div class="person">
+            <span>{{ props.user?.sso || '-' }}</span>
+            <strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong>
+            <small>{{ props.user?.p || props.user?.d || '-' }}</small>
+          </div>
+          <div class="nav-heading">
+            <strong>สมรรถนะที่ต้องพัฒนา</strong>
+            <span>{{ idpGaps.length }}</span>
+          </div>
         </div>
-        <div class="nav-heading">
-          <strong>สมรรถนะที่ต้องพัฒนา</strong>
-          <span>{{ idpGaps.length }}</span>
+        <div class="plan-nav-scroll">
+          <button
+            v-for="plan in plans"
+            :key="plan.competencyGapId"
+            class="plan-nav-item"
+            :class="{ active: selectedGapId === plan.competencyGapId }"
+            :aria-current="selectedGapId === plan.competencyGapId ? 'true' : undefined"
+            type="button"
+            @click="selectedGapId = plan.competencyGapId"
+          >
+            <span class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
+            <span class="competency-copy">
+              <strong>{{ gapForPlan(plan)?.n }}</strong>
+              <small>{{ planNavDetail(plan) }}</small>
+            </span>
+            <span class="plan-status-badge" :class="`is-${planNavStatus(plan).tone}`">
+              {{ planNavStatus(plan).label }}
+            </span>
+          </button>
         </div>
-        <button
-          v-for="plan in plans"
-          :key="plan.competencyGapId"
-          class="plan-nav-item"
-          :class="{ active: selectedGapId === plan.competencyGapId }"
-          :aria-current="selectedGapId === plan.competencyGapId ? 'true' : undefined"
-          type="button"
-          @click="selectedGapId = plan.competencyGapId"
-        >
-          <span class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
-          <span class="competency-copy">
-            <strong>{{ gapForPlan(plan)?.n }}</strong>
-            <small>{{ isPlanLocked(plan) ? planStatusLabel(plan) : (planIssue(plan) || 'พร้อมส่งสมรรถนะนี้') }}</small>
-          </span>
-          <span class="completion-mark" :class="{ ready: !planIssue(plan) }">{{ planIssue(plan) ? '!' : '✓' }}</span>
-        </button>
       </aside>
 
       <main class="plan-content">
@@ -872,7 +1016,6 @@ const submitSelectedPlan = () => {
           <section class="plan-review-route" aria-label="ลำดับอนุมัติ IDP">
             <header>
               <div><h3>ลำดับอนุมัติ IDP</h3><p>สถานะของ {{ selectedGap.cd }} · แต่ละสมรรถนะส่งอนุมัติแยกกัน</p></div>
-              <span>{{ planStatusLabel(selectedPlan) }}</span>
             </header>
             <ol>
               <li v-for="step in idpApprovalSteps" :key="`${step.step}-${step.id}`"
@@ -889,7 +1032,7 @@ const submitSelectedPlan = () => {
           </section>
 
           <div v-if="selectedPlan.status === 'revision_required' && selectedPlan.rejectComment" class="revision-alert">
-            <strong>หัวหน้าตีกลับให้แก้ไข</strong>
+            <strong>{{ selectedPlan.rejectReviewerName ? `ถูกส่งกลับโดย ${selectedPlan.rejectReviewerName}` : 'ถูกส่งกลับให้แก้ไข' }}</strong>
             <span>{{ selectedPlan.rejectComment }}</span>
           </div>
 
@@ -968,13 +1111,14 @@ const submitSelectedPlan = () => {
                 <label>
                   <span>สัดส่วนกิจกรรม (%)</span>
                   <input
-                    v-model.number="activity.weightPercent"
+                    :value="activity.weightPercent"
                     :disabled="selectedPlanLocked"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="3"
                     placeholder="เช่น 30"
+                    @input="updateActivityWeight(activity, $event)"
                   />
                 </label>
                 <div class="activity-readonly-meta">
@@ -1028,13 +1172,13 @@ const submitSelectedPlan = () => {
 
                 <div v-if="activityBuilderFocus !== 'formal'" class="activity-builder-list">
                   <button
-                    v-for="tool in builderTools"
+                    v-for="(tool, toolIndex) in builderTools"
                     :key="tool.id"
                     class="activity-choice"
                     type="button"
                     @click="addToolActivity(selectedPlan, tool)"
                   >
-                    <span class="activity-choice-code">{{ tool.code || '—' }}</span>
+                    <span class="activity-choice-code">{{ toolIndex + 1 }}</span>
                     <span class="activity-choice-copy">
                       <strong>{{ tool.title }}</strong>
                       <small>{{ tool.formCode ? 'มีแบบฟอร์มประกอบตามเครื่องมือนี้' : 'กิจกรรมตามแนวทางที่ผู้ดูแลระบบกำหนด' }}</small>
@@ -1051,13 +1195,16 @@ const submitSelectedPlan = () => {
                     v-for="catalog in builderCatalogs"
                     :key="catalog.id"
                     class="activity-choice"
+                    :class="{ unavailable: !catalogMatchesExpectedLevel(catalog, selectedGap) }"
+                    :disabled="!catalogMatchesExpectedLevel(catalog, selectedGap)"
                     type="button"
                     @click="addCatalogActivity(selectedPlan, catalog)"
                   >
                     <span class="activity-choice-code formal">{{ catalog.code || 'COURSE' }}</span>
                     <span class="activity-choice-copy">
                       <strong>{{ catalog.name }}</strong>
-                      <small>{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
+                      <small v-if="catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
+                      <small v-else>ใช้ไม่ได้ · รองรับระดับความคาดหวัง {{ catalog.expectedLevels?.join(', ') || '-' }}</small>
                     </span>
                     <span class="activity-choice-add">เลือก</span>
                   </button>
@@ -1212,8 +1359,8 @@ const submitSelectedPlan = () => {
                       <strong>ระยะเวลาดำเนินการ</strong>
                       <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                   </div>
                 </div>
               </article>
@@ -1234,9 +1381,9 @@ const submitSelectedPlan = () => {
                       <strong>ระยะเวลาการฝึกปฏิบัติงาน</strong>
                       <span>กำหนดช่วงเวลาและจำนวนชั่วโมงรวม</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
-                    <label><span>จำนวนชั่วโมง</span><input v-model="row.hours" min="0" step="0.5" type="number" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
+                    <label><span>จำนวนชั่วโมง</span><input v-model="row.hours" min="0.01" step="0.5" type="number" /></label>
                   </div>
                 </div>
               </article>
@@ -1279,8 +1426,8 @@ const submitSelectedPlan = () => {
                       <strong>ระยะเวลาการพัฒนา</strong>
                       <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                     <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
                     <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
                   </div>
@@ -1303,8 +1450,8 @@ const submitSelectedPlan = () => {
                       <strong>ระยะเวลาการพัฒนา</strong>
                       <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                     <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
                     <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
                   </div>
@@ -1328,8 +1475,8 @@ const submitSelectedPlan = () => {
                       <strong>กำหนดการจัดกิจกรรม</strong>
                       <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                   </div>
                 </div>
               </article>
@@ -1350,8 +1497,8 @@ const submitSelectedPlan = () => {
                       <strong>ระยะการพัฒนา</strong>
                       <span>กำหนดช่วงเวลา จำนวนครั้ง และระยะเวลาที่ใช้ต่อครั้ง</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                     <label><span>จำนวนครั้ง</span><input v-model="row.sessionCount" min="1" step="1" type="number" /></label>
                     <label><span>ระยะเวลาต่อครั้ง</span><input v-model="row.sessionDuration" placeholder="เช่น ครั้งละ 1 ชั่วโมง" /></label>
                   </div>
@@ -1375,8 +1522,8 @@ const submitSelectedPlan = () => {
                       <strong>กำหนดการจัดกิจกรรม</strong>
                       <span>กำหนดวันที่เริ่มต้นและวันที่สิ้นสุด</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                   </div>
                 </div>
               </article>
@@ -1410,8 +1557,8 @@ const submitSelectedPlan = () => {
                       <strong>กำหนดการอบรม</strong>
                       <span>ระบุวันที่ที่ต้องการเข้าร่วมหลักสูตร</span>
                     </div>
-                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" /></label>
-                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" /></label>
+                    <label><span>วันที่เริ่มต้น</span><input v-model="row.developmentStart" type="date" @change="enforceDateOrder(row)" /></label>
+                    <label><span>วันที่สิ้นสุด</span><input v-model="row.developmentEnd" type="date" :min="row.developmentStart || undefined" /></label>
                   </div>
                 </div>
               </article>
@@ -1502,16 +1649,6 @@ const submitSelectedPlan = () => {
                   </tr>
                 </tbody>
               </table>
-            </div>
-            <div v-if="formDefinitionFor(activeFormActivity)?.note" class="form-note">
-              <span>{{ formDefinitionFor(activeFormActivity)?.note }}</span>
-              <button
-                v-if="effectiveFormCode(activeFormActivity) === 'form_5_coaching'"
-                type="button"
-                @click="showCoachingApproachHelp = true"
-              >
-                ดูคำอธิบายแนวทาง
-              </button>
             </div>
           </section>
 
@@ -1621,7 +1758,8 @@ const submitSelectedPlan = () => {
 
         <footer class="form-modal-footer">
           <button type="button" @click="closeActivityForm">{{ selectedPlanLocked ? 'ปิด' : 'ยกเลิก' }}</button>
-          <button v-if="!selectedPlanLocked" type="button" class="primary" @click="saveActivityForm">บันทึกฟอร์ม</button>
+          <span v-if="!selectedPlanLocked && activeFormUserIssue" class="form-save-error" role="status">{{ activeFormUserIssue }}</span>
+          <button v-if="!selectedPlanLocked" type="button" class="primary" :disabled="!!activeFormUserIssue" @click="saveActivityForm">บันทึกฟอร์ม</button>
         </footer>
       </div>
     </div>
@@ -1689,7 +1827,6 @@ const submitSelectedPlan = () => {
 .plan-review-route > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #e4ebe7; }
 .plan-review-route h3 { margin: 0; font-size: 14px; color: #245d4e; }
 .plan-review-route p { margin: 4px 0 0; font-size: 11px; color: #718096; }
-.plan-review-route header > span { font-size: 11px; font-weight: 800; color: #246b59; }
 .plan-review-route ol { display: flex; gap: 12px; list-style: none; margin: 0; padding: 16px; overflow-x: auto; }
 .plan-review-route li { display: flex; align-items: flex-start; gap: 10px; flex: 1 0 190px; padding: 12px; border-top: 3px solid #dce5e1; background: #f8faf9; }
 .plan-review-route li.current { border-color: #247260; background: #eaf5f0; }
@@ -1726,31 +1863,30 @@ const submitSelectedPlan = () => {
 .idp-readiness-panel > footer { display: grid; gap: 3px; border-top: 1px solid #e2e6eb; background: #f3f5f7; padding: 13px 22px; }
 .idp-readiness-panel > footer strong { color: #172033; font-size: 11px; }
 .idp-readiness-panel > footer span { color: #7a8798; font-size: 10px; line-height: 1.5; }
-.save-indicator { display: flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 11px; border: 1px solid #d8e0e9; border-radius: 6px; background: #fff; color: #657287; font-size: 12px; font-weight: 800; }
-.save-dot { width: 7px; height: 7px; border-radius: 50%; background: #9aa7b7; }
-.save-indicator.saving .save-dot { background: #d97706; animation: pulse 1s infinite; }
-.save-indicator.saved .save-dot { background: #16835d; }
-.save-indicator.error { color: #b42318; border-color: #fecaca; background: #fff7f7; }
-.save-indicator.error .save-dot { background: #dc2626; }
-.workspace { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 620px; border: 1px solid #ccd5df; border-radius: 8px; background: #eef2f5; overflow: hidden; }
-.plan-nav { border-right: 1px solid #cfd8e2; background: #f7f9fb; }
-.person { display: grid; gap: 3px; padding: 17px; border-bottom: 1px solid #d8e0e8; background: #fff; }
+.workspace { min-height: 620px; border: 1px solid #ccd5df; border-radius: 8px; background: #eef2f5; overflow: hidden; }
+.plan-nav { border-bottom: 1px solid #cfd8e2; background: #f7f9fb; }
+.plan-nav-meta { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #d8e0e8; background: #fff; }
+.person { display: grid; gap: 3px; min-width: 220px; padding: 13px 17px; }
 .person span, .person small { color: #718096; font-size: 11px; }
 .person strong { font-size: 14px; }
-.nav-heading { display: flex; justify-content: space-between; align-items: center; padding: 16px 15px 9px; font-size: 12px; }
+.nav-heading { display: flex; align-items: center; gap: 9px; padding: 13px 17px; font-size: 14px; }
 .nav-heading span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #dfe8e5; color: #216b59; font-weight: 900; }
-.plan-nav-item { width: calc(100% - 24px); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; margin: 0 12px 10px; border: 1px solid #dce3e9; border-left: 3px solid #dce3e9; border-radius: 7px; background: #fff; padding: 13px; text-align: left; cursor: pointer; }
+.plan-nav-scroll { display: flex; gap: 10px; overflow-x: auto; padding: 12px 16px 14px; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: #a9bbb5 transparent; }
+.plan-nav-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; flex: 0 0 280px; min-height: 108px; border: 1px solid #dce3e9; border-top: 3px solid #dce3e9; border-radius: 7px; background: #fff; padding: 12px 13px; text-align: left; cursor: pointer; }
 .plan-nav-item:hover { border-color: #9cbfb3; background: #f5faf8; }
-.plan-nav-item.active { border-color: #9cbfb3; border-left-color: #247260; background: #eaf5f0; }
+.plan-nav-item.active { border-color: #9cbfb3; border-top-color: #247260; background: #eaf5f0; }
 .plan-nav-item:focus-visible { outline: 2px solid #247260; outline-offset: 2px; }
 .competency-code { min-width: 51px; color: #247260; font-size: 11px; font-weight: 900; }
 .competency-copy { min-width: 0; grid-column: 1 / -1; grid-row: 2; }
 .competency-copy strong, .competency-copy small { display: block; white-space: normal; overflow-wrap: anywhere; }
-.competency-copy strong { font-size: 12px; line-height: 1.65; color: #273142; }
-.competency-copy small { margin-top: 10px; padding-top: 8px; border-top: 1px solid #dce6e1; color: #657287; font-size: 10px; line-height: 1.5; }
-.plan-nav-item .completion-mark { grid-column: 2; grid-row: 1; }
-.completion-mark { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #fff1f2; color: #c2414b; font-size: 11px; font-weight: 900; }
-.completion-mark.ready { background: #dcfce7; color: #16835d; }
+.competency-copy strong { overflow: hidden; font-size: 14px; line-height: 1.55; color: #273142; text-overflow: ellipsis; white-space: nowrap; }
+.competency-copy small { overflow: hidden; margin-top: 8px; padding-top: 7px; border-top: 1px solid #dce6e1; color: #657287; font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.plan-status-badge { grid-column: 2; grid-row: 1; padding: 4px 7px; border: 1px solid; border-radius: 999px; font-size: 12px; font-weight: 900; line-height: 1.2; white-space: nowrap; }
+.plan-status-badge.is-incomplete { border-color: #fecdd3; background: #fff1f2; color: #b42318; }
+.plan-status-badge.is-ready { border-color: #b7dacc; background: #eaf5f0; color: #176b55; }
+.plan-status-badge.is-review { border-color: #f1d49a; background: #fff7e6; color: #945b05; }
+.plan-status-badge.is-returned { border-color: #f7b4a8; background: #fff0ed; color: #b42318; }
+.plan-status-badge.is-approved { border-color: #abefc6; background: #eaf7ef; color: #067647; }
 .plan-content { min-width: 0; padding: 20px; background: #eef2f5; }
 .select-prompt, .empty-state, .activities-empty { display: grid; place-items: center; align-content: center; gap: 7px; min-height: 260px; color: #7a8798; text-align: center; }
 .select-prompt strong, .empty-state strong, .activities-empty strong { color: #344054; }
@@ -1857,6 +1993,8 @@ select:disabled { cursor: not-allowed; }
 .activity-builder-list { display: grid; gap: 7px; padding: 12px; }
 .activity-choice { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; border: 1px solid #dce4eb; border-radius: 7px; background: #fff; padding: 9px 10px; color: #273142; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .activity-choice:hover { border-color: #75ad9d; background: #f8fcfa; }
+.activity-choice.unavailable { opacity: .45; background: #f3f5f7; cursor: not-allowed; filter: grayscale(.35); }
+.activity-choice.unavailable:hover { border-color: #dce4eb; background: #f3f5f7; }
 .activity-choice-code { display: grid; place-items: center; min-height: 34px; border-radius: 6px; background: #e5f2ee; color: #246b59; font-size: 10px; font-weight: 900; }
 .activity-choice-code.formal { background: #eef4ff; color: #315f9f; }
 .activity-choice-copy { min-width: 0; }
@@ -1974,8 +2112,6 @@ select:disabled { cursor: not-allowed; }
 .row-control { width: 62px; text-align: center; }
 .row-control button { border: 1px solid #efb8b8; border-radius: 5px; background: #fff; color: #b42318; padding: 7px 9px; font-size: 11px; font-weight: 900; }
 .row-control button:disabled { opacity: .35; }
-.form-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 12px 12px; border-left: 4px solid #f59e0b; background: #fffbeb; padding: 9px 11px; color: #8a5300; font-size: 12px; font-weight: 800; }
-.form-note button { border: 1px solid #f2b94b; border-radius: 6px; background: #fff7d6; color: #8a5300; padding: 7px 10px; font-size: 11px; font-weight: 900; cursor: pointer; white-space: nowrap; }
 .approach-modal-backdrop { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; background: rgba(15, 23, 42, .62); padding: 6px; }
 .approach-modal { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1360px, calc(100vw - 12px)); height: calc(100vh - 12px); min-height: 0; overflow: hidden; border: 1px solid #d7e0ea; border-radius: 12px; background: #fff; box-shadow: 0 26px 80px rgba(15, 23, 42, .34); }
 .approach-modal-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; border-bottom: 1px solid #d8e0e9; background: #fff; padding: 14px 18px; }
@@ -2002,8 +2138,10 @@ select:disabled { cursor: not-allowed; }
 .approach-modal-footer { display: flex; justify-content: flex-end; border-top: 1px solid #d8e0e9; background: #fff; padding: 9px 14px; }
 .approach-modal-footer button { border: 1px solid #247260; border-radius: 7px; background: #247260; color: #fff; padding: 10px 20px; font-size: 14px; font-weight: 900; cursor: pointer; }
 .form-modal-footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #d8e0e9; background: #fff; padding: 13px 18px; }
+.form-save-error { align-self: center; margin-right: auto; color: #b42318; font-size: 13px; font-weight: 800; }
 .form-modal-footer button { border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; padding: 10px 14px; font-size: 12px; font-weight: 900; cursor: pointer; }
 .form-modal-footer button.primary { border-color: #247260; background: #247260; color: #fff; }
+.form-modal-footer button:disabled { border-color: #cbd5e1; background: #aab5c2; color: #fff; cursor: not-allowed; }
 .submit-bar { position: sticky; bottom: 0; z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 16px; border: 1px solid #d7dfe8; border-radius: 8px; background: rgba(255,255,255,.96); box-shadow: 0 -8px 22px rgba(23,32,51,.08); }
 .submit-bar strong, .submit-bar span { display: block; }
 .submit-bar strong { font-size: 13px; }
@@ -2012,15 +2150,14 @@ select:disabled { cursor: not-allowed; }
 .submit-bar .submit-ready { color: #247260; font-size: 12px; font-weight: 800; }
 .submit-bar button { min-width: 180px; border: 0; border-radius: 6px; background: #247260; padding: 11px 16px; color: #fff; font-size: 12px; font-weight: 900; cursor: pointer; }
 .submit-bar button:disabled { background: #aab5c2; cursor: not-allowed; }
-@keyframes pulse { 50% { opacity: .35; } }
 @media (max-width: 900px) {
   .page-header, .competency-header, .submit-bar { align-items: stretch; flex-direction: column; }
   .idp-readiness-panel > header { grid-template-columns: auto minmax(0, 1fr); padding: 17px; }
   .idp-readiness-count { grid-column: 1 / -1; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: 5px; }
   .idp-readiness-row { grid-template-columns: 28px minmax(0, 1fr); margin-right: 17px; margin-left: 17px; }
   .idp-readiness-owner { grid-column: 2; justify-self: start; }
-  .workspace { grid-template-columns: 1fr; }
-  .plan-nav { border-right: 0; border-bottom: 1px solid #dfe5ed; }
+  .plan-nav-meta { align-items: stretch; }
+  .person { min-width: 0; }
   .goal-grid, .activity-form, .form-grid, .form-grid.three, .project-assignment-grid, .project-assignment-grid.training-form-grid, .coaching-timeline, .coaching-timeline.group-activity-timeline, .coaching-timeline.training-summary { grid-template-columns: 1fr; }
   .training-course-heading { display: grid; }
   .training-course-heading em { justify-self: start; }

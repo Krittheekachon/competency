@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -43,10 +44,13 @@ class LoginRequest extends FormRequest
         $this->ensureIsNotRateLimited();
 
         $username = Str::lower(trim((string) $this->input('email')));
-        $email = str_contains($username, '@') ? $username : "{$username}@test.com";
+        $user = str_contains($username, '@')
+            ? User::query()->whereRaw('LOWER(email) = ?', [$username])->first()
+            : User::query()->where('username', $username)->first()
+                ?? User::query()->whereRaw('LOWER(email) = ?', ["{$username}@test.com"])->first();
 
-        if (! Auth::attempt([
-            'email' => $email,
+        if (! $user || ! Auth::attempt([
+            'id' => $user->id,
             'password' => $this->input('password'),
         ], $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());

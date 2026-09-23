@@ -26,6 +26,14 @@ class NotificationDigestServiceTest extends TestCase
         Mail::fake();
         Cache::flush();
 
+        DB::table('assessment_rounds')->insert([
+            'name' => 'Current Round',
+            'year' => 2569,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $admin = User::factory()->create([
             'email' => 'admin@example.test',
             'role_id' => $this->roleId('admin'),
@@ -91,6 +99,13 @@ class NotificationDigestServiceTest extends TestCase
     {
         Mail::fake();
         Cache::flush();
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'Current Round',
+            'year' => 2569,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $mappedPositionId = $this->mappedPositionId();
 
         User::factory()->create([
@@ -115,13 +130,6 @@ class NotificationDigestServiceTest extends TestCase
             'position_id' => $mappedPositionId,
         ]);
 
-        $roundId = DB::table('assessment_rounds')->insertGetId([
-            'name' => 'Current Round',
-            'year' => 2569,
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
         DB::table('assessments')->insert([
             [
                 'assessment_round_id' => $roundId,
@@ -173,6 +181,9 @@ class NotificationDigestServiceTest extends TestCase
         ]);
 
         DB::table('position_competencies')->insertOrIgnore([
+            'assessment_round_id' => DB::table('assessment_rounds')
+                ->where('is_active', true)
+                ->value('id'),
             'position_id' => $positionId,
             'competency_id' => $competencyId,
             'created_at' => now(),

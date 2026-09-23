@@ -15,7 +15,7 @@ use App\Models\Role;
     'sso', 'name', 'title',
     'first_name_th', 'last_name_th',
     'first_name_en', 'last_name_en',
-    'email', 'phone',
+    'email', 'username', 'phone',
     'workline', 'department', 'position',
     'level', 'password', 'role_id', 'role_key',
     'is_active', 'profile_photo',

@@ -235,12 +235,23 @@ class NotificationDigestService
             return User::query()->whereRaw('1 = 0');
         }
 
+        $roundId = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('id');
+
+        if (! $roundId) {
+            return User::query()->whereRaw('1 = 0');
+        }
+
         return User::query()
             ->where('is_active', true)
             ->whereNotNull('position_id')
-            ->whereNotExists(function ($query): void {
+            ->whereNotExists(function ($query) use ($roundId): void {
                 $query->selectRaw('1')
                     ->from('position_competencies')
+                    ->where('position_competencies.assessment_round_id', $roundId)
                     ->whereColumn('position_competencies.position_id', 'users.position_id');
             });
     }

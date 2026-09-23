@@ -50,6 +50,7 @@ class DivisionHeadRoleTest extends TestCase
                 ->component('Super/Dashboard')
                 ->where('roleKey', 'division_head')
                 ->where('currentUser.r', 'division_head')
+                ->where('activeCycleName', 'รอบประเมินปัจจุบัน')
             );
     }
 
@@ -71,6 +72,7 @@ class DivisionHeadRoleTest extends TestCase
                 ->component('Super/Dashboard')
                 ->where('roleKey', 'academic_department_head')
                 ->where('currentUser.r', 'academic_department_head')
+                ->where('activeCycleName', 'รอบประเมินปัจจุบัน')
             );
     }
 }

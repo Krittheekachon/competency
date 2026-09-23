@@ -8,8 +8,9 @@ import EmployeeGap from '../Employee/EmployeeGap.vue';
 import EmployeeIDP from '../Employee/EmployeeIDP.vue';
 import EmployeeIDPDetail from '../Employee/EmployeeIDPDetail.vue';
 import EmployeeProgress from '../Employee/EmployeeProgress.vue';
-import ManagerGap from '../Executive/ManagerGap.vue';
-import ManagerIDP from '../Executive/ManagerIDP.vue';
+import FacultyOverview from '../Analytics/FacultyOverview.vue';
+import HrAssessmentRounds from './HrAssessmentRounds.vue';
+import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
     users: {
@@ -80,6 +81,14 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    facultyAnalytics: {
+        type: Object,
+        default: () => ({}),
+    },
+    assessmentRounds: {
+        type: Array,
+        default: () => [],
+    },
     pageTitle: {
         type: String,
         default: 'กำหนดสมรรถนะ',
@@ -90,15 +99,17 @@ const page = usePage();
 const logout = () => router.post(route('logout'));
 
 const isSidebarOpen = ref(true);
-const activePage = ref('hr-position-competencies');
+const activePage = ref('emp-assess');
 const activeModal = ref('');
 const selectedWorkline = ref('');
 const selectedOrgScope = ref('');
 const selectedPosition = ref('');
+const selectedConfigRoundId = ref(null);
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
 const selectedDetailCompetency = ref(null);
 const expandedDetailLevels = ref({});
+const isImportingRound = ref(false);
 const catalogCompetencySearch = ref('');
 const catalogSearch = ref('');
 const catalogMethodFilter = ref('all');
@@ -132,7 +143,7 @@ const deliveryTypeOptions = [
     { value: 'in_class', label: 'การฝึกอบรมในห้องเรียน (In Class Training)' },
 ];
 
-const sections = [
+const baseSections = [
     {
         title: 'ของฉัน (บุคลากร)',
         items: [
@@ -146,16 +157,31 @@ const sections = [
     {
         title: 'HR',
         items: [
+            { id: 'hr-cycle', label: 'รอบการประเมิน' },
             { id: 'hr-position-competencies', label: 'กำหนดสมรรถนะประจำตำแหน่ง' },
         ],
     },
     {
         title: 'ภาพรวมคณะ',
         items: [
-            { id: 'hr-competency-overview', label: 'Competency Gap คณะ' },
+            { id: 'faculty-assessment-overview', label: 'ภาพรวมการประเมิน' },
+            { id: 'faculty-idp-tracking', label: 'การติดตาม IDP' },
         ],
     },
 ];
+const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
+const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [] });
+const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
+const sections = computed(() => {
+    const assignedItems = [
+        ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled) ? [{ id: 'hr-assessment-review', label: 'อนุมัติการประเมิน' }] : []),
+        ...(idpReviewModule.value.enabled ? [{ id: 'hr-idp-review', label: 'อนุมัติแผนและผล IDP' }] : []),
+    ];
+
+    return assignedItems.length
+        ? [...baseSections, { title: 'งานที่ได้รับมอบหมาย', items: assignedItems }]
+        : baseSections;
+});
 
 const pageTitles = {
     'emp-assess': 'ประเมินตนเอง',
@@ -164,7 +190,12 @@ const pageTitles = {
     'emp-progress': 'อัปเดตความก้าวหน้า',
     'emp-idp-detail': 'รายละเอียด IDP',
     'hr-position-competencies': 'กำหนดสมรรถนะ',
-    'hr-competency-overview': 'Competency Gap คณะ',
+    'hr-cycle': 'รอบการประเมิน',
+    'faculty-assessment-overview': 'ภาพรวมการประเมิน',
+    'faculty-idp-tracking': 'การติดตาม IDP',
+    'hr-fc-topic-review': 'พิจารณาหัวข้อการประเมิน',
+    'hr-assessment-review': 'อนุมัติการประเมิน',
+    'hr-idp-review': 'อนุมัติแผนและผล IDP',
 };
 
 const userInitial = computed(() => page.props.auth.user.name?.[0] || 'H');
@@ -238,8 +269,15 @@ const visiblePositionIds = computed(() => new Set(
         .map((position) => Number(position.id))
         .filter((id) => id > 0),
 ));
+const selectedConfigRound = computed(() => (props.assessmentRounds || [])
+    .find((round) => Number(round.id) === Number(selectedConfigRoundId.value)) || null);
+const importSourceRounds = computed(() => (props.assessmentRounds || [])
+    .filter((round) => Number(round.id) !== Number(selectedConfigRoundId.value))
+    .sort((left, right) => Number(right.year) - Number(left.year) || Number(right.id) - Number(left.id)));
+const positionCompetenciesForRound = computed(() => props.positionCompetencies?.[selectedConfigRoundId.value] || {});
+const positionFcRulesForRound = computed(() => props.positionFcSelectionRules?.[selectedConfigRoundId.value] || {});
 const allPositionCount = computed(() => visiblePositionIds.value.size);
-const configuredPositionCount = computed(() => Object.entries(props.positionCompetencies || {})
+const configuredPositionCount = computed(() => Object.entries(positionCompetenciesForRound.value)
     .filter(([positionId, items]) => visiblePositionIds.value.has(Number(positionId)) && items.length)
     .length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
@@ -260,7 +298,7 @@ const competencyTypes = computed(() => {
     return [...new Set(competencyItems.value.map((item) => item.t).filter(Boolean))];
 });
 const coreCompetencyCount = computed(() => competencyItems.value.filter((item) => item.t === 'CC').length);
-const assignedCompetencyIds = computed(() => new Set(props.positionCompetencies?.[currentPositionId.value] || []));
+const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRound.value?.[currentPositionId.value] || []));
 const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
@@ -268,7 +306,7 @@ const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.fi
 const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => String(item.t || '').startsWith('FC')).length);
 const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
 const requiredFcCount = ref(0);
-const savedRequiredFcCount = computed(() => Number(props.positionFcSelectionRules?.[currentPositionId.value] || 0));
+const savedRequiredFcCount = computed(() => Number(positionFcRulesForRound.value?.[currentPositionId.value] || 0));
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
@@ -325,6 +363,11 @@ const filteredCatalogCompetencies = computed(() => {
 
 watch(worklineOptions, (next) => {
     if (!selectedWorkline.value && next.length) selectedWorkline.value = next[0];
+}, { immediate: true });
+
+watch(() => props.assessmentRounds, (rounds) => {
+    if ((rounds || []).some((round) => Number(round.id) === Number(selectedConfigRoundId.value))) return;
+    selectedConfigRoundId.value = (rounds || []).find((round) => round.isActive)?.id || rounds?.[0]?.id || null;
 }, { immediate: true });
 
 watch(organizationScopes, (next) => {
@@ -444,10 +487,11 @@ const deleteCatalog = (item) => {
 };
 
 const addCompetency = (item) => {
-    if (!currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
+    if (!selectedConfigRoundId.value || !currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
 
     router.post(route('hr.position-competencies.store'), {
         position_id: currentPositionId.value,
+        assessment_round_id: selectedConfigRoundId.value,
         competency_id: item.id,
     }, {
         preserveScroll: true,
@@ -455,10 +499,11 @@ const addCompetency = (item) => {
 };
 
 const addAllCoreCompetencies = () => {
-    if (!currentPositionId.value || !availableCoreCompetencies.value.length) return;
+    if (!selectedConfigRoundId.value || !currentPositionId.value || !availableCoreCompetencies.value.length) return;
 
     router.post(route('hr.position-competencies.store'), {
         position_id: currentPositionId.value,
+        assessment_round_id: selectedConfigRoundId.value,
         competency_ids: availableCoreCompetencies.value.map((item) => item.id),
     }, {
         preserveScroll: true,
@@ -466,11 +511,12 @@ const addAllCoreCompetencies = () => {
 };
 
 const removeCompetency = (itemId) => {
-    if (!currentPositionId.value) return;
+    if (!selectedConfigRoundId.value || !currentPositionId.value) return;
 
     router.delete(route('hr.position-competencies.destroy'), {
         data: {
             position_id: currentPositionId.value,
+            assessment_round_id: selectedConfigRoundId.value,
             competency_id: itemId,
         },
         preserveScroll: true,
@@ -478,13 +524,32 @@ const removeCompetency = (itemId) => {
 };
 
 const saveFcSelectionRule = () => {
-    if (!currentPositionId.value) return;
+    if (!selectedConfigRoundId.value || !currentPositionId.value) return;
 
     router.put(route('hr.position-fc-selection-rules.update'), {
         position_id: currentPositionId.value,
+        assessment_round_id: selectedConfigRoundId.value,
         required_fc_count: Number(requiredFcCount.value || 0),
     }, {
         preserveScroll: true,
+    });
+};
+
+const importRoundConfiguration = (source) => {
+    const target = selectedConfigRound.value;
+    if (!source || !target || isImportingRound.value) return;
+
+    isImportingRound.value = true;
+
+    router.post(route('hr.position-competencies.copy-round'), {
+        source_round_id: source.id,
+        target_round_id: target.id,
+    }, {
+        preserveScroll: true,
+        onSuccess: closeModal,
+        onFinish: () => {
+            isImportingRound.value = false;
+        },
     });
 };
 
@@ -579,18 +644,45 @@ const formatWeight = (weight) => {
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="(pageId) => (activePage = pageId)"
+                    :competencies="props.currentUserCompetencies"
                     :gaps="props.currentUserCompetencyGaps"
                     :eval-status="currentProfileUser.evalStatus"
                 />
                 <EmployeeIDP
                     v-else-if="activePage === 'emp-idp'"
                     :learning-methods="props.learningMethods"
+                    :idp-learning-methods="page.props.idpLearningMethods || []"
+                    :learning-catalogs="page.props.hrCatalogItems || []"
+                    :gaps="props.currentUserCompetencyGaps"
+                    :idp="page.props.currentUserIdp || null"
+                    :user="currentProfileUser"
                 />
                 <EmployeeProgress
                     v-else-if="activePage === 'emp-progress'"
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+                <HeadDashboard
+                    v-else-if="activePage === 'hr-fc-topic-review' && fcTopicApprovalModule.enabled"
+                    embedded
+                    embedded-page="dh-fc-topic-approval"
+                    role-key="hr"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+                <HeadDashboard
+                    v-else-if="activePage === 'hr-assessment-review' && (fcTopicApprovalModule.enabled || assessmentApprovalModule.enabled)"
+                    embedded
+                    embedded-page="dh-assess"
+                    role-key="hr"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+                <HeadDashboard
+                    v-else-if="activePage === 'hr-idp-review' && idpReviewModule.enabled"
+                    embedded
+                    embedded-page="dh-idp"
+                    role-key="hr"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
                 <template v-else-if="activePage === 'hr-position-competencies'">
                     <div class="position-hero mb14">
                         <div>
@@ -609,6 +701,29 @@ const formatWeight = (weight) => {
                                 <span>{{ unconfiguredPositionCount }}</span>
                                 <small>ยังไม่กำหนด</small>
                             </div>
+                        </div>
+                    </div>
+                    <div class="round-config-bar mb14">
+                        <div>
+                            <label class="lbl">รอบการประเมินที่กำลังกำหนด</label>
+                            <select v-model.number="selectedConfigRoundId" class="sel">
+                                <option v-if="!assessmentRounds.length" :value="null">ยังไม่มีรอบการประเมิน</option>
+                                <option v-for="round in assessmentRounds" :key="round.id" :value="round.id">
+                                    {{ round.name }}{{ round.isActive ? ' · กำลังใช้งาน' : '' }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="round-config-copy">
+                            <span v-if="importSourceRounds.length">นำเข้าชุดสมรรถนะจากรอบอื่นมาใช้กับรอบนี้</span>
+                            <span v-else>ยังไม่มีรอบการประเมินอื่นสำหรับนำเข้า</span>
+                            <button
+                                class="btn btn-p btn-sm"
+                                type="button"
+                                :disabled="!selectedConfigRoundId || !importSourceRounds.length"
+                                @click="openModal('round-import')"
+                            >
+                                นำเข้าสมรรถนะประจำตำแหน่ง
+                            </button>
                         </div>
                     </div>
                     <div class="position-scope mb14">
@@ -695,12 +810,12 @@ const formatWeight = (weight) => {
                                     type="number"
                                     min="0"
                                     :max="assignedFcCompetencyCount"
-                                    :disabled="!currentPositionId"
+                                    :disabled="!selectedConfigRoundId || !currentPositionId"
                                 />
                                 <button
                                     class="btn btn-p btn-sm"
                                     type="button"
-                                    :disabled="!currentPositionId || requiredFcCount > assignedFcCompetencyCount"
+                                    :disabled="!selectedConfigRoundId || !currentPositionId || requiredFcCount > assignedFcCompetencyCount"
                                     @click="saveFcSelectionRule"
                                 >
                                     บันทึก
@@ -721,7 +836,7 @@ const formatWeight = (weight) => {
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
-                                    :disabled="!currentPositionId || !availableCoreCompetencies.length"
+                                    :disabled="!selectedConfigRoundId || !currentPositionId || !availableCoreCompetencies.length"
                                     type="button"
                                     @click="addAllCoreCompetencies"
                                 >
@@ -780,7 +895,7 @@ const formatWeight = (weight) => {
                                     </div>
                                     <button
                                         class="btn btn-p btn-sm"
-                                        :disabled="!selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        :disabled="!selectedConfigRoundId || !selectedPosition || assignedCompetencyIds.has(item.id)"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >
@@ -792,11 +907,21 @@ const formatWeight = (weight) => {
                     </div>
                 </template>
 
-                <ManagerGap
-                    v-else-if="activePage === 'hr-competency-overview'"
-                    :users="props.users"
-                    :active-cycle-name="props.activeCycleName"
-                    :can-send-reminders="true"
+                <FacultyOverview
+                    v-else-if="activePage === 'faculty-assessment-overview'"
+                    :analytics="props.facultyAnalytics"
+                    module="assessment"
+                />
+
+                <FacultyOverview
+                    v-else-if="activePage === 'faculty-idp-tracking'"
+                    :analytics="props.facultyAnalytics"
+                    module="idp"
+                />
+
+                <HrAssessmentRounds
+                    v-else-if="activePage === 'hr-cycle'"
+                    :rounds="props.assessmentRounds"
                 />
 
                 <template v-else-if="activePage === 'hr-catalog'">
@@ -805,9 +930,7 @@ const formatWeight = (weight) => {
                             <div class="sec-t">Learning Catalog</div>
                             <div class="sec-s">ทะเบียนกิจกรรมพัฒนา · บุคลากรเลือกกิจกรรมจาก Catalog นี้เมื่อทำ IDP</div>
                         </div>
-                        <div class="hr-actions">
-                            <button class="btn btn-p" type="button" @click="openCatalogCreate">เพิ่มกิจกรรม</button>
-                        </div>
+                        <span class="muted fs12">อ่านอย่างเดียว · ผู้ดูแลระบบเป็นผู้กำหนด</span>
                     </div>
 
                     <div class="catalog-summary-card single mb14">
@@ -855,12 +978,11 @@ const formatWeight = (weight) => {
                                         <th>ประเภท</th>
                                         <th>รูปแบบ</th>
                                         <th>สถานะ</th>
-                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody v-if="!catalogItems.length">
                                     <tr>
-                                        <td colspan="6">
+                                        <td colspan="5">
                                             <div class="table-empty-cell">
                                                 <div>
                                                     <div class="fw8 fs14">ยังไม่มี Learning Catalog</div>
@@ -872,7 +994,7 @@ const formatWeight = (weight) => {
                                 </tbody>
                                 <tbody v-else-if="!filteredCatalogItems.length">
                                     <tr>
-                                        <td colspan="6">
+                                        <td colspan="5">
                                             <div class="table-empty-cell">
                                                 <div>
                                                     <div class="fw8 fs14">ไม่พบรายการตาม filter</div>
@@ -895,12 +1017,6 @@ const formatWeight = (weight) => {
                                                 {{ item.isActive ? 'เปิดใช้' : 'ปิด' }}
                                             </span>
                                         </td>
-                                        <td>
-                                            <div class="catalog-actions">
-                                                <button class="btn btn-s btn-sm" type="button" @click="openCatalogEdit(item)">แก้ไข</button>
-                                                <button class="btn btn-s btn-sm danger" type="button" @click="deleteCatalog(item)">ลบ</button>
-                                            </div>
-                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -914,7 +1030,11 @@ const formatWeight = (weight) => {
             <div class="mo-box hr-modal-box" :class="{ 'catalog-modal-box': activeModal === 'catalog' }">
                 <div class="mo-h">
                     <div>
-                        <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                        <template v-if="activeModal === 'round-import'">
+                            <div class="ct">นำเข้าสมรรถนะประจำตำแหน่ง</div>
+                            <div class="cs">เลือกชุดข้อมูลที่จะนำมาใช้กับ {{ selectedConfigRound?.name }}</div>
+                        </template>
+                        <template v-else-if="activeModal === 'competency-detail' && selectedDetailCompetency">
                             <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
                             <div class="cs">รายละเอียดระดับและพฤติกรรมบ่งชี้ของสมรรถนะ</div>
                         </template>
@@ -927,7 +1047,29 @@ const formatWeight = (weight) => {
                 </div>
 
                 <div class="mo-b">
-                    <template v-if="activeModal === 'competency-detail' && selectedDetailCompetency">
+                    <template v-if="activeModal === 'round-import'">
+                        <div class="round-import-note">
+                            เมื่อเลือกรอบ ระบบจะแทนที่สมรรถนะประจำตำแหน่งและจำนวน FC ของรอบนี้ทันที
+                        </div>
+                        <div class="round-import-list" aria-label="เลือกรอบการประเมินต้นทาง">
+                            <button
+                                v-for="round in importSourceRounds"
+                                :key="round.id"
+                                class="round-import-option"
+                                type="button"
+                                :disabled="isImportingRound"
+                                @click="importRoundConfiguration(round)"
+                            >
+                                <span>
+                                    <strong>{{ round.name }}</strong>
+                                    <small>ปี {{ round.year }}</small>
+                                </span>
+                                <span v-if="isImportingRound" class="round-import-action">กำลังนำเข้า…</span>
+                                <span v-else class="round-import-action">เลือกใช้</span>
+                            </button>
+                        </div>
+                    </template>
+                    <template v-else-if="activeModal === 'competency-detail' && selectedDetailCompetency">
                         <div class="competency-detail">
                             <section class="detail-overview">
                                 <div class="detail-title">{{ selectedDetailCompetency.n }}</div>
@@ -1479,6 +1621,97 @@ const formatWeight = (weight) => {
     border-radius: 12px;
     background: #fff;
     box-shadow: var(--sh);
+}
+
+.round-config-bar {
+    display: grid;
+    grid-template-columns: minmax(260px, .7fr) minmax(360px, 1.3fr);
+    align-items: end;
+    gap: 18px;
+    border: 1px solid #cfe0da;
+    border-radius: 12px;
+    background: #f5faf8;
+    padding: 15px 18px;
+}
+
+.round-config-copy {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+}
+
+.round-config-copy span {
+    color: #71817b;
+    font-size: 11px;
+    text-align: right;
+}
+
+.round-import-note {
+    margin-bottom: 12px;
+    border: 1px solid #f2d2c9;
+    border-radius: 8px;
+    background: #fff8f5;
+    padding: 11px 13px;
+    color: #8b3a2b;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.round-import-list {
+    display: grid;
+    gap: 8px;
+}
+
+.round-import-option {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: #fff;
+    padding: 10px 13px;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.round-import-option:hover:not(:disabled),
+.round-import-option:focus-visible {
+    border-color: var(--blue);
+    background: #f7faff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.round-import-option:disabled {
+    cursor: wait;
+    opacity: 0.62;
+}
+
+.round-import-option > span:first-child {
+    display: grid;
+    gap: 2px;
+}
+
+.round-import-option strong {
+    font-size: 13px;
+}
+
+.round-import-option small {
+    color: var(--text3);
+    font-size: 11px;
+}
+
+.round-import-action {
+    color: var(--blue);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
 }
 
 .position-scope-label {
@@ -2530,8 +2763,17 @@ const formatWeight = (weight) => {
     .position-layout,
     .position-scope,
     .position-board,
-    .position-hero {
+    .position-hero,
+    .round-config-bar {
         grid-template-columns: 1fr;
+    }
+
+    .round-config-copy {
+        justify-content: space-between;
+    }
+
+    .round-config-copy span {
+        text-align: left;
     }
 
     .dictionary {
@@ -2583,6 +2825,11 @@ const formatWeight = (weight) => {
 
     .hr-actions {
         justify-content: flex-start;
+    }
+
+    .round-config-copy {
+        align-items: stretch;
+        flex-direction: column;
     }
 
     .position-picker,

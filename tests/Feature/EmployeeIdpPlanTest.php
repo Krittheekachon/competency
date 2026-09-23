@@ -39,7 +39,6 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $projectToolId = DB::table('idp_learning_methods')->insertGetId([
-            'code' => 'EXP-0001',
             'focus_type' => 'experiential',
             'title' => 'การมอบหมายงานโครงการ',
             'is_active' => true,
@@ -47,7 +46,6 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $rotationToolId = DB::table('idp_learning_methods')->insertGetId([
-            'code' => 'EXP-0002',
             'focus_type' => 'experiential',
             'title' => 'การหมุนเวียนงาน',
             'is_active' => true,
@@ -100,13 +98,13 @@ class EmployeeIdpPlanTest extends TestCase
         $this->assertDatabaseCount('idp_items', 1);
         $this->assertDatabaseCount('idp_activities', 2);
         $this->assertDatabaseHas('idp_activities', [
-            'activity_name' => 'EXP-0001 · การมอบหมายงานโครงการ',
+            'activity_name' => 'การมอบหมายงานโครงการ',
             'method_type_id' => $methodTypeId,
             'document_reference_number' => 'กจ.01/2569',
             'weight_percent' => 70,
         ]);
         $this->assertDatabaseHas('idp_activities', [
-            'activity_name' => 'EXP-0002 · การหมุนเวียนงาน',
+            'activity_name' => 'การหมุนเวียนงาน',
             'weight_percent' => 30,
         ]);
     }
@@ -137,9 +135,9 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $toolId = DB::table('idp_learning_methods')->insertGetId([
-            'code' => '03',
             'focus_type' => 'social',
             'title' => 'การสอนงาน (Coaching)',
+            'form_code' => 'form_5_coaching',
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
@@ -182,7 +180,7 @@ class EmployeeIdpPlanTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $activity = DB::table('idp_activities')
-            ->where('activity_name', '03 · การสอนงาน (Coaching)')
+            ->where('activity_name', 'การสอนงาน (Coaching)')
             ->first();
 
         $this->assertNotNull($activity);
@@ -222,6 +220,16 @@ class EmployeeIdpPlanTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $projectToolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'experiential', 'title' => 'การมอบหมายงานโครงการ',
+            'form_code' => 'form_3_project_assignment', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $ojtToolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'experiential', 'title' => 'การเรียนรู้จากการปฏิบัติงานจริง',
+            'form_code' => 'form_4_ojt', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
         $this->actingAs($employee)->post(route('employee.idp.draft'), [
             'items' => [[
@@ -230,6 +238,7 @@ class EmployeeIdpPlanTest extends TestCase
                 'successCriteria' => '',
                 'activities' => [[
                     'methodKey' => 'experiential-learning',
+                    'developmentToolId' => $projectToolId,
                     'activityName' => 'การมอบหมายงานโครงการ',
                     'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
                     'weightPercent' => 50,
@@ -257,6 +266,7 @@ class EmployeeIdpPlanTest extends TestCase
                     ],
                 ], [
                     'methodKey' => 'experiential-learning',
+                    'developmentToolId' => $ojtToolId,
                     'activityName' => 'การเรียนรู้จากการปฏิบัติงานจริง',
                     'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
                     'weightPercent' => 50,
@@ -329,6 +339,11 @@ class EmployeeIdpPlanTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $toolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'social', 'title' => 'การเป็นพี่เลี้ยง',
+            'form_code' => 'form_6_mentoring', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
         $this->actingAs($employee)->post(route('employee.idp.draft'), [
             'items' => [[
@@ -337,6 +352,7 @@ class EmployeeIdpPlanTest extends TestCase
                 'successCriteria' => '',
                 'activities' => [[
                     'methodKey' => 'social-learning',
+                    'developmentToolId' => $toolId,
                     'activityName' => 'การเป็นพี่เลี้ยง',
                     'documentReferenceNumber' => 'ต้องไม่ถูกบันทึก',
                     'weightPercent' => 100,
@@ -545,6 +561,111 @@ class EmployeeIdpPlanTest extends TestCase
         $this->assertSame('ต้องการแจ้งหัวหน้าให้ทราบล่วงหน้า', $details['planRows'][0]['additionalDetails']);
     }
 
+    public function test_training_ignores_tampered_catalog_fields_and_allows_missing_system_hours(): void
+    {
+        $supervisor = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id, 'reviewer_id' => $supervisor->id,
+            'step_order' => 1, 'chain_type' => 'idp',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $competencyId = $this->competencyId('CC-SAFE-CATALOG');
+        $gapId = $this->approvedGap($employee, $competencyId);
+        $formalMethodId = DB::table('learning_method_types')->insertGetId([
+            'key' => 'formal-learning', 'label' => 'Formal Learning', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $catalogId = DB::table('learning_catalogs')->insertGetId([
+            'code' => 'SYSTEM-001', 'name' => 'หลักสูตรจากระบบ',
+            'method_type_id' => $formalMethodId, 'delivery_type' => 'e_learning',
+            'source_type' => 'internal', 'hours' => null, 'cost' => null,
+            'expected_levels' => json_encode([3]), 'description' => 'รายละเอียดจากระบบ',
+            'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('learning_catalog_competency')->insert([
+            'learning_catalog_id' => $catalogId, 'competency_id' => $competencyId,
+        ]);
+
+        $this->actingAs($employee)->post(route('employee.idp.submit-item'), [
+            'item' => [
+                'competencyGapId' => $gapId,
+                'goal' => 'พัฒนาตามแผน',
+                'successCriteria' => 'ผ่านตามเกณฑ์',
+                'activities' => [[
+                    'methodKey' => 'formal-learning',
+                    'learningCatalogId' => $catalogId,
+                    'activityName' => 'ชื่อที่ปลอมมา',
+                    'weightPercent' => 100,
+                    'formCode' => 'form_3_project_assignment',
+                    'formDetails' => [
+                        '_saved' => true,
+                        'planRows' => [[
+                            'trainingType' => 'In-class Training',
+                            'courseCode' => 'HACKED',
+                            'courseName' => 'ชื่อที่ปลอมมา',
+                            'courseDescription' => 'รายละเอียดที่ปลอมมา',
+                            'hours' => 999,
+                            'cost' => 999999,
+                            'developmentStart' => '2026-09-01',
+                            'developmentEnd' => '2026-09-30',
+                            'developmentGoal' => 'นำความรู้ไปใช้',
+                        ]],
+                    ],
+                ]],
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->where('learning_catalog_id', $catalogId)->first();
+        $details = json_decode($activity->form_details, true)['planRows'][0];
+        $this->assertSame('หลักสูตรจากระบบ', $activity->activity_name);
+        $this->assertSame('form_10_training', $activity->form_code);
+        $this->assertSame('SYSTEM-001', $details['courseCode']);
+        $this->assertSame('หลักสูตรจากระบบ', $details['courseName']);
+        $this->assertSame('e-Learning', $details['trainingType']);
+        $this->assertNull($details['hours']);
+        $this->assertNull($details['cost']);
+    }
+
+    public function test_formal_catalog_must_match_the_users_expected_level(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $competencyId = $this->competencyId('CC-LEVEL-CATALOG');
+        $gapId = $this->approvedGap($employee, $competencyId);
+        $formalMethodId = DB::table('learning_method_types')->insertGetId([
+            'key' => 'formal-learning', 'label' => 'Formal Learning', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $catalogId = DB::table('learning_catalogs')->insertGetId([
+            'name' => 'หลักสูตรเฉพาะระดับสอง', 'method_type_id' => $formalMethodId,
+            'delivery_type' => 'e_learning', 'source_type' => 'internal',
+            'expected_levels' => json_encode([2]), 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('learning_catalog_competency')->insert([
+            'learning_catalog_id' => $catalogId, 'competency_id' => $competencyId,
+        ]);
+
+        $payload = [
+            'competencyGapId' => $gapId,
+            'goal' => 'พัฒนาตามแผน',
+            'successCriteria' => 'ผ่านตามเกณฑ์',
+            'activities' => [[
+                'methodKey' => 'formal-learning', 'learningCatalogId' => $catalogId,
+                'weightPercent' => 100, 'formCode' => 'form_10_training',
+                'formDetails' => ['_saved' => true, 'planRows' => [[
+                    'developmentStart' => '2026-09-01', 'developmentEnd' => '2026-09-30',
+                    'developmentGoal' => 'นำความรู้ไปใช้',
+                ]]],
+            ]],
+        ];
+
+        $this->actingAs($employee)
+            ->postJson(route('employee.idp.submit-item'), ['item' => $payload])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('items.0.activities.0.learningCatalogId');
+    }
+
     public function test_employee_can_submit_one_competency_plan_while_another_remains_draft(): void
     {
         $supervisor = User::factory()->create([
@@ -573,7 +694,6 @@ class EmployeeIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $toolId = DB::table('idp_learning_methods')->insertGetId([
-            'code' => 'EXP-TEST',
             'focus_type' => 'experiential',
             'title' => 'Project Assignment',
             'is_active' => true,
@@ -769,6 +889,11 @@ class EmployeeIdpPlanTest extends TestCase
 
     private function assessmentRoundId(): int
     {
+        $existing = DB::table('assessment_rounds')->where('is_active', true)->value('id');
+        if ($existing) {
+            return (int) $existing;
+        }
+
         return (int) DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ',
             'year' => 2568,

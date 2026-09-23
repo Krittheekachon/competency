@@ -875,7 +875,7 @@ Expected: PASS.
 
 ```bash
 git add app/Http/Controllers/IdpApprovalController.php tests/Feature/IdpItemApprovalTest.php
-git commit -m "feat: อนุมัติและตีกลับ IDP ตามลำดับหัวหน้า"
+git commit -m "feat: อนุมัติและส่งกลับ IDP ตามลำดับหัวหน้า"
 ```
 
 ### Task 5: Expose Current Reviewer and Review History
@@ -1035,7 +1035,7 @@ const planStatusLabel = (plan: Plan | null) => ({
   review_step_2: 'รอผู้อนุมัติลำดับ 2',
   review_step_3: 'รอผู้อนุมัติลำดับ 3',
   approved: 'อนุมัติครบทุกลำดับแล้ว',
-  revision_required: 'ตีกลับให้แก้ไข',
+  revision_required: 'ส่งกลับให้แก้ไข',
 }[plan?.status || ''] || 'ร่าง');
 ```
 
@@ -1066,7 +1066,7 @@ Keep rejection validation:
 
 ```js
 if (!comment) {
-    window.alert('กรุณาระบุเหตุผลที่ตีกลับ');
+    window.alert('กรุณาระบุเหตุผลที่ส่งกลับ');
     return;
 }
 ```
@@ -1089,7 +1089,7 @@ Render current step and history:
     <summary>ประวัติการพิจารณา {{ item.reviewHistory.length }} รายการ</summary>
     <div v-for="review in item.reviewHistory" :key="`${review.submissionVersion}-${review.reviewStep}`">
         ครั้งที่ {{ review.submissionVersion }} · ลำดับ {{ review.reviewStep }}
-        · {{ review.decision === 'approved' ? 'อนุมัติ' : 'ตีกลับ' }}
+        · {{ review.decision === 'approved' ? 'อนุมัติ' : 'ส่งกลับ' }}
         · {{ review.reviewerName }}
         <p v-if="review.comment">{{ review.comment }}</p>
     </div>

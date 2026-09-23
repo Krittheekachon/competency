@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class AdminUserControllerTest extends TestCase
@@ -35,6 +36,9 @@ class AdminUserControllerTest extends TestCase
                 'fe' => 'Staff',
                 'le' => 'User',
                 'em' => 'staff001@example.com',
+                'username' => 'staff.001',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
                 'ph' => null,
                 'w' => 'สายสนับสนุน',
                 'd' => 'ฝ่ายบริหาร',
@@ -49,9 +53,14 @@ class AdminUserControllerTest extends TestCase
         $this->assertDatabaseHas('users', [
             'sso' => 'staff-001',
             'name' => 'บุคลากร ใหม่',
+            'username' => 'staff.001',
             'role_id' => $this->roleId('employee'),
             'is_active' => true,
         ]);
+        $this->assertTrue(Hash::check(
+            'secure-password',
+            (string) DB::table('users')->where('sso', 'staff-001')->value('password'),
+        ));
         $userId = (int) DB::table('users')->where('sso', 'staff-001')->value('id');
         $this->assertDatabaseHas('user_reviewer_steps', [
             'user_id' => $userId,
@@ -73,6 +82,7 @@ class AdminUserControllerTest extends TestCase
         $this->createStructure('สายวิชาการ', 'สาขาวิชา', 'อาจารย์', 'อาจารย์');
         $user = User::factory()->create([
             'sso' => 'staff-002',
+            'username' => 'staff.002',
             'role_id' => $this->roleId('employee'),
         ]);
 
@@ -100,9 +110,11 @@ class AdminUserControllerTest extends TestCase
             'id' => $user->id,
             'name' => 'แก้ไข ข้อมูล',
             'email' => 'updated@example.com',
+            'username' => 'staff.002',
             'role_id' => $this->roleId('supervisor'),
             'workline' => 'สายวิชาการ',
         ]);
+        $this->assertTrue(Hash::check('password', $user->refresh()->password));
     }
 
     public function test_admin_can_update_three_assessment_reviewer_steps(): void

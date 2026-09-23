@@ -15,6 +15,7 @@ import EmployeeIDP from './EmployeeIDP.vue';
 import EmployeeIDPDetail from './EmployeeIDPDetail.vue';
 import EmployeeProgress from './EmployeeProgress.vue';
 import FcTopicApproval from './FcTopicApproval.vue';
+import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
     pageTitle: {
@@ -37,6 +38,8 @@ const implementedEmployeePages = new Set([
     'emp-progress',
     'emp-idp-detail',
     'emp-fc-topic-approval',
+    'emp-assessment-review',
+    'emp-idp-review',
 ]);
 
 const showSidebar = ref(true);
@@ -68,10 +71,34 @@ const defaultLearningMethods = [
 
 const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const currentPageTitle = computed(() => ({
-    'emp-fc-topic-approval': 'อนุมัติหัวข้อการประเมิน',
+    'emp-fc-topic-approval': 'พิจารณาหัวข้อการประเมิน',
+    'emp-assessment-review': 'อนุมัติการประเมิน',
+    'emp-idp-review': 'อนุมัติแผนและผล IDP',
 }[activePage.value] || PAGE_TITLES[activePage.value] || props.pageTitle));
 const serverCurrentUser = computed(() => page.props.currentUser || null);
 const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
+const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [], pendingCount: 0 });
+const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
+const employeeNavSections = computed(() => {
+    const sections = NAV_CONFIG.employee.map((section) => ({
+        ...section,
+        items: [...section.items],
+    }));
+    const assignedItems = [
+        ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled)
+            ? [{ id: 'emp-assessment-review', ic: '', lb: 'อนุมัติการประเมิน' }]
+            : []),
+        ...(idpReviewModule.value.enabled
+            ? [{ id: 'emp-idp-review', ic: '', lb: 'อนุมัติแผนและผล IDP' }]
+            : []),
+    ];
+
+    if (assignedItems.length) {
+        sections.push({ sec: 'งานที่ได้รับมอบหมาย', items: assignedItems });
+    }
+
+    return sections;
+});
 const currentProfileUser = computed(() =>
     serverCurrentUser.value
     || users.value.find((user) => user.r === 'employee')
@@ -147,7 +174,7 @@ const logout = () => router.post(route('logout'));
             </button>
 
             <div class="sb-nav">
-                <div v-for="(section, sectionIndex) in NAV_CONFIG.employee" :key="sectionIndex">
+                <div v-for="(section, sectionIndex) in employeeNavSections" :key="sectionIndex">
                     <div class="nav-sec">{{ section.sec }}</div>
                     <div
                         v-for="item in section.items"
@@ -158,19 +185,6 @@ const logout = () => router.post(route('logout'));
                     >
                         <span class="nav-ic">{{ item.ic }}</span>
                         {{ item.lb }}
-                    </div>
-                </div>
-                <div v-if="fcTopicApprovalModule.enabled">
-                    <div class="nav-sec">งานของหัวหน้า</div>
-                    <div
-                        v-if="fcTopicApprovalModule.enabled"
-                        class="nav-item"
-                        :class="{ on: activePage === 'emp-fc-topic-approval' }"
-                        @click="requestPageChange('emp-fc-topic-approval')"
-                    >
-                        <span class="nav-ic"></span>
-                        อนุมัติหัวข้อการประเมิน
-                        <span v-if="fcTopicApprovalModule.items.length" class="nav-count">{{ fcTopicApprovalModule.items.length }}</span>
                     </div>
                 </div>
             </div>
@@ -206,6 +220,7 @@ const logout = () => router.post(route('logout'));
                 <EmployeeGap
                     v-else-if="activePage === 'emp-gap'"
                     :set-page="requestPageChange"
+                    :competencies="assignedCompetencies"
                     :gaps="competencyGaps"
                     :eval-status="currentProfileUser?.evalStatus"
                     :user="currentProfileUser"
@@ -226,11 +241,27 @@ const logout = () => router.post(route('logout'));
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
 
                 <FcTopicApproval
                     v-else-if="activePage === 'emp-fc-topic-approval' && fcTopicApprovalModule.enabled"
                     :module="fcTopicApprovalModule"
+                />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'emp-assessment-review' && (fcTopicApprovalModule.enabled || assessmentApprovalModule.enabled)"
+                    embedded
+                    embedded-page="dh-assess"
+                    role-key="employee"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'emp-idp-review' && idpReviewModule.enabled"
+                    embedded
+                    embedded-page="dh-idp"
+                    role-key="employee"
+                    :idp-review-items="page.props.idpReviewItems || []"
                 />
 
                 <div v-else class="p-20 text-center text-text3">กำลังพัฒนา</div>

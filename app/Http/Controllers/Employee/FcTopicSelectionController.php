@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
+use App\Services\AssessmentRoundWindow;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -11,7 +12,10 @@ use Illuminate\Validation\ValidationException;
 
 class FcTopicSelectionController extends Controller
 {
-    public function __construct(private ReviewerChainResolver $reviewerChainResolver)
+    public function __construct(
+        private ReviewerChainResolver $reviewerChainResolver,
+        private AssessmentRoundWindow $assessmentRoundWindow,
+    )
     {
     }
 
@@ -19,6 +23,7 @@ class FcTopicSelectionController extends Controller
     {
         $user = $request->user();
         $positionId = (int) ($user->position_id ?? 0);
+        $roundId = $this->activeRoundId();
 
         if ($positionId <= 0) {
             throw ValidationException::withMessages([
@@ -39,7 +44,7 @@ class FcTopicSelectionController extends Controller
             'competency_ids.*' => ['integer', 'exists:competencies,id'],
         ]);
 
-        $requiredCount = $this->requiredFcCount($positionId);
+        $requiredCount = $this->requiredFcCount($positionId, $roundId);
         if ($requiredCount <= 0) {
             throw ValidationException::withMessages([
                 'competency_ids' => 'ตำแหน่งนี้ยังไม่ได้กำหนดจำนวน FC ที่ต้องเลือก',
@@ -58,7 +63,7 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        $availableIds = $this->availableFcCompetencyIds($positionId);
+        $availableIds = $this->availableFcCompetencyIds($positionId, $roundId);
         $invalidIds = $selectedIds->diff($availableIds);
 
         if ($invalidIds->isNotEmpty()) {
@@ -67,12 +72,13 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($user, $positionId, $selectedIds, $firstReviewerId): void {
+        DB::transaction(function () use ($user, $positionId, $roundId, $selectedIds, $firstReviewerId): void {
             $now = now();
             $selectionId = DB::table('fc_topic_selections')->updateOrInsert(
                 [
                     'user_id' => $user->id,
                     'position_id' => $positionId,
+                    'assessment_round_id' => $roundId,
                 ],
                 [
                     'status' => 'submitted',
@@ -89,6 +95,7 @@ class FcTopicSelectionController extends Controller
             $selectionId = DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
                 ->where('position_id', $positionId)
+                ->where('assessment_round_id', $roundId)
                 ->value('id');
 
             DB::table('fc_topic_selection_items')
@@ -106,10 +113,11 @@ class FcTopicSelectionController extends Controller
         return back()->with('success', 'ส่งหัวข้อ FC ให้หัวหน้า 1 อนุมัติแล้ว');
     }
 
-    private function requiredFcCount(int $positionId): int
+    private function requiredFcCount(int $positionId, int $roundId): int
     {
         return (int) DB::table('position_fc_selection_rules')
             ->where('position_id', $positionId)
+            ->where('assessment_round_id', $roundId)
             ->value('required_fc_count');
     }
 
@@ -118,15 +126,21 @@ class FcTopicSelectionController extends Controller
         return $this->reviewerChainResolver->firstReviewerId($user);
     }
 
-    private function availableFcCompetencyIds(int $positionId): \Illuminate\Support\Collection
+    private function availableFcCompetencyIds(int $positionId, int $roundId): \Illuminate\Support\Collection
     {
         return DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
             ->where('position_competencies.position_id', $positionId)
+            ->where('position_competencies.assessment_round_id', $roundId)
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->pluck('competencies.id')
             ->map(fn ($id) => (int) $id)
             ->values();
+    }
+
+    private function activeRoundId(): int
+    {
+        return (int) $this->assessmentRoundWindow->assertSelfAssessmentOpen()->id;
     }
 }

@@ -125,7 +125,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
       { key: 'sessionCount', label: 'จำนวนครั้ง' },
       { key: 'sessionDuration', label: 'ระยะเวลาต่อครั้ง', placeholder: 'เช่น ครั้งละ 1 ชั่วโมง' },
     ],
-    note: '',
   },
   form_6_mentoring: {
     number: '6',
@@ -167,7 +166,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
       { key: 'assessmentTools', label: 'เครื่องมือและเงื่อนไขการประเมิน', type: 'area' },
       { key: 'additionalDetails', label: 'รายละเอียดเพิ่มเติม (ถ้ามี)', type: 'area' },
     ],
-    note: 'ผู้รับการพัฒนาต้องจัดทำรายงานสรุปผลการแลกเปลี่ยนเรียนรู้หลังจบกิจกรรม',
   },
   form_8_feedback: {
     number: '8',
@@ -189,7 +187,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
       { key: 'sessionCount', label: 'จำนวนครั้ง' },
       { key: 'sessionDuration', label: 'ระยะเวลาต่อครั้ง', placeholder: 'เช่น ครั้งละ 1 ชั่วโมง' },
     ],
-    note: 'ตัวอย่างแหล่งข้อมูลป้อนกลับ: สถิติการลา ความสาย รายงานผลการปฏิบัติงาน ข้อร้องเรียน ข้อสังเกตจากผู้บังคับบัญชา หรือผลประเมิน 360 องศา',
   },
   form_9_field_trip: {
     number: '9',
@@ -207,7 +204,6 @@ export const formDefinitions: Record<string, IdpFormDefinition> = {
       { key: 'assessmentTools', label: 'เครื่องมือและเงื่อนไขการประเมิน', type: 'area' },
       { key: 'additionalDetails', label: 'รายละเอียดเพิ่มเติม (ถ้ามี)', type: 'area' },
     ],
-    note: 'ผู้รับการพัฒนาต้องจัดทำรายงานสรุปผลการศึกษาดูงานหลังจบกิจกรรม',
   },
   form_10_training: {
     number: '10',

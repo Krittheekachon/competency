@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Services\IdpItemReviewWorkflow;
+use App\Services\ReviewerChainResolver;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,8 +13,43 @@ use Illuminate\Validation\ValidationException;
 class IdpApprovalController extends Controller
 {
     public function __construct(
-        private readonly IdpItemReviewWorkflow $reviewWorkflow
+        private readonly IdpItemReviewWorkflow $reviewWorkflow,
+        private readonly ReviewerChainResolver $reviewerChainResolver,
     ) {
+    }
+
+    public function activityDetail(int $activity): JsonResponse
+    {
+        $row = DB::table('idp_activities')
+            ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idp_activities.id', $activity)
+            ->select(
+                'idp_activities.id',
+                'idp_activities.form_code',
+                'idp_activities.form_details',
+                'idps.user_id'
+            )
+            ->first();
+
+        abort_unless($row, 404);
+
+        $reviewerId = (int) auth()->id();
+        $canView = collect($this->reviewerChainResolver->stepsForUser($row, 'idp'))
+            ->contains(fn (array $step): bool => (int) $step['reviewer_id'] === $reviewerId);
+
+        abort_unless($canView, 403);
+
+        $formDetails = $row->form_details;
+        if (is_string($formDetails)) {
+            $formDetails = json_decode($formDetails, true);
+        }
+
+        return response()->json([
+            'id' => (int) $row->id,
+            'formCode' => (string) ($row->form_code ?? ''),
+            'formDetails' => is_array($formDetails) ? $formDetails : [],
+        ]);
     }
 
     public function approve(Request $request): RedirectResponse
@@ -90,15 +127,19 @@ class IdpApprovalController extends Controller
             $this->reviewWorkflow->syncParentStatus((int) $item->idp_id);
         });
 
-        return back()->with('success', 'ตีกลับแผนสมรรถนะให้แก้ไขแล้ว');
+        return back()->with('success', 'ส่งกลับแผนสมรรถนะให้แก้ไขแล้ว');
     }
 
     private function reviewableItem(int $itemId): object
     {
+        $roundId = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
         $item = DB::table('idp_items')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->where('idp_items.id', $itemId)
+            ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
             ->select(
                 'idp_items.id',
                 'idp_items.idp_id',

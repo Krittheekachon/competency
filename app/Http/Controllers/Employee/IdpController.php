@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
+use App\Services\AssessmentRoundWindow;
 use App\Services\IdpItemReviewWorkflow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,7 +22,8 @@ class IdpController extends Controller
     ];
 
     public function __construct(
-        private readonly IdpItemReviewWorkflow $reviewWorkflow
+        private readonly IdpItemReviewWorkflow $reviewWorkflow,
+        private readonly AssessmentRoundWindow $assessmentRoundWindow,
     ) {
     }
 
@@ -71,7 +73,7 @@ class IdpController extends Controller
             'items.*.activities.*.activityName' => ['nullable', 'string', 'max:255'],
             'items.*.activities.*.activityDescription' => ['nullable', 'string'],
             'items.*.activities.*.documentReferenceNumber' => ['nullable', 'string', 'max:255'],
-            'items.*.activities.*.weightPercent' => [$required, 'numeric', 'min:0', 'max:100'],
+            'items.*.activities.*.weightPercent' => [$required, 'integer', 'min:1', 'max:100'],
             'items.*.activities.*.startDate' => ['nullable', 'date'],
             'items.*.activities.*.endDate' => ['nullable', 'date'],
             'items.*.activities.*.formCode' => ['nullable', 'string', 'max:120'],
@@ -111,7 +113,7 @@ class IdpController extends Controller
         $methodIdsByKey = DB::table('learning_method_types')
             ->whereIn('key', $submittedMethodKeys)
             ->pluck('id', 'key');
-        $toolColumns = ['id', 'code', 'focus_type', 'title'];
+        $toolColumns = ['id', 'focus_type', 'title'];
         if (Schema::hasColumn('idp_learning_methods', 'form_code')) {
             $toolColumns[] = 'form_code';
         }
@@ -130,8 +132,10 @@ class IdpController extends Controller
         $catalogsById = DB::table('learning_catalogs')
             ->whereIn('id', $items->flatMap(fn (array $item) => $item['activities'] ?? [])->pluck('learningCatalogId')->filter()->unique())
             ->where('is_active', true)
-            ->get(['id', 'name', 'description'])
+            ->get(['id', 'code', 'name', 'delivery_type', 'cost', 'hours', 'expected_levels', 'description'])
             ->keyBy('id');
+
+        $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById);
 
         $this->validateActivities(
             $items,
@@ -140,6 +144,7 @@ class IdpController extends Controller
             $methodIdsByKey,
             $toolsById,
             $catalogCompetencies,
+            $catalogsById,
         );
         $owner = DB::table('users')
             ->where('id', auth()->id())
@@ -152,6 +157,7 @@ class IdpController extends Controller
                 $existing = DB::table('idp_items')
                     ->where('idp_id', $idpId)
                     ->where('competency_gap_id', $gapId)
+                    ->orderByDesc('id')
                     ->first();
 
                 if ($existing && ($existing->status === 'approved'
@@ -217,7 +223,7 @@ class IdpController extends Controller
                         : null;
                     $activityName = $catalog?->name;
                     if ($tool) {
-                        $activityName = trim(($tool->code ? $tool->code.' · ' : '').$tool->title);
+                        $activityName = $tool->title;
                     }
 
                     DB::table('idp_activities')->insert([
@@ -262,6 +268,74 @@ class IdpController extends Controller
         }
     }
 
+    private function withAuthoritativeActivityData(Collection $items, Collection $toolsById, Collection $catalogsById): Collection
+    {
+        return $items->map(function (array $item) use ($toolsById, $catalogsById): array {
+            $item['activities'] = collect($item['activities'] ?? [])->map(function (array $activity) use ($toolsById, $catalogsById): array {
+                $tool = ! empty($activity['developmentToolId'])
+                    ? $toolsById->get($activity['developmentToolId'])
+                    : null;
+                $catalog = ! empty($activity['learningCatalogId'])
+                    ? $catalogsById->get($activity['learningCatalogId'])
+                    : null;
+
+                if ($catalog) {
+                    $details = is_array($activity['formDetails'] ?? null) ? $activity['formDetails'] : [];
+                    $rows = collect($details['planRows'] ?? [])->values();
+                    $userRow = is_array($rows->first()) ? $rows->first() : [];
+                    $details['planRows'] = [[
+                        ...$userRow,
+                        'trainingType' => $catalog->delivery_type === 'in_class' ? 'In-class Training' : 'e-Learning',
+                        'courseCode' => $catalog->code ?? '',
+                        'courseName' => $catalog->name ?? '',
+                        'courseDescription' => $catalog->description ?? '',
+                        'hours' => $catalog->hours,
+                        'cost' => $catalog->cost,
+                    ]];
+                    $details['_formCode'] = 'form_10_training';
+
+                    return [
+                        ...$activity,
+                        'activityName' => $catalog->name ?? '',
+                        'activityDescription' => $catalog->description ?? '',
+                        'formCode' => 'form_10_training',
+                        'formDetails' => $details,
+                    ];
+                }
+
+                if ($tool) {
+                    return [
+                        ...$activity,
+                        'activityName' => $tool->title ?? '',
+                        'activityDescription' => '',
+                        'formCode' => $tool->form_code ?? '',
+                    ];
+                }
+
+                return [
+                    ...$activity,
+                    'activityName' => '',
+                    'activityDescription' => '',
+                    'formCode' => '',
+                ];
+            })->values()->all();
+
+            return $item;
+        })->values();
+    }
+
+    private function decodeExpectedLevels(mixed $levels): array
+    {
+        $decoded = is_string($levels) ? json_decode($levels, true) : $levels;
+
+        return collect(is_array($decoded) ? $decoded : [])
+            ->map(fn ($level) => (int) $level)
+            ->filter(fn (int $level) => $level >= 1 && $level <= 5)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function validateActivities(
         Collection $items,
         string $status,
@@ -269,6 +343,7 @@ class IdpController extends Controller
         Collection $methodIdsByKey,
         Collection $toolsById,
         Collection $catalogCompetencies,
+        Collection $catalogsById,
     ): void {
         foreach ($items as $itemIndex => $item) {
             $activities = collect($item['activities'] ?? [])->values();
@@ -285,7 +360,9 @@ class IdpController extends Controller
                 ]);
             }
 
-            $competencyId = (int) ($validGaps[$item['competencyGapId']] ?? 0);
+            $gap = $validGaps[$item['competencyGapId']] ?? null;
+            $competencyId = (int) ($gap->competency_id ?? 0);
+            $expectedLevel = (int) ($gap->expected_level ?? 0);
 
             foreach ($activities as $activityIndex => $activity) {
                 $prefix = "items.$itemIndex.activities.$activityIndex";
@@ -293,6 +370,14 @@ class IdpController extends Controller
                 $focusType = $this->focusTypeForMethodKey($methodKey);
                 $toolId = $activity['developmentToolId'] ?? null;
                 $tool = $toolId ? $toolsById->get($toolId) : null;
+                $catalogId = $activity['learningCatalogId'] ?? null;
+                $catalog = $catalogId ? $catalogsById->get($catalogId) : null;
+
+                if ($toolId && $catalogId) {
+                    throw ValidationException::withMessages([
+                        "$prefix.developmentToolId" => 'หนึ่งกิจกรรมเลือกได้เพียงเครื่องมือหรือหลักสูตรอย่างใดอย่างหนึ่ง',
+                    ]);
+                }
 
                 if ($methodKey !== '' && (! in_array($methodKey, self::CANONICAL_LEARNING_METHOD_KEYS, true) || ! $methodIdsByKey->has($methodKey))) {
                     throw ValidationException::withMessages([
@@ -311,18 +396,33 @@ class IdpController extends Controller
                             "$prefix.developmentToolId" => 'เครื่องมือพัฒนาไม่ตรงกับประเภทการเรียนรู้',
                         ]);
                     }
+                    if ($catalogId) {
+                        throw ValidationException::withMessages([
+                            "$prefix.learningCatalogId" => 'Learning Catalog ใช้ได้กับ Formal Learning เท่านั้น',
+                        ]);
+                    }
                 }
 
                 if ($focusType === 'formal') {
-                    $catalogId = $activity['learningCatalogId'] ?? null;
                     if ($status === 'submitted' && ! $catalogId) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'กรุณาเลือกหลักสูตรจาก Learning Catalog',
                         ]);
                     }
-                    if ($catalogId && ! ($catalogCompetencies[$catalogId] ?? collect())->contains($competencyId)) {
+                    if ($catalogId && (! $catalog || ! ($catalogCompetencies[$catalogId] ?? collect())->contains($competencyId))) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่ได้ผูกกับสมรรถนะที่ต้องพัฒนา',
+                        ]);
+                    }
+                    $catalogExpectedLevels = $this->decodeExpectedLevels($catalog?->expected_levels ?? null);
+                    if ($catalogId && $catalogExpectedLevels && ! in_array($expectedLevel, $catalogExpectedLevels, true)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่รองรับระดับความคาดหวังของผู้ใช้',
+                        ]);
+                    }
+                    if ($toolId) {
+                        throw ValidationException::withMessages([
+                            "$prefix.developmentToolId" => 'Formal Learning ต้องเลือกจาก Learning Catalog',
                         ]);
                     }
                 }
@@ -478,7 +578,7 @@ class IdpController extends Controller
                             ]);
                         }
 
-                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                        if (filter_var($row['sessionCount'] ?? null, FILTER_VALIDATE_INT) === false || (int) $row['sessionCount'] < 1) {
                             throw ValidationException::withMessages([
                                 "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
                             ]);
@@ -530,7 +630,7 @@ class IdpController extends Controller
                             ]);
                         }
 
-                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                        if (filter_var($row['sessionCount'] ?? null, FILTER_VALIDATE_INT) === false || (int) $row['sessionCount'] < 1) {
                             throw ValidationException::withMessages([
                                 "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
                             ]);
@@ -627,7 +727,7 @@ class IdpController extends Controller
                             ]);
                         }
 
-                        if (! is_numeric($row['sessionCount'] ?? null) || (int) $row['sessionCount'] < 1) {
+                        if (filter_var($row['sessionCount'] ?? null, FILTER_VALIDATE_INT) === false || (int) $row['sessionCount'] < 1) {
                             throw ValidationException::withMessages([
                                 "$prefix.formDetails.planRows.$rowIndex.sessionCount" => 'จำนวนครั้งต้องไม่น้อยกว่า 1',
                             ]);
@@ -677,11 +777,8 @@ class IdpController extends Controller
 
                     foreach ($rows as $rowIndex => $row) {
                         foreach ([
-                            'trainingType' => 'รูปแบบการอบรม',
-                            'courseName' => 'ชื่อหลักสูตร',
                             'developmentStart' => 'วันที่เริ่มต้น',
                             'developmentEnd' => 'วันที่สิ้นสุด',
-                            'hours' => 'จำนวนชั่วโมง',
                             'developmentGoal' => 'เป้าหมายในการพัฒนา',
                         ] as $field => $label) {
                             if (blank($row[$field] ?? null)) {
@@ -691,20 +788,9 @@ class IdpController extends Controller
                             }
                         }
 
-                        if (! in_array($row['trainingType'] ?? null, ['In-class Training', 'e-Learning'], true)) {
-                            throw ValidationException::withMessages([
-                                "$prefix.formDetails.planRows.$rowIndex.trainingType" => 'กรุณาเลือกรูปแบบการอบรมจากรายการ',
-                            ]);
-                        }
                         if (($row['developmentEnd'] ?? '') < ($row['developmentStart'] ?? '')) {
                             throw ValidationException::withMessages([
                                 "$prefix.formDetails.planRows.$rowIndex.developmentEnd" => 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น',
-                            ]);
-                        }
-
-                        if (! is_numeric($row['hours'] ?? null) || (float) $row['hours'] <= 0) {
-                            throw ValidationException::withMessages([
-                                "$prefix.formDetails.planRows.$rowIndex.hours" => 'จำนวนชั่วโมงต้องมากกว่า 0',
                             ]);
                         }
                     }
@@ -729,25 +815,45 @@ class IdpController extends Controller
             return collect();
         }
 
+        $roundId = (int) $this->assessmentRoundWindow->activeRound()->id;
+
         return DB::table('competency_gaps')
             ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('assessments.user_id', auth()->id())
+            ->where('assessments.assessment_round_id', $roundId)
             ->whereIn('competency_gaps.id', $gapIds)
             ->where('competency_gaps.requires_idp', true)
             ->where('competency_gaps.gap', '<', 0)
             ->whereIn('competency_gaps.status', ['approved', 'dean_approved'])
-            ->pluck('competency_gaps.competency_id', 'competency_gaps.id');
+            ->get([
+                'competency_gaps.id',
+                'competency_gaps.competency_id',
+                'competency_gaps.expected_level',
+            ])
+            ->keyBy('id');
     }
 
     private function currentUserIdpId(): int
     {
-        $year = (int) (DB::table('assessment_rounds')
-            ->where('is_active', true)
-            ->orderByDesc('year')
-            ->value('year') ?: ((int) now()->format('Y') + 543));
+        $round = $this->assessmentRoundWindow->activeRound();
+        $roundId = (int) $round->id;
+        $year = (int) $round->year;
         $existing = DB::table('idps')
             ->where('user_id', auth()->id())
-            ->where('year', $year)
+            ->where(function ($query) use ($roundId): void {
+                $query->where('assessment_round_id', $roundId)
+                    ->orWhere(function ($legacy) use ($roundId): void {
+                        $legacy->whereNull('assessment_round_id')
+                            ->whereExists(function ($linkedAssessment) use ($roundId): void {
+                                $linkedAssessment->selectRaw('1')
+                                    ->from('idp_items')
+                                    ->join('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+                                    ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
+                                    ->whereColumn('idp_items.idp_id', 'idps.id')
+                                    ->where('assessments.assessment_round_id', $roundId);
+                            });
+                    });
+            })
             ->orderByDesc('id')
             ->value('id');
         if ($existing) {
@@ -756,6 +862,7 @@ class IdpController extends Controller
 
         return (int) DB::table('idps')->insertGetId([
             'user_id' => auth()->id(),
+            'assessment_round_id' => $roundId,
             'year' => $year,
             'status' => 'draft',
             'submitted_at' => null,
