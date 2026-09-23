@@ -6,7 +6,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 
-const appName = 'A-IDP';
+const appName = 'EN-IDP';
 
 const legacyMockKeys = [
     'mock-employee-idp-gaps',

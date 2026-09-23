@@ -76,7 +76,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head title="Manager - CIDP" />
+    <Head title="Manager - EN-IDP" />
 
     <div class="shell manager-shell">
         <aside v-if="isSidebarOpen" class="sidebar">
