@@ -6,7 +6,7 @@
 2. Generate `APP_KEY` once with `php artisan key:generate`. Never copy a development key to production.
 3. Confirm `APP_ENV=production`, `APP_DEBUG=false`, `APP_TIMEZONE=Asia/Bangkok`, HTTPS `APP_URL`, and `SESSION_SECURE_COOKIE=true`.
 4. Back up PostgreSQL before applying migrations.
-5. Confirm the active assessment round has all three dates, position competencies, and active assessment/IDP reviewer chains. The application blocks activation until these are complete.
+5. Confirm the assessment round has all three dates and that they are ordered correctly. Round activation validates the schedule only; assessment and IDP readiness are checked per user when each workflow becomes available.
 
 ## Release commands
 
@@ -26,6 +26,8 @@ Restart the PHP runtime after the release so OPcache cannot serve old code. Run 
 - `/up` returns HTTP 200.
 - Public registration routes return HTTP 404.
 - An active admin can log in with username and password.
+- Existing accounts without a username can still log in with their full email address until an admin assigns a username.
+- Self-service password reset routes return HTTP 404; users who forget their password must contact an admin.
 - A suspended account cannot log in and an existing session is ended.
 - Employee/HR dashboards do not receive the global user list.
 - Admin and HR write routes reject unauthorized roles.

@@ -25,8 +25,6 @@ class HrAssessmentRoundTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $this->prepareRoundForUser($hr, $oldRound);
-
         $this->actingAs($hr)->post(route('hr.assessment-rounds.store'), [
             'name' => 'รอบประเมินประจำปี 2569',
             'year' => 2569,
@@ -51,8 +49,6 @@ class HrAssessmentRoundTest extends TestCase
         $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
         $first = $this->round('รอบ 2568', 2568, true);
         $second = $this->round('รอบ 2569', 2569, false);
-        $this->prepareRoundForUser($hr, $second);
-
         $this->actingAs($hr)
             ->patch(route('hr.assessment-rounds.activate', $second))
             ->assertRedirect();
@@ -181,10 +177,59 @@ class HrAssessmentRoundTest extends TestCase
         ])->assertSessionHasErrors(['self_assess_end', 'supervisor_assess_end']);
     }
 
-    public function test_round_can_not_be_activated_until_configuration_is_ready(): void
+    public function test_round_can_be_activated_when_individual_user_configuration_is_incomplete(): void
     {
         $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
-        $roundId = $this->round('รอบยังไม่พร้อม', 2569, false);
+        $roundId = $this->round('รอบพร้อมตามวันที่', 2569, false);
+
+        $this->actingAs($hr)
+            ->patch(route('hr.assessment-rounds.activate', $roundId))
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('assessment_rounds', [
+            'id' => $roundId,
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_round_without_complete_dates_can_not_be_activated(): void
+    {
+        $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบวันที่ไม่ครบ',
+            'year' => 2569,
+            'self_assess_start' => null,
+            'self_assess_end' => null,
+            'supervisor_assess_end' => null,
+            'is_active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($hr)
+            ->patch(route('hr.assessment-rounds.activate', $roundId))
+            ->assertSessionHasErrors('round');
+
+        $this->assertDatabaseHas('assessment_rounds', [
+            'id' => $roundId,
+            'is_active' => false,
+        ]);
+    }
+
+    public function test_round_with_invalid_date_order_can_not_be_activated(): void
+    {
+        $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบวันที่เรียงผิด',
+            'year' => 2569,
+            'self_assess_start' => '2026-10-15',
+            'self_assess_end' => '2026-10-01',
+            'supervisor_assess_end' => '2026-09-30',
+            'is_active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $this->actingAs($hr)
             ->patch(route('hr.assessment-rounds.activate', $roundId))
@@ -255,38 +300,5 @@ class HrAssessmentRoundTest extends TestCase
         ]);
 
         return [$positionId, $competencyId, $levelId];
-    }
-
-    private function prepareRoundForUser(User $user, int $roundId): void
-    {
-        [$positionId, $competencyId, $levelId] = $this->positionAndCompetency();
-        $reviewer = User::factory()->create([
-            'role_id' => $this->roleId('dean'),
-            'is_active' => true,
-        ]);
-
-        $user->forceFill([
-            'position_id' => $positionId,
-            'level_id' => $levelId,
-        ])->save();
-
-        DB::table('position_competencies')->insert([
-            'assessment_round_id' => $roundId,
-            'position_id' => $positionId,
-            'competency_id' => $competencyId,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        foreach (['assessment', 'idp'] as $chainType) {
-            DB::table('user_reviewer_steps')->insert([
-                'user_id' => $user->id,
-                'reviewer_id' => $reviewer->id,
-                'step_order' => 1,
-                'chain_type' => $chainType,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
     }
 }

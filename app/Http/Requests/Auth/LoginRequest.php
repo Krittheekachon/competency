@@ -46,8 +46,7 @@ class LoginRequest extends FormRequest
         $username = Str::lower(trim((string) $this->input('email')));
         $user = str_contains($username, '@')
             ? User::query()->whereRaw('LOWER(email) = ?', [$username])->first()
-            : User::query()->where('username', $username)->first()
-                ?? User::query()->whereRaw('LOWER(email) = ?', ["{$username}@test.com"])->first();
+            : User::query()->where('username', $username)->first();
 
         if ($user && ! $user->is_active) {
             RateLimiter::hit($this->throttleKey());

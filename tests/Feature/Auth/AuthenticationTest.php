@@ -46,6 +46,22 @@ class AuthenticationTest extends TestCase
         $response->assertRedirect(route('dashboard', absolute: false));
     }
 
+    public function test_test_email_prefix_is_not_treated_as_a_username(): void
+    {
+        User::factory()->create([
+            'email' => 'legacy-user@test.com',
+            'username' => null,
+            'password' => 'secure-password',
+        ]);
+
+        $this->post('/login', [
+            'email' => 'legacy-user',
+            'password' => 'secure-password',
+        ]);
+
+        $this->assertGuest();
+    }
+
     public function test_users_can_not_authenticate_with_invalid_password(): void
     {
         $user = User::factory()->create();

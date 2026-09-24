@@ -104,6 +104,10 @@ const submit = () => {
                     >
                         {{ form.processing ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
                     </button>
+
+                    <p class="password-help">
+                        หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบ (Admin)
+                    </p>
                 </form>
             </section>
         </div>
@@ -383,6 +387,14 @@ const submit = () => {
 .submit-button:disabled {
     cursor: wait;
     opacity: 0.68;
+}
+
+.password-help {
+    margin: 14px 0 0;
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
 }
 
 @media (max-width: 900px) {
