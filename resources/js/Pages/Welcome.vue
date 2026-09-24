@@ -10,187 +10,469 @@ const loginWithKKU = () => {
     <Head :title="$page.props.pageTitle || 'เข้าสู่ระบบ'" />
 
     <main class="welcome-page">
-        <img class="watermark watermark-right" src="/images/gear_encompetency.png" alt="" aria-hidden="true" />
-        <img class="watermark watermark-center" src="/images/gear_encompetency.png" alt="" aria-hidden="true" />
+        <header class="top-bar" aria-label="Faculty branding">
+            <div class="top-brand" aria-label="EN-IDP Competency and IDP System">
+                <svg class="top-brand-mark" viewBox="40 58 470 210" aria-hidden="true" focusable="false">
+                    <g fill="#8f3036">
+                        <path d="M185 65 47 127v135h153v-29H79v-24l106-47v-31L79 178v-29l106-47z" />
+                        <path d="M205 65h23l105 122V109l28-13v166h-30L233 149v113h-28z" />
+                    </g>
+                    <g fill="none" stroke="#8f3036" stroke-width="4" stroke-linejoin="miter" stroke-linecap="square">
+                        <path d="M375 261V119l53-25v168m-38-8V130l22-10v135m16-95 22 10v92m-22-50 72 41v9" />
+                    </g>
+                </svg>
 
-        <section class="welcome-content" aria-labelledby="welcome-title">
-            <div class="brand-text">
-                <img
-                    class="cidp-mark"
-                    src="/images/CIDP_encompetency-nobg.png"
-                    alt="CIDP Competency and IDP System"
-                />
-                <h1 id="welcome-title">ระบบบริหารสมรรถนะและแผนพัฒนารายบุคคล</h1>
-                <p class="subtitle">Competency & Individual Development Plan Management System</p>
+                <span class="top-brand-divider" aria-hidden="true"></span>
+
+                <span class="top-brand-text">
+                    <strong>EN-IDP</strong>
+                    <span>Competency &amp; IDP System</span>
+                </span>
             </div>
 
+            <p>Faculty of Engineering <span>|</span> Khon Kaen University</p>
+        </header>
+
+        <section class="hero" aria-labelledby="welcome-title">
+            <div class="hero-logo" aria-label="EN-IDP Competency and IDP System">
+                <svg class="hero-logo-mark" viewBox="40 58 470 210" aria-hidden="true" focusable="false">
+                    <g fill="#8f3036">
+                        <path d="M185 65 47 127v135h153v-29H79v-24l106-47v-31L79 178v-29l106-47z" />
+                        <path d="M205 65h23l105 122V109l28-13v166h-30L233 149v113h-28z" />
+                    </g>
+                    <g fill="none" stroke="#8f3036" stroke-width="4" stroke-linejoin="miter" stroke-linecap="square">
+                        <path d="M375 261V119l53-25v168m-38-8V130l22-10v135m16-95 22 10v92m-22-50 72 41v9" />
+                    </g>
+                </svg>
+
+                <strong>EN-IDP</strong>
+                <span>Competency &amp; IDP System</span>
+            </div>
+
+            <h1 id="welcome-title">ระบบบริหารสมรรถนะและแผนพัฒนารายบุคคล</h1>
+            <p class="subtitle">Competency &amp; Individual Development Plan Management System</p>
+
             <button class="login-button" type="button" @click="loginWithKKU">
-                เข้าสู่ระบบด้วย Username หรืออีเมล
+                <span class="login-icon" aria-hidden="true">
+                    <span></span>
+                </span>
+                <span>เข้าสู่ระบบด้วย KKU account</span>
             </button>
 
-            <p class="support-text">
-                พบปัญหาการเข้าใช้งาน ติดต่อหน่วยงานทรัพยากรบุคคลคณะวิศวกรรมศาสตร์
-            </p>
+            <div class="support-row">
+                <span></span>
+                <p>พบปัญหาการเข้าใช้งาน ติดต่อหน่วยงานทรัพยากรบุคคลคณะวิศวกรรมศาสตร์</p>
+                <span></span>
+            </div>
         </section>
+
+        <div class="campus-line" aria-hidden="true"></div>
     </main>
 </template>
 
 <style scoped>
 .welcome-page {
     position: relative;
-    display: flex;
-    min-height: 100vh;
-    align-items: center;
-    justify-content: center;
+    isolation: isolate;
+    height: 100vh;
+    max-height: 100svh;
     overflow: hidden;
-    background: #161a1b;
-    color: #f8fafc;
+    background:
+        radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.045), transparent 18%),
+        radial-gradient(circle at 52% 55%, rgba(117, 41, 45, 0.1), transparent 34%),
+        url('/images/en-idp-bg.png'),
+        linear-gradient(180deg, #101719 0%, #101719 54%, #0f1517 100%);
+    background-position:
+        center center,
+        center center,
+        center bottom,
+        center center;
+    background-repeat: no-repeat;
+    background-size:
+        auto,
+        auto,
+        100% 100%,
+        auto;
+    color: #ffffff;
     font-family: 'Kanit', 'Noto Sans Thai', system-ui, sans-serif;
-    padding: 32px 20px;
+}
+
+.welcome-page::before {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 18%);
+    content: '';
+    opacity: 0.72;
 }
 
 .welcome-page::after {
     position: absolute;
-    inset: auto 0 0;
-    height: 1px;
-    background: rgba(148, 163, 184, 0.45);
-    content: '';
-}
-
-.watermark {
-    position: absolute;
-    display: block;
-    height: auto;
+    z-index: 0;
+    inset: 0;
     pointer-events: none;
-    user-select: none;
+    background:
+        radial-gradient(ellipse at center, transparent 38%, rgba(0, 0, 0, 0.36) 100%),
+        linear-gradient(180deg, rgba(16, 23, 25, 0) 0%, rgba(16, 23, 25, 0.28) 72%, rgba(16, 23, 25, 0.76) 100%);
+    content: '';
+    display: none;
 }
 
-.watermark-right {
-    right: -300px;
-    top: -180px;
-    width: min(980px, 68vw);
-    opacity: 0.08;
-    transform: rotate(12deg);
-}
-
-.watermark-center {
-    right: 18%;
-    bottom: -300px;
-    width: min(780px, 54vw);
-    opacity: 0.055;
-    transform: rotate(-8deg);
-}
-
-.welcome-content {
+.top-bar {
     position: relative;
-    z-index: 1;
+    z-index: 3;
     display: flex;
-    width: min(620px, calc(100vw - 40px));
-    flex-direction: column;
+    height: 66px;
     align-items: center;
-    justify-content: center;
-    gap: clamp(24px, 4vh, 42px);
-    text-align: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+    padding: 10px clamp(20px, 4.8vw, 78px);
 }
 
-.brand-text {
+.top-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 13px;
     min-width: 0;
 }
 
-.cidp-mark {
+.top-brand-mark {
     display: block;
-    width: min(500px, 74vw);
-    height: auto;
-    margin-inline: auto;
-    filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.26));
+    width: 86px;
+    height: 42px;
+    overflow: visible;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.18));
 }
 
-.brand-text h1 {
-    margin: 14px auto 0;
-    max-width: 520px;
-    color: rgba(255, 255, 255, 0.72);
-    font-size: clamp(12px, 1vw, 14px);
+.top-brand-divider {
+    width: 1px;
+    height: 38px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.top-brand-text {
+    display: grid;
+    gap: 4px;
+    color: #ffffff;
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.top-brand-text strong {
+    font-size: 27px;
+    font-weight: 800;
+    line-height: 0.9;
+}
+
+.top-brand-text span {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.top-bar p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: clamp(10px, 0.8vw, 14px);
     font-weight: 500;
-    line-height: 1.5;
+    text-transform: uppercase;
     white-space: nowrap;
+}
+
+.top-bar p span {
+    display: inline-block;
+    margin-inline: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.hero {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    box-sizing: border-box;
+    height: calc(100% - 66px);
+    flex-direction: column;
+    align-items: center;
+    padding: clamp(8px, 1.4vh, 16px) 22px clamp(174px, 26vh, 260px);
+    text-align: center;
+}
+
+.hero-logo {
+    display: grid;
+    justify-items: center;
+    width: min(360px, calc(100vw - 40px));
+    margin-bottom: 22px;
+    color: #ffffff;
+    text-align: center;
+    text-transform: uppercase;
+    filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.4));
+}
+
+.hero-logo-mark {
+    display: block;
+    width: 170px;
+    height: 88px;
+    overflow: visible;
+}
+
+.hero-logo strong {
+    margin-top: -6px;
+    font-size: 50px;
+    font-weight: 800;
+    line-height: 0.9;
+}
+
+.hero-logo span {
+    margin-top: 14px;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.hero h1 {
+    margin: 0;
+    max-width: min(980px, calc(100vw - 32px));
+    font-size: clamp(27px, 3.35vw, 48px);
+    font-weight: 900;
+    line-height: 1.18;
+    text-shadow: 0 5px 14px rgba(0, 0, 0, 0.36);
 }
 
 .subtitle {
-    margin: 11px auto 0;
-    padding-top: 11px;
-    width: fit-content;
-    color: rgba(226, 232, 240, 0.78);
-    font-size: clamp(10px, 0.82vw, 12px);
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    line-height: 1.4;
+    max-width: min(980px, calc(100vw - 32px));
+    margin: 10px 0 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: clamp(11px, 1.1vw, 19px);
+    font-weight: 400;
+    line-height: 1.35;
     text-transform: uppercase;
-    white-space: nowrap;
-    border-top: 1px solid rgba(226, 232, 240, 0.56);
 }
 
 .login-button {
-    position: relative;
-    min-width: 196px;
-    min-height: 38px;
-    border: 0;
-    border-radius: 4px;
-    background: #b73a24;
+    display: inline-flex;
+    width: min(500px, calc(100vw - 44px));
+    min-height: 58px;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-top: clamp(22px, 3.8vh, 34px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent),
+        linear-gradient(90deg, #8e2f36 0%, #a43a43 48%, #812930 100%);
+    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.32);
     color: #ffffff;
     cursor: pointer;
-    font-size: 13px;
+    font-size: clamp(16px, 1.25vw, 23px);
     font-weight: 800;
-    line-height: 1;
-    padding: 10px 18px;
-    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
-    transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    line-height: 1.2;
+    padding: 12px 22px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
 .login-button:hover {
-    background: #c9482f;
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 22px 40px rgba(0, 0, 0, 0.4);
+    filter: brightness(1.06);
     transform: translateY(-1px);
 }
 
-.support-text {
-    width: min(680px, calc(100vw - 40px));
+.login-button:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 4px;
+}
+
+.login-icon {
+    position: relative;
+    flex: 0 0 auto;
+    width: 35px;
+    height: 35px;
+    border: 2px solid rgba(255, 255, 255, 0.94);
+    border-left-color: transparent;
+    border-radius: 7px;
+}
+
+.login-icon::before,
+.login-icon::after,
+.login-icon span::before {
+    position: absolute;
+    display: block;
+    background: #ffffff;
+    content: '';
+}
+
+.login-icon::before {
+    top: 16px;
+    left: -8px;
+    width: 25px;
+    height: 2px;
+}
+
+.login-icon::after {
+    top: 11px;
+    left: 8px;
+    width: 13px;
+    height: 13px;
+    border-top: 2px solid #ffffff;
+    border-right: 2px solid #ffffff;
+    background: transparent;
+    transform: rotate(45deg);
+}
+
+.login-icon span::before {
+    top: 7px;
+    left: -8px;
+    width: 13px;
+    height: 2px;
+    box-shadow: 0 18px 0 #ffffff;
+}
+
+.support-row {
+    display: grid;
+    width: min(720px, calc(100vw - 42px));
+    grid-template-columns: minmax(48px, 1fr) auto minmax(48px, 1fr);
+    align-items: center;
+    gap: 18px;
+    margin-top: 22px;
+}
+
+.support-row span {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.support-row p {
     margin: 0;
-    color: rgba(203, 213, 225, 0.74);
-    font-size: clamp(11px, 0.9vw, 13px);
+    color: rgba(255, 255, 255, 0.84);
+    font-size: clamp(10px, 0.82vw, 13px);
     line-height: 1.5;
-    text-align: center;
-    white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-    .welcome-content {
-        gap: 22px;
+.campus-line {
+    display: none;
+}
+
+@media (max-width: 860px) {
+    .top-bar {
+        height: 60px;
     }
 
-    .cidp-mark {
-        width: min(390px, 82vw);
+    .top-bar p {
+        display: none;
     }
 
-    .brand-text h1,
-    .subtitle,
-    .support-text {
-        white-space: normal;
+    .hero {
+        height: calc(100% - 60px);
+        padding-top: 8px;
+        padding-bottom: clamp(150px, 25vh, 210px);
+    }
+
+    .login-button {
+        min-height: 54px;
+        gap: 14px;
+    }
+
+    .support-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .support-row span {
+        display: none;
     }
 }
 
-@media (max-width: 420px) {
-    .brand-text h1 {
-        font-size: 13px;
+@media (max-width: 520px) {
+    .top-bar {
+        padding-inline: 18px;
     }
 
-    .subtitle,
-    .support-text {
+    .top-brand {
+        gap: 9px;
+    }
+
+    .top-brand-mark {
+        width: 66px;
+        height: 32px;
+    }
+
+    .top-brand-divider {
+        height: 30px;
+    }
+
+    .top-brand-text strong {
+        font-size: 20px;
+    }
+
+    .top-brand-text span {
+        font-size: 8px;
+    }
+
+    .hero {
+        padding-inline: 16px;
+        padding-top: 6px;
+        padding-bottom: 142px;
+    }
+
+    .hero-logo {
+        width: min(230px, calc(100vw - 32px));
+        margin-bottom: 12px;
+    }
+
+    .hero-logo-mark {
+        width: 134px;
+        height: 60px;
+    }
+
+    .hero-logo strong {
+        font-size: 34px;
+    }
+
+    .hero-logo span {
+        margin-top: 10px;
+        font-size: 10px;
+    }
+
+    .hero h1 {
+        font-size: clamp(24px, 8vw, 32px);
+    }
+
+    .subtitle {
         font-size: 10px;
     }
 
     .login-button {
-        min-width: 180px;
-        font-size: 12px;
+        min-height: 50px;
+        gap: 12px;
+        padding-inline: 16px;
+    }
+
+    .login-icon {
+        width: 31px;
+        height: 31px;
+    }
+
+    .login-icon::before {
+        top: 14px;
+        width: 22px;
+    }
+
+    .login-icon::after {
+        top: 9px;
+        left: 7px;
+        width: 12px;
+        height: 12px;
+    }
+
+    .login-icon span::before {
+        top: 6px;
+        width: 11px;
+        box-shadow: 0 16px 0 #ffffff;
+    }
+
+    .campus-line {
+        display: none;
     }
 }
 </style>

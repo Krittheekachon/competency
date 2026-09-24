@@ -1230,7 +1230,7 @@ const logout = () => router.post(route('logout'));
 </script>
 
 <template>
-    <Head v-if="!props.embedded" title="Head - CIDP" />
+    <Head v-if="!props.embedded" title="Head - EN-IDP" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar && !props.embedded, 'embedded-reviewer-shell': props.embedded }">
         <div v-if="showSidebar && !props.embedded" class="sidebar">

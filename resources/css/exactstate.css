@@ -40,9 +40,8 @@ body {
 .shell { height: 100vh; display: flex; overflow: hidden; }
 .sidebar { position: relative; isolation: isolate; overflow: hidden; background: linear-gradient(160deg, #1b2025 0%, var(--navy) 62%, #101316 100%); color: rgba(255,255,255,0.62); display: flex; flex-direction: column; width: 250px; flex-shrink: 0; }
 .sidebar::after { position: absolute; z-index: -1; right: -105px; bottom: -78px; width: 310px; height: 310px; background: url('/images/gear_encompetency.png') center / cover no-repeat; content: ""; opacity: 0.1; mix-blend-mode: screen; pointer-events: none; }
-.sb-logo { min-height: 122px; padding: 16px 20px 12px; border-bottom: 1px solid rgba(255,255,255,0.09); text-align: center; }
-.sb-brand-image { display: block; width: 100%; max-width: 178px; height: auto; margin: 0 auto 8px; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.22)); }
-.sb-brand-title { color: rgba(255,255,255,0.74); font-size: 10px; font-weight: 600; line-height: 1.55; letter-spacing: 0.01em; }
+.sb-logo { min-height: 0; padding: 11px 20px 9px; border-bottom: 1px solid rgba(255,255,255,0.09); text-align: center; }
+.sb-brand-image { display: block; width: 130px; height: 58px; margin: 0 auto; overflow: visible; filter: drop-shadow(0 8px 16px rgba(0,0,0,0.22)); }
 .sb-mark { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 4px; font-weight: 700; }
 .sb-name { color: #fff; font-weight: 700; font-size: 13px; line-height: 1.4; }
 
