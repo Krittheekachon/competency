@@ -2,9 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Mail\AssessmentStatusUpdateMail;
 use App\Models\Assessment;
 use App\Models\User;
-use App\Mail\AssessmentStatusUpdateMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -50,12 +50,7 @@ class AssessmentReviewerChainTest extends TestCase
                 ->where('assessmentApprovalModule.items.0.organizationLabel', 'หน่วย')
                 ->where('assessmentApprovalModule.items.0.organization', 'ทดสอบหน่วย')
                 ->where('assessmentApprovalModule.items.0.competencies.0.competencyId', $competencyId)
-                ->where('users', fn ($users) => collect($users)->contains(
-                    fn (array $user): bool => $user['db_id'] === $employee->id
-                        && $user['d'] === 'ทดสอบฝ่าย > ทดสอบงาน > ทดสอบหน่วย'
-                        && $user['approvalOrg'] === 'ทดสอบหน่วย'
-                        && $user['displayOrganization'] === 'ทดสอบหน่วย'
-                ))
+                ->missing('users')
             );
     }
 
@@ -133,6 +128,42 @@ class AssessmentReviewerChainTest extends TestCase
                 ->where('assessmentApprovalModule.enabled', false)
                 ->where('fcTopicApprovalModule.enabled', false)
                 ->where('idpReviewModule.enabled', false)
+            );
+    }
+
+    public function test_head_dashboard_receives_only_assigned_people_without_login_contact_fields(): void
+    {
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $assignedEmployee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'username' => 'assigned.employee',
+            'phone' => '081-111-1111',
+        ]);
+        $unassignedEmployee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        $this->assignAssessmentReviewers($assignedEmployee, [1 => $supervisor->id]);
+
+        $this->actingAs($supervisor)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Super/Dashboard')
+                ->where('users', function ($users) use ($supervisor, $assignedEmployee, $unassignedEmployee): bool {
+                    $rows = collect($users);
+                    $assigned = $rows->firstWhere('db_id', $assignedEmployee->id);
+
+                    return $rows->pluck('db_id')->sort()->values()->all() === collect([
+                        $supervisor->id,
+                        $assignedEmployee->id,
+                    ])->sort()->values()->all()
+                        && ! $rows->contains('db_id', $unassignedEmployee->id)
+                        && ! array_key_exists('em', $assigned)
+                        && ! array_key_exists('username', $assigned)
+                        && ! array_key_exists('ph', $assigned);
+                })
             );
     }
 
@@ -652,6 +683,9 @@ class AssessmentReviewerChainTest extends TestCase
         return (int) DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ',
             'year' => 2568,
+            'self_assess_start' => now()->subMonth()->toDateString(),
+            'self_assess_end' => now()->addMonth()->toDateString(),
+            'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CompetencyType;
 use App\Models\User;
+use App\Services\AssessmentRoundReadinessService;
 use App\Services\ExpectedLevelResolver;
 use App\Services\FacultyAnalyticsService;
 use App\Services\ReviewerChainResolver;
@@ -23,6 +24,7 @@ class DashboardController extends Controller
         'dept_head',
         'division_head',
         'academic_department_head',
+        'manager_dept',
         'hr',
     ];
 
@@ -40,6 +42,7 @@ class DashboardController extends Controller
         private ReviewerChainResolver $reviewerChainResolver,
         private ReviewerTemplateResolver $reviewerTemplateResolver,
         private FacultyAnalyticsService $facultyAnalyticsService,
+        private AssessmentRoundReadinessService $assessmentRoundReadiness,
     ) {}
 
     /**
@@ -49,17 +52,18 @@ class DashboardController extends Controller
     {
         $currentUser = auth()->user()->loadMissing('role');
         $role = $this->roleKeyForUser($currentUser);
-        $competencyTypes = CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
-            'id' => $type->id,
-            'code' => $type->code,
-            'fullName' => $type->full_name,
-            'desc' => $type->description,
-        ]);
-        $competencies = $this->competencyPayload();
-        $users = User::with('role')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (User $user) => $this->dashboardUserPayload($user));
+        $competencyTypes = $role === 'admin'
+            ? CompetencyType::orderBy('code')->get()->map(fn (CompetencyType $type) => [
+                'id' => $type->id,
+                'code' => $type->code,
+                'fullName' => $type->full_name,
+                'desc' => $type->description,
+            ])
+            : collect();
+        $competencies = in_array($role, ['admin', 'hr'], true)
+            ? $this->competencyPayload()
+            : collect();
+        $users = $this->dashboardUsersForRole($currentUser, $role);
         $facultyAnalytics = in_array($role, ['hr', 'dean'], true)
             ? $this->facultyAnalyticsService->build($request->integer('assessment_round_id') ?: null)
             : null;
@@ -206,7 +210,6 @@ class DashboardController extends Controller
             ]),
             'employee' => Inertia::render('Employee/Dashboard', [
                 ...$selfServicePayload,
-                'users' => $users,
                 'roleKey' => 'employee',
                 'currentUser' => $this->dashboardUserPayload($currentUser),
                 'fcTopicApprovalModule' => $fcTopicApprovalModule,
@@ -232,7 +235,6 @@ class DashboardController extends Controller
                     'source' => 'database',
                 ],
                 ...$this->hrStructurePayload(),
-                'users' => $users,
                 'currentUser' => $this->dashboardUserPayload($currentUser),
                 'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
                 'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
@@ -242,24 +244,10 @@ class DashboardController extends Controller
                 'activeCycleName' => $activeCycleName,
                 'assessmentRounds' => $this->assessmentRoundsPayload(),
                 'hrCatalogItems' => $this->learningCatalogItems(),
-                'overviewUsers' => User::query()
-                    ->select(['name', 'email'])
-                    ->get()
-                    ->map(fn (User $user) => [
-                        'n' => $user->name,
-                        't' => '',
-                        'sso' => $user->email,
-                        'p' => '',
-                        'w' => '',
-                        'd' => '',
-                        'evalStatus' => 'draft',
-                        'act' => true,
-                    ]),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
                 'facultyAnalytics' => $facultyAnalytics,
-                'users' => $users,
                 'currentUser' => $this->dashboardUserPayload($currentUser),
                 'fcTopicApprovalModule' => $fcTopicApprovalModule,
                 'assessmentApprovalModule' => $assessmentApprovalModule,
@@ -349,6 +337,7 @@ class DashboardController extends Controller
                 'isActive' => (bool) $round->is_active,
                 'submittedUserCount' => (int) $round->submitted_user_count,
                 'eligibleUserCount' => (int) $eligibleUserCount,
+                'readiness' => $this->assessmentRoundReadiness->check((int) $round->id),
             ])
             ->all();
     }
@@ -422,6 +411,46 @@ class DashboardController extends Controller
             'structureStatus' => $structureIssues === [] ? 'ok' : 'invalid',
             'structureIssues' => $structureIssues,
         ];
+    }
+
+    private function dashboardUsersForRole(User $currentUser, string $role): Collection
+    {
+        if ($role === 'admin') {
+            return User::with('role')
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn (User $user): array => $this->dashboardUserPayload($user));
+        }
+
+        if (! in_array($role, ['supervisor', 'dept_head', 'division_head', 'academic_department_head'], true)) {
+            return collect();
+        }
+
+        $visibleUserIds = collect([
+            $currentUser->id,
+            ...$this->reviewerChainResolver->userIdsForReviewer($currentUser, 'assessment'),
+            ...$this->reviewerChainResolver->userIdsForReviewer($currentUser, 'idp'),
+        ])->map(fn ($id): int => (int) $id)->unique()->values();
+
+        return User::with('role')
+            ->whereIn('id', $visibleUserIds)
+            ->where(function ($query) use ($currentUser): void {
+                $query->where('is_active', true)->orWhere('id', $currentUser->id);
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (User $user): array {
+                $payload = $this->dashboardUserPayload($user);
+                unset(
+                    $payload['em'],
+                    $payload['username'],
+                    $payload['ph'],
+                    $payload['reviewer_template_id'],
+                    $payload['idp_reviewer_template_id'],
+                );
+
+                return $payload;
+            });
     }
 
     private function evaluationStatusFromGaps(array $competencyGaps): string
@@ -2113,8 +2142,7 @@ class DashboardController extends Controller
         User $reviewer,
         ?array $visibleUserIds = null,
         ?int $assessmentRoundId = null,
-    ): array
-    {
+    ): array {
         $assessmentRoundId ??= $this->activeRoundId();
         if (! $assessmentRoundId) {
             return [];

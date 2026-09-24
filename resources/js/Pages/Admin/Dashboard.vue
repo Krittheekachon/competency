@@ -1550,7 +1550,7 @@ const logout = () => router.post(route('logout'));
 
             <div class="mo-b admin-user-modal-body">
                 <div class="admin-user-note">
-                     ระบบจะ map ID ที่กรอกนี้เข้ากับข้อมูลที่ส่งมาจาก KKU SSO โดยอัตโนมัติ
+                     ID ใช้เชื่อมโยงข้อมูลบุคลากรเดิม ส่วน Username และ Password ใช้สำหรับเข้าสู่ระบบ
                 </div>
 
                 <div v-if="userWorkflowIssues.length" class="admin-user-warning">

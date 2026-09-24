@@ -166,9 +166,6 @@
                 >
                   {{ isActive(user) ? 'ระงับ' : 'เปิด' }}
                 </button>
-                <button class="btn btn-r btn-xs delete-btn" type="button" @click="deleteUser(user)">
-                  ลบ
-                </button>
               </div>
             </td>
           </tr>
@@ -397,41 +394,6 @@ const toggleStatus = (user: User) => {
   });
 };
 
-const deleteUser = (user: User) => {
-  if (!user.db_id) {
-    alert('ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่');
-    return;
-  }
-
-  const displayName = `${user.t || ''}${user.n || ''}`.trim() || user.sso || 'ผู้ใช้นี้';
-  if (!confirm(`ต้องการลบ ${displayName} ใช่ไหม?`)) return;
-
-  window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
-
-  try {
-    router.delete(`/admin/users/${user.db_id}`, {
-      preserveScroll: true,
-      preserveState: true,
-      onSuccess: (page) => {
-        if (Array.isArray(page.props.users)) {
-          props.setUsers(page.props.users as User[]);
-          return;
-        }
-
-        props.setUsers((users) => users.filter((item) => item.db_id !== user.db_id));
-      },
-      onError: () => {
-        alert('ไม่สามารถลบผู้ใช้ได้');
-      },
-      onCancel: () => {
-        alert('คำสั่งลบถูกยกเลิก');
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    alert('ไม่สามารถส่งคำสั่งลบผู้ใช้ได้');
-  }
-};
 </script>
 
 <style scoped>

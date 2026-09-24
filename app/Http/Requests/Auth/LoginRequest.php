@@ -49,6 +49,14 @@ class LoginRequest extends FormRequest
             : User::query()->where('username', $username)->first()
                 ?? User::query()->whereRaw('LOWER(email) = ?', ["{$username}@test.com"])->first();
 
+        if ($user && ! $user->is_active) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ',
+            ]);
+        }
+
         if (! $user || ! Auth::attempt([
             'id' => $user->id,
             'password' => $this->input('password'),

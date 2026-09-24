@@ -33,7 +33,8 @@ class HrDashboardTest extends TestCase
                 ->where('hrSummary.hrUsers', 1)
                 ->where('hrSummary.employeeUsers', 1)
                 ->where('hrSummary.source', 'database')
-                ->has('users', 2)
+                ->missing('users')
+                ->missing('overviewUsers')
                 ->missing('roleSwitcher')
             );
     }

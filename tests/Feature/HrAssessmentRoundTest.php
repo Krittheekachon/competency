@@ -18,10 +18,14 @@ class HrAssessmentRoundTest extends TestCase
         $oldRound = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบเดิม',
             'year' => 2568,
+            'self_assess_start' => '2025-10-01',
+            'self_assess_end' => '2025-10-15',
+            'supervisor_assess_end' => '2025-10-31',
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->prepareRoundForUser($hr, $oldRound);
 
         $this->actingAs($hr)->post(route('hr.assessment-rounds.store'), [
             'name' => 'รอบประเมินประจำปี 2569',
@@ -30,6 +34,7 @@ class HrAssessmentRoundTest extends TestCase
             'self_assess_end' => '2026-10-15',
             'supervisor_assess_end' => '2026-10-31',
             'is_active' => true,
+            'copy_from_round_id' => $oldRound,
         ])->assertRedirect();
 
         $this->assertDatabaseHas('assessment_rounds', [
@@ -46,6 +51,7 @@ class HrAssessmentRoundTest extends TestCase
         $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
         $first = $this->round('รอบ 2568', 2568, true);
         $second = $this->round('รอบ 2569', 2569, false);
+        $this->prepareRoundForUser($hr, $second);
 
         $this->actingAs($hr)
             ->patch(route('hr.assessment-rounds.activate', $second))
@@ -175,11 +181,29 @@ class HrAssessmentRoundTest extends TestCase
         ])->assertSessionHasErrors(['self_assess_end', 'supervisor_assess_end']);
     }
 
+    public function test_round_can_not_be_activated_until_configuration_is_ready(): void
+    {
+        $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
+        $roundId = $this->round('รอบยังไม่พร้อม', 2569, false);
+
+        $this->actingAs($hr)
+            ->patch(route('hr.assessment-rounds.activate', $roundId))
+            ->assertSessionHasErrors('round');
+
+        $this->assertDatabaseHas('assessment_rounds', [
+            'id' => $roundId,
+            'is_active' => false,
+        ]);
+    }
+
     private function round(string $name, int $year, bool $active): int
     {
         return (int) DB::table('assessment_rounds')->insertGetId([
             'name' => $name,
             'year' => $year,
+            'self_assess_start' => now()->subMonth()->toDateString(),
+            'self_assess_end' => now()->addMonth()->toDateString(),
+            'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => $active,
             'created_at' => now(),
             'updated_at' => now(),
@@ -223,6 +247,46 @@ class HrAssessmentRoundTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        return [$positionId, $competencyId];
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ระดับทดสอบรอบ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$positionId, $competencyId, $levelId];
+    }
+
+    private function prepareRoundForUser(User $user, int $roundId): void
+    {
+        [$positionId, $competencyId, $levelId] = $this->positionAndCompetency();
+        $reviewer = User::factory()->create([
+            'role_id' => $this->roleId('dean'),
+            'is_active' => true,
+        ]);
+
+        $user->forceFill([
+            'position_id' => $positionId,
+            'level_id' => $levelId,
+        ])->save();
+
+        DB::table('position_competencies')->insert([
+            'assessment_round_id' => $roundId,
+            'position_id' => $positionId,
+            'competency_id' => $competencyId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['assessment', 'idp'] as $chainType) {
+            DB::table('user_reviewer_steps')->insert([
+                'user_id' => $user->id,
+                'reviewer_id' => $reviewer->id,
+                'step_order' => 1,
+                'chain_type' => $chainType,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 }

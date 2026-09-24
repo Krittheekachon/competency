@@ -28,7 +28,6 @@ route
   - `CompetencyAssessmentSyncService`
   - `NotificationService`
   - `NotificationDigestService`
-  - `SsoService`
 - Vue pages under `resources/js/Pages` render role dashboards and operational screens.
 - Shared navigation labels and page IDs live in `resources/js/data.ts`.
 

@@ -90,7 +90,22 @@ class ProfileTest extends TestCase
         $this->assertSame('ระดับ 1', $user->level);
     }
 
-    public function test_user_can_delete_their_account(): void
+    public function test_profile_update_can_not_change_admin_owned_personnel_id(): void
+    {
+        $user = User::factory()->create(['sso' => 'personnel-001']);
+
+        $this->actingAs($user)
+            ->patch('/profile', [
+                'name' => $user->name,
+                'email' => $user->email,
+                'sso' => 'changed-by-user',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('personnel-001', $user->refresh()->sso);
+    }
+
+    public function test_user_can_not_delete_their_account(): void
     {
         $user = User::factory()->create();
 
@@ -100,29 +115,9 @@ class ProfileTest extends TestCase
                 'password' => 'password',
             ]);
 
-        $response
-            ->assertSessionHasNoErrors()
-            ->assertRedirect('/');
+        $response->assertMethodNotAllowed();
 
-        $this->assertGuest();
-        $this->assertNull($user->fresh());
-    }
-
-    public function test_correct_password_must_be_provided_to_delete_account(): void
-    {
-        $user = User::factory()->create();
-
-        $response = $this
-            ->actingAs($user)
-            ->from('/profile')
-            ->delete('/profile', [
-                'password' => 'wrong-password',
-            ]);
-
-        $response
-            ->assertSessionHasErrors('password')
-            ->assertRedirect('/profile');
-
+        $this->assertAuthenticatedAs($user);
         $this->assertNotNull($user->fresh());
     }
 }

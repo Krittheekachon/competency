@@ -4,7 +4,6 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import {
-    INITIAL_USERS,
     NAV_CONFIG,
     PAGE_TITLES,
     ROLES_CONFIG,
@@ -45,8 +44,8 @@ const implementedEmployeePages = new Set([
 const showSidebar = ref(true);
 const activePage = ref(implementedEmployeePages.has(requestedPage) ? requestedPage : 'emp-assess');
 const currentRole = ref('employee');
-const users = ref(clone(INITIAL_USERS));
 const page = usePage();
+const users = ref(page.props.currentUser ? [clone(page.props.currentUser)] : []);
 
 const defaultLearningMethods = [
     {

@@ -13,14 +13,13 @@ class RoleMiddleware
      *
      * @param  Closure(Request): (Response)  $next
      */
-    // app/Http/Middleware/RoleMiddleware.php
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
-        if (!auth()->check()) {
+        if (! auth()->check()) {
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        if (!auth()->user()->hasRole($roles)) {
+        if (! auth()->user()->hasRole($roles)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

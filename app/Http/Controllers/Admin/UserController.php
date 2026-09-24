@@ -21,9 +21,7 @@ class UserController extends Controller
     public function __construct(
         private NotificationService $notifications,
         private ReviewerTemplateResolver $reviewerTemplateResolver,
-    )
-    {
-    }
+    ) {}
 
     public function store(Request $request): RedirectResponse
     {
@@ -33,7 +31,7 @@ class UserController extends Controller
         DB::transaction(function () use ($data, &$user): void {
             $user = User::create([
                 ...$this->userAttributes($data),
-                'password' => Hash::make($data['password'] ?? Str::password(32)),
+                'password' => Hash::make($data['password']),
             ]);
 
             $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
@@ -85,13 +83,6 @@ class UserController extends Controller
         return back()->with('success', 'อัปเดตสถานะผู้ใช้เรียบร้อยแล้ว');
     }
 
-    public function destroy(User $user): RedirectResponse
-    {
-        $user->delete();
-
-        return back()->with('success', 'ลบผู้ใช้เรียบร้อยแล้ว');
-    }
-
     private function validatedData(Request $request, ?User $user = null): array
     {
         $request->merge([
@@ -120,8 +111,8 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($user?->id),
             ],
             'username' => [
+                Rule::requiredIf(fn (): bool => ! $user),
                 'nullable',
-                Rule::requiredIf(fn (): bool => ! $user && $request->filled('password')),
                 'string',
                 'min:3',
                 'max:50',
@@ -129,8 +120,8 @@ class UserController extends Controller
                 Rule::unique('users', 'username')->ignore($user?->id),
             ],
             'password' => [
+                Rule::requiredIf(fn (): bool => ! $user),
                 'nullable',
-                Rule::requiredIf(fn (): bool => ! $user && $request->filled('username')),
                 'confirmed',
                 Password::min(8),
             ],
@@ -238,7 +229,7 @@ class UserController extends Controller
     {
         $worklineId = DB::table('worklines')->where('name', $data['w'])->value('id');
 
-        if (!$worklineId) {
+        if (! $worklineId) {
             throw ValidationException::withMessages([
                 'w' => 'กรุณาเลือกสายงานที่กำหนดไว้ในระบบ',
             ]);
@@ -259,7 +250,7 @@ class UserController extends Controller
                 ->first(['id'])
             : null;
 
-        if (!$jobFamily) {
+        if (! $jobFamily) {
             throw ValidationException::withMessages([
                 'd' => 'กรุณาเลือกกลุ่มงานที่กำหนดไว้ในสายงานนี้',
             ]);
@@ -276,7 +267,7 @@ class UserController extends Controller
         $usesJobFamilyAsPosition = $this->normalizeRoleKey($data['r']) === 'dean'
             && trim((string) ($data['p'] ?? '')) === $jobFamilyName;
 
-        if (!$positionId && !$usesJobFamilyAsPosition) {
+        if (! $positionId && ! $usesJobFamilyAsPosition) {
             throw ValidationException::withMessages([
                 'p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในกลุ่มงานนี้',
             ]);
@@ -288,7 +279,7 @@ class UserController extends Controller
             ->whereNull('job_family_id')
             ->value('id');
 
-        if (!$levelId) {
+        if (! $levelId) {
             throw ValidationException::withMessages([
                 'l' => 'กรุณาเลือกระดับตำแหน่งที่กำหนดไว้ในสายงานนี้',
             ]);

@@ -25,7 +25,7 @@ const loginWithKKU = () => {
             </div>
 
             <button class="login-button" type="button" @click="loginWithKKU">
-                เข้าสู่ระบบด้วย KKU account
+                เข้าสู่ระบบด้วย Username หรืออีเมล
             </button>
 
             <p class="support-text">

@@ -17,12 +17,6 @@ class ProfileUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'sso' => [
-                'nullable',
-                'string',
-                'max:255',
-                Rule::unique(User::class)->ignore($this->user()->id),
-            ],
             'title' => ['nullable', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'first_name_th' => ['nullable', 'string', 'max:255'],

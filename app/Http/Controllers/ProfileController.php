@@ -7,18 +7,14 @@ use App\Services\ReviewerChainResolver;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function __construct(private ReviewerChainResolver $reviewerChainResolver)
-    {
-    }
+    public function __construct(private ReviewerChainResolver $reviewerChainResolver) {}
 
     /**
      * Display the user's profile form.
@@ -46,7 +42,6 @@ class ProfileController extends Controller
         $fullName = trim($firstNameTh.' '.$lastNameTh);
 
         $user->fill([
-            'sso' => $data['sso'] ?? $user->sso,
             'title' => $data['title'] ?? '',
             'name' => $fullName ?: ($data['name'] ?? $user->name),
             'first_name_th' => $firstNameTh,
@@ -94,7 +89,7 @@ class ProfileController extends Controller
 
     private function roleKeyFromId(?int $roleId): string
     {
-        return \DB::table('roles')->where('id', $roleId)->value('key') ?: 'employee';
+        return DB::table('roles')->where('id', $roleId)->value('key') ?: 'employee';
     }
 
     private function normalizeRoleKey(string $roleKey): string
@@ -110,29 +105,8 @@ class ProfileController extends Controller
     {
         $roleKey = $user->relationLoaded('role')
             ? $user->role?->key
-            : \DB::table('roles')->where('id', $user->role_id)->value('key');
+            : DB::table('roles')->where('id', $user->role_id)->value('key');
 
         return $this->normalizeRoleKey($roleKey ?: $this->roleKeyFromId($user->role_id));
-    }
-
-    /**
-     * Delete the user's account.
-     */
-    public function destroy(Request $request): RedirectResponse
-    {
-        $request->validate([
-            'password' => ['required', 'current_password'],
-        ]);
-
-        $user = $request->user();
-
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return Redirect::to('/');
     }
 }

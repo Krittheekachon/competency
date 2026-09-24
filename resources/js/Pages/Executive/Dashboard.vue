@@ -6,10 +6,6 @@ import FacultyOverview from '../Analytics/FacultyOverview.vue';
 import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
-    users: {
-        type: Array,
-        default: () => [],
-    },
     activeCycleName: {
         type: String,
         default: '',

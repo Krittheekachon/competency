@@ -112,11 +112,22 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
         summary[type] = (summary[type] || 0) + 1;
         return summary;
       }, {});
-      const order: Record<string, number> = { CC: 1, MC: 2, FC1: 3, FC2: 4, FC: 5 };
+      const configuredTypes = ((__props as any).competencyTypes || [])
+        .map((type: any) => ({
+          code: getCompetencyTypeCode(type),
+          fullName: typeof type === "string" ? "" : type?.fullName || type?.label || "",
+        }))
+        .filter((type: any) => type.code);
+      const configuredCodes = new Set(configuredTypes.map((type: any) => type.code));
+      const unconfiguredTypes = Object.keys(counts)
+        .filter((code) => !configuredCodes.has(code))
+        .sort((typeA, typeB) => typeA.localeCompare(typeB))
+        .map((code) => ({ code, fullName: "" }));
 
-      return Object.entries(counts).sort(([typeA], [typeB]) => {
-        return (order[typeA] || 99) - (order[typeB] || 99) || typeA.localeCompare(typeB);
-      });
+      return [...configuredTypes, ...unconfiguredTypes].map((type: any) => ({
+        ...type,
+        count: counts[type.code] || 0,
+      }));
     });
 
     const levelNumbersFor = (c: any) => (c.levels || []).map((level: any) => Number(level.lvl)).filter(Boolean);
@@ -414,11 +425,11 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
               <div class="dict-summary-value">{totalCompetencies.value}</div>
               <div class="dict-summary-sub">รายการในพจนานุกรมสมรรถนะ</div>
             </div>
-            {competencyTypeSummary.value.map(([type, count]) =>
-              <div class="dict-summary-card" key={type}>
-                <div class="dict-summary-label">ประเภท {type}</div>
-                <div class="dict-summary-value">{count}</div>
-                <div class="dict-summary-sub">สมรรถนะ</div>
+            {competencyTypeSummary.value.map((type) =>
+              <div class={`dict-summary-card ${type.count === 0 ? 'is-empty' : ''}`} key={type.code}>
+                <div class="dict-summary-label">ประเภท {type.code}</div>
+                <div class="dict-summary-value">{type.count}</div>
+                <div class="dict-summary-sub">{type.fullName || (type.count === 0 ? 'ยังไม่มีสมรรถนะ' : 'สมรรถนะ')}</div>
               </div>
             )}
           </div>
@@ -549,8 +560,12 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       }
 
       <style>{`
-        .dict-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
-        .dict-summary-card { background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+        .dict-summary-grid { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 36px) / 4); gap: 12px; margin-bottom: 16px; padding-bottom: 8px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
+        .dict-summary-grid::-webkit-scrollbar { height: 6px; }
+        .dict-summary-grid::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
+        .dict-summary-card { min-width: 0; background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); scroll-snap-align: start; }
+        .dict-summary-card.is-empty { background: #f8fafc; box-shadow: none; }
+        .dict-summary-card.is-empty .dict-summary-value { color: var(--text3); }
         .dict-summary-label { font-size: 12px; font-weight: 800; color: var(--text3); }
         .dict-summary-value { margin-top: 6px; font-size: 34px; line-height: 1; font-weight: 900; color: var(--navy); }
         .dict-summary-sub { margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--text3); }
@@ -620,6 +635,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
           .dict-filter-summary { justify-content: space-between; }
         }
         @media (max-width: 960px) {
+          .dict-summary-grid { grid-auto-columns: minmax(240px, 82vw); }
           .dict-main-fields { grid-template-columns: 1fr; gap: 16px; }
           .dict-code-name-fields { grid-template-columns: 1fr; }
           .dict-code-box { max-width: 260px; }

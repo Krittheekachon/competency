@@ -13,10 +13,6 @@ import HrAssessmentRounds from './HrAssessmentRounds.vue';
 import HeadDashboard from '../Head/Dashboard.vue';
 
 const props = defineProps({
-    users: {
-        type: Array,
-        default: () => [],
-    },
     currentUser: {
         type: Object,
         default: () => ({}),

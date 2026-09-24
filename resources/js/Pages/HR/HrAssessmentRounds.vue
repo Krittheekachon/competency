@@ -82,9 +82,14 @@ const submit = () => {
 
 const activate = (round) => {
     if (round.isActive) return;
+    if (round.readiness && !round.readiness.ready) return;
     if (!window.confirm(`เปิดใช้ “${round.name}” เป็นรอบปัจจุบัน? รอบที่เปิดใช้อยู่จะถูกปิดทันที`)) return;
     router.patch(route('hr.assessment-rounds.activate', round.id), {}, { preserveScroll: true });
 };
+
+const readinessMessage = (round) => (round.readiness?.issues || [])
+    .map((issue) => issue.message)
+    .join(' · ');
 
 const dateLabel = (value) => value
     ? new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }).format(new Date(`${value}T00:00:00`))
@@ -163,17 +168,17 @@ const dateLabel = (value) => value
                             <em v-if="form.errors.year">{{ form.errors.year }}</em>
                         </label>
                         <label class="field">
-                            <span>วันเริ่มการประเมิน</span>
+                            <span>วันเริ่มการประเมิน{{ form.is_active ? ' *' : '' }}</span>
                             <input v-model="form.self_assess_start" type="date">
                             <em v-if="form.errors.self_assess_start">{{ form.errors.self_assess_start }}</em>
                         </label>
                         <label class="field">
-                            <span>วันสิ้นสุดการประเมิน</span>
+                            <span>วันสิ้นสุดการประเมิน{{ form.is_active ? ' *' : '' }}</span>
                             <input v-model="form.self_assess_end" type="date" :min="form.self_assess_start || undefined">
                             <em v-if="form.errors.self_assess_end">{{ form.errors.self_assess_end }}</em>
                         </label>
                         <label class="field">
-                            <span>หัวหน้าตรวจผลได้ถึง</span>
+                            <span>หัวหน้าตรวจผลได้ถึง{{ form.is_active ? ' *' : '' }}</span>
                             <input v-model="form.supervisor_assess_end" type="date" :min="form.self_assess_end || form.self_assess_start || undefined">
                             <em v-if="form.errors.supervisor_assess_end">{{ form.errors.supervisor_assess_end }}</em>
                         </label>
@@ -185,6 +190,11 @@ const dateLabel = (value) => value
                             </select>
                             <em v-if="form.errors.copy_from_round_id">{{ form.errors.copy_from_round_id }}</em>
                         </label>
+                    </div>
+
+                    <div v-if="form.errors.round" class="round-readiness-error">
+                        <strong>ยังเปิดใช้รอบนี้ไม่ได้</strong>
+                        <span>{{ form.errors.round }}</span>
                     </div>
 
                     <footer class="editor-footer">
@@ -221,7 +231,14 @@ const dateLabel = (value) => value
                     </thead>
                     <tbody>
                         <tr v-for="round in rounds" :key="round.id" :class="{ current: round.isActive }">
-                            <td><strong>{{ round.name }}</strong></td>
+                            <td>
+                                <strong>{{ round.name }}</strong>
+                                <span
+                                    v-if="round.readiness && !round.readiness.ready"
+                                    class="readiness-badge"
+                                    :title="readinessMessage(round)"
+                                >ยังไม่พร้อม</span>
+                            </td>
                             <td class="year-cell">{{ round.year }}</td>
                             <td>{{ dateLabel(round.selfAssessStart) }} <span class="date-separator">ถึง</span> {{ dateLabel(round.selfAssessEnd) }}</td>
                             <td>{{ dateLabel(round.supervisorAssessEnd) }}</td>
@@ -237,7 +254,14 @@ const dateLabel = (value) => value
                             <td>
                                 <div class="row-actions">
                                     <button type="button" class="edit-button" @click="editRound(round)">แก้ไข</button>
-                                    <button v-if="!round.isActive" type="button" class="activate-button" @click="activate(round)">เปิดใช้</button>
+                                    <button
+                                        v-if="!round.isActive"
+                                        type="button"
+                                        class="activate-button"
+                                        :disabled="round.readiness && !round.readiness.ready"
+                                        :title="round.readiness && !round.readiness.ready ? readinessMessage(round) : 'เปิดใช้รอบนี้'"
+                                        @click="activate(round)"
+                                    >เปิดใช้</button>
                                 </div>
                             </td>
                         </tr>
@@ -264,8 +288,10 @@ const dateLabel = (value) => value
 .round-editor { width: min(960px,100%); max-height: calc(100vh - 56px); margin: auto; overflow-y: auto; border: 1px solid oklch(84% .045 165); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px oklch(18% .025 253 / .28); animation: modal-in .18s cubic-bezier(.22,1,.36,1); }.editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); padding: 18px 22px; }.editor-heading span { color: var(--accent-dark); font-size: 11px; font-weight: 700; letter-spacing: .04em; }.editor-heading h2 { margin: 3px 0 0; font-size: 16px; font-weight: 800; }.editor-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }.icon-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font: inherit; font-size: 19px; cursor: pointer; }.icon-close:hover { background: var(--canvas); color: var(--ink); }
 .editor-grid { display: grid; grid-template-columns: 1.35fr .55fr 1fr 1fr 1fr; gap: 14px; padding: 20px 22px; }.field { display: grid; align-content: start; gap: 6px; min-width: 0; }.field > span { font-size: 12px; font-weight: 700; }.field input,.field select { width: 100%; height: 40px; box-sizing: border-box; border: 1px solid oklch(83% .025 253); border-radius: 7px; padding: 0 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; outline: 0; }.field input:hover,.field select:hover { border-color: oklch(72% .045 253); }.field input:focus-visible,.field select:focus-visible,.round-page button:focus-visible { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px oklch(72% .09 165 / .22); }.field em { color: oklch(52% .18 28); font-size: 11px; font-style: normal; }.copy-field { grid-column: span 2; }
 .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); background: var(--canvas); padding: 13px 22px; }.active-toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }.active-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }.active-toggle > span { display: grid; gap: 1px; }.active-toggle b { font-size: 12px; }.active-toggle small { color: var(--muted); font-size: 11px; }.editor-footer > div { display: flex; gap: 8px; }.secondary-button,.save-button { min-height: 38px; border-radius: 7px; padding: 8px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }.secondary-button { border: 1px solid oklch(83% .025 253); background: var(--surface); color: var(--ink); }.secondary-button:hover { background: var(--canvas); }.save-button:disabled { opacity: .55; cursor: wait; }
+.round-readiness-error { display: grid; gap: 3px; margin: 0 22px 18px; border: 1px solid oklch(78% .11 29); border-radius: 8px; background: oklch(96% .035 29); padding: 10px 12px; color: oklch(46% .16 29); font-size: 12px; }.round-readiness-error strong { font-weight: 800; }
 .round-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 10px oklch(32% .03 253 / .055); }.round-table-card > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; }.round-table-card > header h2 { margin: 0; font-size: 14px; font-weight: 700; }.round-table-card > header span { color: var(--muted); font-size: 12px; }.table-scroll { overflow-x: auto; border-top: 1px solid var(--line); }table { width: 100%; min-width: 900px; border-collapse: collapse; }th,td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }th { background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 700; }td { color: oklch(49% .03 253); font-size: 13px; }tbody tr:last-child td { border-bottom: 0; }tbody tr:hover { background: oklch(98% .008 253); }tbody tr.current { background: var(--accent-soft); }td strong { color: var(--ink); font-size: 13px; font-weight: 700; }.year-cell { color: var(--muted); font-weight: 600; }.date-separator { margin: 0 3px; color: oklch(72% .025 253); }.number-column { text-align: center; }.assessment-cell { color: var(--accent-dark); font-weight: 800; }.assessment-cell span { color: var(--muted); font-weight: 600; }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 700; }.status-badge.open { background: oklch(93% .06 145); color: oklch(42% .13 145); }.status-badge.closed { background: oklch(94% .012 253); color: var(--muted); }.status-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }.row-actions { display: flex; justify-content: flex-end; gap: 6px; }.edit-button,.activate-button { min-height: 32px; padding: 5px 10px; }.edit-button { border: 1px solid oklch(83% .025 253); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }.edit-button:hover { border-color: oklch(70% .045 253); background: var(--canvas); }.activate-button { font-size: 12px; }
+.readiness-badge { display: inline-flex; margin-left: 8px; border-radius: 999px; background: oklch(94% .045 29); padding: 3px 7px; color: oklch(49% .17 29); font-size: 10px; font-weight: 700; }.activate-button:disabled { border-color: var(--line); background: var(--canvas); color: var(--muted); cursor: not-allowed; }
 .empty-state { display: grid; justify-items: center; border-top: 1px solid var(--line); padding: 54px 20px; text-align: center; }.empty-state > span { margin-bottom: 10px; color: var(--muted); font-size: 24px; }.empty-state strong { font-size: 14px; }.empty-state p { margin: 4px 0 14px; color: var(--muted); font-size: 12px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 @media (max-width: 1180px) { .editor-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }.name-field { grid-column: span 2; }.copy-field { grid-column: span 2; } }
 @media (max-width: 760px) { .page-heading { align-items: flex-start; }.page-heading h1 { font-size: 22px; }.page-heading p { max-width: 34ch; line-height: 1.5; }.create-button { min-height: 40px; padding: 8px 12px; white-space: nowrap; }.summary-grid { grid-template-columns: 1fr; gap: 12px; }.summary-card { min-height: 118px; padding: 20px; }.active-name { font-size: 19px; }.editor-grid { grid-template-columns: 1fr; padding: 18px; }.name-field,.copy-field { grid-column: auto; }.editor-footer { align-items: stretch; flex-direction: column; }.editor-footer > div { justify-content: flex-end; }.round-table-card > header { padding: 16px 18px; } }

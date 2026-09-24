@@ -58,6 +58,9 @@ class FcTopicSelectionFlowTest extends TestCase
         $roundId = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ FC',
             'year' => 2569,
+            'self_assess_start' => now()->subMonth()->toDateString(),
+            'self_assess_end' => now()->addMonth()->toDateString(),
+            'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),

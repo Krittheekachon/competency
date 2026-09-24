@@ -35,6 +35,12 @@ class AssessmentRoundWindow
         $round = $this->activeRound();
         $today = $this->today();
 
+        if (! $round->self_assess_start || ! $round->self_assess_end) {
+            throw ValidationException::withMessages([
+                'assessment' => 'รอบการประเมินยังไม่ได้กำหนดช่วงเวลาประเมินตนเอง กรุณาติดต่อฝ่ายทรัพยากรบุคคล',
+            ]);
+        }
+
         if ($round->self_assess_start
             && $today->lt($this->date($round->self_assess_start))) {
             throw ValidationException::withMessages([
@@ -56,6 +62,12 @@ class AssessmentRoundWindow
     {
         $round = $this->activeRound();
 
+        if (! $round->supervisor_assess_end) {
+            throw ValidationException::withMessages([
+                'assessment' => 'รอบการประเมินยังไม่ได้กำหนดวันสิ้นสุดการตรวจของผู้บังคับบัญชา กรุณาติดต่อฝ่ายทรัพยากรบุคคล',
+            ]);
+        }
+
         if ($round->supervisor_assess_end
             && $this->today()->gt($this->date($round->supervisor_assess_end))) {
             throw ValidationException::withMessages([
@@ -68,11 +80,11 @@ class AssessmentRoundWindow
 
     private function today(): CarbonImmutable
     {
-        return CarbonImmutable::today(config('app.timezone', 'Asia/Bangkok'));
+        return CarbonImmutable::today(config('app.timezone'));
     }
 
     private function date(string $date): CarbonImmutable
     {
-        return CarbonImmutable::parse($date, config('app.timezone', 'Asia/Bangkok'))->startOfDay();
+        return CarbonImmutable::parse($date, config('app.timezone'))->startOfDay();
     }
 }

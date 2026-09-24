@@ -12,6 +12,24 @@ class AdminUserControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_new_user_requires_username_and_password(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [])
+            ->assertSessionHasErrors(['username', 'password']);
+    }
+
+    public function test_non_admin_can_not_manage_users(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+
+        $this->actingAs($employee)
+            ->postJson(route('admin.users.store'), [])
+            ->assertForbidden();
+    }
+
     public function test_admin_can_create_user_with_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
@@ -280,6 +298,9 @@ class AdminUserControllerTest extends TestCase
                 'fe' => 'No',
                 'le' => 'Position',
                 'em' => 'no-position@example.com',
+                'username' => 'no.position',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
                 'ph' => null,
                 'w' => 'สายงานบริหาร',
                 'd' => 'รองคณบดีฝ่ายบริหาร',
@@ -311,6 +332,9 @@ class AdminUserControllerTest extends TestCase
                 'le' => 'User',
                 'g' => 'ชาย',
                 'em' => 'dean-no-position@example.com',
+                'username' => 'dean.no.position',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
                 'ph' => null,
                 'w' => 'สายงานบริหาร',
                 'd' => 'คณบดี',
@@ -396,6 +420,9 @@ class AdminUserControllerTest extends TestCase
                 'fe' => 'Template',
                 'le' => 'Staff',
                 'em' => 'template-staff@example.com',
+                'username' => 'template.staff',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
                 'ph' => null,
                 'w' => 'สายทดลอง',
                 'd' => 'งานทดสอบ',
@@ -980,16 +1007,16 @@ class AdminUserControllerTest extends TestCase
             ->assertHeader('X-Inertia-Location', route('login'));
     }
 
-    public function test_admin_can_delete_user(): void
+    public function test_users_can_not_be_hard_deleted_through_admin_routes(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $user = User::factory()->create(['role_id' => $this->roleId('employee')]);
 
         $this->actingAs($admin)
-            ->delete(route('admin.users.destroy', $user))
-            ->assertRedirect();
+            ->delete("/admin/users/{$user->id}")
+            ->assertMethodNotAllowed();
 
-        $this->assertDatabaseMissing('users', [
+        $this->assertDatabaseHas('users', [
             'id' => $user->id,
         ]);
     }

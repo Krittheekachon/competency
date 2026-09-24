@@ -58,6 +58,31 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_inactive_users_can_not_authenticate(): void
+    {
+        $user = User::factory()->create(['is_active' => false]);
+
+        $response = $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response->assertSessionHasErrors([
+            'email' => 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ',
+        ]);
+    }
+
+    public function test_existing_session_is_ended_when_account_becomes_inactive(): void
+    {
+        $user = User::factory()->create(['is_active' => false]);
+
+        $response = $this->actingAs($user)->get('/dashboard');
+
+        $this->assertGuest();
+        $response->assertRedirect(route('login'));
+    }
+
     public function test_users_can_logout(): void
     {
         $user = User::factory()->create();

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Services\AssessmentRoundReadinessService;
 use App\Services\CompetencyAssessmentSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -11,30 +12,37 @@ use Illuminate\Validation\Rule;
 
 class AssessmentRoundController extends Controller
 {
-    public function __construct(private CompetencyAssessmentSyncService $assessmentSync)
-    {
-    }
+    public function __construct(
+        private CompetencyAssessmentSyncService $assessmentSync,
+        private AssessmentRoundReadinessService $readiness,
+    ) {}
 
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validated($request);
 
         DB::transaction(function () use ($data): void {
-            if ($data['is_active']) {
-                DB::table('assessment_rounds')->where('is_active', true)->update([
-                    'is_active' => false,
-                    'updated_at' => now(),
-                ]);
-            }
-
             $roundId = DB::table('assessment_rounds')->insertGetId([
-                ...$this->roundValues($data),
+                ...$this->roundValues($data, false),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
             if (! empty($data['copy_from_round_id'])) {
                 $this->copyConfiguration((int) $data['copy_from_round_id'], (int) $roundId);
+            }
+
+            if ($data['is_active']) {
+                $this->readiness->assertReady((int) $roundId);
+                DB::table('assessment_rounds')->lockForUpdate()->get(['id']);
+                DB::table('assessment_rounds')->where('is_active', true)->update([
+                    'is_active' => false,
+                    'updated_at' => now(),
+                ]);
+                DB::table('assessment_rounds')->where('id', $roundId)->update([
+                    'is_active' => true,
+                    'updated_at' => now(),
+                ]);
             }
         });
 
@@ -59,17 +67,23 @@ class AssessmentRoundController extends Controller
         }
 
         DB::transaction(function () use ($data, $round): void {
+            DB::table('assessment_rounds')->lockForUpdate()->get(['id']);
+            DB::table('assessment_rounds')->where('id', $round)->update([
+                ...$this->roundValues($data, false),
+                'updated_at' => now(),
+            ]);
+
             if ($data['is_active']) {
+                $this->readiness->assertReady($round);
                 DB::table('assessment_rounds')
                     ->where('id', '!=', $round)
                     ->where('is_active', true)
                     ->update(['is_active' => false, 'updated_at' => now()]);
+                DB::table('assessment_rounds')->where('id', $round)->update([
+                    'is_active' => true,
+                    'updated_at' => now(),
+                ]);
             }
-
-            DB::table('assessment_rounds')->where('id', $round)->update([
-                ...$this->roundValues($data),
-                'updated_at' => now(),
-            ]);
         });
 
         if ($data['is_active']) {
@@ -82,8 +96,10 @@ class AssessmentRoundController extends Controller
     public function activate(int $round): RedirectResponse
     {
         abort_unless(DB::table('assessment_rounds')->where('id', $round)->exists(), 404);
+        $this->readiness->assertReady($round);
 
         DB::transaction(function () use ($round): void {
+            DB::table('assessment_rounds')->lockForUpdate()->get(['id']);
             DB::table('assessment_rounds')->where('is_active', true)->update([
                 'is_active' => false,
                 'updated_at' => now(),
@@ -109,21 +125,24 @@ class AssessmentRoundController extends Controller
                 Rule::unique('assessment_rounds', 'name')->ignore($round),
             ],
             'year' => ['required', 'integer', 'min:2500', 'max:2700'],
-            'self_assess_start' => ['nullable', 'date'],
-            'self_assess_end' => ['nullable', 'date', 'after_or_equal:self_assess_start'],
-            'supervisor_assess_end' => ['nullable', 'date', 'after_or_equal:self_assess_end'],
+            'self_assess_start' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date'],
+            'self_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_start'],
+            'supervisor_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_end'],
             'is_active' => ['required', 'boolean'],
             'copy_from_round_id' => ['nullable', 'integer', 'exists:assessment_rounds,id'],
         ], [
             'name.required' => 'กรุณาระบุชื่อรอบการประเมิน',
             'name.unique' => 'ชื่อรอบการประเมินนี้ถูกใช้แล้ว',
             'year.required' => 'กรุณาระบุปีการประเมิน',
+            'self_assess_start.required' => 'กรุณาระบุวันเริ่มการประเมินก่อนเปิดใช้งานรอบ',
+            'self_assess_end.required' => 'กรุณาระบุวันสิ้นสุดการประเมินก่อนเปิดใช้งานรอบ',
+            'supervisor_assess_end.required' => 'กรุณาระบุวันสิ้นสุดการตรวจของหัวหน้าก่อนเปิดใช้งานรอบ',
             'self_assess_end.after_or_equal' => 'วันสิ้นสุดการประเมินต้องไม่ก่อนวันเริ่มการประเมิน',
             'supervisor_assess_end.after_or_equal' => 'วันสิ้นสุดการตรวจของหัวหน้าต้องไม่ก่อนวันสิ้นสุดการประเมิน',
         ]);
     }
 
-    private function roundValues(array $data): array
+    private function roundValues(array $data, ?bool $isActive = null): array
     {
         return [
             'name' => trim($data['name']),
@@ -131,7 +150,7 @@ class AssessmentRoundController extends Controller
             'self_assess_start' => $data['self_assess_start'] ?? null,
             'self_assess_end' => $data['self_assess_end'] ?? null,
             'supervisor_assess_end' => $data['supervisor_assess_end'] ?? null,
-            'is_active' => (bool) $data['is_active'],
+            'is_active' => $isActive ?? (bool) $data['is_active'],
         ];
     }
 

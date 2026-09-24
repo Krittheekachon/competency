@@ -8,8 +8,6 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use App\Models\Assessment;
-use App\Models\Role;
 
 #[Fillable([
     'sso', 'name', 'title',
@@ -50,21 +48,54 @@ class User extends Authenticatable
 
     public function hasRole(string|array $roleKey): bool
     {
-        $currentRoleKey = $this->role?->key;
+        $normalize = static fn (?string $key): string => match ($key) {
+            'manager' => 'dean',
+            'manager_dept' => 'dept_head',
+            default => (string) $key,
+        };
+        $currentRoleKey = $normalize($this->role?->key ?: $this->role_key);
 
         if (is_array($roleKey)) {
-            return in_array($currentRoleKey, $roleKey, true);
+            return in_array($currentRoleKey, array_map($normalize, $roleKey), true);
         }
-        return $currentRoleKey === $roleKey;
+
+        return $currentRoleKey === $normalize($roleKey);
     }
 
-    public function isAdmin(): bool      { return $this->hasRole('admin'); }
-    public function isHR(): bool         { return $this->hasRole('hr'); }
-    public function isSupervisor(): bool { return $this->hasRole('supervisor'); }
-    public function isDeptHead(): bool   { return $this->hasRole('dept_head'); }
-    public function isDivisionHead(): bool { return $this->hasRole('division_head'); }
-    public function isAcademicDepartmentHead(): bool { return $this->hasRole('academic_department_head'); }
-    public function isDean(): bool       { return $this->hasRole('dean'); }
+    public function isAdmin(): bool
+    {
+        return $this->hasRole('admin');
+    }
+
+    public function isHR(): bool
+    {
+        return $this->hasRole('hr');
+    }
+
+    public function isSupervisor(): bool
+    {
+        return $this->hasRole('supervisor');
+    }
+
+    public function isDeptHead(): bool
+    {
+        return $this->hasRole('dept_head');
+    }
+
+    public function isDivisionHead(): bool
+    {
+        return $this->hasRole('division_head');
+    }
+
+    public function isAcademicDepartmentHead(): bool
+    {
+        return $this->hasRole('academic_department_head');
+    }
+
+    public function isDean(): bool
+    {
+        return $this->hasRole('dean');
+    }
 
     // ======================================================
 }
