@@ -34,6 +34,11 @@
     </div>
   </div>
 
+  <div v-if="statusFeedback" class="status-feedback" :class="statusFeedback.kind" role="status" aria-live="polite">
+    <span>{{ statusFeedback.message }}</span>
+    <button type="button" class="status-feedback-close" aria-label="ปิดข้อความแจ้ง" @click="statusFeedback = null">×</button>
+  </div>
+
   <div class="card mb14">
     <div class="ch filter-row">
       <input v-model="search" class="inp search-input" placeholder=" ค้นหาชื่อ / ID..." />
@@ -148,7 +153,7 @@
             </td>
             <td class="center-cell">
               <span class="b" :class="isActive(user) ? 'bg' : 'br'">
-                {{ isActive(user) ? 'ปกติ' : 'ระงับ' }}
+                {{ isActive(user) ? 'ใช้งานอยู่' : 'ระงับแล้ว' }}
               </span>
             </td>
             <td class="right-cell">
@@ -157,14 +162,14 @@
                   แก้ไข
                 </button>
                 <button
-                  class="btn btn-r btn-xs status-btn"
+                  class="btn btn-xs status-btn"
                   type="button"
-                  :class="isActive(user) ? 'suspend' : 'activate'"
-                  :disabled="isCurrentUser(user) && isActive(user)"
+                  :class="isActive(user) ? 'btn-r suspend' : 'btn-g activate'"
+                  :disabled="updatingStatusId !== null || (isCurrentUser(user) && isActive(user))"
                   :title="statusActionTitle(user)"
                   @click="toggleStatus(user)"
                 >
-                  {{ isActive(user) ? 'ระงับ' : 'เปิด' }}
+                  {{ updatingStatusId === user.db_id ? 'กำลังบันทึก...' : (isActive(user) ? 'ระงับ' : 'เปิดใช้งาน') }}
                 </button>
               </div>
             </td>
@@ -226,6 +231,8 @@ const departmentFilter = ref('ทุกหน่วยงาน/ภาควิ�
 const positionFilter = ref('ทุกตำแหน่ง');
 const roleFilter = ref('ทุกบทบาท (Role)');
 const statusFilter = ref('ทุกสถานะ');
+const updatingStatusId = ref<number | null>(null);
+const statusFeedback = ref<{ kind: 'success' | 'suspended' | 'error'; message: string } | null>(null);
 const page = usePage();
 const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
 const roleOptions = [
@@ -361,21 +368,18 @@ const filteredUsers = computed(() => {
 
 const toggleStatus = (user: User) => {
   if (!user.db_id) {
-    alert('ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่');
+    statusFeedback.value = { kind: 'error', message: 'ไม่พบรหัสฐานข้อมูลของผู้ใช้นี้ กรุณารีเฟรชหน้าแล้วลองใหม่' };
     return;
   }
 
   const nextActive = !isActive(user);
   if (!nextActive && isCurrentUser(user)) {
-    alert('ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่ได้');
+    statusFeedback.value = { kind: 'error', message: 'ไม่สามารถระงับบัญชีที่กำลังใช้งานอยู่ได้' };
     return;
   }
 
-  const previousUsers = [...props.users];
-  const userKey = user.db_id;
-
-  window.sessionStorage.setItem('cidp.admin.activePage', 'admin-users');
-  props.setUsers((users) => users.map((u) => (u.db_id === userKey ? { ...u, act: nextActive } : u)));
+  updatingStatusId.value = user.db_id;
+  statusFeedback.value = null;
 
   router.patch(route('admin.users.status', user.db_id), {
     act: nextActive,
@@ -384,19 +388,69 @@ const toggleStatus = (user: User) => {
     preserveState: true,
     onSuccess: (page) => {
       if (Array.isArray(page.props.users)) {
-        props.setUsers(page.props.users as User[]);
+        const serverUsers = page.props.users as User[];
+        props.setUsers(serverUsers);
+        const savedUser = serverUsers.find((item) => Number(item.db_id) === Number(user.db_id));
+        if (savedUser && isActive(savedUser) === nextActive) {
+          statusFeedback.value = {
+            kind: nextActive ? 'success' : 'suspended',
+            message: `${nextActive ? 'เปิดใช้งาน' : 'ระงับ'}บัญชี ${user.n} เรียบร้อยแล้ว`,
+          };
+          return;
+        }
       }
+      statusFeedback.value = { kind: 'error', message: 'ยังยืนยันสถานะที่บันทึกไม่ได้ กรุณารีเฟรชหน้าเพื่อตรวจสอบอีกครั้ง' };
     },
-    onError: () => {
-      props.setUsers(previousUsers);
-      alert('ไม่สามารถบันทึกสถานะผู้ใช้ลงฐานข้อมูลได้');
+    onError: (errors) => {
+      statusFeedback.value = {
+        kind: 'error',
+        message: errors.act || 'ไม่สามารถบันทึกสถานะผู้ใช้ได้ กรุณาลองใหม่อีกครั้ง',
+      };
     },
+    onFinish: () => { updatingStatusId.value = null; },
   });
 };
 
 </script>
 
 <style scoped>
+.status-feedback {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1100;
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+}
+
+.status-feedback.suspended,
+.status-feedback.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.status-feedback-close {
+  margin: -4px -5px -4px auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+
 .admin-users-head {
   display: flex;
   align-items: flex-start;

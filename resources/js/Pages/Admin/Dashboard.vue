@@ -68,6 +68,10 @@ const users = ref(clone(page.props.users || []));
 const activeModal = ref(null);
 const editingUserKey = ref(null);
 const isSavingUser = ref(false);
+const isChangingPassword = ref(false);
+const showNewPassword = ref(false);
+const showPasswordConfirmation = ref(false);
+const issuedCredentials = ref(null);
 const supervisorSearch = ref('');
 const evaluator2Search = ref('');
 const showReviewerModal = ref(false);
@@ -1172,6 +1176,9 @@ const resetUserForm = (data = null) => {
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
 
     editingUserKey.value = data?.sso || null;
+    isChangingPassword.value = !data?.db_id;
+    showNewPassword.value = false;
+    showPasswordConfirmation.value = false;
     supervisorSearch.value = '';
     evaluator2Search.value = '';
     userForm.value = {
@@ -1221,6 +1228,23 @@ const openModal = (type, data = null) => {
 const closeModal = () => {
     activeModal.value = null;
     editingUserKey.value = null;
+    userForm.value.password = '';
+    userForm.value.password_confirmation = '';
+    isChangingPassword.value = false;
+    showNewPassword.value = false;
+    showPasswordConfirmation.value = false;
+};
+
+const cancelPasswordChange = () => {
+    userForm.value.password = '';
+    userForm.value.password_confirmation = '';
+    isChangingPassword.value = false;
+    showNewPassword.value = false;
+    showPasswordConfirmation.value = false;
+};
+
+const closeIssuedCredentials = () => {
+    issuedCredentials.value = null;
 };
 
 const saveUser = () => {
@@ -1244,6 +1268,11 @@ const saveUser = () => {
 
     if (!form.db_id && (!form.username.trim() || !form.password)) {
         alert('กรุณากำหนด Username และ Password สำหรับเข้าสู่ระบบ');
+        return;
+    }
+
+    if (form.db_id && isChangingPassword.value && !form.password) {
+        alert('กรุณากรอกรหัสผ่านใหม่ หรือยกเลิกการแก้ไขรหัสผ่าน');
         return;
     }
 
@@ -1308,6 +1337,14 @@ const saveUser = () => {
         idp_reviewer_ids: selectedIdpReviewerIds.value,
         act: Boolean(form.act),
     };
+    const credentialsToShow = nextUser.password
+        ? { username: nextUser.username || nextUser.em, password: nextUser.password }
+        : null;
+
+    const finishUserSave = () => {
+        closeModal();
+        issuedCredentials.value = credentialsToShow;
+    };
 
     const onSuccess = (responsePage) => {
         activePage.value = 'admin-users';
@@ -1317,7 +1354,7 @@ const saveUser = () => {
 
         if (Array.isArray(responsePage.props.users)) {
             users.value = clone(responsePage.props.users);
-            closeModal();
+            finishUserSave();
             return;
         }
 
@@ -1326,7 +1363,7 @@ const saveUser = () => {
             preserveScroll: true,
             onSuccess: (page) => {
                 users.value = clone(page.props.users || []);
-                closeModal();
+                finishUserSave();
             },
         });
     };
@@ -1582,7 +1619,7 @@ const logout = () => router.post(route('logout'));
 
                 <div class="modal-section-label">ข้อมูลเข้าสู่ระบบ</div>
                 <div class="admin-user-note login-account-note">
-                    Username ใช้เข้าสู่ระบบแทนอีเมล{{ userForm.db_id ? ' · หากไม่ต้องการเปลี่ยนรหัสผ่าน ให้เว้นช่อง Password ไว้' : '' }}
+                    Username ใช้เข้าสู่ระบบแทนอีเมล{{ userForm.db_id ? ' · รหัสเดิมเปิดดูย้อนหลังไม่ได้ หากผู้ใช้ลืม ให้กำหนดรหัสใหม่' : '' }}
                 </div>
                 <div class="modal-grid">
                     <div class="fg">
@@ -1595,26 +1632,48 @@ const logout = () => router.post(route('logout'));
                         />
                     </div>
                     <div class="fg">
-                        <label class="lbl" :class="{ req: !userForm.db_id }">Password</label>
-                        <input
-                            v-model="userForm.password"
-                            autocomplete="new-password"
-                            class="inp modal-input"
-                            :placeholder="userForm.db_id ? 'เว้นว่างเพื่อใช้รหัสเดิม' : 'อย่างน้อย 8 ตัวอักษร'"
-                            type="password"
-                        />
+                        <label class="lbl" :class="{ req: isChangingPassword }">{{ userForm.db_id && isChangingPassword ? 'Password ใหม่' : 'Password' }}</label>
+                        <div class="admin-password-input">
+                            <input
+                                v-if="!isChangingPassword"
+                                class="inp modal-input"
+                                value="ตั้งรหัสผ่านแล้ว"
+                                aria-label="สถานะรหัสผ่าน: ตั้งรหัสผ่านแล้ว"
+                                readonly
+                            />
+                            <div v-else class="admin-password-field">
+                                <input
+                                    v-model="userForm.password"
+                                    autocomplete="new-password"
+                                    class="inp modal-input"
+                                    placeholder="อย่างน้อย 8 ตัวอักษร"
+                                    :type="showNewPassword ? 'text' : 'password'"
+                                />
+                                <button class="admin-password-toggle" type="button" :aria-label="showNewPassword ? 'ซ่อนรหัสผ่านใหม่' : 'แสดงรหัสผ่านใหม่'" :aria-pressed="showNewPassword" @click="showNewPassword = !showNewPassword">
+                                    {{ showNewPassword ? 'ซ่อน' : 'แสดง' }}
+                                </button>
+                            </div>
+                            <button v-if="userForm.db_id" class="btn btn-s btn-sm" type="button" @click="isChangingPassword ? cancelPasswordChange() : isChangingPassword = true">
+                                {{ isChangingPassword ? 'ยกเลิก' : 'แก้ไขรหัสผ่าน' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="modal-grid single-col">
+                <div v-if="isChangingPassword" class="modal-grid single-col">
                     <div class="fg">
-                        <label class="lbl" :class="{ req: !userForm.db_id }">ยืนยัน Password</label>
-                        <input
-                            v-model="userForm.password_confirmation"
-                            autocomplete="new-password"
-                            class="inp modal-input"
-                            placeholder="กรอก Password อีกครั้ง"
-                            type="password"
-                        />
+                        <label class="lbl req">ยืนยัน Password</label>
+                        <div class="admin-password-field">
+                            <input
+                                v-model="userForm.password_confirmation"
+                                autocomplete="new-password"
+                                class="inp modal-input"
+                                placeholder="กรอก Password อีกครั้ง"
+                                :type="showPasswordConfirmation ? 'text' : 'password'"
+                            />
+                            <button class="admin-password-toggle" type="button" :aria-label="showPasswordConfirmation ? 'ซ่อนรหัสผ่านที่ยืนยัน' : 'แสดงรหัสผ่านที่ยืนยัน'" :aria-pressed="showPasswordConfirmation" @click="showPasswordConfirmation = !showPasswordConfirmation">
+                                {{ showPasswordConfirmation ? 'ซ่อน' : 'แสดง' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1918,6 +1977,28 @@ const logout = () => router.post(route('logout'));
                     <button class="btn btn-p modal-action-btn modal-save-btn" type="button" @click="saveUser">
                          บันทึก
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="issuedCredentials" class="mo admin-user-modal">
+        <div class="mo-box issued-credentials-box" role="dialog" aria-modal="true" aria-labelledby="issued-credentials-title">
+            <div class="mo-h admin-user-modal-head">
+                <div class="fw8 fs18" id="issued-credentials-title">ข้อมูลเข้าสู่ระบบที่เพิ่งกำหนด</div>
+            </div>
+            <div class="mo-b admin-user-modal-body">
+                <p class="issued-credentials-note">แจ้งข้อมูลนี้ให้ผู้ใช้ก่อนปิดหน้าต่าง รหัสผ่านเดิมจะเปิดดูย้อนหลังไม่ได้ หากลืมรหัสให้ Admin กำหนดใหม่</p>
+                <div class="fg">
+                    <label class="lbl">Username</label>
+                    <input class="inp modal-input" :value="issuedCredentials.username" readonly />
+                </div>
+                <div class="fg">
+                    <label class="lbl">Password</label>
+                    <input class="inp modal-input" :value="issuedCredentials.password" readonly />
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-p modal-action-btn" type="button" @click="closeIssuedCredentials">รับทราบและปิด</button>
                 </div>
             </div>
         </div>
@@ -2333,6 +2414,64 @@ const logout = () => router.post(route('logout'));
     background: #eff6ff;
     color: #2563eb;
     font-size: 13px;
+}
+
+.admin-password-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-password-input .inp {
+    min-width: 0;
+    flex: 1;
+}
+
+.admin-password-field {
+    position: relative;
+    min-width: 0;
+    flex: 1;
+}
+
+.admin-password-field .inp {
+    width: 100%;
+    padding-right: 72px;
+}
+
+.admin-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    min-height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--navy);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.admin-password-toggle:hover,
+.admin-password-toggle:focus-visible {
+    background: #eef2f7;
+}
+
+.issued-credentials-box {
+    max-width: 480px;
+}
+
+.issued-credentials-box .fg {
+    margin-bottom: 14px;
+}
+
+.issued-credentials-note {
+    margin: 0 0 18px;
+    color: var(--text2);
+    font-size: 13px;
+    line-height: 1.55;
 }
 
 .admin-user-warning {
