@@ -171,6 +171,7 @@ const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: 
 const sections = computed(() => {
     const assignedItems = [
         ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled) ? [{ id: 'hr-assessment-review', label: 'อนุมัติการประเมิน' }] : []),
+        ...(assessmentApprovalModule.value.enabled ? [{ id: 'hr-team-assessment', label: 'ผลการประเมินของทีม' }] : []),
         ...(idpReviewModule.value.enabled ? [{ id: 'hr-idp-review', label: 'อนุมัติแผนและผล IDP' }] : []),
     ];
 
@@ -191,6 +192,7 @@ const pageTitles = {
     'faculty-idp-tracking': 'การติดตาม IDP',
     'hr-fc-topic-review': 'พิจารณาหัวข้อการประเมิน',
     'hr-assessment-review': 'อนุมัติการประเมิน',
+    'hr-team-assessment': 'ผลการประเมินของทีม',
     'hr-idp-review': 'อนุมัติแผนและผล IDP',
 };
 
@@ -673,6 +675,13 @@ const formatWeight = (weight) => {
                     :idp-review-items="page.props.idpReviewItems || []"
                 />
                 <HeadDashboard
+                    v-else-if="activePage === 'hr-team-assessment' && assessmentApprovalModule.enabled"
+                    embedded
+                    embedded-page="sup-gap"
+                    role-key="hr"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+                <HeadDashboard
                     v-else-if="activePage === 'hr-idp-review' && idpReviewModule.enabled"
                     embedded
                     embedded-page="dh-idp"
@@ -1058,7 +1067,6 @@ const formatWeight = (weight) => {
                             >
                                 <span>
                                     <strong>{{ round.name }}</strong>
-                                    <small>ปี {{ round.year }}</small>
                                 </span>
                                 <span v-if="isImportingRound" class="round-import-action">กำลังนำเข้า…</span>
                                 <span v-else class="round-import-action">เลือกใช้</span>

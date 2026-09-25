@@ -67,6 +67,7 @@ const competencies = ref(clone(page.props.competencies || []));
 const users = ref(clone(page.props.users || []));
 const activeModal = ref(null);
 const editingUserKey = ref(null);
+const organizationDirty = ref(false);
 const isSavingUser = ref(false);
 const isChangingPassword = ref(false);
 const showNewPassword = ref(false);
@@ -205,6 +206,11 @@ const roleOptions = computed(() => (page.props.roles || [
 })));
 
 const supportDeptsList = computed(() => Object.keys(supportOrg.value));
+const legacyDeptOption = computed(() => {
+    const department = userForm.value.dept;
+
+    return department && !supportDeptsList.value.includes(department) ? department : '';
+});
 const supportJobFamilies = computed(() => Object.keys(supportPositionGroups.value));
 const normalizeWorklineName = (name = '') => name.replace(/^สายงาน\s*/, '').replace(/^สาย\s*/, '').trim();
 const selectedWorklineKind = computed(() => normalizeWorklineName(userForm.value.w));
@@ -215,6 +221,12 @@ const levelOptionsFromDatabase = computed(() => {
 const isAcademicWorkline = computed(() => selectedWorklineKind.value === 'วิชาการ');
 const isSupportWorkline = computed(() => selectedWorklineKind.value === 'สนับสนุน');
 const isAdminWorkline = computed(() => selectedWorklineKind.value === 'บริหาร');
+const incompleteLegacySupportPath = computed(() => {
+    if (!userForm.value.db_id || !isSupportWorkline.value || organizationDirty.value) return '';
+
+    const path = userForm.value.d;
+    return path && path.split(' > ').filter(Boolean).length < 3 ? path : '';
+});
 const selectedDeptWorks = computed(() => supportOrg.value[userForm.value.dept] || []);
 const jobOptions = computed(() => {
     if (!userForm.value.w) return [];
@@ -234,6 +246,11 @@ const unitOptions = computed(() => {
     if (isSupportWorkline.value) return (selectedSupportWork.value?.units || []).map((unit) => typeof unit === 'string' ? unit : unit.name);
 
     return [];
+});
+const legacyUnitOption = computed(() => {
+    const unit = userForm.value.unit;
+
+    return unit && !unitOptions.value.includes(unit) ? unit : '';
 });
 const positionOptions = computed(() => {
     if (isSupportWorkline.value) {
@@ -275,6 +292,7 @@ const visibleAdminPageIds = new Set([
     'admin-idp-tools',
     'admin-fc-topic-review',
     'admin-assessment-review',
+    'admin-team-assessment',
     'admin-idp-review',
 ]);
 const currentNavConfig = computed(() => {
@@ -290,6 +308,7 @@ const currentNavConfig = computed(() => {
         .filter((section) => section.items.length > 0);
     const assignedItems = [
         ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled) ? [{ id: 'admin-assessment-review', ic: '', lb: 'อนุมัติการประเมิน' }] : []),
+        ...(assessmentApprovalModule.value.enabled ? [{ id: 'admin-team-assessment', ic: '', lb: 'ผลการประเมินของทีม' }] : []),
         ...(idpReviewModule.value.enabled ? [{ id: 'admin-idp-review', ic: '', lb: 'อนุมัติแผนและผล IDP' }] : []),
     ];
 
@@ -1099,9 +1118,11 @@ const parseOrgPath = (path = '') => {
 const syncOrgPath = () => {
     const form = userForm.value;
 
-    form.d = isSupportWorkline.value
-        ? [form.dept, form.job, form.unit].filter(Boolean).join(' > ')
-        : form.job;
+    if (isSupportWorkline.value) {
+        form.d = [form.dept, form.job, form.unit].filter(Boolean).join(' > ');
+    } else if (parseOrgPath(form.d).dept !== form.job) {
+        form.d = form.job;
+    }
 };
 
 const findUserName = (predicate) => {
@@ -1118,6 +1139,7 @@ const syncOrgSupervisors = () => {
 };
 
 const resetOrgSelection = () => {
+    organizationDirty.value = true;
     userForm.value.dept = '';
     userForm.value.job = '';
     userForm.value.unit = '';
@@ -1135,6 +1157,7 @@ const handleWorklineChange = () => {
 };
 
 const handleDeptChange = () => {
+    organizationDirty.value = true;
     userForm.value.job = '';
     userForm.value.unit = '';
     userForm.value.p = '';
@@ -1143,6 +1166,7 @@ const handleDeptChange = () => {
 };
 
 const handleJobChange = () => {
+    organizationDirty.value = true;
     userForm.value.unit = '';
     userForm.value.p = isDeanRole.value ? userForm.value.job : '';
     userForm.value.l = '';
@@ -1150,12 +1174,14 @@ const handleJobChange = () => {
 };
 
 const handleUnitChange = () => {
+    organizationDirty.value = true;
     userForm.value.p = '';
     userForm.value.l = '';
     syncOrgPath();
 };
 
 const handlePositionChange = () => {
+    organizationDirty.value = true;
     userForm.value.l = '';
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
     if (!directLevels.length && userForm.value.p) {
@@ -1165,6 +1191,7 @@ const handlePositionChange = () => {
 
 const handleRoleChange = () => {
     if (isDeanRole.value && userForm.value.job) {
+        organizationDirty.value = organizationDirty.value || userForm.value.p !== userForm.value.job;
         userForm.value.p = userForm.value.job;
     }
 
@@ -1173,9 +1200,11 @@ const handleRoleChange = () => {
 
 const resetUserForm = (data = null) => {
     const org = parseOrgPath(data?.d || '');
+    const supportWorkline = normalizeWorklineName(data?.w || '') === 'สนับสนุน';
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
 
     editingUserKey.value = data?.sso || null;
+    organizationDirty.value = false;
     isChangingPassword.value = !data?.db_id;
     showNewPassword.value = false;
     showPasswordConfirmation.value = false;
@@ -1195,11 +1224,11 @@ const resetUserForm = (data = null) => {
         password: '',
         password_confirmation: '',
         ph: data?.ph || '',
-        w: data?.w || worklines.value[0] || '',
+        w: data ? (data.w || '') : (worklines.value[0] || ''),
         d: data?.d || '',
-        dept: '',
-        job: org.job || org.dept,
-        unit: org.unit,
+        dept: supportWorkline && (org.job || org.unit) ? org.dept : '',
+        job: supportWorkline ? org.job : org.dept,
+        unit: supportWorkline ? org.unit : '',
         p: data?.p || '',
         l: data?.l || '',
         r: normalizeUserRoleKey(data?.r || 'employee'),
@@ -1255,8 +1284,11 @@ const saveUser = () => {
         window.sessionStorage.setItem(adminPageStorageKey, 'admin-users');
     }
     const form = userForm.value;
-    syncOrgPath();
-    if (isDeanRole.value && form.job) {
+    const preserveExistingStructure = Boolean(form.db_id && !organizationDirty.value);
+    if (!preserveExistingStructure) {
+        syncOrgPath();
+    }
+    if (!preserveExistingStructure && isDeanRole.value && form.job) {
         form.p = form.job;
     }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
@@ -1284,21 +1316,21 @@ const saveUser = () => {
     const missingOrganization = !form.w
         || !form.job
         || (isSupportWorkline.value && (!form.dept || !form.unit));
-    if (missingOrganization || (!isDeanRole.value && !form.p) || !form.l) {
+    if (!preserveExistingStructure && (missingOrganization || (!isDeanRole.value && !form.p) || !form.l)) {
         alert(isSupportWorkline.value
             ? 'กรุณาเลือกสายงาน ฝ่าย งาน หน่วย ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน'
             : 'กรุณาเลือกสายงาน ภาควิชา ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
         return;
     }
 
-    if (!isDeanRole.value && !positionOptions.value.includes(form.p)) {
+    if (!preserveExistingStructure && !isDeanRole.value && !positionOptions.value.includes(form.p)) {
         alert(isSupportWorkline.value
             ? 'กรุณาให้ Admin เพิ่มตำแหน่งในหน่วยนี้ก่อนบันทึกผู้ใช้'
             : 'กรุณาให้ Admin เพิ่มตำแหน่งสำหรับภาควิชานี้ก่อนบันทึกผู้ใช้');
         return;
     }
 
-    if (!levelOptions.value.includes(form.l)) {
+    if (!preserveExistingStructure && !levelOptions.value.includes(form.l)) {
         alert('กรุณาให้ Admin เพิ่มระดับตำแหน่งในสายงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
@@ -1311,6 +1343,7 @@ const saveUser = () => {
 
     const nextUser = {
         ...form,
+        preserve_existing_structure: preserveExistingStructure,
         db_id: form.db_id,
         sso: form.sso.trim(),
         n: thaiName,
@@ -1329,7 +1362,7 @@ const saveUser = () => {
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
-        p: (isDeanRole.value ? form.job : form.p).trim(),
+        p: (isDeanRole.value && !preserveExistingStructure ? form.job : form.p).trim(),
         l: form.l.trim(),
         reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
         idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
@@ -1491,6 +1524,14 @@ const logout = () => router.post(route('logout'));
                     v-else-if="activePage === 'admin-assessment-review' && (fcTopicApprovalModule.enabled || assessmentApprovalModule.enabled)"
                     embedded
                     embedded-page="dh-assess"
+                    role-key="admin"
+                    :idp-review-items="page.props.idpReviewItems || []"
+                />
+
+                <HeadDashboard
+                    v-else-if="activePage === 'admin-team-assessment' && assessmentApprovalModule.enabled"
+                    embedded
+                    embedded-page="sup-gap"
                     role-key="admin"
                     :idp-review-items="page.props.idpReviewItems || []"
                 />
@@ -1722,6 +1763,9 @@ const logout = () => router.post(route('logout'));
                 </div>
 
                 <div class="modal-section-label">โครงสร้างสังกัด</div>
+                <div v-if="incompleteLegacySupportPath" class="modal-help warning">
+                    สังกัดเดิม: {{ incompleteLegacySupportPath }} (ข้อมูลเดิมไม่ครบลำดับฝ่าย งาน และหน่วย หากไม่แก้สังกัด ระบบจะคงค่าเดิมไว้)
+                </div>
                 <div class="modal-grid" :class="{ 'single-col': !userForm.w }">
                     <div class="fg">
                         <label class="lbl req">สายงาน</label>
@@ -1737,6 +1781,9 @@ const logout = () => router.post(route('logout'));
                         <label class="lbl req">ฝ่าย</label>
                         <select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange">
                             <option value="">— เลือกฝ่าย —</option>
+                            <option v-if="legacyDeptOption" :value="legacyDeptOption">
+                                {{ legacyDeptOption }} (ข้อมูลเดิม)
+                            </option>
                             <option v-for="department in supportDeptsList" :key="department" :value="department">{{ department }}</option>
                         </select>
                     </div>
@@ -1753,7 +1800,7 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                         <div v-if="legacyJobOption" class="modal-help warning">
-                            {{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}นี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกใหม่ก่อนบันทึก
+                            {{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}นี้ไม่มีในโครงสร้างปัจจุบัน หากเปลี่ยนสังกัดกรุณาเลือกใหม่
                         </div>
                     </div>
 
@@ -1761,6 +1808,9 @@ const logout = () => router.post(route('logout'));
                         <label class="lbl req">หน่วย</label>
                         <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
                             <option value="">— เลือกหน่วย —</option>
+                            <option v-if="legacyUnitOption" :value="legacyUnitOption">
+                                {{ legacyUnitOption }} (ข้อมูลเดิม)
+                            </option>
                             <option v-for="unit in unitOptions" :key="unit" :value="unit">{{ unit }}</option>
                         </select>
                     </div>
@@ -1786,7 +1836,7 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                         <div v-if="legacyPositionOption" class="modal-help warning">
-                            ตำแหน่งนี้ไม่มีใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}ปัจจุบัน กรุณาเลือกตำแหน่งใหม่ก่อนบันทึก
+                            ตำแหน่งนี้ไม่มีใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}ปัจจุบัน หากเปลี่ยนสังกัดกรุณาเลือกใหม่
                         </div>
                         <div v-if="!positionOptions.length" class="modal-help">
                             กรุณาให้ Admin เพิ่มตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}ก่อนกำหนดผู้ใช้
@@ -1801,7 +1851,7 @@ const logout = () => router.post(route('logout'));
                     </div>
                     <div v-if="userForm.p || isDeanRole" class="fg">
                         <label class="lbl req">ระดับตำแหน่ง</label>
-                        <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption">
+                        <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption" @change="organizationDirty = true">
                             <option v-if="levelOptions.length" value="">— เลือกระดับตำแหน่ง —</option>
                             <option v-else value="">ยังไม่มีระดับตำแหน่งในสายงานหรือกลุ่มงาน</option>
                             <option v-if="legacyLevelOption" :value="legacyLevelOption">
@@ -1812,7 +1862,7 @@ const logout = () => router.post(route('logout'));
                             </option>
                         </select>
                         <div v-if="legacyLevelOption" class="modal-help warning">
-                            ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน กรุณาเลือกระดับใหม่ก่อนบันทึก
+                            ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน หากเปลี่ยนสังกัดกรุณาเลือกใหม่
                         </div>
                         <div v-if="!levelOptions.length" class="modal-help">
                             กรุณาให้ Admin เพิ่มระดับตำแหน่งก่อนกำหนดผู้ใช้

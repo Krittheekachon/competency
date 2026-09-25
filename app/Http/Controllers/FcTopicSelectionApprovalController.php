@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\AssessmentRoundWindow;
+use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,7 +11,10 @@ use Illuminate\Validation\ValidationException;
 
 class FcTopicSelectionApprovalController extends Controller
 {
-    public function __construct(private AssessmentRoundWindow $assessmentRoundWindow)
+    public function __construct(
+        private AssessmentRoundWindow $assessmentRoundWindow,
+        private ReviewerChainResolver $reviewerChainResolver,
+    )
     {
     }
 
@@ -73,7 +77,7 @@ class FcTopicSelectionApprovalController extends Controller
         if (! $selection
             || ! $activeRoundId
             || (int) $selection->assessment_round_id !== (int) $activeRoundId
-            || (int) $selection->submitted_to !== (int) $request->user()->id) {
+            || $this->reviewerChainResolver->firstReviewerId($selection, 'assessment') !== (int) $request->user()->id) {
             throw ValidationException::withMessages([
                 'selection' => 'คุณไม่มีสิทธิ์อนุมัติหัวข้อ FC รายการนี้',
             ]);
