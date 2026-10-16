@@ -279,9 +279,9 @@ class NotificationService
         }
 
         try {
-            Mail::to($user)->send($mailable);
+            Mail::to($user)->queue($mailable);
         } catch (Throwable $exception) {
-            Log::warning('Unable to send notification email.', [
+            Log::warning('Unable to queue notification email.', [
                 'user_id' => $user->id,
                 'recipient' => $user->email,
                 'mail' => $mailable::class,

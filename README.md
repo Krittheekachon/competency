@@ -126,6 +126,7 @@ npm run build
 
 - `AGENTS.md`: AI coding-agent working rules.
 - `docs/project/deployment.md`: production environment, release, and smoke-test checklist.
+- `docs/project/load-testing.md`: 1,000-user capacity model, k6 profiles, pass/fail gates, and production sizing.
 - `docs/project/architecture.md`: current implementation architecture.
 - `docs/project/requirements.md`: canonical business/domain rules.
 - `docs/project/current-state.md`: implemented features, gaps, and discrepancies.
