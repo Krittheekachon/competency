@@ -2,6 +2,12 @@
 import { ref } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 
+const props = defineProps({
+    ssoEnabled: { type: Boolean, default: false },
+    passwordLoginEnabled: { type: Boolean, default: true },
+    ssoError: { type: String, default: '' },
+});
+
 const showPassword = ref(false);
 
 const form = useForm({
@@ -17,6 +23,10 @@ const submit = () => {
             showPassword.value = false;
         },
     });
+};
+
+const loginWithKku = () => {
+    window.location.assign(route('sso.redirect'));
 };
 </script>
 
@@ -72,10 +82,12 @@ const submit = () => {
                 <form class="login-form" @submit.prevent="submit">
                     <div class="heading">
                         <h1 id="login-title">เข้าสู่ระบบ</h1>
-                        <p>กรอก username และ password เพื่อเข้าใช้งานระบบ</p>
+                        <p>{{ props.ssoEnabled ? 'เข้าใช้งานด้วยบัญชีมหาวิทยาลัยขอนแก่น' : 'กรอก username และ password เพื่อเข้าใช้งานระบบ' }}</p>
                     </div>
 
-                    <div class="field">
+                    <p v-if="props.ssoError" class="sso-error" role="alert">{{ props.ssoError }}</p>
+
+                    <div v-if="props.passwordLoginEnabled" class="field">
                         <label for="username">Username</label>
                         <input
                             id="username"
@@ -89,7 +101,7 @@ const submit = () => {
                         <p v-if="form.errors.email" class="error">{{ form.errors.email }}</p>
                     </div>
 
-                    <div class="field">
+                    <div v-if="props.passwordLoginEnabled" class="field">
                         <label for="password">Password</label>
                         <div class="password-input-wrap">
                             <input
@@ -123,6 +135,7 @@ const submit = () => {
                     </div>
 
                     <button
+                        v-if="props.passwordLoginEnabled"
                         class="submit-button"
                         :disabled="form.processing"
                         type="submit"
@@ -130,7 +143,20 @@ const submit = () => {
                         {{ form.processing ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
                     </button>
 
-                    <p class="password-help">
+                    <div v-if="props.ssoEnabled && props.passwordLoginEnabled" class="login-divider">
+                        <span>หรือ</span>
+                    </div>
+
+                    <button
+                        v-if="props.ssoEnabled"
+                        class="sso-button"
+                        type="button"
+                        @click="loginWithKku"
+                    >
+                        เข้าสู่ระบบด้วย KKU SSO
+                    </button>
+
+                    <p v-if="props.passwordLoginEnabled" class="password-help">
                         หากลืมรหัสผ่าน กรุณาติดต่อผู้ดูแลระบบ (Admin)
                     </p>
                 </form>
@@ -148,6 +174,56 @@ const submit = () => {
         linear-gradient(180deg, #101719 0%, #0f1517 100%);
     color: #ffffff;
     font-family: 'Kanit', 'Noto Sans Thai', system-ui, sans-serif;
+}
+
+.sso-button {
+    width: 100%;
+    border: 1px solid #8f3036;
+    border-radius: 8px;
+    padding: 13px 18px;
+    background: #8f3036;
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sso-button:hover {
+    border-color: #a63b42;
+    background: #a63b42;
+}
+
+.sso-button:focus-visible {
+    outline: 3px solid rgba(143, 48, 54, 0.28);
+    outline-offset: 2px;
+}
+
+.sso-error {
+    margin: 0;
+    border: 1px solid rgba(248, 113, 113, 0.5);
+    border-radius: 7px;
+    padding: 10px 12px;
+    background: rgba(127, 29, 29, 0.28);
+    color: #fecaca;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.login-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 12px;
+}
+
+.login-divider::before,
+.login-divider::after {
+    height: 1px;
+    flex: 1;
+    background: rgba(255, 255, 255, 0.2);
+    content: '';
 }
 
 .top-bar {

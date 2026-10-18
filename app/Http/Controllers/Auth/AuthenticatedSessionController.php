@@ -27,6 +27,9 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Auth/Login', [
             'pageTitle' => 'เข้าสู่ระบบ',
             'status' => session('status'),
+            'ssoEnabled' => (bool) config('services.kku_sso.enabled'),
+            'passwordLoginEnabled' => (bool) config('services.kku_sso.password_login_enabled'),
+            'ssoError' => session('sso_error'),
         ]);
     }
 
@@ -35,6 +38,10 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
+        if (! config('services.kku_sso.password_login_enabled')) {
+            return redirect()->route('login')->with('sso_error', 'ระบบนี้อนุญาตให้เข้าสู่ระบบผ่าน KKU SSO เท่านั้น');
+        }
+
         $request->authenticate();
 
         $request->session()->regenerate();
@@ -47,11 +54,22 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $authenticatedViaSso = (bool) $request->session()->get('auth_via_kku_sso', false);
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();
 
         $request->session()->regenerateToken();
+
+        if ($authenticatedViaSso && config('services.kku_sso.enabled')) {
+            $appId = trim((string) config('services.kku_sso.app_id'));
+            $webUrl = rtrim((string) config('services.kku_sso.web_url'), '/');
+
+            if ($appId !== '' && $webUrl !== '') {
+                return redirect()->away($webUrl.'/logout?'.http_build_query(['app' => $appId]));
+            }
+        }
 
         return redirect('/');
     }
