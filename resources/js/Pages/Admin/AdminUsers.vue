@@ -32,6 +32,46 @@
       <span>ต้องตรวจสอบ</span>
       <strong>{{ invalidStructureCount }}</strong>
     </div>
+    <div class="user-metric sso-warning">
+      <span>ข้อมูล SSO รอตรวจสอบ</span>
+      <strong>{{ pendingSsoUsers.length }}</strong>
+    </div>
+  </div>
+
+  <div v-if="pendingSsoUsers.length" class="card sso-review-card mb14">
+    <div class="sso-review-head">
+      <div>
+        <div class="ct">ข้อมูลจาก SSO ที่ต้องจัดการ</div>
+        <div class="cs">ข้อมูลเดิมยังใช้กับ workflow ปัจจุบัน จนกว่าผู้ดูแลระบบจะเลือกวิธีจัดการ</div>
+      </div>
+      <span class="b br">{{ pendingSsoUsers.length }} รายการ</span>
+    </div>
+
+    <div class="sso-review-list">
+      <div v-for="user in pendingSsoUsers" :key="`sso-${user.db_id}`" class="sso-review-row">
+        <div class="sso-review-person">
+          <strong>{{ user.t }}{{ user.n }}</strong>
+          <span>{{ user.sso }}</span>
+        </div>
+        <div class="sso-review-change">
+          <span>{{ ssoWorklineLabel(user) }}</span>
+          <span>{{ user.ssoProfile?.positionName || 'ไม่ระบุตำแหน่ง' }}</span>
+          <span>{{ user.ssoProfile?.positionTypeName || 'ไม่ระบุประเภทตำแหน่ง' }}</span>
+          <span>{{ user.ssoProfile?.levelName || 'ไม่ระบุระดับ' }}</span>
+        </div>
+        <div class="sso-review-actions">
+          <button class="btn btn-s btn-xs" type="button" :disabled="reviewingUserId === user.db_id" @click="reviewSso(user, 'keep')">
+            คงข้อมูลเดิม
+          </button>
+          <button class="btn btn-s btn-xs" type="button" :disabled="reviewingUserId === user.db_id || !user.position_id" @click="reviewSso(user, 'rename')">
+            เปลี่ยนเป็นชื่อใหม่
+          </button>
+          <button class="btn btn-p btn-xs" type="button" :disabled="reviewingUserId === user.db_id" @click="reviewSso(user, 'restructure')">
+            ใช้ข้อมูลใหม่และจัดโครงสร้าง
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div v-if="statusFeedback" class="status-feedback" :class="statusFeedback.kind" role="status" aria-live="polite">
@@ -152,9 +192,12 @@
               </span>
             </td>
             <td class="center-cell">
-              <span class="b" :class="isActive(user) ? 'bg' : 'br'">
-                {{ isActive(user) ? 'ใช้งานอยู่' : 'ระงับแล้ว' }}
-              </span>
+              <div class="user-status-stack">
+                <span class="readiness-status" :class="`status-${user.readiness?.key || 'structure'}`">
+                  {{ user.readiness?.label || 'รอตรวจสอบ' }}
+                </span>
+                <span class="account-status">{{ isActive(user) ? 'ใช้งานอยู่' : 'ระงับแล้ว' }}</span>
+              </div>
             </td>
             <td class="right-cell">
               <div class="row-actions">
@@ -205,6 +248,19 @@ type User = {
   act?: boolean;
   structureStatus?: string;
   structureIssues?: string[];
+  position_id?: number | null;
+  ssoProfile?: {
+    workline?: string | null;
+    worklineType?: string | null;
+    positionName?: string | null;
+    positionTypeName?: string | null;
+    levelName?: string | null;
+  };
+  ssoReview?: {
+    id: number;
+    status: 'pending' | 'restructure';
+  } | null;
+  readiness?: { key: string; label: string };
 };
 
 type RoleBadge = {
@@ -232,6 +288,7 @@ const positionFilter = ref('ทุกตำแหน่ง');
 const roleFilter = ref('ทุกบทบาท (Role)');
 const statusFilter = ref('ทุกสถานะ');
 const updatingStatusId = ref<number | null>(null);
+const reviewingUserId = ref<number | null>(null);
 const statusFeedback = ref<{ kind: 'success' | 'suspended' | 'error'; message: string } | null>(null);
 const page = usePage();
 const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
@@ -271,6 +328,47 @@ const statusActionTitle = (user: User) => {
 const hasInvalidStructure = (user: User) => user.structureStatus === 'invalid';
 const structureIssueText = (user: User) => (user.structureIssues || []).join('\n') || 'ข้อมูลโครงสร้างไม่ตรงกับ master data ปัจจุบัน';
 const invalidStructureCount = computed(() => props.users.filter(hasInvalidStructure).length);
+const pendingSsoUsers = computed(() => props.users.filter((user) => Boolean(user.ssoReview)));
+const ssoWorklineLabel = (user: User) => {
+  if (user.ssoProfile?.worklineType === 'academic') return 'สายวิชาการ';
+  if (user.ssoProfile?.worklineType === 'support') return 'สายสนับสนุน';
+  return user.ssoProfile?.workline || 'สายงานไม่รู้จัก';
+};
+
+const reviewSso = (user: User, decision: 'keep' | 'restructure' | 'rename') => {
+  if (!user.db_id) return;
+
+  reviewingUserId.value = user.db_id;
+  statusFeedback.value = null;
+  router.patch(route('admin.users.sso-profile-review', user.db_id), { decision }, {
+    preserveScroll: true,
+    onSuccess: (nextPage) => {
+      if (Array.isArray(nextPage.props.users)) {
+        props.setUsers(nextPage.props.users as User[]);
+      }
+
+      if (decision === 'restructure') {
+        const latest = Array.isArray(nextPage.props.users)
+          ? (nextPage.props.users as User[]).find((item) => Number(item.db_id) === Number(user.db_id))
+          : user;
+        props.openModal('modal-user', latest || user);
+      }
+
+      statusFeedback.value = {
+        kind: 'success',
+        message: decision === 'keep'
+          ? `คงข้อมูลเดิมของ ${user.n} แล้ว`
+          : decision === 'rename'
+            ? `เปลี่ยนชื่อตำแหน่งของ ${user.n} โดยคง workflow เดิมแล้ว`
+            : `กรุณาจัดโครงสร้างใหม่ให้ ${user.n} แล้วบันทึก`,
+      };
+    },
+    onError: (errors) => {
+      statusFeedback.value = { kind: 'error', message: errors.decision || 'ไม่สามารถจัดการข้อมูล SSO ได้' };
+    },
+    onFinish: () => { reviewingUserId.value = null; },
+  });
+};
 const departmentOptions = computed(() => {
   const departments = props.users
     .filter((user) => worklineFilter.value === 'ทุกสายงาน' || user.w === worklineFilter.value)
@@ -493,7 +591,7 @@ const toggleStatus = (user: User) => {
 
 .user-dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -524,6 +622,74 @@ const toggleStatus = (user: User) => {
 
 .user-metric.warning strong {
   color: #c2410c;
+}
+
+.user-metric.sso-warning strong {
+  color: #b91c1c;
+}
+
+.sso-review-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sso-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fffaf7;
+}
+
+.sso-review-list {
+  display: grid;
+}
+
+.sso-review-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.7fr) minmax(320px, 1.4fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.sso-review-row:last-child {
+  border-bottom: 0;
+}
+
+.sso-review-person,
+.sso-review-change {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sso-review-person span,
+.sso-review-change span {
+  color: var(--text3);
+  font-size: 12px;
+}
+
+.sso-review-change {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sso-review-change span {
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.sso-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .filter-row {
@@ -686,6 +852,41 @@ const toggleStatus = (user: User) => {
   text-align: center;
 }
 
+.user-status-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.readiness-status {
+  display: inline-flex;
+  max-width: 132px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.readiness-status.status-ready {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.readiness-status.status-sso_changed {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.account-status {
+  color: var(--text3);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .right-cell {
   text-align: right;
 }
@@ -742,6 +943,14 @@ const toggleStatus = (user: User) => {
   .user-dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .sso-review-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sso-review-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 640px) {
@@ -751,6 +960,10 @@ const toggleStatus = (user: User) => {
 
   .filter-row {
     grid-template-columns: 1fr;
+  }
+
+  .sso-review-change {
+    grid-template-columns: 1fr 1fr;
   }
 
   .search-input,

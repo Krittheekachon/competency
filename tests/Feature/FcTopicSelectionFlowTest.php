@@ -192,7 +192,7 @@ class FcTopicSelectionFlowTest extends TestCase
             ->where('chain_type', 'assessment')
             ->update(['reviewer_id' => $replacementReviewer->id]);
 
-        $this->actingAs($supervisor)
+        $this->actingAs($replacementReviewer)
             ->post(route('fc-topic-selections.approve'), ['selection_id' => $selectionId])
             ->assertSessionHasErrors('selection');
         $this->assertDatabaseHas('fc_topic_selections', [

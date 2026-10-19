@@ -3,16 +3,21 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
+use App\Services\SsoProfileSyncService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class KkuSsoController extends Controller
 {
+    public function __construct(private SsoProfileSyncService $profileSync)
+    {
+    }
+
     public function redirect(Request $request): RedirectResponse
     {
         if (! config('services.kku_sso.enabled')) {
@@ -92,26 +97,17 @@ class KkuSsoController extends Controller
             return $this->loginFailure('ไม่สามารถเชื่อมต่อ KKU SSO ได้ กรุณาลองใหม่ภายหลัง');
         }
 
-        $user = $this->findUser($token, $profile);
-
-        if (! $user) {
-            return $this->loginFailure('ไม่พบบัญชีนี้ในระบบ EN-IDP กรุณาติดต่อผู้ดูแลระบบ');
+        try {
+            $user = $this->profileSync->sync($token, $profile);
+        } catch (ValidationException $exception) {
+            return $this->loginFailure(
+                collect($exception->errors())->flatten()->first()
+                    ?: 'ไม่สามารถบันทึกข้อมูลจาก KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ'
+            );
         }
 
         if (! $user->is_active) {
             return $this->loginFailure('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-        }
-
-        $verifiedAttributes = [];
-        $ssoId = $this->firstFilled([$token['employeeId'] ?? null, $profile['userId'] ?? null]);
-        if (! $user->sso && $ssoId !== null) {
-            $verifiedAttributes['sso'] = $ssoId;
-        }
-        if (! $user->email_verified_at) {
-            $verifiedAttributes['email_verified_at'] = now();
-        }
-        if ($verifiedAttributes !== []) {
-            $user->forceFill($verifiedAttributes)->save();
         }
 
         Auth::guard('web')->login($user);
@@ -130,28 +126,6 @@ class KkuSsoController extends Controller
         return redirect('/');
     }
 
-    /** @param array<string, mixed> $token @param array<string, mixed> $profile */
-    private function findUser(array $token, array $profile): ?User
-    {
-        $ssoIds = array_values(array_unique(array_filter([
-            $this->filledString($token['employeeId'] ?? null),
-            $this->filledString($profile['userId'] ?? null),
-        ])));
-
-        foreach ($ssoIds as $ssoId) {
-            $user = User::query()->where('sso', $ssoId)->first();
-            if ($user) {
-                return $user;
-            }
-        }
-
-        $email = $this->firstFilled([$profile['email'] ?? null, $token['email'] ?? null]);
-
-        return $email === null
-            ? null
-            : User::query()->whereRaw('LOWER(email) = ?', [Str::lower($email)])->first();
-    }
-
     private function hasRequiredConfiguration(): bool
     {
         return collect(['client_id', 'client_secret', 'redirect_url', 'api_url'])
@@ -161,25 +135,6 @@ class KkuSsoController extends Controller
     private function apiUrl(string $path): string
     {
         return rtrim((string) config('services.kku_sso.api_url'), '/').$path;
-    }
-
-    /** @param array<int, mixed> $values */
-    private function firstFilled(array $values): ?string
-    {
-        foreach ($values as $value) {
-            if (($filled = $this->filledString($value)) !== null) {
-                return $filled;
-            }
-        }
-
-        return null;
-    }
-
-    private function filledString(mixed $value): ?string
-    {
-        $value = trim((string) $value);
-
-        return $value === '' ? null : $value;
     }
 
     private function loginFailure(string $message): RedirectResponse

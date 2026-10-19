@@ -30,26 +30,11 @@ const hasAssessmentReviewer = computed(() => reviewerSteps.value.length > 0);
 const structureIssues = computed(() => blockReasons.value.filter((reason) => !/ผู้ประเมิน|หัวหน้า/.test(reason)));
 const hasCompleteStructure = computed(() => structureIssues.value.length === 0);
 const hasAssignedCompetencies = computed(() => assignedCompetencies.value.length > 0);
-const readinessItems = computed(() => [
-  {
-    key: 'reviewer',
-    label: 'หัวหน้าตามลำดับการอนุมัติ',
-    ready: hasAssessmentReviewer.value,
-    detail: hasAssessmentReviewer.value ? `กำหนดแล้ว ${reviewerSteps.value.length} ลำดับ` : 'ยังไม่ได้กำหนดหัวหน้า',
-    owner: 'Admin',
-  },
-  {
-    key: 'competencies',
-    label: 'สมรรถนะประจำตำแหน่ง',
-    ready: hasCompleteStructure.value && hasAssignedCompetencies.value,
-    detail: !hasCompleteStructure.value
-      ? structureIssues.value.join(' · ')
-      : (hasAssignedCompetencies.value ? `มีหัวข้อสำหรับประเมิน ${assignedCompetencies.value.length} รายการ` : 'ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้'),
-    owner: 'HR',
-  },
-]);
-const readinessCompletedCount = computed(() => readinessItems.value.filter((item) => item.ready).length);
-const isBaseAssessmentReady = computed(() => readinessItems.value.every((item) => item.ready));
+const isBaseAssessmentReady = computed(() =>
+  hasAssessmentReviewer.value
+  && hasCompleteStructure.value
+  && hasAssignedCompetencies.value,
+);
 const fcSelectionBlockReason = computed(() => {
   if (!fcSelectionRequired.value || isFcSelectionApproved.value) return '';
   if (fcSelectionStatus.value === 'submitted') return 'ส่งหัวข้อ FC ให้หัวหน้าแล้ว รออนุมัติก่อนเริ่มประเมิน';
@@ -471,35 +456,13 @@ onBeforeUnmount(() => {
 
     <section v-if="!isBaseAssessmentReady" class="readiness-panel">
       <header class="readiness-head">
-        <div class="readiness-symbol" aria-hidden="true">!</div>
+        <div class="readiness-symbol" aria-hidden="true">…</div>
         <div>
-          <div class="readiness-kicker">ASSESSMENT READINESS</div>
-          <h2>ยังไม่สามารถเริ่มประเมินได้</h2>
-          <p>ระบบกำลังรอข้อมูลจากผู้ดูแล เมื่อครบแล้วหน้านี้จะเปิดขั้นตอนประเมินให้อัตโนมัติ</p>
+          <h2>ผู้ดูแลระบบกำลังตรวจสอบข้อมูล</h2>
+          <p>เมื่อข้อมูลครบ ระบบจะเปิดการประเมินให้โดยอัตโนมัติ</p>
         </div>
-        <div class="readiness-count">
-          <strong>{{ readinessCompletedCount }}/{{ readinessItems.length }}</strong>
-          <span>รายการพร้อม</span>
-        </div>
+        <span class="readiness-status">รอตรวจสอบข้อมูล</span>
       </header>
-
-      <div class="readiness-list">
-        <div v-for="item in readinessItems" :key="item.key" class="readiness-row" :class="{ ready: item.ready }">
-          <span class="readiness-state" aria-hidden="true">{{ item.ready ? '✓' : '!' }}</span>
-          <div>
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.detail }}</small>
-          </div>
-          <span class="readiness-owner">{{ item.ready ? 'พร้อม' : `รอ ${item.owner}` }}</span>
-        </div>
-      </div>
-
-      <footer class="readiness-footer">
-        <div>
-          <strong>ต้องดำเนินการอย่างไร?</strong>
-          <span>ติดต่อ Admin หรือ HR พร้อมแจ้งชื่อและตำแหน่งของคุณ จากนั้นกลับมาตรวจสอบหน้านี้อีกครั้ง</span>
-        </div>
-      </footer>
     </section>
 
     <div v-if="fcSelectionRequired && isBaseAssessmentReady" class="fc-selection-card">
@@ -835,28 +798,11 @@ onBeforeUnmount(() => {
 .page-head h1 { margin: 0; color: var(--text); font-size: 24px; font-weight: 900; }
 .page-head p { margin: 7px 0 0; color: var(--text3); font-size: 12px; }
 .readiness-panel { overflow: hidden; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; box-shadow: 0 12px 32px rgba(21, 25, 29, .07); }
-.readiness-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 15px; border-bottom: 1px solid #e2e6eb; padding: 20px 22px; }
+.readiness-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 15px; padding: 20px 22px; }
 .readiness-symbol { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #f7ded7; color: #a63824; font-size: 17px; font-weight: 900; }
-.readiness-kicker { margin-bottom: 4px; color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .1em; }
 .readiness-head h2 { margin: 0; color: var(--text); font-size: 18px; font-weight: 900; }
 .readiness-head p { margin: 5px 0 0; color: var(--text3); font-size: 12px; }
-.readiness-count { display: grid; min-width: 88px; border: 1px solid #e0e4e9; border-radius: 8px; background: #f3f5f7; padding: 9px 12px; text-align: center; }
-.readiness-count strong { color: var(--text); font-size: 18px; font-weight: 900; }
-.readiness-count span { color: var(--text3); font-size: 9px; font-weight: 800; }
-.readiness-list { display: grid; padding: 8px 22px; }
-.readiness-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 0; }
-.readiness-row + .readiness-row { border-top: 1px solid #e7eaee; }
-.readiness-state { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #fff0eb; color: #ad3b26; font-size: 11px; font-weight: 900; }
-.readiness-row.ready .readiness-state { background: #e3f1ec; color: #24624f; }
-.readiness-row > div { display: grid; gap: 3px; min-width: 0; }
-.readiness-row strong { color: var(--text); font-size: 12px; font-weight: 900; }
-.readiness-row small { color: #778391; font-size: 11px; line-height: 1.45; }
-.readiness-owner { border-radius: 999px; background: #fff0eb; color: #a63824; padding: 5px 9px; font-size: 10px; font-weight: 900; white-space: nowrap; }
-.readiness-row.ready .readiness-owner { background: #e3f1ec; color: #24624f; }
-.readiness-footer { border-top: 1px solid #e2e6eb; background: #f3f5f7; padding: 13px 22px; }
-.readiness-footer > div { display: grid; gap: 3px; }
-.readiness-footer strong { color: var(--text); font-size: 11px; font-weight: 900; }
-.readiness-footer span { color: var(--text3); font-size: 10px; line-height: 1.5; }
+.readiness-status { border-radius: 999px; background: #fff0eb; color: #a63824; padding: 6px 10px; font-size: 10px; font-weight: 900; white-space: nowrap; }
 .assessment-process {
   overflow: hidden;
   border: 1px solid #d9dee5;
@@ -1652,11 +1598,7 @@ onBeforeUnmount(() => {
 @media (max-width: 760px) {
   .page-head { align-items: flex-start; flex-direction: column; }
   .readiness-head { grid-template-columns: auto minmax(0, 1fr); padding: 17px; }
-  .readiness-count { grid-column: 1 / -1; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: 5px; }
-  .readiness-list { padding-right: 17px; padding-left: 17px; }
-  .readiness-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .readiness-owner { grid-column: 2; justify-self: start; }
-  .readiness-footer { padding-right: 17px; padding-left: 17px; }
+  .readiness-status { grid-column: 2; justify-self: start; }
   .process-intro,
   .fc-selection-head,
   .fc-selection-actions { align-items: stretch; flex-direction: column; }

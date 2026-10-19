@@ -173,6 +173,7 @@ const supportPositions = ref([]);
 const adminPositions = ref(clone(page.props.adminJobFamilies || []));
 const levelsByWorkline = ref(clone(page.props.levelsByWorkline || {}));
 const levelExpectationsByWorkline = ref(clone(page.props.levelExpectationsByWorkline || {}));
+const positionTitles = ref(clone(page.props.positionTitles || []));
 const academicRanks = ref(clone(levelsByWorkline.value['สายวิชาการ'] || []));
 const supportRanks = ref(clone(levelsByWorkline.value['สายสนับสนุน'] || []));
 const learningMethods = ref(clone(page.props.learningMethods || []));
@@ -1580,6 +1581,8 @@ const logout = () => router.post(route('logout'));
                     :set-levels-by-workline="setRef(levelsByWorkline)"
                     :level-expectations-by-workline="levelExpectationsByWorkline"
                     :set-level-expectations-by-workline="setRef(levelExpectationsByWorkline)"
+                    :position-titles="positionTitles"
+                    :set-position-titles="setRef(positionTitles)"
                     :academic-rank="academicRanks"
                     :set-academic-rank="setRef(academicRanks)"
                     :support-rank="supportRanks"

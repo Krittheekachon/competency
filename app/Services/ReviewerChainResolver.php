@@ -16,6 +16,23 @@ class ReviewerChainResolver
     public function stepsForUser(object $user, string $chainType = 'assessment'): array
     {
         $userId = (int) ($user->user_id ?? $user->id ?? 0);
+        $roundId = (int) ($user->assessment_round_id ?? 0) ?: null;
+
+        if ($userId > 0 && $roundId && Schema::hasTable('user_round_reviewer_steps')) {
+            $snapshotRows = DB::table('user_round_reviewer_steps')
+                ->where('assessment_round_id', $roundId)
+                ->where('user_id', $userId)
+                ->where('chain_type', $chainType)
+                ->orderBy('step_order')
+                ->get(['step_order', 'reviewer_id']);
+
+            if ($snapshotRows->isNotEmpty()) {
+                return $snapshotRows->map(fn (object $row): array => [
+                    'step' => (int) $row->step_order,
+                    'reviewer_id' => (int) $row->reviewer_id,
+                ])->all();
+            }
+        }
 
         if ($userId > 0 && $this->hasReviewerStepsTable()) {
             $rows = $this->rowsForUser($userId, $chainType);
@@ -150,12 +167,22 @@ class ReviewerChainResolver
             $query->where('chain_type', $chainType);
         }
 
-        return $query
+        $currentUserIds = $query
             ->distinct()
             ->orderBy('user_id')
             ->pluck('user_id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
+            ->map(fn ($id): int => (int) $id);
+
+        $snapshotUserIds = Schema::hasTable('user_round_reviewer_steps')
+            ? DB::table('user_round_reviewer_steps')
+                ->where('reviewer_id', $reviewerId)
+                ->where('chain_type', $chainType)
+                ->distinct()
+                ->pluck('user_id')
+                ->map(fn ($id): int => (int) $id)
+            : collect();
+
+        return $currentUserIds->merge($snapshotUserIds)->unique()->sort()->values()->all();
     }
 
     public function pendingStatusForStep(int $step): string

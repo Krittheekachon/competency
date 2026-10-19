@@ -5,6 +5,7 @@ namespace Tests\Feature\Auth;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class KkuSsoAuthenticationTest extends TestCase
@@ -59,6 +60,12 @@ class KkuSsoAuthenticationTest extends TestCase
                     'userId' => 'staff.user',
                     'firstname' => 'สมชาย',
                     'lastname' => 'ใจดี',
+                    'facultyName' => 'คณะวิศวกรรมศาสตร์',
+                    'workline' => 'สายสนับสนุน',
+                    'positionName' => 'นักวิชาการคอมพิวเตอร์',
+                    'positionTypeName' => 'พนักงานมหาวิทยาลัย',
+                    'levelId' => 'L2',
+                    'levelName' => 'ชำนาญการ',
                 ],
             ]),
         ]);
@@ -68,6 +75,24 @@ class KkuSsoAuthenticationTest extends TestCase
 
         $this->assertAuthenticatedAs($user);
         $this->assertNotNull($user->fresh()->email_verified_at);
+        $this->assertSame('นักวิชาการคอมพิวเตอร์', $user->fresh()->sso_position_name);
+        $this->assertSame('support', $user->fresh()->sso_workline_type);
+        $this->assertDatabaseHas('position_titles', [
+            'workline_type' => 'support',
+            'name' => 'นักวิชาการคอมพิวเตอร์',
+            'position_type_name' => 'พนักงานมหาวิทยาลัย',
+            'source' => 'sso',
+        ]);
+        $this->assertDatabaseHas('levels', [
+            'name' => 'ชำนาญการ',
+            'expected_level' => null,
+            'source' => 'sso',
+            'sso_level_id' => 'L2',
+        ]);
+        $this->assertDatabaseHas('sso_profile_changes', [
+            'user_id' => $user->id,
+            'status' => 'pending',
+        ]);
         $response->assertRedirect(route('dashboard', absolute: false));
         $response->assertSessionHas('auth_via_kku_sso', true);
 
@@ -81,7 +106,7 @@ class KkuSsoAuthenticationTest extends TestCase
             && $request->hasHeader('Authorization', 'Bearer secret-access-token'));
     }
 
-    public function test_sso_does_not_create_an_unknown_user(): void
+    public function test_sso_creates_an_unknown_user_as_employee_without_overwriting_internal_structure(): void
     {
         Http::fake([
             'https://sso-uat-api.kku.ac.th/auth.token' => Http::response([
@@ -95,6 +120,13 @@ class KkuSsoAuthenticationTest extends TestCase
                 'profile' => [
                     'email' => 'unknown@kku.ac.th',
                     'userId' => 'unknown.user',
+                    'firstname' => 'คนใหม่',
+                    'lastname' => 'ทดสอบ',
+                    'workline' => 'วิชาการ',
+                    'positionName' => 'อาจารย์',
+                    'positionTypeName' => 'ข้าราชการ',
+                    'levelId' => 'AC-1',
+                    'levelName' => 'ระดับ 1',
                 ],
             ]),
         ]);
@@ -102,10 +134,59 @@ class KkuSsoAuthenticationTest extends TestCase
         $response = $this->withSession(['kku_sso_login_attempt' => true])
             ->get(route('sso.callback.login', ['code' => 'one-time-code']));
 
-        $this->assertGuest();
-        $this->assertDatabaseCount('users', 0);
-        $response->assertRedirect(route('login'));
-        $response->assertSessionHas('sso_error', 'ไม่พบบัญชีนี้ในระบบ EN-IDP กรุณาติดต่อผู้ดูแลระบบ');
+        $this->assertAuthenticated();
+        $response->assertRedirect(route('dashboard', absolute: false));
+
+        $user = User::query()->where('email', 'unknown@kku.ac.th')->firstOrFail();
+        $this->assertSame('employee', $user->role->key);
+        $this->assertSame('not-registered', $user->sso);
+        $this->assertSame('unknown.user', $user->sso_user_id);
+        $this->assertSame('academic', $user->sso_workline_type);
+        $this->assertNull($user->workline);
+        $this->assertNull($user->position_id);
+        $this->assertNull($user->level_id);
+        $this->assertTrue($user->is_active);
+        $this->assertNotNull($user->email_verified_at);
+    }
+
+    public function test_repeated_identical_sso_profile_does_not_duplicate_pending_change(): void
+    {
+        $responses = [
+            'https://sso-uat-api.kku.ac.th/auth.token' => Http::response([
+                'ok' => true,
+                'accessToken' => 'secret-access-token',
+                'email' => 'repeat@kku.ac.th',
+                'employeeId' => 'repeat-1',
+            ]),
+            'https://sso-uat-api.kku.ac.th/user.profile' => Http::response([
+                'ok' => true,
+                'profile' => [
+                    'email' => 'repeat@kku.ac.th',
+                    'userId' => 'repeat.user',
+                    'firstname' => 'ทดสอบ',
+                    'lastname' => 'ซ้ำ',
+                    'workline' => 'สายงานสนับสนุน',
+                    'positionName' => 'นักวิชาการคอมพิวเตอร์',
+                    'positionTypeName' => 'พนักงานมหาวิทยาลัย',
+                    'levelId' => 'L2',
+                    'levelName' => 'ชำนาญการ',
+                ],
+            ]),
+        ];
+
+        Http::fake($responses);
+        $this->withSession(['kku_sso_login_attempt' => true])
+            ->get(route('sso.callback.login', ['code' => 'first-code']))
+            ->assertRedirect(route('dashboard', absolute: false));
+
+        $this->post(route('logout'));
+        Http::fake($responses);
+        $this->withSession(['kku_sso_login_attempt' => true])
+            ->get(route('sso.callback.login', ['code' => 'second-code']))
+            ->assertRedirect(route('dashboard', absolute: false));
+
+        $user = User::query()->where('sso', 'repeat-1')->firstOrFail();
+        $this->assertSame(1, DB::table('sso_profile_changes')->where('user_id', $user->id)->count());
     }
 
     public function test_callback_is_rejected_without_a_started_login_attempt(): void

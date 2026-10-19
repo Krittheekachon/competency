@@ -90,6 +90,14 @@ class IdpController extends Controller
             ]);
         }
 
+        $roundIds = $validGaps->pluck('assessment_round_id')->map(fn ($id): int => (int) $id)->unique()->values();
+        if ($roundIds->count() > 1) {
+            throw ValidationException::withMessages([
+                'items' => 'กรุณาจัดทำ IDP แยกตามรอบการประเมิน',
+            ]);
+        }
+        $roundId = (int) ($roundIds->first() ?: $this->assessmentRoundWindow->activeRound()->id);
+
         if ($status === 'submitted' && $items->isEmpty()) {
             throw ValidationException::withMessages([
                 'items' => 'ไม่มีรายการ Gap ที่ต้องจัดทำ IDP',
@@ -149,9 +157,10 @@ class IdpController extends Controller
         $owner = DB::table('users')
             ->where('id', auth()->id())
             ->first(['id']);
+        $owner->assessment_round_id = $roundId;
 
-        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner): void {
-            $idpId = $this->currentUserIdpId();
+        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId): void {
+            $idpId = $this->currentUserIdpId($roundId);
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
                 $existing = DB::table('idp_items')
@@ -815,12 +824,9 @@ class IdpController extends Controller
             return collect();
         }
 
-        $roundId = (int) $this->assessmentRoundWindow->activeRound()->id;
-
         return DB::table('competency_gaps')
             ->join('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('assessments.user_id', auth()->id())
-            ->where('assessments.assessment_round_id', $roundId)
             ->whereIn('competency_gaps.id', $gapIds)
             ->where('competency_gaps.requires_idp', true)
             ->where('competency_gaps.gap', '<', 0)
@@ -829,15 +835,14 @@ class IdpController extends Controller
                 'competency_gaps.id',
                 'competency_gaps.competency_id',
                 'competency_gaps.expected_level',
+                'assessments.assessment_round_id',
             ])
             ->keyBy('id');
     }
 
-    private function currentUserIdpId(): int
+    private function currentUserIdpId(int $roundId): int
     {
-        $round = $this->assessmentRoundWindow->activeRound();
-        $roundId = (int) $round->id;
-        $year = (int) $round->year;
+        $year = (int) DB::table('assessment_rounds')->where('id', $roundId)->value('year');
         $existing = DB::table('idps')
             ->where('user_id', auth()->id())
             ->where(function ($query) use ($roundId): void {

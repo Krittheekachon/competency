@@ -43,10 +43,26 @@ After changing environment values, run `php artisan config:clear` (or rebuild th
 
 ## Account matching and access control
 
-- Admin must create the EN-IDP account and assign its role and organization data before the first SSO login.
-- The callback first matches `users.sso` against KKU `employeeId`, then KKU `userId`, and finally matches the verified KKU email.
-- If an email match has no `users.sso` value, EN-IDP links the returned KKU identifier to that account.
-- Successful SSO confirms `email_verified_at`; it does not overwrite the Admin-owned name, role, position, or reviewer chains.
-- Unknown and inactive accounts are rejected. SSO never creates a user or grants a role automatically.
+- The callback matches `users.sso` against KKU `employeeId`, then `users.sso_user_id` against KKU `userId`, and finally the verified KKU email.
+- A new KKU identity creates an active EN-IDP user with the canonical `employee` role. The user can sign in, but assessment readiness remains blocked until Admin completes the internal structure, expected level, competencies, and reviewer chains.
+- Inactive existing accounts remain blocked.
+- Identity fields (name, email, phone, and SSO identifiers) are refreshed at login.
+- Structural fields from SSO are stored separately (`sso_workline`, `sso_position_name`, `sso_position_type_name`, `sso_level_id`, and `sso_level_name`). They never overwrite the Admin-owned `workline`, `position_id`, `level_id`, organization path, role, or reviewer chains automatically.
+- `workline` is normalized through `SsoWorklineNormalizer::structureType()` to exactly `academic` or `support`; an unknown value remains unmapped for Admin review.
+- A changed structural profile creates one deduplicated row in `sso_profile_changes` and appears on the Admin user dashboard.
+
+## Admin decisions for changed SSO data
+
+- **คงข้อมูลเดิม** resolves the change and leaves all internal IDs and workflow configuration unchanged.
+- **ใช้ข้อมูลใหม่และจัดโครงสร้าง** keeps the current workflow untouched, marks the change as waiting for structure, and opens the existing user editor. Saving the completed structure resolves the change.
+- **เปลี่ยนเป็นชื่อใหม่** updates the display name on the same internal position ID, records the old name as an alias, and preserves competencies and reviewer flows attached to that ID.
+
+`position_titles` is the reusable position catalog. One title may be placed in several organization units through separate `positions` rows. SSO-discovered levels are added under their normalized workline with `expected_level = null` until Admin sets it.
+
+## Round snapshot behavior
+
+When an employee first loads or writes assessment data for a round, EN-IDP stores the operational profile in `user_round_profiles` and both reviewer chains in `user_round_reviewer_steps`. Assessment, FC selection, and IDP approvals then use that round snapshot. A later SSO or Admin structure change applies to a future round and does not rewrite an in-progress assessment or IDP.
+
+HR may end an active round manually. Date windows also prevent new assessment work after their configured deadlines. IDP work remains linked to its original `assessment_round_id` and can continue after the round closes or a new round becomes active.
 
 Keep `KKU_SSO_PASSWORD_LOGIN_ENABLED=true` during UAT if a local fallback is required. Set it to `false` in production to make KKU SSO the only login path.
