@@ -304,6 +304,94 @@ class KkuSsoAuthenticationTest extends TestCase
         $this->assertSame(1, DB::table('sso_profile_changes')->where('user_id', $user->id)->count());
     }
 
+    public function test_missing_and_empty_structural_fields_preserve_last_synced_values(): void
+    {
+        $user = User::factory()->create([
+            'sso' => 'preserve-1',
+            'email' => 'preserve@kku.ac.th',
+            'sso_workline' => 'สายสนับสนุน',
+            'sso_workline_type' => 'support',
+            'sso_faculty_name' => 'คณะเดิม',
+            'sso_position_name' => 'ตำแหน่งเดิม',
+            'sso_position_type_name' => 'ประเภทเดิม',
+            'sso_level_id' => 'L-old',
+            'sso_level_name' => 'ระดับเดิม',
+            'sso_person_status' => 'active',
+        ]);
+
+        Http::fake([
+            'https://sso-uat-api.kku.ac.th/auth.token' => Http::response([
+                'ok' => true,
+                'accessToken' => 'test-access-token',
+                'employeeId' => 'preserve-1',
+            ]),
+            'https://sso-uat-api.kku.ac.th/user.profile' => Http::response([
+                'ok' => true,
+                'profile' => [
+                    'employeeId' => 'preserve-1',
+                    'userId' => 'preserve.user',
+                    'workline' => '',
+                    'facultyName' => null,
+                    'positionName' => '   ',
+                    'positionTypeName' => null,
+                    'levelId' => '',
+                    'levelName' => null,
+                    'personStatus' => '',
+                ],
+            ]),
+        ]);
+
+        $response = $this->withSession(['kku_sso_login_attempt' => now()->timestamp])
+            ->get(route('sso.callback.login', ['code' => 'one-time-code']));
+
+        $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertAuthenticatedAs($user);
+        $user->refresh();
+        $this->assertSame('สายสนับสนุน', $user->sso_workline);
+        $this->assertSame('support', $user->sso_workline_type);
+        $this->assertSame('คณะเดิม', $user->sso_faculty_name);
+        $this->assertSame('ตำแหน่งเดิม', $user->sso_position_name);
+        $this->assertSame('ประเภทเดิม', $user->sso_position_type_name);
+        $this->assertSame('L-old', $user->sso_level_id);
+        $this->assertSame('ระดับเดิม', $user->sso_level_name);
+        $this->assertSame('active', $user->sso_person_status);
+        $this->assertSame(0, DB::table('sso_profile_changes')->where('user_id', $user->id)->count());
+    }
+
+    public function test_malformed_structural_payload_is_rejected_without_changing_user_data(): void
+    {
+        $user = User::factory()->create([
+            'sso' => 'malformed-1',
+            'email' => 'malformed@kku.ac.th',
+            'sso_position_name' => 'ตำแหน่งเดิม',
+        ]);
+
+        Http::fake([
+            'https://sso-uat-api.kku.ac.th/auth.token' => Http::response([
+                'ok' => true,
+                'accessToken' => 'test-access-token',
+                'employeeId' => 'malformed-1',
+            ]),
+            'https://sso-uat-api.kku.ac.th/user.profile' => Http::response([
+                'ok' => true,
+                'profile' => [
+                    'employeeId' => 'malformed-1',
+                    'userId' => 'malformed.user',
+                    'positionName' => ['unexpected' => 'array'],
+                ],
+            ]),
+        ]);
+
+        $response = $this->withSession(['kku_sso_login_attempt' => now()->timestamp])
+            ->get(route('sso.callback.login', ['code' => 'one-time-code']));
+
+        $this->assertGuest();
+        $response->assertSessionHas('sso_error');
+        $this->assertSame('ตำแหน่งเดิม', $user->fresh()->sso_position_name);
+        $this->assertNull($user->fresh()->sso_user_id);
+        $this->assertSame(0, DB::table('sso_profile_changes')->where('user_id', $user->id)->count());
+    }
+
     public function test_callback_is_rejected_without_a_started_login_attempt(): void
     {
         Http::fake();

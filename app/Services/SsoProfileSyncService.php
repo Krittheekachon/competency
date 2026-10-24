@@ -18,6 +18,31 @@ class SsoProfileSyncService
     public function sync(array $token, array $profile): User
     {
         return DB::transaction(function () use ($token, $profile): User {
+            $this->validateStringFields($token, [
+                'employeeId',
+                'email',
+                'firstName',
+                'lastName',
+            ]);
+            $this->validateStringFields($profile, [
+                'employeeId',
+                'userId',
+                'email',
+                'title',
+                'firstname',
+                'lastname',
+                'firstnameEng',
+                'lastnameEng',
+                'phoneNumber',
+                'workline',
+                'facultyName',
+                'positionName',
+                'positionTypeName',
+                'levelId',
+                'levelName',
+                'personStatus',
+            ]);
+
             $tokenEmployeeId = $this->filledString($token['employeeId'] ?? null);
             $profileEmployeeId = $this->filledString($profile['employeeId'] ?? null);
 
@@ -49,6 +74,13 @@ class SsoProfileSyncService
 
             $previousStructuralProfile = $this->structuralProfileFromUser($user);
             $incomingStructuralProfile = $this->structuralProfileFromSso($profile);
+            $hasIncomingWorkline = $incomingStructuralProfile['workline'] !== null;
+            foreach (['workline', 'facultyName', 'positionName', 'positionTypeName', 'levelId', 'levelName'] as $field) {
+                $incomingStructuralProfile[$field] ??= $previousStructuralProfile[$field];
+            }
+            if (! $hasIncomingWorkline) {
+                $incomingStructuralProfile['worklineType'] = $previousStructuralProfile['worklineType'];
+            }
             $fingerprint = hash('sha256', json_encode($incomingStructuralProfile, JSON_UNESCAPED_UNICODE));
 
             $user->forceFill([
@@ -62,7 +94,7 @@ class SsoProfileSyncService
                 'sso_position_type_name' => $incomingStructuralProfile['positionTypeName'],
                 'sso_level_id' => $incomingStructuralProfile['levelId'],
                 'sso_level_name' => $incomingStructuralProfile['levelName'],
-                'sso_person_status' => $this->filledString($profile['personStatus'] ?? null),
+                'sso_person_status' => $this->filledString($profile['personStatus'] ?? null) ?? $user->sso_person_status,
                 'sso_profile_fingerprint' => $fingerprint,
                 'sso_profile_synced_at' => now(),
             ])->save();
@@ -298,8 +330,25 @@ class SsoProfileSyncService
 
     private function filledString(mixed $value): ?string
     {
+        if (! is_string($value) && ! is_int($value) && ! is_float($value)) {
+            return null;
+        }
+
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    /** @param array<string, mixed> $payload @param array<int, string> $keys */
+    private function validateStringFields(array $payload, array $keys): void
+    {
+        foreach ($keys as $key) {
+            $value = $payload[$key] ?? null;
+            if ($value !== null && ! is_string($value) && ! is_int($value) && ! is_float($value)) {
+                throw ValidationException::withMessages([
+                    'sso' => 'ข้อมูลโปรไฟล์จาก KKU SSO มีรูปแบบไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ',
+                ]);
+            }
+        }
     }
 }
