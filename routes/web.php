@@ -29,15 +29,8 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    $ssoEnabled = (bool) config('services.kku_sso.enabled')
-        && filled(config('services.kku_sso.app_id'))
-        && filled(config('services.kku_sso.client_id'))
-        && filled(config('services.kku_sso.client_secret'));
-
     return Inertia::render('Welcome', [
         'pageTitle' => 'เข้าสู่ระบบ',
-        'ssoEnabled' => $ssoEnabled,
-        'ssoError' => session('sso_error'),
     ]);
 });
 
