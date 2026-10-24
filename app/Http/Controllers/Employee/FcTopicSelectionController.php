@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
+use App\Services\AssessmentRoundSnapshotService;
 use App\Services\NotificationService;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +17,7 @@ class FcTopicSelectionController extends Controller
     public function __construct(
         private ReviewerChainResolver $reviewerChainResolver,
         private AssessmentRoundWindow $assessmentRoundWindow,
+        private AssessmentRoundSnapshotService $roundSnapshot,
         private NotificationService $notifications,
     )
     {
@@ -24,8 +26,10 @@ class FcTopicSelectionController extends Controller
     public function submit(Request $request): RedirectResponse
     {
         $user = $request->user();
-        $positionId = (int) ($user->position_id ?? 0);
         $roundId = $this->activeRoundId();
+        $this->roundSnapshot->captureIfMissing($user, $roundId);
+        $user = $this->roundSnapshot->userForRound($user, $roundId);
+        $positionId = (int) ($user->position_id ?? 0);
 
         if ($positionId <= 0) {
             throw ValidationException::withMessages([

@@ -27,6 +27,9 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Auth/Login', [
             'pageTitle' => 'เข้าสู่ระบบ',
             'status' => session('status'),
+            'ssoEnabled' => (bool) config('services.kku_sso.enabled'),
+            'passwordLoginEnabled' => (bool) config('services.kku_sso.password_login_enabled'),
+            'ssoError' => session('sso_error'),
         ]);
     }
 
@@ -35,12 +38,21 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
-        if (Auth::guard('web')->check()) {
-            Auth::guard('web')->logout();
+        if (! config('services.kku_sso.password_login_enabled')) {
+            if (Auth::guard('web')->check()) {
+                return redirect()->intended(route('dashboard', absolute: false));
+            }
+
+            return redirect()->route('login')->with('sso_error', 'ระบบนี้อนุญาตให้เข้าสู่ระบบผ่าน KKU SSO เท่านั้น');
         }
 
         $request->authenticate();
 
+        $request->session()->forget([
+            'auth_via_kku_sso',
+            'kku_sso_authenticated',
+            'kku_sso_login_attempt',
+        ]);
         $request->session()->regenerate();
 
         return redirect()->intended(route('dashboard', absolute: false));
@@ -51,7 +63,8 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        $wasKkuSsoLogin = (bool) $request->session()->get('kku_sso_authenticated', false);
+        $authenticatedViaSso = (bool) $request->session()->get('auth_via_kku_sso', false)
+            || (bool) $request->session()->get('kku_sso_authenticated', false);
 
         Auth::guard('web')->logout();
 
@@ -59,12 +72,14 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        if ($wasKkuSsoLogin && filled(config('services.kku_sso.app_id'))) {
-            $logoutUrl = config('services.kku_sso.logout_url').'?'.http_build_query([
-                'app' => config('services.kku_sso.app_id'),
-            ]);
+        if ($authenticatedViaSso && config('services.kku_sso.enabled')) {
+            $appId = trim((string) config('services.kku_sso.app_id'));
+            $logoutUrl = trim((string) config('services.kku_sso.logout_url'));
+            $webUrl = rtrim((string) config('services.kku_sso.web_url'), '/');
 
-            return redirect()->away($logoutUrl);
+            if ($appId !== '' && ($logoutUrl !== '' || $webUrl !== '')) {
+                return redirect()->away(($logoutUrl !== '' ? $logoutUrl : $webUrl.'/logout').'?'.http_build_query(['app' => $appId]));
+            }
         }
 
         return redirect('/');

@@ -254,6 +254,9 @@ class HrPositionCompetencyTest extends TestCase
                 ->component('Employee/Dashboard')
                 ->has('currentUserCompetencies', 1)
                 ->where('currentUserCompetencies.0.id', $activeCompetencyId)
+                ->missing('currentUser.assignedCompetencies')
+                ->missing('currentUser.competencyGaps')
+                ->missing('currentUser.fcTopicSelection')
             );
     }
 

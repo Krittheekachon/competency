@@ -6,10 +6,49 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class StructureController extends Controller
 {
+    public function storePositionTitle(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'workline_type' => ['required', Rule::in(['academic', 'support'])],
+            'name' => ['required', 'string', 'max:255'],
+            'position_type_name' => ['nullable', 'string', 'max:255'],
+        ]);
+        $normalizedName = $this->normalizeCatalogName($data['name']);
+        $normalizedType = $this->normalizeCatalogName($data['position_type_name'] ?? null);
+
+        $exists = DB::table('position_titles')
+            ->where('workline_type', $data['workline_type'])
+            ->where('normalized_name', $normalizedName)
+            ->where('normalized_position_type_name', $normalizedType)
+            ->exists();
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'name' => 'มีตำแหน่งนี้ในรายการตำแหน่งทั้งหมดแล้ว',
+            ]);
+        }
+
+        DB::table('position_titles')->insert([
+            'workline_type' => $data['workline_type'],
+            'name' => trim($data['name']),
+            'normalized_name' => $normalizedName,
+            'position_type_name' => filled($data['position_type_name'] ?? null) ? trim($data['position_type_name']) : null,
+            'normalized_position_type_name' => $normalizedType,
+            'source' => 'manual',
+            'first_seen_at' => now(),
+            'last_seen_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'เพิ่มตำแหน่งในรายการตำแหน่งทั้งหมดแล้ว');
+    }
+
     public function storeWorkline(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -139,17 +178,10 @@ class StructureController extends Controller
             return $this->storeSupportPosition($request);
         }
 
-        $worklineName = $request->string('workline_name')->toString() ?: null;
-        $jobFamilyName = $request->string('job_family_name')->toString() ?: 'ตำแหน่งสายสนับสนุน';
-        $jobFamilyId = $this->jobFamilyId($jobFamilyName, $worklineName);
-        if (! $jobFamilyId && $worklineName && $this->isSupportWorklineName($worklineName)) {
-            $jobFamilyId = DB::table('job_families')->insertGetId([
-                'workline_id' => $this->worklineId($worklineName),
-                'name' => $jobFamilyName,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+        $jobFamilyId = $this->jobFamilyId(
+            $request->string('job_family_name')->toString(),
+            $request->string('workline_name')->toString() ?: null
+        );
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
@@ -166,16 +198,17 @@ class StructureController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('positions', 'name')
-                    ->where(fn ($query) => $query
-                        ->where('job_family_id', $jobFamilyId)
-                        ->whereNull('support_unit_id')),
+                Rule::unique('positions', 'name')->where(fn ($query) => $query
+                    ->where('job_family_id', $jobFamilyId)
+                    ->whereNull('support_unit_id')),
             ],
+            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
         ]);
 
         DB::table('positions')->insert([
             'job_family_id' => $jobFamilyId,
             'support_unit_id' => null,
+            'position_title_id' => $data['position_title_id'] ?? null,
             'name' => $data['name'],
             'created_at' => now(),
             'updated_at' => now(),
@@ -194,11 +227,6 @@ class StructureController extends Controller
             $request->string('job_family_name')->toString(),
             $request->string('workline_name')->toString() ?: null
         );
-        $positionId = DB::table('positions')
-            ->where('job_family_id', $jobFamilyId)
-            ->whereNull('support_unit_id')
-            ->where('name', $request->old_name)
-            ->value('id');
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
@@ -212,21 +240,11 @@ class StructureController extends Controller
                 ),
             ],
             'old_name' => ['required', 'string'],
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('positions', 'name')
-                    ->where(fn ($query) => $query
-                        ->where('job_family_id', $jobFamilyId)
-                        ->whereNull('support_unit_id'))
-                    ->ignore($positionId),
-            ],
+            'name' => ['required', 'string', 'max:255'],
         ]);
 
         DB::table('positions')
             ->where('job_family_id', $jobFamilyId)
-            ->whereNull('support_unit_id')
             ->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
 
@@ -267,7 +285,6 @@ class StructureController extends Controller
 
         DB::table('positions')
             ->where('job_family_id', $jobFamilyId)
-            ->whereNull('support_unit_id')
             ->where('name', $data['name'])
             ->delete();
 
@@ -616,11 +633,6 @@ class StructureController extends Controller
         return DB::table('worklines')->where('name', $name)->value('id');
     }
 
-    private function isSupportWorklineName(string $name): bool
-    {
-        return in_array($name, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
-    }
-
     private function syncUserWorklineName(string $oldName, string $newName): void
     {
         DB::table('users')
@@ -629,6 +641,11 @@ class StructureController extends Controller
                 'workline' => $newName,
                 'updated_at' => now(),
             ]);
+    }
+
+    private function normalizeCatalogName(?string $value): string
+    {
+        return Str::lower(trim((string) preg_replace('/\s+/u', ' ', trim((string) $value))));
     }
 
     private function syncUserDepartmentPrefix(?string $worklineName, string $oldName, string $newName): void
@@ -726,6 +743,7 @@ class StructureController extends Controller
             'work_name' => ['required', 'string'],
             'unit_name' => ['required', 'string'],
             'name' => ['required', 'string', 'max:255', Rule::unique('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
+            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
         ]);
 
         $supportWorklineId = $this->worklineId('สายสนับสนุน');
@@ -742,6 +760,7 @@ class StructureController extends Controller
         DB::table('positions')->insert([
             'job_family_id' => $jobFamilyId,
             'support_unit_id' => $unitId,
+            'position_title_id' => $data['position_title_id'] ?? null,
             'name' => $data['name'],
             'created_at' => now(),
             'updated_at' => now(),

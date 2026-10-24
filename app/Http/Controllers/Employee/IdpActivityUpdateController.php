@@ -149,7 +149,6 @@ class IdpActivityUpdateController extends Controller
                     'status' => 'in_progress',
                     'updated_at' => $now,
                 ]);
-
             });
         } catch (\Throwable $exception) {
             foreach ($storedPaths as $path) {
@@ -166,19 +165,16 @@ class IdpActivityUpdateController extends Controller
     public function submitCompletion(Request $request): RedirectResponse
     {
         $data = $request->validate(['idpItemId' => ['required', 'integer']]);
-        $roundId = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
-
         $submittedItemId = null;
-        DB::transaction(function () use ($request, $data, $roundId, &$submittedItemId): void {
+        DB::transaction(function () use ($request, $data, &$submittedItemId): void {
             $item = DB::table('idp_items')
                 ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
                 ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
                 ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
                 ->where('idp_items.id', $data['idpItemId'])
                 ->where('idps.user_id', $request->user()->id)
-                ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
                 ->where('idp_items.status', 'approved')
-                ->select('idp_items.id', 'idps.user_id')
+                ->select('idp_items.id', 'idps.user_id', 'idps.assessment_round_id')
                 ->lockForUpdate()
                 ->first();
             if (! $item) {
@@ -241,7 +237,6 @@ class IdpActivityUpdateController extends Controller
 
     private function ownedApprovedActivity(int $activityId): object
     {
-        $roundId = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
         $activity = DB::table('idp_activities')
             ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
@@ -249,8 +244,7 @@ class IdpActivityUpdateController extends Controller
             ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('idp_activities.id', $activityId)
             ->where('idps.user_id', auth()->id())
-            ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
-            ->select('idp_activities.id', 'idp_activities.idp_item_id', 'idp_activities.form_code', 'idp_activities.form_details', 'idp_items.status as item_status', 'idps.user_id')
+            ->select('idp_activities.id', 'idp_activities.idp_item_id', 'idp_activities.form_code', 'idp_activities.form_details', 'idp_items.status as item_status', 'idps.user_id', 'idps.assessment_round_id')
             ->lockForUpdate()
             ->first();
         if (! $activity || $activity->item_status !== 'approved') {

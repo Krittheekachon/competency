@@ -187,7 +187,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'fc_topic_selection_id' => $selectionId,
             'competency_id' => $selectedFcId,
         ]);
-        Mail::assertSent(FcTopicSelectionSubmittedMail::class, function (FcTopicSelectionSubmittedMail $mail) use ($employee): bool {
+        Mail::assertQueued(FcTopicSelectionSubmittedMail::class, function (FcTopicSelectionSubmittedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && in_array('สมรรถนะ FC1-FLOW-01', $mail->topicNames, true);
@@ -201,7 +201,7 @@ class FcTopicSelectionFlowTest extends TestCase
             ->where('chain_type', 'assessment')
             ->update(['reviewer_id' => $replacementReviewer->id]);
 
-        $this->actingAs($supervisor)
+        $this->actingAs($replacementReviewer)
             ->post(route('fc-topic-selections.approve'), ['selection_id' => $selectionId])
             ->assertSessionHasErrors('selection');
         $this->assertDatabaseHas('fc_topic_selections', [
@@ -233,7 +233,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'status' => 'revision_required',
             'review_comment' => 'เลือกใหม่ให้ตรงงานที่รับผิดชอบ',
         ]);
-        Mail::assertSent(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
+        Mail::assertQueued(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->status === 'revision_required'
@@ -257,7 +257,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'status' => 'approved',
             'reviewed_by' => $supervisor->id,
         ]);
-        Mail::assertSent(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
+        Mail::assertQueued(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->status === 'approved';
@@ -343,7 +343,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'status' => 'submitted',
             'submitted_to' => $supervisor->id,
         ]);
-        Mail::assertSent(FcTopicSelectionSubmittedMail::class, fn (FcTopicSelectionSubmittedMail $mail): bool =>
+        Mail::assertQueued(FcTopicSelectionSubmittedMail::class, fn (FcTopicSelectionSubmittedMail $mail): bool =>
             $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
         );

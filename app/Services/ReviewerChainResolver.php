@@ -3,16 +3,38 @@
 namespace App\Services;
 
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ReviewerChainResolver
 {
+    private ?bool $hasReviewerStepsTable = null;
+
+    private ?bool $hasChainTypeColumn = null;
+
     public function stepsForUser(object $user, string $chainType = 'assessment'): array
     {
         $userId = (int) ($user->user_id ?? $user->id ?? 0);
+        $roundId = (int) ($user->assessment_round_id ?? 0) ?: null;
 
-        if ($userId > 0 && Schema::hasTable('user_reviewer_steps')) {
+        if ($userId > 0 && $roundId && Schema::hasTable('user_round_reviewer_steps')) {
+            $snapshotRows = DB::table('user_round_reviewer_steps')
+                ->where('assessment_round_id', $roundId)
+                ->where('user_id', $userId)
+                ->where('chain_type', $chainType)
+                ->orderBy('step_order')
+                ->get(['step_order', 'reviewer_id']);
+
+            if ($snapshotRows->isNotEmpty()) {
+                return $snapshotRows->map(fn (object $row): array => [
+                    'step' => (int) $row->step_order,
+                    'reviewer_id' => (int) $row->reviewer_id,
+                ])->all();
+            }
+        }
+
+        if ($userId > 0 && $this->hasReviewerStepsTable()) {
             $rows = $this->rowsForUser($userId, $chainType);
 
             if ($rows->isNotEmpty()) {
@@ -44,6 +66,51 @@ class ReviewerChainResolver
             ->get()
             ->keyBy('id');
 
+        return $this->payloadFromSteps($steps, $reviewers, $chainType);
+    }
+
+    public function payloadsForUsers(iterable $users, string $chainType = 'assessment'): array
+    {
+        $users = collect($users)->keyBy(fn (object $user): int => (int) $user->id);
+
+        if ($users->isEmpty() || ! $this->hasReviewerStepsTable()) {
+            return [];
+        }
+
+        $query = DB::table('user_reviewer_steps')
+            ->whereIn('user_id', $users->keys())
+            ->orderBy('user_id')
+            ->orderBy('step_order');
+
+        if ($this->hasChainTypeColumn()) {
+            $query->where('chain_type', $chainType);
+        } elseif ($chainType !== 'assessment') {
+            return $users->mapWithKeys(fn (object $user): array => [(int) $user->id => []])->all();
+        }
+
+        $rowsByUser = $query->get(['user_id', 'step_order', 'reviewer_id'])->groupBy('user_id');
+        $reviewers = User::query()
+            ->with('role')
+            ->whereIn('id', $rowsByUser->flatten(1)->pluck('reviewer_id')->unique())
+            ->get()
+            ->keyBy('id');
+
+        return $users->mapWithKeys(function (object $user) use ($rowsByUser, $reviewers, $chainType): array {
+            $steps = collect($rowsByUser->get((int) $user->id, []))
+                ->map(fn (object $row): array => [
+                    'step' => (int) $row->step_order,
+                    'reviewer_id' => (int) $row->reviewer_id,
+                ])
+                ->filter(fn (array $step): bool => $step['step'] > 0 && $step['reviewer_id'] > 0)
+                ->values()
+                ->all();
+
+            return [(int) $user->id => $this->payloadFromSteps($steps, $reviewers, $chainType)];
+        })->all();
+    }
+
+    private function payloadFromSteps(array $steps, Collection $reviewers, string $chainType): array
+    {
         return collect($steps)
             ->map(function (array $step) use ($reviewers, $chainType): ?array {
                 $reviewer = $reviewers->get($step['reviewer_id']);
@@ -89,23 +156,33 @@ class ReviewerChainResolver
     {
         $reviewerId = (int) ($reviewer->reviewer_id ?? $reviewer->id ?? 0);
 
-        if ($reviewerId <= 0 || ! Schema::hasTable('user_reviewer_steps')) {
+        if ($reviewerId <= 0 || ! $this->hasReviewerStepsTable()) {
             return [];
         }
 
         $query = DB::table('user_reviewer_steps')
             ->where('reviewer_id', $reviewerId);
 
-        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+        if ($this->hasChainTypeColumn()) {
             $query->where('chain_type', $chainType);
         }
 
-        return $query
+        $currentUserIds = $query
             ->distinct()
             ->orderBy('user_id')
             ->pluck('user_id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
+            ->map(fn ($id): int => (int) $id);
+
+        $snapshotUserIds = Schema::hasTable('user_round_reviewer_steps')
+            ? DB::table('user_round_reviewer_steps')
+                ->where('reviewer_id', $reviewerId)
+                ->where('chain_type', $chainType)
+                ->distinct()
+                ->pluck('user_id')
+                ->map(fn ($id): int => (int) $id)
+            : collect();
+
+        return $currentUserIds->merge($snapshotUserIds)->unique()->sort()->values()->all();
     }
 
     public function pendingStatusForStep(int $step): string
@@ -144,13 +221,24 @@ class ReviewerChainResolver
         $query = DB::table('user_reviewer_steps')
             ->where('user_id', $userId);
 
-        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
+        if ($this->hasChainTypeColumn()) {
             $query->where('chain_type', $chainType);
         }
 
         return $query
             ->orderBy('step_order')
             ->get(['step_order', 'reviewer_id']);
+    }
+
+    private function hasReviewerStepsTable(): bool
+    {
+        return $this->hasReviewerStepsTable ??= Schema::hasTable('user_reviewer_steps');
+    }
+
+    private function hasChainTypeColumn(): bool
+    {
+        return $this->hasChainTypeColumn ??= $this->hasReviewerStepsTable()
+            && Schema::hasColumn('user_reviewer_steps', 'chain_type');
     }
 
     private function normalizeRoleKey(string $roleKey): string

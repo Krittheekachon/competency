@@ -774,7 +774,7 @@ class EmployeeIdpPlanTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
 
-        Mail::assertSent(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->competencyName === 'Test Competency';

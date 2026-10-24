@@ -1,4 +1,4 @@
-# Architecture
+﻿# Architecture
 
 ## System Overview
 
@@ -145,7 +145,10 @@ The removed legacy table `idp_delivery_type_settings` should only appear in migr
 
 ## Integration Boundaries
 
+- KKU SSONext authentication starts at `/auth/kku-sso`, returns through `/auth/kku/callback`, and exchanges the one-time code server-side before matching an existing EN-IDP account.
+- KKU SSO never auto-creates users or roles. It matches `users.sso` from `employeeId`/`userId`, with verified KKU email as a fallback; inactive and unknown accounts are rejected.
+- Deployment URLs, environment variables, and account-matching behavior are documented in `docs/project/kku-sso.md`.
 - Mock SSO exists through `/mock-sso` only when the environment is `local` and `MOCK_SSO_ENABLED=true`.
-- Email notifications require `MAIL_NOTIFICATIONS_ENABLED=true`; delivery recipients remain controlled by the mail environment settings.
+- Email notifications require `MAIL_NOTIFICATIONS_ENABLED=true`; queued delivery uses `NotificationRecipientResolver` to route to controlled development recipients or real users according to mail configuration.
 - Email notifications are handled through mailables and `NotificationService`/`NotificationDigestService`.
 - File and URL evidence for IDP progress are stored through `idp_activity_updates`.

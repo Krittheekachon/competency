@@ -34,5 +34,7 @@ Homestead.json
 .env.production
 .phpactor.json
 auth.json
+/tests/Load/accounts.local.json
+/tests/Load/results/
 
 เอกสารที่เกี่ยวข้อง/

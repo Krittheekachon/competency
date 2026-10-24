@@ -167,12 +167,12 @@ class IdpItemApprovalTest extends TestCase
             'status' => 'review_step_3',
             'current_review_step' => 3,
         ]);
-        Mail::assertSent(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->status === 'review_step_3';
         });
-        Mail::assertSent(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee);
         });
@@ -209,7 +209,7 @@ class IdpItemApprovalTest extends TestCase
             'reviewer_id' => $supervisor->id,
             'decision' => 'rejected',
         ]);
-        Mail::assertSent(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->status === 'revision_required'

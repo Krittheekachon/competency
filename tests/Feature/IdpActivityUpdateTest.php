@@ -107,14 +107,14 @@ class IdpActivityUpdateTest extends TestCase
         ]);
 
         $this->submitProgress($employee, $activityId, 0);
-        Mail::assertNothingSent();
+        Mail::assertNothingOutgoing();
 
         $this->submitProgress($employee, $activityId, 1);
         $this->actingAs($employee)->post(route('employee.idp-items.submit-completion'), [
             'idpItemId' => $itemId,
         ])->assertSessionHasNoErrors();
 
-        Mail::assertSent(IdpProgressSubmittedMail::class, function (IdpProgressSubmittedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpProgressSubmittedMail::class, function (IdpProgressSubmittedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee);
         });

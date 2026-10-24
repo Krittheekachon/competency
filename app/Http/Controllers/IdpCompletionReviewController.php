@@ -133,14 +133,12 @@ class IdpCompletionReviewController extends Controller
 
     private function reviewableCompletion(string $publicId): object
     {
-        $roundId = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
         $completion = DB::table('idp_item_completion_submissions')
             ->join('idp_items', 'idp_item_completion_submissions.idp_item_id', '=', 'idp_items.id')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
             ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('idp_item_completion_submissions.public_id', $publicId)
-            ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
             ->select(
                 'idp_item_completion_submissions.id',
                 'idp_item_completion_submissions.idp_item_id',
@@ -152,7 +150,8 @@ class IdpCompletionReviewController extends Controller
                 'idp_items.behavior_key',
                 'idp_items.behavior_description',
                 'idp_items.target_level',
-                'idps.user_id'
+                'idps.user_id',
+                'idps.assessment_round_id'
             )
             ->lockForUpdate()
             ->first();

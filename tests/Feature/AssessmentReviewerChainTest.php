@@ -741,7 +741,7 @@ class AssessmentReviewerChainTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
 
-        Mail::assertSent(AssessmentStatusUpdateMail::class, function (AssessmentStatusUpdateMail $mail) {
+        Mail::assertQueued(AssessmentStatusUpdateMail::class, function (AssessmentStatusUpdateMail $mail) {
             if ($mail->status !== 'unit_evaluated') {
                 return false;
             }

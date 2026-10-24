@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\KkuSsoController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
@@ -11,7 +12,18 @@ use Illuminate\Support\Facades\Route;
 Route::get('login', [AuthenticatedSessionController::class, 'create'])
     ->name('login');
 
-Route::post('login', [AuthenticatedSessionController::class, 'store']);
+Route::post('login', [AuthenticatedSessionController::class, 'store'])->middleware('throttle:10,1');
+
+Route::middleware('guest')->group(function () {
+    Route::get('auth/kku-sso', [KkuSsoController::class, 'redirect'])
+        ->name('sso.redirect');
+    Route::get('auth/kku/callback', [KkuSsoController::class, 'callback'])
+        ->middleware('throttle:10,1')
+        ->name('sso.callback.login');
+});
+
+Route::get('auth/callback/logout', [KkuSsoController::class, 'logoutCallback'])
+    ->name('sso.callback.logout');
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('verify-email', EmailVerificationPromptController::class)

@@ -31,7 +31,8 @@ class IdpApprovalController extends Controller
                 'idp_activities.id',
                 'idp_activities.form_code',
                 'idp_activities.form_details',
-                'idps.user_id'
+                'idps.user_id',
+                'idps.assessment_round_id'
             )
             ->first();
 
@@ -206,21 +207,20 @@ class IdpApprovalController extends Controller
 
     private function reviewableItem(int $itemId): object
     {
-        $roundId = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
         $item = DB::table('idp_items')
             ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
             ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
             ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->join('users', 'idps.user_id', '=', 'users.id')
             ->where('idp_items.id', $itemId)
-            ->when($roundId, fn ($query) => $query->where('assessments.assessment_round_id', $roundId))
             ->select(
                 'idp_items.id',
                 'idp_items.idp_id',
                 'idp_items.status',
                 'idp_items.submission_version',
                 'idp_items.current_review_step',
-                'users.id as user_id'
+                'users.id as user_id',
+                'idps.assessment_round_id'
             )
             ->lockForUpdate()
             ->first();

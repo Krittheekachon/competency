@@ -10,7 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 #[Fillable([
-    'sso', 'name', 'title',
+    'sso', 'sso_user_id', 'name', 'title',
     'first_name_th', 'last_name_th',
     'first_name_en', 'last_name_en',
     'email', 'username', 'phone',
@@ -20,6 +20,10 @@ use Illuminate\Notifications\Notifiable;
     'position_id', 'level_id',
     'reviewer_template_id', 'idp_reviewer_template_id',
     'profile_affiliation', 'profile_saved',
+    'sso_workline', 'sso_workline_type', 'sso_faculty_name',
+    'sso_position_name', 'sso_position_type_name',
+    'sso_level_id', 'sso_level_name', 'sso_person_status',
+    'sso_profile_fingerprint', 'sso_profile_synced_at',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -33,6 +37,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'sso_profile_synced_at' => 'datetime',
         ];
     }
 

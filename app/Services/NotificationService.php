@@ -466,15 +466,15 @@ class NotificationService
         }
 
         try {
-            Mail::to($resolvedRecipient)->send($mailable);
-            Log::info('Sent notification email.', [
+            Mail::to($resolvedRecipient)->queue($mailable);
+            Log::info('Queued notification email.', [
                 'user_id' => $user->id,
                 'recipient' => $this->recipientResolver->recipientLabelFor($user),
                 'intended_recipient' => $user->email,
                 'mail' => $mailable::class,
             ]);
         } catch (Throwable $exception) {
-            Log::warning('Unable to send notification email.', [
+            Log::warning('Unable to queue notification email.', [
                 'user_id' => $user->id,
                 'recipient' => $this->recipientResolver->recipientLabelFor($user),
                 'intended_recipient' => $user->email,

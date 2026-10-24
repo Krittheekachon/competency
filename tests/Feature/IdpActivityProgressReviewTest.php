@@ -47,7 +47,7 @@ class IdpActivityProgressReviewTest extends TestCase
         $this->assertDatabaseHas('idp_activities', ['id' => $activityId, 'result' => 'completed']);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
-        Mail::assertSent(IdpProgressApprovedMail::class, function (IdpProgressApprovedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpProgressApprovedMail::class, function (IdpProgressApprovedMail $mail) use ($employee): bool {
             $mail->assertSeeInHtml('บรรลุตามเป้าหมาย');
 
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
@@ -168,7 +168,7 @@ class IdpActivityProgressReviewTest extends TestCase
         ]);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
-        Mail::assertSent(IdpProgressReturnedMail::class, function (IdpProgressReturnedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpProgressReturnedMail::class, function (IdpProgressReturnedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->comment === 'กรุณาเพิ่มหลักฐานผลลัพธ์';

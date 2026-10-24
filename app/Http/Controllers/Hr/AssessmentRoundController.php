@@ -42,6 +42,8 @@ class AssessmentRoundController extends Controller
                 ]);
                 DB::table('assessment_rounds')->where('id', $roundId)->update([
                     'is_active' => true,
+                    'closed_at' => null,
+                    'closed_by' => null,
                     'updated_at' => now(),
                 ]);
             }
@@ -75,6 +77,8 @@ class AssessmentRoundController extends Controller
                     ->update(['is_active' => false, 'updated_at' => now()]);
                 DB::table('assessment_rounds')->where('id', $round)->update([
                     'is_active' => true,
+                    'closed_at' => null,
+                    'closed_by' => null,
                     'updated_at' => now(),
                 ]);
             }
@@ -100,6 +104,8 @@ class AssessmentRoundController extends Controller
             ]);
             DB::table('assessment_rounds')->where('id', $round)->update([
                 'is_active' => true,
+                'closed_at' => null,
+                'closed_by' => null,
                 'updated_at' => now(),
             ]);
         });
@@ -107,6 +113,25 @@ class AssessmentRoundController extends Controller
         $this->assessmentSync->syncAllActiveUsers();
 
         return back()->with('success', 'เปลี่ยนรอบการประเมินที่ใช้งานแล้ว');
+    }
+
+    public function close(Request $request, int $round): RedirectResponse
+    {
+        $assessmentRound = DB::table('assessment_rounds')->where('id', $round)->first();
+        abort_unless($assessmentRound, 404);
+
+        if (! $assessmentRound->is_active) {
+            return back()->with('success', 'รอบการประเมินนี้ปิดอยู่แล้ว');
+        }
+
+        DB::table('assessment_rounds')->where('id', $round)->update([
+            'is_active' => false,
+            'closed_at' => now(),
+            'closed_by' => $request->user()->id,
+            'updated_at' => now(),
+        ]);
+
+        return back()->with('success', 'สิ้นสุดรอบการประเมินแล้ว งาน Assessment และ IDP ที่เริ่มไว้ยังดำเนินการต่อด้วยข้อมูล snapshot เดิม');
     }
 
     private function validated(Request $request, ?int $round = null): array

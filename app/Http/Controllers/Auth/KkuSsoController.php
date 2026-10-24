@@ -4,110 +4,149 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\SsoProfileSyncService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class KkuSsoController extends Controller
 {
     private const ATTEMPT_TTL_SECONDS = 900;
 
+    public function __construct(private SsoProfileSyncService $profileSync)
+    {
+    }
+
     public function redirect(Request $request): RedirectResponse
     {
-        if (! $this->isConfigured()) {
-            return $this->fail('ระบบ KKU SSO ยังตั้งค่าไม่ครบ กรุณาเข้าสู่ระบบด้วยวิธีอื่นหรือติดต่อผู้ดูแลระบบ');
+        if (! config('services.kku_sso.enabled')) {
+            return redirect()->route('login');
         }
 
-        $request->session()->put('kku_sso_attempted_at', now()->timestamp);
+        $appId = trim((string) config('services.kku_sso.app_id'));
+        $loginUrl = trim((string) config('services.kku_sso.login_url'));
 
-        return redirect()->away(config('services.kku_sso.login_url').'?'.http_build_query([
-            'app' => config('services.kku_sso.app_id'),
-        ]));
+        if ($appId === '' || $loginUrl === '') {
+            return $this->loginFailure('ยังไม่ได้ตั้งค่า KKU SSO กรุณาติดต่อผู้ดูแลระบบ');
+        }
+
+        $request->session()->put('kku_sso_login_attempt', now()->timestamp);
+
+        return redirect()->away($loginUrl.'?'.http_build_query(['app' => $appId]));
     }
 
     public function callback(Request $request): RedirectResponse
     {
-        if (! $this->isConfigured()) {
-            return $this->fail('ระบบ KKU SSO ยังตั้งค่าไม่ครบ กรุณาเข้าสู่ระบบด้วยวิธีอื่นหรือติดต่อผู้ดูแลระบบ');
+        if (! config('services.kku_sso.enabled')) {
+            return redirect()->route('login');
         }
 
-        $attemptedAt = (int) $request->session()->pull('kku_sso_attempted_at', 0);
+        $attemptedAt = (int) $request->session()->pull('kku_sso_login_attempt', 0);
         if ($attemptedAt === 0 || now()->timestamp - $attemptedAt > self::ATTEMPT_TTL_SECONDS) {
-            return $this->fail('คำขอเข้าสู่ระบบ KKU SSO หมดอายุ กรุณาลองเข้าสู่ระบบอีกครั้ง');
+            return $this->loginFailure('ไม่พบคำขอเข้าสู่ระบบ SSO กรุณาลองใหม่อีกครั้ง');
         }
 
         $code = trim((string) $request->query('code'));
-        if ($code === '') {
-            return $this->fail('KKU SSO ไม่ได้ส่งรหัสยืนยันกลับมา กรุณาลองเข้าสู่ระบบอีกครั้ง');
+
+        if ($code === '' || Str::length($code) > 255) {
+            return $this->loginFailure('KKU SSO ไม่ได้ส่งรหัสเข้าสู่ระบบที่ถูกต้อง');
+        }
+
+        if (! $this->hasRequiredConfiguration()) {
+            return $this->loginFailure('ยังไม่ได้ตั้งค่า KKU SSO กรุณาติดต่อผู้ดูแลระบบ');
         }
 
         try {
-            $response = Http::acceptJson()
+            $tokenResponse = Http::acceptJson()
                 ->asJson()
-                ->timeout(10)
-                ->post(config('services.kku_sso.token_url'), [
+                ->timeout((int) config('services.kku_sso.timeout', 10))
+                ->post((string) config('services.kku_sso.token_url'), [
                     'code' => $code,
                     'redirectUrl' => config('services.kku_sso.redirect_url'),
                     'clientId' => config('services.kku_sso.client_id'),
                     'clientSecret' => config('services.kku_sso.client_secret'),
                 ]);
-        } catch (ConnectionException $exception) {
-            Log::warning('KKU SSO token endpoint could not be reached.', [
-                'exception' => $exception::class,
-            ]);
 
-            return $this->fail('ไม่สามารถเชื่อมต่อ KKU SSO ได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง');
+            $token = $tokenResponse->json();
+
+            if (! $tokenResponse->successful() || ! is_array($token) || ($token['ok'] ?? false) !== true) {
+                return $this->loginFailure('ไม่สามารถยืนยันตัวตนกับ KKU SSO ได้ กรุณาลองใหม่อีกครั้ง');
+            }
+
+            $accessToken = trim((string) ($token['accessToken'] ?? ''));
+
+            if ($accessToken === '') {
+                return $this->loginFailure('KKU SSO ไม่ได้ส่ง Access Token กลับมา');
+            }
+
+            $profileResponse = Http::acceptJson()
+                ->withToken($accessToken)
+                ->timeout((int) config('services.kku_sso.timeout', 10))
+                ->post($this->apiUrl('/user.profile'));
+
+            $profilePayload = $profileResponse->json();
+            $profile = is_array($profilePayload) ? ($profilePayload['profile'] ?? null) : null;
+
+            if (! $profileResponse->successful()
+                || ! is_array($profilePayload)
+                || ($profilePayload['ok'] ?? false) !== true
+                || ! is_array($profile)) {
+                return $this->loginFailure('ไม่สามารถอ่านข้อมูลผู้ใช้จาก KKU SSO ได้ กรุณาลองใหม่อีกครั้ง');
+            }
+        } catch (ConnectionException) {
+            return $this->loginFailure('ไม่สามารถเชื่อมต่อ KKU SSO ได้ กรุณาลองใหม่ภายหลัง');
         }
 
-        if (! $response->successful() || $response->json('ok') !== true) {
-            Log::warning('KKU SSO rejected a token exchange.', [
-                'status' => $response->status(),
-                'error' => $response->json('error'),
-            ]);
-
-            return $this->fail('KKU SSO ไม่สามารถยืนยันตัวตนได้ กรุณาลองเข้าสู่ระบบอีกครั้ง');
-        }
-
-        $employeeId = trim((string) $response->json('employeeId'));
-        $email = mb_strtolower(trim((string) $response->json('email')));
-
-        $user = $employeeId !== ''
-            ? User::query()->where('sso', $employeeId)->first()
-            : null;
-
-        if (! $user && $email !== '') {
-            $user = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
+        try {
+            $user = $this->profileSync->sync($token, $profile);
+        } catch (ValidationException $exception) {
+            return $this->loginFailure(
+                collect($exception->errors())->flatten()->first()
+                    ?: 'ไม่สามารถบันทึกข้อมูลจาก KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ'
+            );
         }
 
         if (! $user) {
-            return $this->fail('ไม่พบบัญชีผู้ใช้นี้ในระบบ EN-IDP กรุณาติดต่อผู้ดูแลระบบ');
+            return $this->loginFailure('ไม่พบบัญชีผู้ใช้นี้ในระบบ EN-IDP กรุณาติดต่อผู้ดูแลระบบ');
         }
 
         if (! $user->is_active) {
-            return $this->fail('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+            return $this->loginFailure('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
         }
 
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
-        $request->session()->put('kku_sso_authenticated', true);
+        $request->session()->put('auth_via_kku_sso', true);
 
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
-    private function isConfigured(): bool
+    public function logoutCallback(Request $request): RedirectResponse
     {
-        return (bool) config('services.kku_sso.enabled')
-            && filled(config('services.kku_sso.app_id'))
-            && filled(config('services.kku_sso.client_id'))
-            && filled(config('services.kku_sso.client_secret'))
-            && filled(config('services.kku_sso.redirect_url'));
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/');
     }
 
-    private function fail(string $message): RedirectResponse
+    private function hasRequiredConfiguration(): bool
     {
-        return redirect('/')->with('sso_error', $message);
+        return collect(['client_id', 'client_secret', 'redirect_url', 'api_url', 'token_url'])
+            ->every(fn (string $key): bool => trim((string) config("services.kku_sso.$key")) !== '');
+    }
+
+    private function apiUrl(string $path): string
+    {
+        return rtrim((string) config('services.kku_sso.api_url'), '/').$path;
+    }
+
+    private function loginFailure(string $message): RedirectResponse
+    {
+        return redirect()->route('login')->with('sso_error', $message);
     }
 }
