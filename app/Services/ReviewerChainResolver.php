@@ -53,7 +53,7 @@ class ReviewerChainResolver
                     return [];
                 }
 
-                return DB::table('user_round_reviewer_steps')
+                $steps = DB::table('user_round_reviewer_steps')
                     ->where('assessment_round_id', $roundId)
                     ->where('user_id', $userId)
                     ->where('chain_type', $chainType)
@@ -64,6 +64,20 @@ class ReviewerChainResolver
                         'reviewer_id' => (int) $row->reviewer_id,
                     ])
                     ->all();
+
+                // Empty or malformed snapshots fail closed. Sparse reviewer steps
+                // are valid in this system (for example, direct step-3 routing).
+                if ($steps === []) {
+                    return [];
+                }
+
+                foreach ($steps as $step) {
+                    if ($step['step'] <= 0 || $step['reviewer_id'] <= 0) {
+                        return [];
+                    }
+                }
+
+                return $steps;
             }
 
             // An orphaned reviewer snapshot indicates incomplete round data; never substitute current assignments.

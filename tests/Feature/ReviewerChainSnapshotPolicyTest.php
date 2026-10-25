@@ -106,6 +106,43 @@ class ReviewerChainSnapshotPolicyTest extends TestCase
         ]);
     }
 
+    public function test_snapshot_required_round_with_invalid_reviewer_step_fails_closed_without_live_fallback(): void
+    {
+        $roundId = $this->round(snapshotRequired: true);
+        $employee = User::factory()->create();
+        $snapshotReviewer = User::factory()->create();
+        $currentReviewer = User::factory()->create();
+        $this->assignCurrentReviewer($employee, $currentReviewer);
+        $this->insertProfileSnapshot($roundId, $employee);
+        DB::table('user_round_reviewer_steps')->insert([
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'chain_type' => 'assessment',
+            'step_order' => 0,
+            'reviewer_id' => $snapshotReviewer->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $steps = app(ReviewerChainResolver::class)->stepsForUser((object) [
+            'id' => $employee->id,
+            'assessment_round_id' => $roundId,
+        ]);
+
+        $this->assertSame([], $steps);
+        $this->assertDatabaseHas('user_round_reviewer_steps', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'step_order' => 0,
+            'reviewer_id' => $snapshotReviewer->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $employee->id,
+            'reviewer_id' => $currentReviewer->id,
+            'chain_type' => 'assessment',
+        ]);
+    }
+
     private function round(bool $snapshotRequired): int
     {
         return (int) DB::table('assessment_rounds')->insertGetId([

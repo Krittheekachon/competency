@@ -159,6 +159,53 @@ class KkuSsoAuthenticationTest extends TestCase
         $this->assertSame(0, User::query()->where('email', 'new-user-42@kku.ac.th')->count());
     }
 
+    public function test_sso_identity_normalization_matches_sql_trim_for_tabs_and_newlines(): void
+    {
+        $employeeId = "\temployee-42\n";
+        $employee = User::factory()->create([
+            'sso' => " {$employeeId} ",
+            'email' => 'old-employee-42@kku.ac.th',
+            'is_active' => true,
+        ]);
+        $ssoUserId = "\tkku-user-42\n";
+        $ssoUser = User::factory()->create([
+            'sso_user_id' => " {$ssoUserId} ",
+            'email' => 'old-user-42@kku.ac.th',
+            'is_active' => true,
+        ]);
+
+        $syncedByEmployeeId = app(SsoProfileSyncService::class)->sync(
+            ['employeeId' => " {$employeeId} ", 'email' => 'new-employee-42@kku.ac.th'],
+            ['employeeId' => " {$employeeId} ", 'email' => 'new-employee-42@kku.ac.th'],
+        );
+        $syncedBySsoUserId = app(SsoProfileSyncService::class)->sync(
+            ['userId' => " {$ssoUserId} ", 'email' => 'new-user-42@kku.ac.th'],
+            ['userId' => " {$ssoUserId} ", 'email' => 'new-user-42@kku.ac.th'],
+        );
+
+        $this->assertSame($employee->id, $syncedByEmployeeId->id);
+        $this->assertSame($employeeId, $syncedByEmployeeId->sso);
+        $this->assertSame($ssoUser->id, $syncedBySsoUserId->id);
+        $this->assertSame($ssoUserId, $syncedBySsoUserId->sso_user_id);
+        $this->assertSame(2, User::query()->count());
+    }
+
+    public function test_empty_or_null_sso_identifiers_are_treated_as_missing(): void
+    {
+        try {
+            app(SsoProfileSyncService::class)->sync(
+                ['employeeId' => '   ', 'userId' => null, 'email' => 'unidentified@kku.ac.th'],
+                ['employeeId' => null, 'userId' => ' ', 'email' => 'unidentified@kku.ac.th'],
+            );
+
+            $this->fail('SSO must reject provisioning without a non-empty identifier.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertNotEmpty($exception->errors());
+        }
+
+        $this->assertDatabaseCount('users', 0);
+    }
+
     public function test_sso_provisions_an_unknown_user_without_assigning_internal_structure(): void
     {
         Http::fake([

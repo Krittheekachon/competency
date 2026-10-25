@@ -45,8 +45,8 @@ class SsoProfileSyncService
                     'personStatus',
                 ]);
 
-                $tokenEmployeeId = $this->filledString($token['employeeId'] ?? null);
-                $profileEmployeeId = $this->filledString($profile['employeeId'] ?? null);
+                $tokenEmployeeId = $this->filledIdentityString($token['employeeId'] ?? null);
+                $profileEmployeeId = $this->filledIdentityString($profile['employeeId'] ?? null);
 
                 if ($tokenEmployeeId !== null && $profileEmployeeId !== null && $tokenEmployeeId !== $profileEmployeeId) {
                     throw ValidationException::withMessages([
@@ -55,9 +55,9 @@ class SsoProfileSyncService
                 }
 
                 $employeeId = $tokenEmployeeId ?? $profileEmployeeId;
-                $ssoUserId = $this->consistentValue($token, 'userId', $profile, 'userId');
-                $tokenEmail = $this->filledString($token['email'] ?? null);
-                $profileEmail = $this->filledString($profile['email'] ?? null);
+                $ssoUserId = $this->consistentIdentityValue($token, 'userId', $profile, 'userId');
+                $tokenEmail = $this->filledIdentityString($token['email'] ?? null);
+                $profileEmail = $this->filledIdentityString($profile['email'] ?? null);
                 if ($tokenEmail !== null && $profileEmail !== null && Str::lower($tokenEmail) !== Str::lower($profileEmail)) {
                     throw ValidationException::withMessages([
                         'sso' => 'ไม่สามารถยืนยันข้อมูล KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ',
@@ -143,8 +143,8 @@ class SsoProfileSyncService
         if (! $employeeId && ! $ssoUserId) {
             throw ValidationException::withMessages(['sso' => 'ไม่สามารถยืนยันข้อมูล KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ']);
         }
-        $email = $this->firstFilled([$profile['email'] ?? null, $token['email'] ?? null]);
-        if (! $email || User::query()->whereRaw('LOWER(TRIM(email)) = ?', [Str::lower(trim($email))])->exists()) {
+        $email = $this->firstIdentityString([$profile['email'] ?? null, $token['email'] ?? null]);
+        if (! $email || User::query()->whereRaw('LOWER(TRIM(email)) = ?', [Str::lower($email)])->exists()) {
             throw ValidationException::withMessages(['sso' => 'ไม่สามารถยืนยันข้อมูล KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ']);
         }
         $roleId = DB::table('roles')->where('key', 'employee')->value('id');
@@ -193,7 +193,7 @@ class SsoProfileSyncService
         $emailMatches = collect();
         foreach ($emailCandidates as $email) {
             $emailMatches = $emailMatches->concat(
-                User::query()->whereRaw('LOWER(TRIM(email)) = ?', [Str::lower(trim($email))])->get()
+                User::query()->whereRaw('LOWER(TRIM(email)) = ?', [Str::lower($email)])->get()
             );
         }
 
@@ -217,10 +217,10 @@ class SsoProfileSyncService
         return $matches->first();
     }
 
-    private function consistentValue(array $first, string $key, array $second, string $secondKey): ?string
+    private function consistentIdentityValue(array $first, string $key, array $second, string $secondKey): ?string
     {
-        $firstValue = $this->filledString($first[$key] ?? null);
-        $secondValue = $this->filledString($second[$secondKey] ?? null);
+        $firstValue = $this->filledIdentityString($first[$key] ?? null);
+        $secondValue = $this->filledIdentityString($second[$secondKey] ?? null);
 
         if ($firstValue !== null && $secondValue !== null && $firstValue !== $secondValue) {
             throw ValidationException::withMessages([
@@ -402,6 +402,34 @@ class SsoProfileSyncService
         return $value === '' ? null : $value;
     }
 
+    /**
+     * PostgreSQL TRIM(value) removes ordinary spaces by default. Keep identity
+     * normalization identical so PHP does not merge tab/newline identifiers
+     * that the database indexes and lookup expressions consider distinct.
+     */
+    private function filledIdentityString(mixed $value): ?string
+    {
+        if (! is_string($value) && ! is_int($value)) {
+            return null;
+        }
+
+        $value = trim((string) $value, ' ');
+
+        return $value === '' ? null : $value;
+    }
+
+    /** @param array<int, mixed> $values */
+    private function firstIdentityString(array $values): ?string
+    {
+        foreach ($values as $value) {
+            if (($filled = $this->filledIdentityString($value)) !== null) {
+                return $filled;
+            }
+        }
+
+        return null;
+    }
+
     /** @param array<string, mixed> $payload @param array<int, string> $keys */
     private function validateStringFields(array $payload, array $keys): void
     {
@@ -414,7 +442,7 @@ class SsoProfileSyncService
             }
 
             if (in_array($key, ['employeeId', 'userId', 'email'], true) && $value !== null) {
-                $stringValue = trim((string) $value);
+                $stringValue = trim((string) $value, ' ');
                 if (Str::length($stringValue) > 255
                     || ($key === 'email' && $stringValue !== '' && filter_var($stringValue, FILTER_VALIDATE_EMAIL) === false)) {
                     throw ValidationException::withMessages([
