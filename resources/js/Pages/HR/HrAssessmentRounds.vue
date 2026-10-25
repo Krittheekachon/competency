@@ -107,6 +107,12 @@ const activate = (round) => {
     router.patch(route('hr.assessment-rounds.activate', round.id), {}, { preserveScroll: true });
 };
 
+const closeRound = (round) => {
+    if (!round.isActive) return;
+    if (!window.confirm(`สิ้นสุด “${round.name}” ตอนนี้? ผู้ใช้จะเริ่ม Assessment ใหม่ไม่ได้ แต่ IDP และงานที่เริ่มไว้จะยังทำต่อได้`)) return;
+    router.patch(route('hr.assessment-rounds.close', round.id), {}, { preserveScroll: true });
+};
+
 const readinessMessage = (round) => (round.readiness?.issues || [])
     .map((issue) => issue.message)
     .join(' · ');
@@ -269,6 +275,12 @@ const dateLabel = (value) => value
                                 <div class="row-actions">
                                     <button type="button" class="edit-button" @click="editRound(round)">แก้ไข</button>
                                     <button
+                                        v-if="round.isActive"
+                                        type="button"
+                                        class="close-round-button"
+                                        @click="closeRound(round)"
+                                    >สิ้นสุดรอบ</button>
+                                    <button
                                         v-if="!round.isActive"
                                         type="button"
                                         class="activate-button"
@@ -306,6 +318,7 @@ const dateLabel = (value) => value
 .round-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 10px oklch(32% .03 253 / .055); }.round-table-card > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; }.round-table-card > header h2 { margin: 0; font-size: 14px; font-weight: 700; }.round-table-card > header span { color: var(--muted); font-size: 12px; }.table-scroll { overflow-x: auto; border-top: 1px solid var(--line); }table { width: 100%; min-width: 820px; border-collapse: collapse; }th,td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }th { background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 700; }td { color: oklch(49% .03 253); font-size: 13px; }tbody tr:last-child td { border-bottom: 0; }tbody tr:hover { background: oklch(98% .008 253); }tbody tr.current { background: var(--accent-soft); }td strong { color: var(--ink); font-size: 13px; font-weight: 700; }.date-separator { margin: 0 3px; color: oklch(72% .025 253); }.number-column { text-align: center; }.assessment-cell { color: var(--accent-dark); font-weight: 800; }.assessment-cell span { color: var(--muted); font-weight: 600; }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 700; }.status-badge.open { background: oklch(93% .06 145); color: oklch(42% .13 145); }.status-badge.closed { background: oklch(94% .012 253); color: var(--muted); }.status-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }.row-actions { display: flex; justify-content: flex-end; gap: 6px; }.edit-button,.activate-button { min-height: 32px; padding: 5px 10px; }.edit-button { border: 1px solid oklch(83% .025 253); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }.edit-button:hover { border-color: oklch(70% .045 253); background: var(--canvas); }.activate-button { font-size: 12px; }
 .readiness-badge { display: inline-flex; margin-left: 8px; border-radius: 999px; background: oklch(94% .045 29); padding: 3px 7px; color: oklch(49% .17 29); font-size: 10px; font-weight: 700; }.activate-button:disabled { border-color: var(--line); background: var(--canvas); color: var(--muted); cursor: not-allowed; }
+.close-round-button { min-height: 32px; padding: 5px 10px; border: 1px solid oklch(78% .09 29); border-radius: 7px; background: oklch(97% .025 29); color: oklch(48% .16 29); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }.close-round-button:hover { background: oklch(94% .045 29); }
 .empty-state { display: grid; justify-items: center; border-top: 1px solid var(--line); padding: 54px 20px; text-align: center; }.empty-state > span { margin-bottom: 10px; color: var(--muted); font-size: 24px; }.empty-state strong { font-size: 14px; }.empty-state p { margin: 4px 0 14px; color: var(--muted); font-size: 12px; }.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 @media (max-width: 760px) { .page-heading { align-items: flex-start; }.page-heading h1 { font-size: 22px; }.page-heading p { max-width: 34ch; line-height: 1.5; }.create-button { min-height: 40px; padding: 8px 12px; white-space: nowrap; }.summary-grid { grid-template-columns: 1fr; gap: 12px; }.summary-card { min-height: 118px; padding: 20px; }.active-name { font-size: 19px; }.editor-grid { row-gap: 16px; padding: 18px; }.date-fields { grid-template-columns: 1fr; gap: 14px; }.date-hint { grid-column: 1; margin-bottom: -4px; }.editor-footer { align-items: stretch; flex-direction: column; }.editor-footer > div { justify-content: flex-end; }.round-table-card > header { padding: 16px 18px; } }
 @media (max-width: 430px) { .page-heading { flex-direction: column; }.create-button { width: 100%; }.round-modal-backdrop { align-items: end; padding: 12px; }.round-editor { max-height: calc(100vh - 24px); border-radius: 14px 14px 10px 10px; }.editor-footer > div { display: grid; grid-template-columns: 1fr 1fr; }.empty-state .create-button { width: auto; } }

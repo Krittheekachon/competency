@@ -146,6 +146,11 @@ const selfAssessmentBlockReasons = computed(() => {
         reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
     }
 
+    const readinessKey = user.readiness?.key;
+    if (readinessKey === 'expected_level') reasons.push('รอกำหนด Expected Level สำหรับสมรรถนะ');
+    if (readinessKey === 'competencies') reasons.push('รอกำหนดสมรรถนะสำหรับตำแหน่ง');
+    if (readinessKey === 'sso_changed') reasons.push('รอผู้ดูแลตรวจสอบข้อมูล SSO');
+
     return Array.from(new Set(reasons.filter(Boolean)));
 });
 const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
@@ -219,6 +224,7 @@ const logout = () => router.post(route('logout'));
                     :fc-topic-selection="fcTopicSelection"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
+                    :readiness="currentProfileUser?.readiness"
                 />
 
                 <EmployeeGap

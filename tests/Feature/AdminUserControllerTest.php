@@ -21,6 +21,16 @@ class AdminUserControllerTest extends TestCase
             ->assertSessionHasErrors(['username', 'password']);
     }
 
+    public function test_admin_user_email_validation_is_case_insensitive(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        User::factory()->create(['email' => 'Existing.User@example.test']);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), ['em' => 'existing.user@example.test'])
+            ->assertSessionHasErrors('em');
+    }
+
     public function test_non_admin_can_not_manage_users(): void
     {
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);

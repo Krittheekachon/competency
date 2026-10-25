@@ -1,0 +1,10 @@
+[
+  {
+    "email": "employee001",
+    "password": "replace-me",
+    "sso_id": "replace-me",
+    "competency_id": 1,
+    "checked_indicators": [],
+    "score": 0
+  }
+]

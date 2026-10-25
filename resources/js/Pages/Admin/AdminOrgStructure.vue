@@ -17,6 +17,8 @@ const useEffect = (effect: any) => {
 };
 
 interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;supportDepts: string[];supportPositionGroups: Record<string, string[]>;setSupportPositionGroups: any;adminDepts: string[];setAdminDepts: any;supportOrg: any;setSupportOrg: any;users: any[];academicPos: string[];setAcademicPos: any;supportPos: string[];setSupportPos: any;adminPos: string[];setAdminPos: any;jobFamiliesByWorkline: Record<string, Record<string, string[]>>;setJobFamiliesByWorkline: any;levelsByWorkline: Record<string, string[]>;setLevelsByWorkline: any;levelExpectationsByWorkline: Record<string, Record<string, number | null>>;setLevelExpectationsByWorkline: any;
+  positionTitles: any[];
+  setPositionTitles: any;
   academicRank: string[];
   setAcademicRank: any;
   supportRank: string[];
@@ -27,7 +29,7 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setCompetencyTypes: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes"], setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "positionTitles", "setPositionTitles", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes"], setup(__props) {const {
       setAcademicDepts,
       setSupportPositionGroups,
       setAdminDepts,
@@ -39,6 +41,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setJobFamiliesByWorkline,
       setLevelsByWorkline,
       setLevelExpectationsByWorkline,
+      setPositionTitles,
       setAcademicRank,
       setSupportRank,
       setWorklines,
@@ -54,6 +57,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     let jobFamiliesByWorkline = { ...((( __props as any).jobFamiliesByWorkline) || {}) };
     let levelsByWorkline = { ...((( __props as any).levelsByWorkline) || {}) };
     let levelExpectationsByWorkline = { ...((( __props as any).levelExpectationsByWorkline) || {}) };
+    const positionTitles = ref<any[]>([...((( __props as any).positionTitles) || [])]);
     let worklines = [...((__props as any).worklines || [])];
     const POSITION_PREVIEW_LIMIT = 4;
     const SUPPORT_GROUP_PREVIEW_LIMIT = 4;
@@ -81,7 +85,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       expectedLevel: "1",
       worklineName: "",
       parent: "",
-      grandparent: ""
+      grandparent: "",
+      worklineType: "support",
+      positionTypeName: "",
+      positionTitleId: ""
     });
     const [structureVersion, setStructureVersion] = useState(0);
     const addNameInput = ref<HTMLInputElement | null>(null);
@@ -174,6 +181,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         applyLevelExpectationsByWorkline(props.levelExpectationsByWorkline);
       }
 
+      if (Array.isArray(props.positionTitles)) {
+        positionTitles.value = [...props.positionTitles];
+        setPositionTitles(positionTitles.value);
+      }
+
     };
     const showPersistError = (errors: any) => {
       const firstError = Object.values(errors || {})[0];
@@ -229,6 +241,14 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const expectedLevelForItem = (worklineName: string, levelName: string) => {
       const value = levelExpectationsByWorkline?.[worklineName]?.[levelName];
       return value === null || value === undefined ? "" : String(value);
+    };
+    const catalogOptionsForAdd = () => {
+      const worklineType = addItemData.value.category === "support-unit-position"
+        || normalizeWorklineName(addItemData.value.worklineName || "") === "สนับสนุน"
+        ? "support"
+        : "academic";
+
+      return positionTitles.value.filter((item: any) => item.worklineType === worklineType);
     };
     const levelNameCollator = new Intl.Collator("th", {
       numeric: true,
@@ -774,6 +794,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       "สายงานบริหาร");
 
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
+      if (addItemData.value.category === "position-title") return { title: "เพิ่มตำแหน่งทั้งหมด", label: "ชื่อตำแหน่ง" };
       if (addItemData.value.category === "support-dept") return { title: "เพิ่มฝ่าย", label: "ชื่อฝ่าย" };
       if (addItemData.value.category === "support-unit-position") return { title: `เพิ่มตำแหน่งในหน่วย ${addItemData.value.parent}`, label: "ชื่อตำแหน่ง" };
       if (addItemData.value.category === "support-global-position") return { title: "เพิ่มตำแหน่ง Global ในสายสนับสนุน", label: "ชื่อตำแหน่ง" };
@@ -806,6 +827,18 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       const { category, type, name, fullName, desc, worklineName, parent, grandparent } = addItemData.value;
       const trimmedName = name.trim();
       if (trimmedName) {
+        if (category === "position-title") {
+          setIsSavingAddItem(true);
+          postStructure("admin.structure.position-titles.store", {
+            workline_type: addItemData.value.worklineType,
+            name: trimmedName,
+            position_type_name: addItemData.value.positionTypeName || null
+          }, () => {
+            setIsSavingAddItem(false);
+            setShowAddModal(false);
+          });
+          return;
+        }
         if (category === "pos" && type === "2" && !parent) return;
         if (category === "support-global-position") {
           const targetWorklineName = supportWorklineName();
@@ -834,7 +867,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             division_name: divisionName,
             work_name: workName,
             unit_name: unitName,
-            name: trimmedName
+            name: trimmedName,
+            position_title_id: addItemData.value.positionTitleId || null
           }, () => {
             supportOrg = {
               ...supportOrg,
@@ -902,7 +936,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               return;
             }
             setIsSavingAddItem(true);
-            postStructure("admin.structure.positions.store", { workline_name: targetWorklineName, job_family_name: parent, name: trimmedName }, () => {
+            postStructure("admin.structure.positions.store", { workline_name: targetWorklineName, job_family_name: parent, name: trimmedName, position_title_id: addItemData.value.positionTitleId || null }, () => {
               const groups = groupMapForWorkline(targetWorklineName);
               setGroupMapForWorkline(targetWorklineName, {
                 ...groups,
@@ -978,12 +1012,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       <div class="structure-tabs mb20">
 	        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>โครงสร้างสายงาน</button>
+        <button class={`structure-tab ${activeTab.value === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>ตำแหน่งทั้งหมด</button>
         <button class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
         <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
       </div>
 
       <div class="anim-fade-in" data-structure-version={structureVersion.value}>
-        <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
+        <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "catalog" ? "catalog-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
           {activeTab.value === "workline" ?
           <div class="structure-pane">
               <div class="structure-heading">โครงสร้างสายงาน</div>
@@ -1085,6 +1120,32 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 {worklines.length === 0 &&
                   <div class="structure-empty">ยังไม่มีข้อมูลสายงาน</div>
                 }
+              </div>
+            </div> :
+          activeTab.value === "catalog" ?
+            <div class="structure-pane">
+              <div class="level-page-head">
+                <div>
+                  <div class="structure-heading">ตำแหน่งทั้งหมด</div>
+                  <div class="level-page-copy">ตำแหน่งจาก SSO จะเข้ามาในรายการนี้ก่อน และยังไม่กระทบโครงสร้างจนกว่า Admin จะนำไปจัดเข้าภาควิชา ฝ่าย งาน หรือหน่วย</div>
+                </div>
+                <button class="btn btn-p btn-sm" onClick={() => {
+                  setAddItemData({ category: "position-title", type: "", name: "", worklineType: "support", positionTypeName: "", worklineName: "", parent: "", grandparent: "" });
+                  setShowAddModal(true);
+                }}>+ เพิ่มตำแหน่ง</button>
+              </div>
+              <div class="position-catalog-table">
+                <div class="position-catalog-head"><span>ตำแหน่ง</span><span>สายงาน</span><span>ประเภทตำแหน่ง</span><span>ที่มา</span><span>สถานะ</span></div>
+                {positionTitles.value.map((item: any) =>
+                  <div key={item.id} class="position-catalog-row">
+                    <strong>{item.name}</strong>
+                    <span>{item.worklineName}</span>
+                    <span>{item.positionTypeName || "—"}</span>
+                    <span class={`source-chip ${item.source === "sso" ? "sso" : "manual"}`}>{item.source === "sso" ? "SSO" : item.source === "legacy" ? "ข้อมูลเดิม" : "เพิ่มด้วยมือ"}</span>
+                    <span class={`source-chip ${item.isUnassigned ? "pending" : "ready"}`}>{item.isUnassigned ? "ยังไม่จัดโครงสร้าง" : `ใช้ ${item.placementCount} จุด`}</span>
+                  </div>
+                )}
+                {!positionTitles.value.length && <div class="structure-empty">ยังไม่มีตำแหน่งจาก SSO หรือที่เพิ่มด้วยมือ</div>}
               </div>
             </div> :
           activeTab.value === "dept" ?
@@ -1290,6 +1351,20 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
             <div class="mo-b">
               <div class="fg">
                 <label class="lbl fw8" style={{ color: "var(--navy)" }}>{getAddModalCopy().label}</label>
+                {(["pos", "support-unit-position"].includes(addItemData.value.category)) ?
+                <select
+                  class="sel"
+                  value={addItemData.value.positionTitleId || ""}
+                  onChange={(e) => {
+                    const selected = positionTitles.value.find((item: any) => String(item.id) === String(e.target.value));
+                    setAddItemData({ ...addItemData.value, positionTitleId: e.target.value, name: selected?.name || "" });
+                  }}
+                  disabled={isSavingAddItem.value}
+                  autoFocus
+                >
+                  <option value="">เลือกจากตำแหน่งทั้งหมด</option>
+                  {catalogOptionsForAdd().map((item: any) => <option key={item.id} value={String(item.id)}>{item.name}{item.positionTypeName ? ` — ${item.positionTypeName}` : ""}</option>)}
+                </select> :
                 <input
                   ref={addNameInput}
                   class="inp"
@@ -1305,7 +1380,23 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   placeholder="กรอกชื่อที่ต้องการ..."
                   autoFocus
                 />
+                }
               </div>
+              {addItemData.value.category === "position-title" &&
+                <>
+                  <div class="fg">
+                    <label class="lbl fw8">สายงาน</label>
+                    <select class="sel" value={addItemData.value.worklineType} onChange={(e) => setAddItemData({ ...addItemData.value, worklineType: e.target.value })}>
+                      <option value="academic">สายวิชาการ</option>
+                      <option value="support">สายสนับสนุน</option>
+                    </select>
+                  </div>
+                  <div class="fg">
+                    <label class="lbl fw8">ประเภทตำแหน่ง (ถ้ามี)</label>
+                    <input class="inp" value={addItemData.value.positionTypeName} onChange={(e) => setAddItemData({ ...addItemData.value, positionTypeName: e.target.value })} placeholder="เช่น พนักงานมหาวิทยาลัย" />
+                  </div>
+                </>
+              }
               {addItemData.value.category === "comp" &&
             <>
                 <div class="fg">
@@ -1398,13 +1489,24 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .structure-tab.active { background: var(--blue); color: #fff; }
         .structure-shell { min-height: 400px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r); background: #fff; }
         .structure-shell.workline-shell,
+        .structure-shell.catalog-shell,
         .structure-shell.level-shell,
         .structure-shell.comp-shell { min-height: 0; overflow: visible; border: 0; background: transparent; }
         .structure-shell.workline-shell .structure-pane,
+        .structure-shell.catalog-shell .structure-pane,
         .structure-shell.level-shell .structure-pane,
         .structure-shell.comp-shell .structure-pane { padding: 0; }
         .structure-pane { padding: 20px; }
         .structure-heading { margin-bottom: 14px; color: var(--text); font-size: 15px; font-weight: 800; }
+        .position-catalog-table { overflow: hidden; border: 1px solid #dbe5f1; border-radius: 10px; background: #fff; }
+        .position-catalog-head, .position-catalog-row { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(110px, .7fr) minmax(160px, 1fr) minmax(90px, .55fr) minmax(140px, .8fr); align-items: center; gap: 12px; padding: 12px 14px; }
+        .position-catalog-head { border-bottom: 1px solid #dbe5f1; background: #f8fafc; color: var(--text3); font-size: 11px; font-weight: 800; }
+        .position-catalog-row { border-bottom: 1px solid #edf2f7; color: var(--text2); font-size: 12px; }
+        .position-catalog-row:last-child { border-bottom: 0; }
+        .source-chip { justify-self: start; padding: 4px 7px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 10px; font-weight: 800; }
+        .source-chip.sso { background: #eff6ff; color: #1d4ed8; }
+        .source-chip.pending { background: #fff7ed; color: #c2410c; }
+        .source-chip.ready { background: #ecfdf5; color: #047857; }
         .structure-note { display: grid; gap: 4px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--blue-md); border-radius: 8px; background: var(--blue-lt); color: var(--text2); font-size: 12px; line-height: 1.55; }
         .add-modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; width: 100%; }
         .add-modal-actions .btn { flex: 0 0 auto; min-width: 96px; }

@@ -67,6 +67,44 @@ class AdminStructureControllerTest extends TestCase
         $this->assertSame(2, DB::table('positions')->where('name', 'นักทรัพยากรบุคคล')->count());
     }
 
+    public function test_global_position_name_cannot_repeat_in_the_same_job_family(): void
+    {
+        $admin = $this->createAdmin();
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ตำแหน่งสายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('positions')->insert([
+            'job_family_id' => $jobFamilyId,
+            'support_unit_id' => null,
+            'name' => 'นักวิเคราะห์ระบบ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.structure.positions.store'), [
+                'workline_name' => 'สายสนับสนุน',
+                'job_family_name' => 'ตำแหน่งสายสนับสนุน',
+                'name' => 'นักวิเคราะห์ระบบ',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasErrors(['name']);
+
+        $this->assertSame(1, DB::table('positions')
+            ->where('job_family_id', $jobFamilyId)
+            ->whereNull('support_unit_id')
+            ->where('name', 'นักวิเคราะห์ระบบ')
+            ->count());
+    }
+
     public function test_support_position_name_can_repeat_in_different_units_but_not_the_same_unit(): void
     {
         $admin = User::factory()->create([

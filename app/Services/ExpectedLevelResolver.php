@@ -18,12 +18,49 @@ class ExpectedLevelResolver
 
     private array $worklineIdCache = [];
 
+    private ?int $activeRoundIdCache = null;
+
+    private bool $activeRoundIdResolved = false;
+
+    public function resetRequestCache(): void
+    {
+        $this->expectedLevelCache = [];
+        $this->levelIdsCache = [];
+        $this->jobFamilyIdsCache = [];
+        $this->positionIdsCache = [];
+        $this->worklineIdCache = [];
+        $this->activeRoundIdCache = null;
+        $this->activeRoundIdResolved = false;
+    }
+
     public function forUserCompetency(User $user, int $competencyId): ?int
     {
-        $cacheKey = $this->userCacheKey($user).':'.$competencyId;
+        return $this->forUserCompetencies($user, [$competencyId])[$competencyId] ?? null;
+    }
 
-        if (array_key_exists($cacheKey, $this->expectedLevelCache)) {
-            return $this->expectedLevelCache[$cacheKey];
+    public function forUserCompetencies(User $user, iterable $competencyIds): array
+    {
+        $competencyIds = collect($competencyIds)
+            ->map(fn ($id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values();
+        $userCacheKey = $this->userCacheKey($user);
+        $resolved = [];
+        $unresolvedIds = $competencyIds->filter(function (int $competencyId) use ($userCacheKey, &$resolved): bool {
+            $cacheKey = $userCacheKey.':'.$competencyId;
+
+            if (! array_key_exists($cacheKey, $this->expectedLevelCache)) {
+                return true;
+            }
+
+            $resolved[$competencyId] = $this->expectedLevelCache[$cacheKey];
+
+            return false;
+        })->values();
+
+        if ($unresolvedIds->isEmpty()) {
+            return $resolved;
         }
 
         $levelIds = $this->levelIdsForUser($user);
@@ -31,47 +68,64 @@ class ExpectedLevelResolver
         $roundId = $this->activeRoundId();
 
         if (! $roundId || $levelIds->isEmpty()) {
-            return $this->expectedLevelCache[$cacheKey] = null;
+            foreach ($unresolvedIds as $competencyId) {
+                $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId] = null;
+            }
+
+            return $resolved;
         }
 
         $expectedLevels = $jobFamilyIds->isEmpty()
             ? collect()
             : DB::table('hr_expectations')
                 ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-                ->where('hr_expectations.competency_id', $competencyId)
+                ->whereIn('hr_expectations.competency_id', $unresolvedIds)
                 ->where('hr_expectations.assessment_round_id', $roundId)
                 ->whereIn('hr_expectations.level_id', $levelIds)
                 ->whereIn('hr_expectations.job_family_id', $jobFamilyIds)
-                ->selectRaw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
-                ->pluck('expected_level')
-                ->filter(fn ($level) => $level !== null)
-                ->map(fn ($level): int => (int) $level);
+                ->selectRaw('hr_expectations.competency_id, MAX(COALESCE(hr_expectations.expected_level, levels.expected_level)) as expected_level')
+                ->groupBy('hr_expectations.competency_id')
+                ->pluck('expected_level', 'hr_expectations.competency_id');
 
-        if ($expectedLevels->isNotEmpty()) {
-            return $this->expectedLevelCache[$cacheKey] = $expectedLevels->max();
+        foreach ($expectedLevels as $competencyId => $expectedLevel) {
+            $competencyId = (int) $competencyId;
+            $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId]
+                = $expectedLevel === null ? null : (int) $expectedLevel;
+        }
+
+        $fallbackIds = $unresolvedIds
+            ->reject(fn (int $competencyId): bool => array_key_exists($competencyId, $resolved))
+            ->values();
+        if ($fallbackIds->isEmpty()) {
+            return $resolved;
         }
 
         $positionIds = $this->positionIdsForUser($user);
-        $hasPositionCompetency = $positionIds->isNotEmpty()
-            && DB::table('position_competencies')
+        $positionCompetencyIds = $positionIds->isEmpty()
+            ? collect()
+            : DB::table('position_competencies')
                 ->whereIn('position_id', $positionIds)
-                ->where('competency_id', $competencyId)
+                ->whereIn('competency_id', $fallbackIds)
                 ->where('assessment_round_id', $roundId)
-                ->exists();
-
-        if (! $hasPositionCompetency) {
-            return $this->expectedLevelCache[$cacheKey] = null;
-        }
+                ->pluck('competency_id')
+                ->map(fn ($id): int => (int) $id)
+                ->flip();
 
         $levelExpectedLevels = DB::table('levels')
             ->whereIn('id', $levelIds)
             ->pluck('expected_level')
             ->filter(fn ($level) => $level !== null)
             ->map(fn ($level): int => (int) $level);
-
-        return $this->expectedLevelCache[$cacheKey] = $levelExpectedLevels->isEmpty()
+        $fallbackExpectedLevel = $levelExpectedLevels->isEmpty()
             ? null
             : $levelExpectedLevels->max();
+
+        foreach ($fallbackIds as $competencyId) {
+            $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId]
+                = $positionCompetencyIds->has($competencyId) ? $fallbackExpectedLevel : null;
+        }
+
+        return $resolved;
     }
 
     private function levelIdsForUser(User $user): Collection
@@ -221,8 +275,14 @@ class ExpectedLevelResolver
 
     private function activeRoundId(): ?int
     {
+        if ($this->activeRoundIdResolved) {
+            return $this->activeRoundIdCache;
+        }
+
         $id = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
 
-        return $id ? (int) $id : null;
+        $this->activeRoundIdResolved = true;
+
+        return $this->activeRoundIdCache = $id ? (int) $id : null;
     }
 }

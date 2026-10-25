@@ -47,7 +47,7 @@ class IdpActivityProgressReviewTest extends TestCase
         $this->assertDatabaseHas('idp_activities', ['id' => $activityId, 'result' => 'completed']);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
-        Mail::assertSent(IdpProgressApprovedMail::class, function (IdpProgressApprovedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpProgressApprovedMail::class, function (IdpProgressApprovedMail $mail) use ($employee): bool {
             $mail->assertSeeInHtml('บรรลุตามเป้าหมาย');
 
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
@@ -168,7 +168,7 @@ class IdpActivityProgressReviewTest extends TestCase
         ]);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
-        Mail::assertSent(IdpProgressReturnedMail::class, function (IdpProgressReturnedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpProgressReturnedMail::class, function (IdpProgressReturnedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->comment === 'กรุณาเพิ่มหลักฐานผลลัพธ์';
@@ -385,6 +385,8 @@ class IdpActivityProgressReviewTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $employee = User::query()->findOrFail($employeeId);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
 
         return (int) DB::table('competency_gaps')->insertGetId([
             'assessment_id' => $assessmentId,
@@ -421,8 +423,10 @@ class IdpActivityProgressReviewTest extends TestCase
         ]);
         $roundId = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ', 'year' => 2569, 'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
         $assessmentId = DB::table('assessments')->insertGetId([
             'assessment_round_id' => $roundId, 'user_id' => $employee->id, 'competency_id' => $competencyId,
             'score' => 2, 'status' => 'approved', 'created_at' => now(), 'updated_at' => now(),

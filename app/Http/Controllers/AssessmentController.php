@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Assessment;
 use App\Models\User;
 use App\Services\AssessmentRoundWindow;
+use App\Services\AssessmentRoundSnapshotService;
 use App\Services\ExpectedLevelResolver;
 use App\Services\NotificationService;
 use App\Services\ReviewerChainResolver;
@@ -21,6 +22,8 @@ class AssessmentController extends Controller
         private NotificationService $notifications,
         private ReviewerChainResolver $reviewerChainResolver,
         private AssessmentRoundWindow $assessmentRoundWindow,
+        private AssessmentRoundSnapshotService $roundSnapshot,
+        private \App\Services\AssessmentReadinessService $readiness,
     )
     {
     }
@@ -28,9 +31,9 @@ class AssessmentController extends Controller
     public function draft(Request $request)
     {
         $data = $this->validatedAssessmentPayload($request);
-        $this->assessmentRoundWindow->assertSelfAssessmentOpen();
-
+        $round = $this->assessmentRoundWindow->assertSelfAssessmentOpen();
         $this->assertCanSelfAssess($request->user());
+        $this->prepareUserRoundSnapshot($request->user(), (int) $round->id);
         $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         $savedAt = null;
@@ -59,9 +62,9 @@ class AssessmentController extends Controller
     public function save(Request $request)
     {
         $data = $this->validatedAssessmentPayload($request);
-        $this->assessmentRoundWindow->assertSelfAssessmentOpen();
-
+        $round = $this->assessmentRoundWindow->assertSelfAssessmentOpen();
         $this->assertCanSelfAssess($request->user());
+        $this->prepareUserRoundSnapshot($request->user(), (int) $round->id);
         $this->assertFcTopicsApprovedForAssessment($request->user(), (int) $data['competency_id']);
 
         DB::transaction(function () use ($request, $data): void {
@@ -149,6 +152,7 @@ class AssessmentController extends Controller
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
         $employee = User::findOrFail((int) $data['user_id']);
+        $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
         $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
 
         DB::transaction(function () use ($data, $decision, $request, $comment, $employee): void {
@@ -225,6 +229,7 @@ class AssessmentController extends Controller
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
         $employee = User::findOrFail((int) $data['user_id']);
+        $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
 
         DB::transaction(function () use ($data, $decision, $request, $comment): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
@@ -275,17 +280,57 @@ class AssessmentController extends Controller
                 : (DB::table('roles')->where('id', $user->role_id)->value('key') ?: '')
         );
 
-        if (in_array($roleKey, ['admin', 'dean'], true)) {
-            return;
-        }
+        $ssoPending = Schema::hasTable('sso_profile_changes') && DB::table('sso_profile_changes')
+            ->where('user_id', $user->id)->whereIn('status', ['pending', 'restructure'])->exists();
+        $roundId = $this->activeAssessmentRoundId();
+        $positionId = (int) ($user->position_id ?? 0);
+        $competencyIds = $roundId && $positionId
+            ? DB::table('position_competencies')->where('assessment_round_id', $roundId)
+                ->where('position_id', $positionId)->pluck('competency_id')->map(fn ($id): int => (int) $id)->all()
+            : [];
+        $expectedLevels = $competencyIds === [] ? [] : $this->expectedLevelResolver->forUserCompetencies($user, $competencyIds);
+        $competencies = collect($competencyIds)->map(fn (int $id): array => ['expectedLevel' => $expectedLevels[$id] ?? null])->all();
+        $roundUser = clone $user;
+        $roundUser->setAttribute('assessment_round_id', $roundId);
 
-        $hasAssignedEvaluator = $this->reviewerChainResolver->stepsForUser($user) !== [];
+        $roundRequiresSnapshot = (bool) DB::table('assessment_rounds')->where('id', $roundId)->value('snapshot_required');
+        $hasRoundProfile = Schema::hasTable('user_round_profiles') && DB::table('user_round_profiles')
+            ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists();
+        $hasExistingRoundWork = (Schema::hasTable('assessments') && DB::table('assessments')
+            ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists())
+            || (Schema::hasTable('idps') && DB::table('idps')
+                ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists());
 
-        if (! $hasAssignedEvaluator) {
+        if ($roundRequiresSnapshot && ! $hasRoundProfile && $hasExistingRoundWork) {
             throw ValidationException::withMessages([
-                'assessment' => 'ยังไม่สามารถประเมินตนเองได้ กรุณาให้ Admin กำหนดผู้ประเมินก่อน',
+                'assessment' => 'รอบการประเมินนี้มีข้อมูลเดิมแต่ไม่มี reviewer snapshot กรุณาติดต่อ Admin ก่อนดำเนินการต่อ',
             ]);
         }
+
+        $reviewerSteps = $this->reviewerChainResolver->stepsForUser($roundUser, 'assessment', true);
+        $status = $this->readiness->status(
+            $this->readiness->organizationReady($user), $ssoPending, $competencies, $reviewerSteps,
+            $roleKey !== 'admin',
+        );
+
+        if ($status['key'] !== 'ready') {
+            throw ValidationException::withMessages(['assessment' => 'ข้อมูลโครงสร้าง สมรรถนะ Expected Level หรือผู้ประเมินยังไม่พร้อมสำหรับการประเมิน']);
+        }
+    }
+
+    private function prepareUserRoundSnapshot(User $user, int $roundId): void
+    {
+        $this->roundSnapshot->captureIfMissing($user, $roundId);
+        $snapshot = $this->roundSnapshot->userForRound($user, $roundId);
+        $user->forceFill([
+            'position_id' => $snapshot->position_id,
+            'level_id' => $snapshot->level_id,
+            'workline' => $snapshot->workline,
+            'department' => $snapshot->department,
+            'position' => $snapshot->position,
+            'level' => $snapshot->level,
+            'assessment_round_id' => $roundId,
+        ]);
     }
 
     private function assertFcTopicsApprovedForAssessment($user, int $competencyId): void
@@ -512,6 +557,8 @@ class AssessmentController extends Controller
                 'assessment' => 'คุณไม่มีสิทธิ์อนุมัติผลการประเมินของบุคลากรคนนี้',
             ]);
         }
+
+        $target->assessment_round_id = $this->activeAssessmentRoundId();
 
         $reviewStep = $this->reviewStepForReviewer($target, (int) $reviewer->id);
 

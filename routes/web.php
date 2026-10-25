@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\IdpLearningMethodController as AdminIdpLearningMe
 use App\Http\Controllers\Admin\LearningCatalogController as AdminLearningCatalogController;
 use App\Http\Controllers\Admin\ReviewerChainTemplateController as AdminReviewerChainTemplateController;
 use App\Http\Controllers\Admin\StructureController as AdminStructureController;
+use App\Http\Controllers\Admin\SsoProfileReviewController as AdminSsoProfileReviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AssessmentController;
 use App\Http\Controllers\Auth\KkuSsoController;
@@ -69,6 +70,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
         Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
+        Route::patch('/admin/users/{user}/sso-profile-review', [AdminSsoProfileReviewController::class, 'update'])->name('admin.users.sso-profile-review');
         Route::post('/admin/reviewer-chain-templates', [AdminReviewerChainTemplateController::class, 'store'])->name('admin.reviewer-chain-templates.store');
         Route::patch('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'update'])->name('admin.reviewer-chain-templates.update');
         Route::delete('/admin/reviewer-chain-templates/{template}', [AdminReviewerChainTemplateController::class, 'destroy'])->name('admin.reviewer-chain-templates.destroy');
@@ -88,6 +90,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::put('/admin/structure/job-families', [AdminStructureController::class, 'updateJobFamily'])->name('admin.structure.job-families.update');
         Route::delete('/admin/structure/job-families', [AdminStructureController::class, 'destroyJobFamily'])->name('admin.structure.job-families.destroy');
         Route::post('/admin/structure/positions', [AdminStructureController::class, 'storePosition'])->name('admin.structure.positions.store');
+        Route::post('/admin/structure/position-titles', [AdminStructureController::class, 'storePositionTitle'])->name('admin.structure.position-titles.store');
         Route::put('/admin/structure/positions', [AdminStructureController::class, 'updatePosition'])->name('admin.structure.positions.update');
         Route::delete('/admin/structure/positions', [AdminStructureController::class, 'destroyPosition'])->name('admin.structure.positions.destroy');
         Route::post('/admin/structure/support-departments', [AdminStructureController::class, 'storeSupportDepartment'])->name('admin.structure.support-departments.store');
@@ -147,6 +150,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('/hr/assessment-rounds', [HrAssessmentRoundController::class, 'store'])->name('hr.assessment-rounds.store');
         Route::put('/hr/assessment-rounds/{round}', [HrAssessmentRoundController::class, 'update'])->name('hr.assessment-rounds.update');
         Route::patch('/hr/assessment-rounds/{round}/activate', [HrAssessmentRoundController::class, 'activate'])->name('hr.assessment-rounds.activate');
+        Route::patch('/hr/assessment-rounds/{round}/close', [HrAssessmentRoundController::class, 'close'])->name('hr.assessment-rounds.close');
     });
     Route::post('/hr/remind-assess', function (NotificationService $notifications) {
         $notifications->remindPendingEmployees();

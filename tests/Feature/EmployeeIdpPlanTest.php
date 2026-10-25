@@ -774,7 +774,7 @@ class EmployeeIdpPlanTest extends TestCase
             ])
             ->assertSessionHasNoErrors();
 
-        Mail::assertSent(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
+        Mail::assertQueued(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
             return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
                 && $mail->employee->is($employee)
                 && $mail->competencyName === 'Test Competency';
@@ -912,7 +912,14 @@ class EmployeeIdpPlanTest extends TestCase
             $values['assessment_round_id'] = $this->assessmentRoundId();
         }
 
-        return Assessment::create($values);
+        $assessment = Assessment::create($values);
+
+        if ($assessment->assessment_round_id) {
+            app(\App\Services\AssessmentRoundSnapshotService::class)
+                ->captureIfMissing($user, (int) $assessment->assessment_round_id);
+        }
+
+        return $assessment;
     }
 
     private function competencyId(string $code = 'CC-IDP'): int
@@ -950,6 +957,7 @@ class EmployeeIdpPlanTest extends TestCase
             'name' => 'รอบทดสอบ',
             'year' => 2568,
             'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

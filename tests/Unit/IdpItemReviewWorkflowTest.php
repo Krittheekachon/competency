@@ -43,7 +43,7 @@ class IdpItemReviewWorkflowTest extends TestCase
             {
             }
 
-            public function stepsForUser(object $user, string $chainType = 'assessment'): array
+            public function stepsForUser(object $user, string $chainType = 'assessment', bool $allowUncapturedSnapshot = false): array
             {
                 return $chainType === 'idp' ? $this->steps : [];
             }

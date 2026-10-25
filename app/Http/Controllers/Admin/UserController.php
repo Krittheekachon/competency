@@ -59,6 +59,18 @@ class UserController extends Controller
             $user->update($attributes);
             $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
             $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
+
+            if (! ($data['preserve_existing_structure'] ?? false)) {
+                DB::table('sso_profile_changes')
+                    ->where('user_id', $user->id)
+                    ->where('status', 'restructure')
+                    ->update([
+                        'status' => 'applied',
+                        'resolution_note' => 'จัดโครงสร้างใหม่เรียบร้อยแล้ว',
+                        'resolved_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+            }
         });
 
         return back()->with('success', 'อัปเดตผู้ใช้เรียบร้อยแล้ว');
@@ -122,7 +134,15 @@ class UserController extends Controller
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($user?->id),
+                function (string $attribute, mixed $value, \Closure $fail) use ($user): void {
+                    $query = DB::table('users')->whereRaw('LOWER(email) = ?', [Str::lower((string) $value)]);
+                    if ($user) {
+                        $query->where('id', '!=', $user->id);
+                    }
+                    if ($query->exists()) {
+                        $fail('อีเมลนี้ถูกใช้งานแล้ว');
+                    }
+                },
             ],
             'username' => [
                 Rule::requiredIf(fn (): bool => ! $user),
