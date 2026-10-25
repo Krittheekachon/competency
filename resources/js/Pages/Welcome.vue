@@ -1,22 +1,7 @@
 <script setup>
 import { Head } from '@inertiajs/vue3';
 
-defineProps({
-    ssoEnabled: {
-        type: Boolean,
-        default: false,
-    },
-    ssoError: {
-        type: String,
-        default: null,
-    },
-});
-
 const loginWithKkuSso = () => {
-    window.location.href = route('auth.kku.redirect');
-};
-
-const loginWithPassword = () => {
     window.location.href = route('login');
 };
 </script>
@@ -71,21 +56,13 @@ const loginWithPassword = () => {
                 <button
                     class="login-button"
                     type="button"
-                    :disabled="!ssoEnabled"
-                    :aria-disabled="!ssoEnabled"
                     @click="loginWithKkuSso"
                 >
                     <span class="login-icon" aria-hidden="true">
                         <span></span>
                     </span>
-                    <span>เข้าสู่ระบบด้วย KKU SSO</span>
+                    <span>เข้าสู่ระบบด้วย KKU account</span>
                 </button>
-
-                <button class="alternative-login-button" type="button" @click="loginWithPassword">
-                    หรือ เข้าสู่ระบบด้วยวิธีอื่น
-                </button>
-
-                <p v-if="ssoError" class="login-error" role="alert">{{ ssoError }}</p>
             </div>
 
             <div class="support-row">
@@ -317,17 +294,6 @@ const loginWithPassword = () => {
     transform: translateY(-1px);
 }
 
-.login-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.76;
-}
-
-.login-button:disabled:hover {
-    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.32);
-    filter: none;
-    transform: none;
-}
-
 .login-button:focus-visible {
     outline: 3px solid rgba(255, 255, 255, 0.7);
     outline-offset: 4px;
@@ -350,44 +316,6 @@ const loginWithPassword = () => {
     display: block;
     background: #ffffff;
     content: '';
-}
-
-.alternative-login-button {
-    width: 100%;
-    min-height: 48px;
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    border-radius: 6px;
-    background: rgba(15, 21, 23, 0.36);
-    color: #ffffff;
-    cursor: pointer;
-    font: inherit;
-    font-size: clamp(14px, 1vw, 17px);
-    font-weight: 600;
-    line-height: 1.3;
-    padding: 11px 20px;
-    transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
-}
-
-.alternative-login-button:hover {
-    border-color: #ffffff;
-    background: rgba(255, 255, 255, 0.12);
-    transform: translateY(-1px);
-}
-
-.alternative-login-button:focus-visible {
-    outline: 3px solid rgba(255, 255, 255, 0.7);
-    outline-offset: 4px;
-}
-
-.login-error {
-    margin: 0;
-    border: 1px solid rgba(255, 198, 198, 0.72);
-    border-radius: 6px;
-    background: rgba(111, 24, 30, 0.86);
-    color: #ffffff;
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 10px 14px;
 }
 
 .login-icon::before {
@@ -551,11 +479,6 @@ const loginWithPassword = () => {
 
     .login-actions {
         margin-top: 18px;
-    }
-
-    .alternative-login-button {
-        min-height: 44px;
-        padding: 9px 14px;
     }
 
     .support-row {
