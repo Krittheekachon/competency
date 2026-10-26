@@ -203,15 +203,13 @@ const logout = () => router.post(route('logout'));
         <div class="main">
             <div class="topbar">
                 <button
-                    class="btn btn-s btn-sm menu-btn"
+                    class="btn btn-s btn-sm"
                     :aria-label="showSidebar ? 'ซ่อนเมนู' : 'แสดงเมนู'"
                     :aria-expanded="showSidebar"
-                    title="เมนูหลัก"
+                    style="padding: 8px; min-width: 40px; justify-content: center; border: none; background: transparent"
                     type="button"
                     @click="showSidebar = !showSidebar"
-                >
-                    <span aria-hidden="true">{{ showSidebar ? '‹' : '☰' }}</span>
-                </button>
+                >&#9776;</button>
                 <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
@@ -293,34 +291,11 @@ const logout = () => router.post(route('logout'));
 
 <style scoped>
 .shell { position: relative; }
-.menu-btn {
-    position: relative;
-    z-index: 60;
-    display: inline-grid;
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
-    place-items: center;
-    padding: 0;
-    border: 1px solid var(--border, #cbd5e1) !important;
-    border-radius: 10px;
-    background: var(--bg, #fff) !important;
-    color: var(--text, #172033) !important;
-    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
-    font-size: 23px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-    transition: background-color .15s ease, box-shadow .15s ease;
-}
-.menu-btn:hover { background: var(--border, #e2e8f0) !important; box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
-.menu-btn:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .sidebar-backdrop { display: none; }
-.shell > .sidebar { z-index: 70; }
 
 .nav-count { display: grid; place-items: center; min-width: 20px; height: 20px; margin-left: auto; border-radius: 10px; background: var(--color-primary-soft); color: var(--color-primary); padding: 0 6px; font-size: 10px; font-weight: 900; }
 .nav-item.on .nav-count { background: rgba(255,255,255,.2); color: #fff; }
-@media (max-width: 900px) {
+@media (max-width: 768px) {
     .shell > .sidebar {
         position: fixed;
         z-index: 70;

@@ -116,9 +116,7 @@ const logout = () => router.post(route('logout'));
                     :title="isSidebarOpen ? 'ซ่อนเมนู' : 'แสดงเมนู'"
                     type="button"
                     @click="isSidebarOpen = !isSidebarOpen"
-                >
-                    <span aria-hidden="true">{{ isSidebarOpen ? '‹' : '☰' }}</span>
-                </button>
+                >&#9776;</button>
                 <div class="tb-title">{{ currentPageTitle }}</div>
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
             </header>
@@ -190,29 +188,7 @@ const logout = () => router.post(route('logout'));
     text-align: left;
 }
 
-.manager-menu-button {
-    position: relative;
-    z-index: 60;
-    display: inline-grid;
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
-    place-items: center;
-    padding: 0;
-    border: 1px solid var(--border, #cbd5e1) !important;
-    border-radius: 10px;
-    background: var(--bg, #fff) !important;
-    color: var(--text, #172033) !important;
-    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
-    font-size: 23px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-}
-.manager-menu-button:hover { background: var(--border, #e2e8f0) !important; box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
-.manager-menu-button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .sidebar-backdrop { display: none; }
-.manager-shell > .sidebar { z-index: 70; }
 
 @media (max-width: 768px) {
     .manager-shell {
