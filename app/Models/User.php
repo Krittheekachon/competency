@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notifiable;
     'sso', 'sso_user_id', 'name', 'title',
     'first_name_th', 'last_name_th',
     'first_name_en', 'last_name_en',
-    'email', 'username', 'phone',
+    'email', 'email_verified_at', 'username', 'phone',
     'workline', 'department', 'position',
     'level', 'password', 'role_id', 'role_key',
     'is_active', 'profile_photo',

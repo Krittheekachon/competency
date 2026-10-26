@@ -25,6 +25,7 @@ class AssessmentRoundController extends Controller
         DB::transaction(function () use ($data): void {
             $roundId = DB::table('assessment_rounds')->insertGetId([
                 ...$this->roundValues($data, false),
+                'snapshot_required' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

@@ -2,16 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Mail\IdpSubmittedMail;
 use App\Models\Assessment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class EmployeeIdpPlanTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
 
     public function test_employee_can_save_one_competency_plan_with_multiple_activities(): void
     {
@@ -729,6 +733,54 @@ class EmployeeIdpPlanTest extends TestCase
         ]);
     }
 
+    public function test_submitting_idp_item_notifies_first_idp_reviewer(): void
+    {
+        Mail::fake();
+
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'idp',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $competencyId = $this->competencyId('CC-IDP-NOTIFY');
+        $gapId = $this->approvedGap($employee, $competencyId);
+        DB::table('learning_method_types')->insert([
+            'key' => 'experiential-learning',
+            'label' => 'Experiential Learning',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $toolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'experiential',
+            'title' => 'Project Assignment',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('employee.idp.submit-item'), [
+                'item' => $this->completePlanPayload($gapId, $toolId),
+            ])
+            ->assertSessionHasNoErrors();
+
+        Mail::assertQueued(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->competencyName === 'Test Competency';
+        });
+    }
+
     public function test_auto_save_does_not_overwrite_submitted_competency_plan(): void
     {
         $supervisor = User::factory()->create([
@@ -860,7 +912,14 @@ class EmployeeIdpPlanTest extends TestCase
             $values['assessment_round_id'] = $this->assessmentRoundId();
         }
 
-        return Assessment::create($values);
+        $assessment = Assessment::create($values);
+
+        if ($assessment->assessment_round_id) {
+            app(\App\Services\AssessmentRoundSnapshotService::class)
+                ->captureIfMissing($user, (int) $assessment->assessment_round_id);
+        }
+
+        return $assessment;
     }
 
     private function competencyId(string $code = 'CC-IDP'): int
@@ -898,6 +957,7 @@ class EmployeeIdpPlanTest extends TestCase
             'name' => 'รอบทดสอบ',
             'year' => 2568,
             'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

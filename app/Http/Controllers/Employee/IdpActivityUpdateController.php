@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
 use App\Services\IdpItemReviewWorkflow;
+use App\Services\NotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,7 @@ class IdpActivityUpdateController extends Controller
 {
     public function __construct(
         private readonly IdpItemReviewWorkflow $reviewWorkflow,
+        private readonly NotificationService $notifications,
     ) {}
 
     public function store(Request $request): RedirectResponse
@@ -163,7 +165,8 @@ class IdpActivityUpdateController extends Controller
     public function submitCompletion(Request $request): RedirectResponse
     {
         $data = $request->validate(['idpItemId' => ['required', 'integer']]);
-        DB::transaction(function () use ($request, $data): void {
+        $submittedItemId = null;
+        DB::transaction(function () use ($request, $data, &$submittedItemId): void {
             $item = DB::table('idp_items')
                 ->where('idp_items.id', $data['idpItemId'])
                 ->where('idp_items.status', 'approved')
@@ -222,7 +225,13 @@ class IdpActivityUpdateController extends Controller
                     'created_at' => $now,
                 ]);
             }
+
+            $submittedItemId = (int) $item->id;
         });
+
+        if ($submittedItemId) {
+            $this->notifications->notifyIdpReviewerOfProgressSubmission($request->user(), $submittedItemId);
+        }
 
         return back()->with('success', 'ส่งผลการพัฒนาสมรรถนะให้หัวหน้าตรวจแล้ว');
     }

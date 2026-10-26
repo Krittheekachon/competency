@@ -19,6 +19,13 @@ class AssessmentReviewerChainTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        if (! Schema::hasColumn('assessment_rounds', 'snapshot_required')) {
+            Schema::table('assessment_rounds', function ($table): void {
+                $table->boolean('snapshot_required')->default(true);
+            });
+        }
+
         $this->assessmentRoundId();
     }
 
@@ -64,6 +71,346 @@ class AssessmentReviewerChainTest extends TestCase
                 })
                 ->missing('users')
             );
+    }
+
+    public function test_round_profile_snapshot_with_empty_chain_never_falls_back_to_current_reviewers(): void
+    {
+        $currentReviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $roundId = $this->assessmentRoundId();
+        $this->assignAssessmentReviewers($employee, [1 => $currentReviewer->id]);
+        $employee->setAttribute('assessment_round_id', $roundId);
+        DB::table('user_round_profiles')->insert([
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'captured_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->assertSame([], app(\App\Services\ReviewerChainResolver::class)->stepsForUser($employee));
+    }
+
+    public function test_current_reviewer_cannot_approve_assessment_when_round_snapshot_chain_is_empty(): void
+    {
+        $currentReviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $roundId = $this->assessmentRoundId();
+        $this->assignAssessmentReviewers($employee, [1 => $currentReviewer->id]);
+        $assessment = $this->assessment(
+            $employee,
+            $this->competencyId('CC-SNAPSHOT-EMPTY'),
+            'self_submitted',
+            captureSnapshot: false,
+        );
+        DB::table('user_round_profiles')->insert([
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'captured_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($currentReviewer)
+            ->post(route('assessments.approve'), [
+                'user_id' => $employee->id,
+                'competency_id' => $assessment->competency_id,
+            ])
+            ->assertSessionHasErrors('assessment');
+
+        $this->assertDatabaseHas('assessments', ['id' => $assessment->id, 'status' => 'self_submitted']);
+    }
+
+    public function test_self_assessment_is_rejected_when_expected_level_is_missing_without_capturing_snapshot(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $competencyId = $this->competencyId('CC-NO-EXPECTED');
+        $this->makeAssessable($employee, [$competencyId], null);
+
+        $this->actingAs($employee)
+            ->postJson(route('assessments.draft'), [
+                'competency_id' => $competencyId,
+                'checked_indicators' => [],
+                'score' => 0,
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame(0, Assessment::query()->where('user_id', $employee->id)->count());
+        $this->assertDatabaseMissing('user_round_profiles', [
+            'assessment_round_id' => $this->assessmentRoundId(),
+            'user_id' => $employee->id,
+        ]);
+    }
+
+    public function test_self_assessment_rejects_existing_position_id_from_an_unrelated_workline(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $competencyId = $this->competencyId('CC-MISMATCHED-STRUCTURE');
+        $this->makeAssessable($employee, [$competencyId]);
+
+        $otherWorkline = DB::table('worklines')->insertGetId([
+            'name' => 'Other Workline', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $otherFamily = DB::table('job_families')->insertGetId([
+            'workline_id' => $otherWorkline, 'name' => 'Test Family', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $otherPosition = DB::table('positions')->insertGetId([
+            'job_family_id' => $otherFamily, 'name' => 'Test Position', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('position_competencies')->insert([
+            'assessment_round_id' => $this->assessmentRoundId(), 'position_id' => $otherPosition,
+            'competency_id' => $competencyId, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $employee->forceFill(['position_id' => $otherPosition])->save();
+
+        $this->actingAs($employee)->postJson(route('assessments.draft'), [
+            'competency_id' => $competencyId, 'checked_indicators' => [], 'score' => 0,
+        ])->assertUnprocessable()->assertJsonValidationErrors('assessment');
+        $this->assertSame(0, Assessment::query()->where('user_id', $employee->id)->count());
+        $this->assertDatabaseMissing('user_round_profiles', [
+            'assessment_round_id' => $this->assessmentRoundId(), 'user_id' => $employee->id,
+        ]);
+    }
+
+    public function test_admin_reviewer_exemption_is_preserved_but_other_readiness_requirements_apply(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $competencyId = $this->competencyId('CC-ADMIN-ASSESSMENT');
+        $this->makeAssessable($admin, [$competencyId]);
+
+        $this->actingAs($admin)->postJson(route('assessments.draft'), [
+            'competency_id' => $competencyId, 'checked_indicators' => [], 'score' => 1,
+        ])->assertOk();
+        $this->assertDatabaseHas('assessments', ['user_id' => $admin->id, 'competency_id' => $competencyId]);
+    }
+
+    public function test_dean_is_a_non_admin_and_requires_a_reviewer_chain_for_self_assessment(): void
+    {
+        $dean = User::factory()->create(['role_id' => $this->roleId('dean')]);
+        $competencyId = $this->competencyId('CC-DEAN-REVIEWER-REQUIRED');
+        $this->makeAssessable($dean, [$competencyId]);
+
+        $this->actingAs($dean)->postJson(route('assessments.draft'), [
+            'competency_id' => $competencyId, 'checked_indicators' => [], 'score' => 1,
+        ])->assertUnprocessable()->assertJsonValidationErrors('assessment');
+        $this->assertSame(0, Assessment::query()->where('user_id', $dean->id)->count());
+    }
+
+    public function test_explicitly_legacy_round_without_profile_snapshot_uses_current_chain_and_snapshot_round_keeps_old_chain(): void
+    {
+        $oldReviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $newReviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $roundA = $this->assessmentRoundId();
+        $this->assignAssessmentReviewers($employee, [1 => $oldReviewer->id]);
+        DB::table('user_round_profiles')->insert([
+            'assessment_round_id' => $roundA,
+            'user_id' => $employee->id,
+            'captured_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_round_reviewer_steps')->insert([
+            'assessment_round_id' => $roundA,
+            'user_id' => $employee->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $oldReviewer->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->assignAssessmentReviewers($employee, [1 => $newReviewer->id]);
+        $resolver = app(\App\Services\ReviewerChainResolver::class);
+        $snapshotUser = clone $employee;
+        $snapshotUser->setAttribute('assessment_round_id', $roundA);
+        $legacyRound = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'Persisted Legacy Round', 'year' => 2569, 'is_active' => false,
+            'snapshot_required' => false, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $legacyUser = clone $employee;
+        $legacyUser->setAttribute('assessment_round_id', $legacyRound);
+        $roundB = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'New Snapshot Round',
+            'year' => 2570,
+            'is_active' => false,
+            'snapshot_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundB);
+        $roundBUser = clone $employee;
+        $roundBUser->setAttribute('assessment_round_id', $roundB);
+
+        $this->assertSame($oldReviewer->id, $resolver->stepsForUser($snapshotUser)[0]['reviewer_id']);
+        $this->assertSame($newReviewer->id, $resolver->stepsForUser($legacyUser)[0]['reviewer_id']);
+        $this->assertSame($newReviewer->id, $resolver->stepsForUser($roundBUser)[0]['reviewer_id']);
+    }
+
+    public function test_new_round_missing_snapshot_fails_closed_instead_of_using_current_chain(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $roundId = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'Snapshot Required Round', 'year' => 2571, 'is_active' => false,
+            'snapshot_required' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $roundUser = clone $employee;
+        $roundUser->setAttribute('assessment_round_id', $roundId);
+
+        $this->assertSame([], app(\App\Services\ReviewerChainResolver::class)->stepsForUser($roundUser));
+    }
+
+    public function test_existing_round_without_snapshot_fails_closed_even_with_current_chain_configured(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $roundId = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'Pre-snapshot existing round',
+            'year' => 2567,
+            'is_active' => false,
+            'snapshot_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $roundUser = clone $employee;
+        $roundUser->setAttribute('assessment_round_id', $roundId);
+
+        $this->assertSame([], app(\App\Services\ReviewerChainResolver::class)->stepsForUser($roundUser));
+    }
+
+    public function test_round_with_in_progress_assessment_and_missing_profile_fails_closed(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $roundId = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'In-progress round missing profile',
+            'year' => 2567,
+            'is_active' => false,
+            'snapshot_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $assessment = $this->assessment($employee, $this->competencyId('CC-UNSNAPSHOTTED-PENDING'), 'self_submitted');
+        $assessment->forceFill(['assessment_round_id' => $roundId])->save();
+        $roundUser = clone $employee;
+        $roundUser->setAttribute('assessment_round_id', $roundId);
+
+        $this->assertSame([], app(\App\Services\ReviewerChainResolver::class)->stepsForUser($roundUser));
+    }
+
+    public function test_draft_endpoint_fails_closed_for_in_progress_snapshot_required_round_with_missing_snapshot(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $competencyId = $this->competencyId('CC-IN-PROGRESS-MISSING-SNAPSHOT');
+        $this->makeAssessable($employee, [$competencyId]);
+
+        $roundId = $this->assessmentRoundId();
+        DB::table('assessment_rounds')->where('id', $roundId)->update(['snapshot_required' => true]);
+        $assessment = $this->assessment($employee, $competencyId, 'draft', captureSnapshot: false);
+        $assessment->forceFill(['score' => 1, 'note' => 'Existing in-progress draft'])->save();
+        $this->assertSame($roundId, (int) $assessment->assessment_round_id);
+        $this->assertDatabaseMissing('user_round_profiles', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+        ]);
+
+        $response = $this->actingAs($employee)->postJson(route('assessments.draft'), [
+            'competency_id' => $competencyId,
+            'checked_indicators' => [],
+            'score' => 0,
+        ]);
+
+        $this->assertDatabaseMissing('user_round_profiles', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+        ]);
+        $this->assertDatabaseMissing('user_round_reviewer_steps', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'reviewer_id' => $reviewer->id,
+            'chain_type' => 'assessment',
+        ]);
+        $this->assertDatabaseHas('assessments', [
+            'id' => $assessment->id,
+            'assessment_round_id' => $roundId,
+            'score' => 1,
+            'note' => 'Existing in-progress draft',
+            'status' => 'draft',
+        ]);
+        $response->assertUnprocessable()->assertJsonValidationErrors('assessment');
+    }
+
+    public function test_idp_approval_does_not_authorize_current_reviewer_when_round_profile_is_missing(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $roundId = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'In-progress IDP round missing profile',
+            'year' => 2567,
+            'is_active' => false,
+            'snapshot_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $idpId = DB::table('idps')->insertGetId([
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'year' => 2568,
+            'status' => 'submitted',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $itemId = DB::table('idp_items')->insertGetId([
+            'idp_id' => $idpId,
+            'goal' => 'Pending item without round snapshot',
+            'status' => 'review_step_1',
+            'current_review_step' => 1,
+            'submission_version' => 1,
+            'submitted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $item = DB::table('idp_items')->where('id', $itemId)->first();
+        $item->user_id = $employee->id;
+        $item->assessment_round_id = $roundId;
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        app(\App\Services\IdpItemReviewWorkflow::class)->assertCurrentReviewer($item, $reviewer->id);
+    }
+
+    public function test_profile_snapshot_with_missing_idp_chain_does_not_fall_back_to_live_chain(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->assignAssessmentReviewers($employee, [1 => $reviewer->id]);
+        $roundId = (int) DB::table('assessment_rounds')->insertGetId([
+            'name' => 'Profile without IDP reviewer snapshot',
+            'year' => 2567,
+            'is_active' => false,
+            'snapshot_required' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('user_round_profiles')->insert([
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'captured_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $employee->setAttribute('assessment_round_id', $roundId);
+
+        $this->assertSame([], app(\App\Services\ReviewerChainResolver::class)->stepsForUser($employee, 'idp'));
     }
 
     public function test_employee_assigned_only_to_idp_chain_keeps_employee_dashboard_and_sees_idp_review_module(): void
@@ -364,6 +711,7 @@ class AssessmentReviewerChainTest extends TestCase
             3 => $dean->id,
         ]);
         $competencyId = $this->competencyId();
+        $this->makeAssessable($employee, [$competencyId]);
 
         $this->actingAs($employee)
             ->post(route('assessments.save'), [
@@ -465,6 +813,70 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
     }
 
+    public function test_final_approval_creates_missing_gap_with_expected_and_actual_levels(): void
+    {
+        $thirdReviewer = User::factory()->create([
+            'role_id' => $this->roleId('dean'),
+        ]);
+        [$positionId, $levelId, $competencyId] = $this->positionLevelAndCompetencyForGap('CC-FINAL-GAP');
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'Test Workline',
+            'position' => 'Test Position',
+            'position_id' => $positionId,
+            'level' => 'Test Level',
+            'level_id' => $levelId,
+        ]);
+        $this->assignAssessmentReviewers($employee, [
+            3 => $thirdReviewer->id,
+        ]);
+        $roundId = $this->assessmentRoundId();
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
+        $assessment = Assessment::create([
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+            'assessment_round_id' => $roundId,
+            'score' => 2,
+            'note' => '',
+            'status' => 'dept_evaluated',
+        ]);
+
+        $this->assertDatabaseMissing('competency_gaps', [
+            'assessment_id' => $assessment->id,
+            'competency_id' => $competencyId,
+        ]);
+
+        $this->actingAs($thirdReviewer)
+            ->post(route('assessments.approve'), [
+                'user_id' => $employee->id,
+                'competency_id' => $competencyId,
+            ])
+            ->assertSessionHasNoErrors();
+
+        $gap = DB::table('competency_gaps')
+            ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $competencyId)
+            ->first();
+
+        $this->assertNotNull($gap);
+        $this->assertSame('approved', $gap->status);
+        $this->assertEquals(3, $gap->expected_level);
+        $this->assertEquals(2, $gap->actual_level);
+        $this->assertEquals(-1, $gap->gap);
+        $this->assertTrue((bool) $gap->requires_idp);
+
+        $this->actingAs($employee)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentUserCompetencyGaps.0.competencyId', $competencyId)
+                ->where('currentUserCompetencyGaps.0.expected', 3)
+                ->where('currentUserCompetencyGaps.0.actual', 2)
+                ->where('currentUserCompetencyGaps.0.gap', -1)
+                ->where('currentUserCompetencyGaps.0.status', 'approved')
+            );
+    }
+
     public function test_dynamic_reviewer_chain_can_continue_past_three_steps(): void
     {
         $reviewers = collect(range(1, 4))
@@ -475,12 +887,11 @@ class AssessmentReviewerChainTest extends TestCase
             'role_id' => $this->roleId('employee'),
         ]);
         $competencyId = $this->competencyId('CC-DYNAMIC');
-        $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
-
         $this->assignAssessmentReviewers($employee, $reviewers
             ->values()
             ->mapWithKeys(fn (User $reviewer, int $index): array => [$index + 1 => $reviewer->id])
             ->all());
+        $assessment = $this->assessment($employee, $competencyId, 'self_submitted');
 
         foreach ([
             0 => 'unit_evaluated',
@@ -525,6 +936,7 @@ class AssessmentReviewerChainTest extends TestCase
         $secondCompetencyId = $this->competencyId('CC-TWO');
         $firstAssessment = $this->assessment($employee, $firstCompetencyId, 'self_submitted');
         $secondAssessment = $this->assessment($employee, $secondCompetencyId, 'self_submitted');
+        $this->makeAssessable($employee, [$firstCompetencyId, $secondCompetencyId]);
         $reviewerComment = trim(str_repeat('ผ่านแล้ว พร้อมข้อเสนอแนะเพิ่มเติม ', 12));
 
         $this->actingAs($reviewer)
@@ -589,6 +1001,7 @@ class AssessmentReviewerChainTest extends TestCase
         ]);
         $firstCompetencyId = $this->competencyId('CC-REJECT');
         $secondCompetencyId = $this->competencyId('CC-STAY');
+        $this->makeAssessable($employee, [$firstCompetencyId, $secondCompetencyId]);
         $firstAssessment = $this->assessment($employee, $firstCompetencyId, 'self_submitted');
         $firstAssessment->forceFill(['note' => 'ประเมินตนเองไว้ก่อนส่งหัวหน้า'])->save();
         $secondAssessment = $this->assessment($employee, $secondCompetencyId, 'self_submitted');
@@ -706,6 +1119,7 @@ class AssessmentReviewerChainTest extends TestCase
             1 => $reviewer->id,
         ]);
         $competencyId = $this->competencyId('CC-CHECKED');
+        $this->makeAssessable($employee, [$competencyId]);
         $checkedKey = $competencyId.':1:0';
 
         $this->actingAs($employee)
@@ -744,7 +1158,7 @@ class AssessmentReviewerChainTest extends TestCase
         $this->assertTrue($checked[$checkedKey] ?? false);
     }
 
-    private function assessment(User $user, int $competencyId, string $status): Assessment
+    private function assessment(User $user, int $competencyId, string $status, bool $captureSnapshot = true): Assessment
     {
         $values = [
             'user_id' => $user->id,
@@ -758,6 +1172,10 @@ class AssessmentReviewerChainTest extends TestCase
             $values['assessment_round_id'] = $this->assessmentRoundId();
         }
 
+        $roundId = $values['assessment_round_id'] ?? $this->assessmentRoundId();
+        if ($captureSnapshot) {
+            app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($user, (int) $roundId);
+        }
         $assessment = Assessment::create($values);
 
         DB::table('competency_gaps')->insert([
@@ -789,6 +1207,90 @@ class AssessmentReviewerChainTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function positionLevelAndCompetencyForGap(string $code): array
+    {
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'Test Workline',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'Test Family',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $positionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $jobFamilyId,
+            'name' => 'Test Position',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'Test Level',
+            'expected_level' => 3,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $competencyId = $this->competencyId($code);
+
+        DB::table('position_competencies')->insert([
+            'assessment_round_id' => $this->assessmentRoundId(),
+            'position_id' => $positionId,
+            'competency_id' => $competencyId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$positionId, $levelId, $competencyId];
+    }
+
+    private function makeAssessable(User $user, array $competencyIds, ?int $expectedLevel = 2): void
+    {
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'Test Workline',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'Test Family',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $positionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $jobFamilyId,
+            'name' => 'Test Position',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'Test Level',
+            'expected_level' => $expectedLevel,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user->forceFill([
+            'workline' => 'Test Workline',
+            'department' => 'Test Family',
+            'position' => 'Test Position',
+            'level' => 'Test Level',
+            'position_id' => $positionId,
+            'level_id' => $levelId,
+        ])->save();
+        foreach ($competencyIds as $competencyId) {
+            DB::table('position_competencies')->insert([
+                'assessment_round_id' => $this->assessmentRoundId(),
+                'position_id' => $positionId,
+                'competency_id' => $competencyId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     private function roleId(string $key): int
@@ -832,6 +1334,7 @@ class AssessmentReviewerChainTest extends TestCase
             'self_assess_end' => now()->addMonth()->toDateString(),
             'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

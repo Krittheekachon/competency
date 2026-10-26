@@ -39,11 +39,20 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         if (! config('services.kku_sso.password_login_enabled')) {
+            if (Auth::guard('web')->check()) {
+                return redirect()->intended(route('dashboard', absolute: false));
+            }
+
             return redirect()->route('login')->with('sso_error', 'ระบบนี้อนุญาตให้เข้าสู่ระบบผ่าน KKU SSO เท่านั้น');
         }
 
         $request->authenticate();
 
+        $request->session()->forget([
+            'auth_via_kku_sso',
+            'kku_sso_authenticated',
+            'kku_sso_login_attempt',
+        ]);
         $request->session()->regenerate();
 
         return redirect()->intended(route('dashboard', absolute: false));
@@ -54,7 +63,8 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        $authenticatedViaSso = (bool) $request->session()->get('auth_via_kku_sso', false);
+        $authenticatedViaSso = (bool) $request->session()->get('auth_via_kku_sso', false)
+            || (bool) $request->session()->get('kku_sso_authenticated', false);
 
         Auth::guard('web')->logout();
 
@@ -64,10 +74,11 @@ class AuthenticatedSessionController extends Controller
 
         if ($authenticatedViaSso && config('services.kku_sso.enabled')) {
             $appId = trim((string) config('services.kku_sso.app_id'));
+            $logoutUrl = trim((string) config('services.kku_sso.logout_url'));
             $webUrl = rtrim((string) config('services.kku_sso.web_url'), '/');
 
-            if ($appId !== '' && $webUrl !== '') {
-                return redirect()->away($webUrl.'/logout?'.http_build_query(['app' => $appId]));
+            if ($appId !== '' && ($logoutUrl !== '' || $webUrl !== '')) {
+                return redirect()->away(($logoutUrl !== '' ? $logoutUrl : $webUrl.'/logout').'?'.http_build_query(['app' => $appId]));
             }
         }
 

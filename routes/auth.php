@@ -12,8 +12,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('login', [AuthenticatedSessionController::class, 'create'])
     ->name('login');
 
+Route::post('login', [AuthenticatedSessionController::class, 'store'])->middleware('throttle:10,1');
+
 Route::middleware('guest')->group(function () {
-    Route::post('login', [AuthenticatedSessionController::class, 'store']);
     Route::get('auth/kku-sso', [KkuSsoController::class, 'redirect'])
         ->name('sso.redirect');
     Route::get('auth/kku/callback', [KkuSsoController::class, 'callback'])

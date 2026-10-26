@@ -199,13 +199,16 @@ class StructureController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('positions', 'name')->where(fn ($query) => $query->where('job_family_id', $jobFamilyId)),
+                Rule::unique('positions', 'name')->where(fn ($query) => $query
+                    ->where('job_family_id', $jobFamilyId)
+                    ->whereNull('support_unit_id')),
             ],
             'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
         ]);
 
         DB::table('positions')->insert([
             'job_family_id' => $jobFamilyId,
+            'support_unit_id' => null,
             'position_title_id' => $data['position_title_id'] ?? null,
             'name' => $data['name'],
             'created_at' => now(),
@@ -796,9 +799,32 @@ class StructureController extends Controller
 
         DB::table('positions')->where('support_unit_id', $unitId)->where('name', $data['old_name'])
             ->update(['name' => $data['name'], 'updated_at' => now()]);
-        $this->syncUserPositionName('สายสนับสนุน', $data['division_name'], $data['old_name'], $data['name']);
+        $this->syncUserSupportPositionName(
+            $data['division_name'],
+            $data['work_name'],
+            $data['unit_name'],
+            $data['old_name'],
+            $data['name'],
+        );
 
         return back()->with('success', 'อัปเดตตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    private function syncUserSupportPositionName(
+        string $divisionName,
+        string $workName,
+        string $unitName,
+        string $oldName,
+        string $newName,
+    ): void {
+        DB::table('users')
+            ->whereIn('workline', ['สายสนับสนุน', 'สายงานสนับสนุน'])
+            ->where('department', implode(' > ', [$divisionName, $workName, $unitName]))
+            ->where('position', $oldName)
+            ->update([
+                'position' => $newName,
+                'updated_at' => now(),
+            ]);
     }
 
     private function destroySupportPosition(Request $request): RedirectResponse

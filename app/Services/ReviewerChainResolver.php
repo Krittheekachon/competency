@@ -13,24 +13,82 @@ class ReviewerChainResolver
 
     private ?bool $hasChainTypeColumn = null;
 
-    public function stepsForUser(object $user, string $chainType = 'assessment'): array
+    public function stepsForUser(
+        object $user,
+        string $chainType = 'assessment',
+        bool $allowUncapturedSnapshot = false,
+    ): array
     {
         $userId = (int) ($user->user_id ?? $user->id ?? 0);
         $roundId = (int) ($user->assessment_round_id ?? 0) ?: null;
 
-        if ($userId > 0 && $roundId && Schema::hasTable('user_round_reviewer_steps')) {
-            $snapshotRows = DB::table('user_round_reviewer_steps')
-                ->where('assessment_round_id', $roundId)
-                ->where('user_id', $userId)
-                ->where('chain_type', $chainType)
-                ->orderBy('step_order')
-                ->get(['step_order', 'reviewer_id']);
+        if ($userId > 0 && $roundId) {
+            if (! Schema::hasTable('assessment_rounds')
+                || ! Schema::hasColumn('assessment_rounds', 'snapshot_required')) {
+                return [];
+            }
 
-            if ($snapshotRows->isNotEmpty()) {
-                return $snapshotRows->map(fn (object $row): array => [
-                    'step' => (int) $row->step_order,
-                    'reviewer_id' => (int) $row->reviewer_id,
-                ])->all();
+            $round = DB::table('assessment_rounds')
+                ->where('id', $roundId)
+                ->first(['snapshot_required']);
+
+            if (! $round) {
+                return [];
+            }
+
+            $hasProfileSnapshot = Schema::hasTable('user_round_profiles')
+                && DB::table('user_round_profiles')
+                    ->where('assessment_round_id', $roundId)
+                    ->where('user_id', $userId)
+                    ->exists();
+
+            $hasReviewerSnapshots = Schema::hasTable('user_round_reviewer_steps')
+                && DB::table('user_round_reviewer_steps')
+                    ->where('assessment_round_id', $roundId)
+                    ->where('user_id', $userId)
+                    ->exists();
+
+            if ($hasProfileSnapshot) {
+                if (! Schema::hasTable('user_round_reviewer_steps')) {
+                    return [];
+                }
+
+                $steps = DB::table('user_round_reviewer_steps')
+                    ->where('assessment_round_id', $roundId)
+                    ->where('user_id', $userId)
+                    ->where('chain_type', $chainType)
+                    ->orderBy('step_order')
+                    ->get(['step_order', 'reviewer_id'])
+                    ->map(fn (object $row): array => [
+                        'step' => (int) $row->step_order,
+                        'reviewer_id' => (int) $row->reviewer_id,
+                    ])
+                    ->all();
+
+                // Empty or malformed snapshots fail closed. Sparse reviewer steps
+                // are valid in this system (for example, direct step-3 routing).
+                if ($steps === []) {
+                    return [];
+                }
+
+                foreach ($steps as $step) {
+                    if ($step['step'] <= 0 || $step['reviewer_id'] <= 0) {
+                        return [];
+                    }
+                }
+
+                return $steps;
+            }
+
+            // An orphaned reviewer snapshot indicates incomplete round data; never substitute current assignments.
+            if ($hasReviewerSnapshots) {
+                return [];
+            }
+
+            // Only legacy rounds or the pre-capture assessment guard may read current assignments.
+            if (filter_var($round->snapshot_required, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) !== false
+                && ! $allowUncapturedSnapshot) {
+                return [];
             }
         }
 

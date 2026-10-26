@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\SsoProfileSyncService;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class KkuSsoController extends Controller
 {
+    private const ATTEMPT_TTL_SECONDS = 900;
+
     public function __construct(private SsoProfileSyncService $profileSync)
     {
     }
@@ -25,15 +29,15 @@ class KkuSsoController extends Controller
         }
 
         $appId = trim((string) config('services.kku_sso.app_id'));
-        $webUrl = rtrim((string) config('services.kku_sso.web_url'), '/');
+        $loginUrl = trim((string) config('services.kku_sso.login_url'));
 
-        if ($appId === '' || $webUrl === '') {
+        if ($appId === '' || $loginUrl === '') {
             return $this->loginFailure('ยังไม่ได้ตั้งค่า KKU SSO กรุณาติดต่อผู้ดูแลระบบ');
         }
 
-        $request->session()->put('kku_sso_login_attempt', true);
+        $request->session()->put('kku_sso_login_attempt', now()->timestamp);
 
-        return redirect()->away($webUrl.'/login?'.http_build_query(['app' => $appId]));
+        return redirect()->away($loginUrl.'?'.http_build_query(['app' => $appId]));
     }
 
     public function callback(Request $request): RedirectResponse
@@ -42,7 +46,8 @@ class KkuSsoController extends Controller
             return redirect()->route('login');
         }
 
-        if (! $request->session()->pull('kku_sso_login_attempt', false)) {
+        $attemptedAt = (int) $request->session()->pull('kku_sso_login_attempt', 0);
+        if ($attemptedAt === 0 || now()->timestamp - $attemptedAt > self::ATTEMPT_TTL_SECONDS) {
             return $this->loginFailure('ไม่พบคำขอเข้าสู่ระบบ SSO กรุณาลองใหม่อีกครั้ง');
         }
 
@@ -60,7 +65,7 @@ class KkuSsoController extends Controller
             $tokenResponse = Http::acceptJson()
                 ->asJson()
                 ->timeout((int) config('services.kku_sso.timeout', 10))
-                ->post($this->apiUrl('/auth.token'), [
+                ->post((string) config('services.kku_sso.token_url'), [
                     'code' => $code,
                     'redirectUrl' => config('services.kku_sso.redirect_url'),
                     'clientId' => config('services.kku_sso.client_id'),
@@ -104,6 +109,12 @@ class KkuSsoController extends Controller
                 collect($exception->errors())->flatten()->first()
                     ?: 'ไม่สามารถบันทึกข้อมูลจาก KKU SSO ได้ กรุณาติดต่อผู้ดูแลระบบ'
             );
+        } catch (UniqueConstraintViolationException) {
+            return $this->loginFailure('ข้อมูลบัญชี KKU SSO ขัดแย้งกับบัญชีในระบบ กรุณาติดต่อผู้ดูแลระบบ');
+        }
+
+        if (! $user) {
+            return $this->loginFailure('ไม่พบบัญชีผู้ใช้นี้ในระบบ EN-IDP กรุณาติดต่อผู้ดูแลระบบ');
         }
 
         if (! $user->is_active) {
@@ -128,7 +139,7 @@ class KkuSsoController extends Controller
 
     private function hasRequiredConfiguration(): bool
     {
-        return collect(['client_id', 'client_secret', 'redirect_url', 'api_url'])
+        return collect(['client_id', 'client_secret', 'redirect_url', 'api_url', 'token_url'])
             ->every(fn (string $key): bool => trim((string) config("services.kku_sso.$key")) !== '');
     }
 

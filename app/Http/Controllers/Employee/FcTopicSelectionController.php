@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Employee;
 use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
+use App\Services\NotificationService;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +19,7 @@ class FcTopicSelectionController extends Controller
         private ReviewerChainResolver $reviewerChainResolver,
         private AssessmentRoundWindow $assessmentRoundWindow,
         private AssessmentRoundSnapshotService $roundSnapshot,
+        private NotificationService $notifications,
         private PositionTitleResolver $positionTitles,
     )
     {
@@ -27,7 +29,6 @@ class FcTopicSelectionController extends Controller
     {
         $user = $request->user();
         $roundId = $this->activeRoundId();
-        $this->roundSnapshot->captureIfMissing($user, $roundId);
         $user = $this->roundSnapshot->userForRound($user, $roundId);
         $positionId = (int) ($user->position_id ?? 0);
         $positionTitleId = $this->positionTitles->forUser($user);
@@ -37,6 +38,9 @@ class FcTopicSelectionController extends Controller
                 'position' => 'ยังไม่พบตำแหน่งของคุณ กรุณาให้ Admin ตรวจสอบข้อมูลก่อนเลือกหัวข้อ FC',
             ]);
         }
+
+        // Ensure a newly resolved canonical title is included in a new round snapshot.
+        $user->setAttribute('position_title_id', $positionTitleId);
 
         $firstReviewerId = $this->firstReviewerId($user);
 
@@ -79,9 +83,19 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($user, $positionId, $positionTitleId, $roundId, $selectedIds, $firstReviewerId): void {
+        // Do not freeze an empty or invalid reviewer chain on an incomplete request.
+        $this->roundSnapshot->captureIfMissing($user, $roundId);
+        $user = $this->roundSnapshot->userForRound($user, $roundId);
+        $firstReviewerId = $this->firstReviewerId($user);
+        if (! $firstReviewerId) {
+            throw ValidationException::withMessages([
+                'supervisor' => 'ยังไม่ได้กำหนดหัวหน้า 1 จึงไม่สามารถส่งอนุมัติหัวข้อ FC ได้',
+            ]);
+        }
+
+        $selectionId = DB::transaction(function () use ($user, $positionId, $positionTitleId, $roundId, $selectedIds, $firstReviewerId): int {
             $now = now();
-            $selectionId = DB::table('fc_topic_selections')->updateOrInsert(
+            DB::table('fc_topic_selections')->updateOrInsert(
                 [
                     'user_id' => $user->id,
                     'position_title_id' => $positionTitleId,
@@ -116,7 +130,11 @@ class FcTopicSelectionController extends Controller
                 'created_at' => $now,
                 'updated_at' => $now,
             ])->all());
+
+            return (int) $selectionId;
         });
+
+        $this->notifications->notifyFcTopicSelectionSubmitted($user, $selectionId);
 
         return back()->with('success', 'ส่งหัวข้อ FC ให้หัวหน้า 1 อนุมัติแล้ว');
     }
@@ -149,6 +167,6 @@ class FcTopicSelectionController extends Controller
 
     private function activeRoundId(): int
     {
-        return (int) $this->assessmentRoundWindow->assertSelfAssessmentOpen()->id;
+        return (int) $this->assessmentRoundWindow->activeRound()->id;
     }
 }

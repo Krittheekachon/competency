@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Mail\IdpProgressApprovedMail;
+use App\Mail\IdpProgressReturnedMail;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -13,6 +16,8 @@ use Tests\TestCase;
 class IdpActivityProgressReviewTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
 
     protected function tearDown(): void
     {
@@ -22,6 +27,7 @@ class IdpActivityProgressReviewTest extends TestCase
 
     public function test_current_reviewer_can_approve_the_completed_competency(): void
     {
+        Mail::fake();
         [$reviewer, $completionPublicId, $activityId] = $this->pendingCompletion();
 
         $this->actingAs($reviewer)->post(route('idp-completions.approve'), [
@@ -41,6 +47,14 @@ class IdpActivityProgressReviewTest extends TestCase
         $this->assertDatabaseHas('idp_activities', ['id' => $activityId, 'result' => 'completed']);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
+        Mail::assertQueued(IdpProgressApprovedMail::class, function (IdpProgressApprovedMail $mail) use ($employee): bool {
+            $mail->assertSeeInHtml('บรรลุตามเป้าหมาย');
+
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->achievementStatus === 'met'
+                && $mail->comment === 'ผลงานเป็นไปตามเป้าหมาย';
+        });
         $this->actingAs($employee)->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -138,6 +152,7 @@ class IdpActivityProgressReviewTest extends TestCase
 
     public function test_current_reviewer_can_return_completion_without_changing_submitted_updates(): void
     {
+        Mail::fake();
         [$reviewer, $completionPublicId, $activityId, $updateId] = $this->pendingCompletion();
 
         $this->actingAs($reviewer)->post(route('idp-completions.reject'), [
@@ -153,6 +168,11 @@ class IdpActivityProgressReviewTest extends TestCase
         ]);
 
         $employee = User::findOrFail((int) DB::table('idp_activity_updates')->where('activity_id', $activityId)->value('updated_by'));
+        Mail::assertQueued(IdpProgressReturnedMail::class, function (IdpProgressReturnedMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->comment === 'กรุณาเพิ่มหลักฐานผลลัพธ์';
+        });
         $this->actingAs($employee)->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -365,6 +385,9 @@ class IdpActivityProgressReviewTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $employee = User::query()->findOrFail($employeeId);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
+
         return (int) DB::table('competency_gaps')->insertGetId([
             'assessment_id' => $assessmentId,
             'competency_id' => $competencyId,
@@ -400,8 +423,10 @@ class IdpActivityProgressReviewTest extends TestCase
         ]);
         $roundId = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบ', 'year' => 2569, 'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
         $assessmentId = DB::table('assessments')->insertGetId([
             'assessment_round_id' => $roundId, 'user_id' => $employee->id, 'competency_id' => $competencyId,
             'score' => 2, 'status' => 'approved', 'created_at' => now(), 'updated_at' => now(),

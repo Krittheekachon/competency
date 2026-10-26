@@ -74,7 +74,7 @@ const defaultLearningMethods = [
         key: 'formal',
         label: 'Formal Learning',
         desc: 'การเรียนรู้อย่างเป็นทางการผ่านหลักสูตรหรือการอบรม',
-        color: '#c7432b',
+        color: '#75292D',
     },
 ];
 
@@ -154,6 +154,11 @@ const selfAssessmentBlockReasons = computed(() => {
         reasons.push('ยังไม่ได้กำหนดหัวหน้าอย่างน้อย 1 ลำดับ');
     }
 
+    const readinessKey = user.readiness?.key;
+    if (readinessKey === 'expected_level') reasons.push('รอกำหนด Expected Level สำหรับสมรรถนะ');
+    if (readinessKey === 'competencies') reasons.push('รอกำหนดสมรรถนะสำหรับตำแหน่ง');
+    if (readinessKey === 'sso_changed') reasons.push('รอผู้ดูแลตรวจสอบข้อมูล SSO');
+
     return Array.from(new Set(reasons.filter(Boolean)));
 });
 const isSelfAssessmentBlocked = computed(() => selfAssessmentBlockReasons.value.length > 0);
@@ -228,6 +233,7 @@ const logout = () => router.post(route('logout'));
                     :assessment-window="page.props.selfAssessmentWindow || {}"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
+                    :readiness="currentProfileUser?.readiness"
                 />
 
                 <EmployeeGap
@@ -292,6 +298,6 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
-.nav-count { display: grid; place-items: center; min-width: 20px; height: 20px; margin-left: auto; border-radius: 10px; background: #fff1ec; color: #c7432b; padding: 0 6px; font-size: 10px; font-weight: 900; }
+.nav-count { display: grid; place-items: center; min-width: 20px; height: 20px; margin-left: auto; border-radius: 10px; background: var(--color-primary-soft); color: var(--color-primary); padding: 0 6px; font-size: 10px; font-weight: 900; }
 .nav-item.on .nav-count { background: rgba(255,255,255,.2); color: #fff; }
 </style>

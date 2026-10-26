@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\Admin\SsoProfileReviewController as AdminSsoProfileReviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AssessmentController;
+use App\Http\Controllers\Auth\KkuSsoController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
 use App\Http\Controllers\Employee\IdpActivityUpdateController;
@@ -33,11 +34,18 @@ Route::get('/', function () {
     ]);
 });
 
+Route::get('/auth/kku', [KkuSsoController::class, 'redirect'])
+    ->middleware('throttle:20,1')
+    ->name('auth.kku.redirect');
+Route::get('/auth/kku/callback', [KkuSsoController::class, 'callback'])
+    ->middleware('throttle:20,1')
+    ->name('auth.kku.callback');
+
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'active', 'verified'])
     ->name('dashboard');
 
-if (app()->environment('local')) {
+if (app()->environment('local') && config('app.mock_sso_enabled')) {
     Route::get('/mock-sso', [MockSsoController::class, 'showLogin'])->name('mock.sso');
     Route::post('/mock-sso', [MockSsoController::class, 'login'])->name('mock.sso.login');
     Route::post('/mock-sso/test-notification', [MockSsoController::class, 'testNotification'])->name('mock.sso.test-notification');

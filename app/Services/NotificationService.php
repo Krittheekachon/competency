@@ -4,6 +4,13 @@ namespace App\Services;
 
 use App\Mail\AssessmentStatusUpdateMail;
 use App\Mail\AssessmentSubmittedMail;
+use App\Mail\FcTopicSelectionStatusUpdateMail;
+use App\Mail\FcTopicSelectionSubmittedMail;
+use App\Mail\IdpProgressApprovedMail;
+use App\Mail\IdpProgressReturnedMail;
+use App\Mail\IdpProgressSubmittedMail;
+use App\Mail\IdpStatusUpdateMail;
+use App\Mail\IdpSubmittedMail;
 use App\Mail\ReminderAssessMail;
 use App\Mail\RoleNotificationMail;
 use App\Models\User;
@@ -18,18 +25,12 @@ use Throwable;
 
 class NotificationService
 {
-    private const DEFAULT_TEST_RECIPIENT = 'krittheekachon.s@kkumail.com';
-    private const REVIEWER_1_RECIPIENT = 'krittheekachon.s@kkumail.com';
-    private const REVIEWER_2_3_RECIPIENT = 'chin172755@gmail.com';
-    private const EMPLOYEE_REVISION_RECIPIENT = 'polysaccc1351@gmail.com';
-
     public function __construct(
         private NotificationDigestService $digest,
         private ReviewerChainResolver $reviewerChainResolver,
         private PositionTitleResolver $positionTitles,
-    )
-    {
-    }
+        private NotificationRecipientResolver $recipientResolver,
+    ) {}
 
     public function notifyFirstReviewerOnSubmit(User $employee, string $competencyName): void
     {
@@ -38,7 +39,6 @@ class NotificationService
         $this->sendToUser(
             $reviewer,
             new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
-            $this->recipientForReviewer($reviewer),
         );
     }
 
@@ -49,7 +49,6 @@ class NotificationService
         $this->sendToUser(
             $reviewer,
             new AssessmentSubmittedMail($employee, $competencyName, $this->dashboardUrl()),
-            $this->recipientForReviewer($reviewer),
         );
     }
 
@@ -72,6 +71,51 @@ class NotificationService
             ->first(fn (array $item): bool => (int) $item['step'] === $step)['reviewer_id'] ?? null;
 
         return $reviewerId ? User::find((int) $reviewerId) : null;
+    }
+
+    private function reviewerForIdpStep(User $employee, int $step): ?User
+    {
+        $reviewerId = collect($this->reviewerChainResolver->stepsForUser($employee, 'idp'))
+            ->first(fn (array $item): bool => (int) $item['step'] === $step)['reviewer_id'] ?? null;
+
+        return $reviewerId ? User::find((int) $reviewerId) : null;
+    }
+
+    private function idpItemNotificationContext(int $idpItemId): ?object
+    {
+        return DB::table('idp_items')
+            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->leftJoin('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->where('idp_items.id', $idpItemId)
+            ->select(
+                'idp_items.id',
+                'idp_items.current_review_step',
+                'idp_items.status',
+                'competencies.name as competency_name',
+            )
+            ->first();
+    }
+
+    private function fcTopicSelectionNotificationContext(int $selectionId): ?object
+    {
+        $selection = DB::table('fc_topic_selections')
+            ->where('id', $selectionId)
+            ->first(['id', 'submitted_to', 'status']);
+
+        if (! $selection) {
+            return null;
+        }
+
+        $selection->topic_names = DB::table('fc_topic_selection_items')
+            ->join('competencies', 'fc_topic_selection_items.competency_id', '=', 'competencies.id')
+            ->where('fc_topic_selection_items.fc_topic_selection_id', $selectionId)
+            ->orderBy('competencies.code')
+            ->pluck('competencies.name')
+            ->filter()
+            ->values()
+            ->all();
+
+        return $selection;
     }
 
     public function notifyAdminIncompleteUser(User $user): void
@@ -163,12 +207,140 @@ class NotificationService
         $this->sendToUser(
             $employee,
             new AssessmentStatusUpdateMail($employee, $status, $this->dashboardUrl(), $rejectComment),
-            $this->recipientForEmployeeStatus($status),
+        );
+    }
+
+    public function notifyFcTopicSelectionSubmitted(User $employee, int $selectionId): void
+    {
+        $context = $this->fcTopicSelectionNotificationContext($selectionId);
+        $reviewer = $context?->submitted_to ? User::find((int) $context->submitted_to) : null;
+
+        $this->sendToUser(
+            $reviewer,
+            new FcTopicSelectionSubmittedMail(
+                $employee,
+                $context?->topic_names ?? [],
+                $this->dashboardUrl(),
+            ),
+        );
+    }
+
+    public function notifyEmployeeFcTopicSelectionStatusUpdate(User $employee, int $selectionId, string $status, string $comment = ''): void
+    {
+        $context = $this->fcTopicSelectionNotificationContext($selectionId);
+
+        $this->sendToUser(
+            $employee,
+            new FcTopicSelectionStatusUpdateMail(
+                $employee,
+                $context?->topic_names ?? [],
+                $status,
+                $this->dashboardUrl(),
+                $comment,
+            ),
+        );
+    }
+
+    public function notifyIdpReviewerForItem(User $employee, int $idpItemId, ?int $reviewStep = null): void
+    {
+        $item = $this->idpItemNotificationContext($idpItemId);
+        $step = $reviewStep ?? (int) ($item?->current_review_step ?? 0);
+
+        if (! $item || $step < 1) {
+            return;
+        }
+
+        $reviewer = $this->reviewerForIdpStep($employee, $step);
+
+        $this->sendToUser(
+            $reviewer,
+            new IdpSubmittedMail($employee, $item->competency_name ?: 'แผน IDP', $this->dashboardUrl()),
+        );
+    }
+
+    public function notifyIdpReviewerOfProgressSubmission(User $employee, int $idpItemId): void
+    {
+        $item = DB::table('idp_items')
+            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
+            ->leftJoin('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
+            ->where('idp_items.id', $idpItemId)
+            ->select(
+                'competencies.name as competency_name',
+            )
+            ->first();
+
+        if (! $item) {
+            return;
+        }
+
+        $reviewer = $this->reviewerForIdpStep($employee, 1);
+        $this->sendToUser(
+            $reviewer,
+            new IdpProgressSubmittedMail(
+                $employee,
+                $item->competency_name ?: 'แผน IDP',
+                $this->dashboardUrl(),
+            ),
+        );
+    }
+
+    public function notifyEmployeeIdpProgressReturned(User $employee, int $idpItemId, string $comment): void
+    {
+        $item = $this->idpItemNotificationContext($idpItemId);
+
+        $this->sendToUser(
+            $employee,
+            new IdpProgressReturnedMail(
+                $employee,
+                $item?->competency_name ?: 'แผน IDP',
+                $comment,
+                $this->dashboardUrl(),
+            ),
+        );
+    }
+
+    public function notifyEmployeeIdpProgressApproved(
+        User $employee,
+        int $idpItemId,
+        string $achievementStatus,
+        string $comment = '',
+    ): void {
+        $item = $this->idpItemNotificationContext($idpItemId);
+
+        $this->sendToUser(
+            $employee,
+            new IdpProgressApprovedMail(
+                $employee,
+                $item?->competency_name ?: 'แผน IDP',
+                $achievementStatus,
+                $comment,
+                $this->dashboardUrl(),
+            ),
+        );
+    }
+
+    public function notifyEmployeeIdpStatusUpdate(User $employee, int $idpItemId, string $status, string $rejectComment = ''): void
+    {
+        $item = $this->idpItemNotificationContext($idpItemId);
+
+        $this->sendToUser(
+            $employee,
+            new IdpStatusUpdateMail(
+                $employee,
+                $item?->competency_name ?: 'แผน IDP',
+                $status,
+                $this->dashboardUrl(),
+                $rejectComment,
+            ),
         );
     }
 
     public function isNotificationEnabled(): bool
     {
+        if (! config('mail.notifications_enabled', false)) {
+            return false;
+        }
+
         return ! app()->environment('local') || Cache::get('dev_notifications_enabled', true) !== false;
     }
 
@@ -269,52 +441,47 @@ class NotificationService
         });
     }
 
-    private function sendToUser(?User $user, $mailable, ?string $recipient = null): void
+    private function sendToUser(?User $user, $mailable): void
     {
         if (! $this->isNotificationEnabled()) {
             return;
         }
 
-        if (! $user?->email) {
+        if (! $user) {
+            Log::info('Skipped notification email because recipient user is missing.', [
+                'mail' => $mailable::class,
+            ]);
+
+            return;
+        }
+
+        $resolvedRecipient = $this->recipientResolver->recipientsFor($user);
+        if (! $resolvedRecipient) {
+            Log::info('Skipped notification email because recipient email is missing.', [
+                'user_id' => $user->id,
+                'intended_recipient' => $user->email,
+                'mail' => $mailable::class,
+            ]);
+
             return;
         }
 
         try {
-            Mail::to($user)->queue($mailable);
+            Mail::to($resolvedRecipient)->queue($mailable);
+            Log::info('Queued notification email.', [
+                'user_id' => $user->id,
+                'recipient' => $this->recipientResolver->recipientLabelFor($user),
+                'intended_recipient' => $user->email,
+                'mail' => $mailable::class,
+            ]);
         } catch (Throwable $exception) {
             Log::warning('Unable to queue notification email.', [
                 'user_id' => $user->id,
-                'recipient' => $user->email,
+                'recipient' => $this->recipientResolver->recipientLabelFor($user),
+                'intended_recipient' => $user->email,
                 'mail' => $mailable::class,
                 'message' => $exception->getMessage(),
             ]);
         }
-    }
-
-    private function recipientForReviewer(?User $reviewer): string
-    {
-        $roleKey = $this->normalizeRoleKey($reviewer?->role?->key ?? $reviewer?->role_key ?? '');
-
-        return match ($roleKey) {
-            'supervisor' => self::REVIEWER_1_RECIPIENT,
-            'dept_head', 'division_head', 'academic_department_head', 'dean' => self::REVIEWER_2_3_RECIPIENT,
-            default => self::DEFAULT_TEST_RECIPIENT,
-        };
-    }
-
-    private function recipientForEmployeeStatus(string $status): string
-    {
-        return $status === 'revision_required'
-            ? self::EMPLOYEE_REVISION_RECIPIENT
-            : self::DEFAULT_TEST_RECIPIENT;
-    }
-
-    private function normalizeRoleKey(string $roleKey): string
-    {
-        return match ($roleKey) {
-            'manager' => 'dean',
-            'manager_dept' => 'dept_head',
-            default => $roleKey,
-        };
     }
 }

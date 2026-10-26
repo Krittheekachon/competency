@@ -18,9 +18,16 @@ return new class extends Migration
                 ->get();
 
             foreach ($positions as $position) {
-                $worklineType = str_contains((string) $position->workline_name, 'วิชาการ')
-                    ? 'academic'
-                    : 'support';
+                $normalizedWorkline = Str::lower((string) preg_replace('/\s+/u', '', trim((string) $position->workline_name)));
+                $worklineType = match ($normalizedWorkline) {
+                    'วิชาการ', 'สายวิชาการ', 'สายงานวิชาการ' => 'academic',
+                    'สนับสนุน', 'สายสนับสนุน', 'สายงานสนับสนุน' => 'support',
+                    default => null,
+                };
+
+                if ($worklineType === null) {
+                    continue;
+                }
                 $normalizedName = Str::lower(Str::squish((string) $position->name));
 
                 $titleId = DB::table('position_titles')
@@ -64,10 +71,8 @@ return new class extends Migration
             DB::table('positions')
                 ->whereIn('position_title_id', $legacyTitleIds)
                 ->update(['position_title_id' => null, 'updated_at' => now()]);
-
-            DB::table('position_titles')
-                ->whereIn('id', $legacyTitleIds)
-                ->delete();
+            // These catalog rows may have been reused or aliased after backfill.
+            // Keep them on rollback so existing catalog history is never deleted.
         });
     }
 };

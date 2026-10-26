@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Mail\FcTopicSelectionStatusUpdateMail;
+use App\Mail\FcTopicSelectionSubmittedMail;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +14,8 @@ use Tests\TestCase;
 class FcTopicSelectionFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
 
     public function test_employee_dashboard_marks_the_self_assessment_window_as_closed_after_its_deadline(): void
     {
@@ -39,13 +43,13 @@ class FcTopicSelectionFlowTest extends TestCase
                 ->where('selfAssessmentWindow.status', 'closed')
                 ->where('selfAssessmentWindow.endDate', now()->subDay()->toDateString()));
     }
-
     public function test_employee_assigned_as_first_reviewer_sees_fc_topic_approval_module(): void
     {
-        DB::table('assessment_rounds')->insert([
+        $roundId = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบทดสอบผู้อนุมัติ FC',
             'year' => 2569,
             'is_active' => true,
+            'snapshot_required' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -67,6 +71,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
 
         $this->actingAs($reviewer)
             ->get(route('dashboard'))
@@ -78,7 +83,7 @@ class FcTopicSelectionFlowTest extends TestCase
                 ->has('fcTopicApprovalModule.items', 0));
     }
 
-    public function test_current_first_reviewer_can_take_over_a_submitted_fc_selection_after_chain_changes(): void
+    public function test_submitted_fc_selection_stays_with_snapshot_reviewer_after_chain_changes(): void
     {
         $roundId = DB::table('assessment_rounds')->insertGetId([
             'name' => 'รอบเปลี่ยนผู้ตรวจ FC',
@@ -87,6 +92,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'self_assess_end' => now()->addMonth()->toDateString(),
             'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => true,
+            'snapshot_required' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -99,12 +105,13 @@ class FcTopicSelectionFlowTest extends TestCase
         ]);
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $employee->id,
-            'reviewer_id' => $currentReviewer->id,
-            'step_order' => 2,
+            'reviewer_id' => $previousReviewer->id,
+            'step_order' => 1,
             'chain_type' => 'assessment',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        app(\App\Services\AssessmentRoundSnapshotService::class)->captureIfMissing($employee, $roundId);
         $selectionId = DB::table('fc_topic_selections')->insertGetId([
             'assessment_round_id' => $roundId,
             'user_id' => $employee->id,
@@ -115,25 +122,29 @@ class FcTopicSelectionFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('user_reviewer_steps')
+            ->where('user_id', $employee->id)
+            ->where('chain_type', 'assessment')
+            ->update(['reviewer_id' => $currentReviewer->id]);
 
         $this->actingAs($currentReviewer)
             ->get(route('dashboard'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Employee/Dashboard')
-                ->where('fcTopicApprovalModule.items.0.id', $selectionId));
+                ->where('fcTopicApprovalModule.items', fn ($items): bool => $items->isEmpty()));
 
         $this->actingAs($previousReviewer)
             ->post(route('fc-topic-selections.approve'), ['selection_id' => $selectionId])
-            ->assertSessionHasErrors('selection');
+            ->assertSessionHasNoErrors();
 
         $this->actingAs($currentReviewer)
             ->post(route('fc-topic-selections.approve'), ['selection_id' => $selectionId])
-            ->assertSessionHasNoErrors();
+            ->assertSessionHasErrors('selection');
         $this->assertDatabaseHas('fc_topic_selections', [
             'id' => $selectionId,
             'status' => 'approved',
-            'reviewed_by' => $currentReviewer->id,
+            'reviewed_by' => $previousReviewer->id,
         ]);
     }
 
@@ -148,6 +159,7 @@ class FcTopicSelectionFlowTest extends TestCase
             'self_assess_end' => now()->addMonth()->toDateString(),
             'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
             'is_active' => true,
+            'snapshot_required' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -170,6 +182,22 @@ class FcTopicSelectionFlowTest extends TestCase
             'position_id' => $positionId,
             'is_active' => true,
         ]);
+        $worklineId = (int) DB::table('worklines')->value('id');
+        $position = DB::table('positions')->where('id', $positionId)->first();
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'FC Test Level',
+            'expected_level' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $employee->forceFill([
+            'workline' => DB::table('worklines')->where('id', $worklineId)->value('name'),
+            'department' => DB::table('job_families')->where('id', $position->job_family_id)->value('name'),
+            'position' => $position->name,
+            'level' => 'FC Test Level',
+            'level_id' => $levelId,
+        ])->save();
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $employee->id,
             'reviewer_id' => $supervisor->id,
@@ -210,6 +238,11 @@ class FcTopicSelectionFlowTest extends TestCase
             'fc_topic_selection_id' => $selectionId,
             'competency_id' => $selectedFcId,
         ]);
+        Mail::assertQueued(FcTopicSelectionSubmittedMail::class, function (FcTopicSelectionSubmittedMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && in_array('สมรรถนะ FC1-FLOW-01', $mail->topicNames, true);
+        });
 
         $replacementReviewer = User::factory()->create([
             'role_id' => $this->roleId('employee'),
@@ -251,6 +284,12 @@ class FcTopicSelectionFlowTest extends TestCase
             'status' => 'revision_required',
             'review_comment' => 'เลือกใหม่ให้ตรงงานที่รับผิดชอบ',
         ]);
+        Mail::assertQueued(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->status === 'revision_required'
+                && $mail->comment === 'เลือกใหม่ให้ตรงงานที่รับผิดชอบ';
+        });
 
         $this->actingAs($employee)
             ->post(route('employee.fc-topic-selection.submit'), [
@@ -269,6 +308,11 @@ class FcTopicSelectionFlowTest extends TestCase
             'status' => 'approved',
             'reviewed_by' => $supervisor->id,
         ]);
+        Mail::assertQueued(FcTopicSelectionStatusUpdateMail::class, function (FcTopicSelectionStatusUpdateMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->status === 'approved';
+        });
 
         $this->actingAs($employee)
             ->post(route('assessments.save'), [
@@ -293,6 +337,68 @@ class FcTopicSelectionFlowTest extends TestCase
                 'note' => '',
             ])
             ->assertSessionHasErrors('assessment');
+    }
+
+    public function test_employee_can_submit_fc_topics_before_self_assessment_window_opens(): void
+    {
+        Mail::fake();
+
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบทดสอบส่ง FC ล่วงหน้า',
+            'year' => 2569,
+            'self_assess_start' => now()->addWeek()->toDateString(),
+            'self_assess_end' => now()->addMonth()->toDateString(),
+            'supervisor_assess_end' => now()->addMonths(2)->toDateString(),
+            'is_active' => true,
+            'snapshot_required' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        [$positionId, , $selectedFcId] = $this->positionWithCompetencies($roundId);
+
+        DB::table('position_fc_selection_rules')->insert([
+            'assessment_round_id' => $roundId,
+            'position_id' => $positionId,
+            'required_fc_count' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $supervisor = User::factory()->create([
+            'role_id' => $this->roleId('supervisor'),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'position_id' => $positionId,
+            'is_active' => true,
+        ]);
+
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id,
+            'reviewer_id' => $supervisor->id,
+            'step_order' => 1,
+            'chain_type' => 'assessment',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($employee)
+            ->post(route('employee.fc-topic-selection.submit'), [
+                'competency_ids' => [$selectedFcId],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('fc_topic_selections', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'status' => 'submitted',
+            'submitted_to' => $supervisor->id,
+        ]);
+        Mail::assertQueued(FcTopicSelectionSubmittedMail::class, fn (FcTopicSelectionSubmittedMail $mail): bool =>
+            $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+        );
     }
 
     private function positionWithCompetencies(int $roundId): array

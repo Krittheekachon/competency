@@ -9,6 +9,7 @@ const props = defineProps({
 });
 
 const showPassword = ref(false);
+const displayedSsoError = ref(props.ssoError);
 
 const form = useForm({
     email: '',
@@ -26,6 +27,11 @@ const submit = () => {
 };
 
 const loginWithKku = () => {
+    if (!props.ssoEnabled) {
+        displayedSsoError.value = 'KKU SSO ยังไม่เปิดใช้งานในระบบนี้ กรุณาติดต่อผู้ดูแลระบบ';
+        return;
+    }
+
     window.location.assign(route('sso.redirect'));
 };
 </script>
@@ -85,7 +91,7 @@ const loginWithKku = () => {
                         <p>{{ props.ssoEnabled ? 'เข้าใช้งานด้วยบัญชีมหาวิทยาลัยขอนแก่น' : 'กรอก username และ password เพื่อเข้าใช้งานระบบ' }}</p>
                     </div>
 
-                    <p v-if="props.ssoError" class="sso-error" role="alert">{{ props.ssoError }}</p>
+                    <p v-if="displayedSsoError" class="sso-error" role="alert">{{ displayedSsoError }}</p>
 
                     <div v-if="props.passwordLoginEnabled" class="field">
                         <label for="username">Username</label>
@@ -143,12 +149,11 @@ const loginWithKku = () => {
                         {{ form.processing ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
                     </button>
 
-                    <div v-if="props.ssoEnabled && props.passwordLoginEnabled" class="login-divider">
+                    <div v-if="props.passwordLoginEnabled" class="login-divider">
                         <span>หรือ</span>
                     </div>
 
                     <button
-                        v-if="props.ssoEnabled"
                         class="sso-button"
                         type="button"
                         @click="loginWithKku"

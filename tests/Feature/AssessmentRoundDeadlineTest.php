@@ -7,12 +7,24 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AssessmentRoundDeadlineTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (! Schema::hasColumn('assessment_rounds', 'snapshot_required')) {
+            Schema::table('assessment_rounds', function ($table): void {
+                $table->boolean('snapshot_required')->default(true);
+            });
+        }
+    }
 
     protected function tearDown(): void
     {
@@ -228,6 +240,13 @@ class AssessmentRoundDeadlineTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('user_round_profiles')->insert([
+            'assessment_round_id' => $oldRoundId,
+            'user_id' => $employee->id,
+            'captured_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $employee->id,
             'reviewer_id' => $newReviewer->id,
@@ -267,6 +286,7 @@ class AssessmentRoundDeadlineTest extends TestCase
             'self_assess_start' => $start,
             'self_assess_end' => $selfEnd,
             'supervisor_assess_end' => $reviewEnd,
+            'snapshot_required' => true,
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),

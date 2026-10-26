@@ -36,15 +36,19 @@ return [
     ],
 
     'kku_sso' => [
-        'enabled' => env('KKU_SSO_ENABLED', false),
+        'enabled' => filter_var(env('KKU_SSO_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'app_id' => env('KKU_SSO_APP_ID'),
         'client_id' => env('KKU_SSO_CLIENT_ID'),
         'client_secret' => env('KKU_SSO_CLIENT_SECRET'),
         'web_url' => env('KKU_SSO_WEB_URL', 'https://sso-uat-web.kku.ac.th'),
         'api_url' => env('KKU_SSO_API_URL', 'https://sso-uat-api.kku.ac.th'),
-        'redirect_url' => env('KKU_SSO_REDIRECT_URL', rtrim((string) env('APP_URL'), '/').'/auth/kku/callback'),
-        'password_login_enabled' => env('KKU_SSO_PASSWORD_LOGIN_ENABLED', true),
-        'timeout' => env('KKU_SSO_TIMEOUT', 10),
+        'redirect_url' => env('KKU_SSO_REDIRECT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/auth/kku/callback'),
+        'login_url' => env('KKU_SSO_LOGIN_URL', rtrim((string) env('KKU_SSO_WEB_URL', 'https://sso-uat-web.kku.ac.th'), '/').'/login'),
+        'token_url' => env('KKU_SSO_TOKEN_URL', rtrim((string) env('KKU_SSO_API_URL', 'https://sso-uat-api.kku.ac.th'), '/').'/auth.token'),
+        'logout_url' => env('KKU_SSO_LOGOUT_URL', rtrim((string) env('KKU_SSO_WEB_URL', 'https://sso-uat-web.kku.ac.th'), '/').'/logout'),
+        'logout_redirect_url' => env('KKU_SSO_LOGOUT_REDIRECT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/')),
+        'password_login_enabled' => filter_var(env('KKU_SSO_PASSWORD_LOGIN_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'timeout' => max(1, (int) env('KKU_SSO_TIMEOUT', 10)),
     ],
 
 ];

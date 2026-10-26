@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Mail\IdpStatusUpdateMail;
+use App\Mail\IdpSubmittedMail;
 use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -14,6 +17,8 @@ use Tests\TestCase;
 class IdpItemApprovalTest extends TestCase
 {
     use RefreshDatabase;
+
+    private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
 
     public function test_schema_supports_sequential_idp_review_history(): void
     {
@@ -136,6 +141,8 @@ class IdpItemApprovalTest extends TestCase
 
     public function test_approval_advances_to_next_configured_reviewer(): void
     {
+        Mail::fake();
+
         $reviewer1 = User::factory()->create([
             'role_id' => $this->roleId('supervisor'),
         ]);
@@ -146,6 +153,7 @@ class IdpItemApprovalTest extends TestCase
             'supervisor_id_1' => $reviewer1->id,
             'supervisor_id_3' => $reviewer3->id,
         ]);
+        $employee = $this->employeeForItem($itemId);
 
         $this->actingAs($reviewer1)
             ->post(route('idp-items.approve'), [
@@ -159,11 +167,23 @@ class IdpItemApprovalTest extends TestCase
             'status' => 'review_step_3',
             'current_review_step' => 3,
         ]);
+        Mail::assertQueued(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->status === 'review_step_3';
+        });
+        Mail::assertQueued(IdpSubmittedMail::class, function (IdpSubmittedMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee);
+        });
     }
 
     public function test_rejection_records_history_and_returns_item_to_employee(): void
     {
+        Mail::fake();
+
         [$supervisor, $itemId] = $this->submittedItem();
+        $employee = $this->employeeForItem($itemId);
         $supervisor->forceFill([
             'title' => 'นาย',
             'name' => 'หัวหน้าทดสอบ',
@@ -189,11 +209,12 @@ class IdpItemApprovalTest extends TestCase
             'reviewer_id' => $supervisor->id,
             'decision' => 'rejected',
         ]);
-
-        $employee = User::query()->findOrFail((int) DB::table('idp_items')
-            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
-            ->where('idp_items.id', $itemId)
-            ->value('idps.user_id'));
+        Mail::assertQueued(IdpStatusUpdateMail::class, function (IdpStatusUpdateMail $mail) use ($employee): bool {
+            return $mail->hasTo(self::DEV_NOTIFICATION_RECIPIENT)
+                && $mail->employee->is($employee)
+                && $mail->status === 'revision_required'
+                && $mail->rejectComment === 'แก้ช่วงเวลาดำเนินการ';
+        });
 
         $this->actingAs($employee)
             ->get(route('dashboard'))
@@ -343,6 +364,14 @@ class IdpItemApprovalTest extends TestCase
         ]);
 
         return [$supervisor, $itemId];
+    }
+
+    private function employeeForItem(int $itemId): User
+    {
+        return User::query()->findOrFail((int) DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idp_items.id', $itemId)
+            ->value('idps.user_id'));
     }
 
     private function roleId(string $key): int

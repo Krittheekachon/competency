@@ -87,13 +87,13 @@
         </div>
         <form method="POST" action="{{ route('mock.sso.login') }}">
           @csrf
-          <input type="hidden" name="sso_id" value="{{ $user['id'] }}">
+          <input type="hidden" name="user_id" value="{{ $user['db_id'] }}">
           <button class="login-button" type="submit">Login</button>
         </form>
       </div>
 
       <div class="mail-test">
-        <div class="mail-title">ทดสอบแจ้งเตือน reviewer 1 ไปที่ krittheekachon.s@kkumail.com · reviewer 2/3 ไปที่ chin172755@gmail.com</div>
+        <div class="mail-title">ทดสอบแจ้งเตือนไปยังอีเมลที่กำหนดใน MAIL_DEV_TO</div>
         <div class="mail-grid">
           @foreach($mailTests as $type => $label)
             <form method="POST" action="{{ route('mock.sso.test-notification') }}">
@@ -114,7 +114,7 @@
       </div>
     </div>
   @empty
-    <p style="color:#94a3b8;">ยังไม่มี User ในระบบ - กรุณา Import ข้อมูลก่อน</p>
+    <p style="color:#4B5563;">ยังไม่มี User ในระบบ - กรุณา Import ข้อมูลก่อน</p>
   @endforelse
   @php($notificationsEnabled = \Illuminate\Support\Facades\Cache::get('dev_notifications_enabled', true))
   <button
