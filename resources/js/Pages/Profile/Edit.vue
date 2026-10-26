@@ -57,6 +57,7 @@ const logout = () => router.post(route('logout'));
     <Head :title="props.pageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
+        <button v-if="showSidebar" class="sidebar-backdrop" type="button" aria-label="ปิดเมนู" @click="showSidebar = false" />
         <aside v-if="showSidebar" class="sidebar">
             <SidebarBrand />
 
@@ -89,7 +90,7 @@ const logout = () => router.post(route('logout'));
 
         <main class="main">
             <div class="topbar">
-                <button class="menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
+                <button class="menu-btn" :aria-label="showSidebar ? 'ซ่อนเมนู' : 'แสดงเมนู'" :aria-expanded="showSidebar" title="เมนูหลัก" type="button" @click="showSidebar = !showSidebar"><span aria-hidden="true">{{ showSidebar ? '‹' : '☰' }}</span></button>
                 <PageTitleBlock :page-title="props.pageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
@@ -148,14 +149,28 @@ const logout = () => router.post(route('logout'));
 }
 
 .menu-btn {
-    padding: 8px;
-    min-width: 40px;
-    border: none;
-    background: transparent;
-    color: var(--text2);
-    font-size: 22px;
+    position: relative;
+    z-index: 60;
+    display: inline-grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 10px;
+    background: var(--bg, #fff);
+    color: var(--text, #172033);
+    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1;
     cursor: pointer;
 }
+.menu-btn:hover { background: var(--border, #e2e8f0); box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
+.menu-btn:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+.shell > .sidebar { z-index: 70; }
 
 .profile-page {
     display: grid;
@@ -295,6 +310,27 @@ const logout = () => router.post(route('logout'));
 }
 
 @media (max-width: 900px) {
+    .shell { position: relative; }
+    .shell > .sidebar {
+        position: fixed;
+        z-index: 70;
+        inset: 0 auto 0 0;
+        width: min(320px, 86vw);
+        max-width: none;
+        height: 100dvh;
+        overflow-y: auto;
+        box-shadow: 12px 0 32px rgba(15, 23, 42, .24);
+    }
+    .shell > .sidebar-backdrop {
+        position: fixed;
+        z-index: 65;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgba(15, 23, 42, .48);
+        backdrop-filter: blur(1px);
+    }
+    .shell > .main { width: 100%; flex: 1 1 100%; }
     .profile-hero,
     .profile-identity {
         align-items: flex-start;

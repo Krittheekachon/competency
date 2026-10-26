@@ -1232,6 +1232,7 @@ const logout = () => router.post(route('logout'));
     <Head v-if="!props.embedded" title="Head - EN-IDP" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar && !props.embedded, 'embedded-reviewer-shell': props.embedded }">
+        <button v-if="showSidebar && !props.embedded" class="sidebar-backdrop" type="button" aria-label="ปิดเมนู" @click="showSidebar = false" />
         <div v-if="showSidebar && !props.embedded" class="sidebar">
             <SidebarBrand />
 
@@ -1264,7 +1265,7 @@ const logout = () => router.post(route('logout'));
 
         <div class="main">
             <div v-if="!props.embedded" class="topbar">
-                <button class="btn btn-s btn-sm menu-btn" type="button" @click="showSidebar = !showSidebar">☰</button>
+                <button class="btn btn-s btn-sm menu-btn" :aria-label="showSidebar ? 'ซ่อนเมนู' : 'แสดงเมนู'" :aria-expanded="showSidebar" title="เมนูหลัก" type="button" @click="showSidebar = !showSidebar"><span aria-hidden="true">{{ showSidebar ? '‹' : '☰' }}</span></button>
                 <div class="tb-title">{{ pageTitle }}</div>
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
                     ออกจากระบบ
@@ -2265,12 +2266,28 @@ const logout = () => router.post(route('logout'));
 }
 
 .menu-btn {
-    padding: 8px;
-    min-width: 40px;
-    justify-content: center;
-    border: none;
-    background: transparent;
+    position: relative;
+    z-index: 60;
+    display: inline-grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--border, #cbd5e1) !important;
+    border-radius: 10px;
+    background: var(--bg, #fff) !important;
+    color: var(--text, #172033) !important;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
 }
+.menu-btn:hover { background: var(--border, #e2e8f0) !important; box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
+.menu-btn:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+.shell > .sidebar { z-index: 70; }
 
 .stat-button {
     text-align: left;
@@ -4854,6 +4871,27 @@ const logout = () => router.post(route('logout'));
 .assessment-empty-state.muted-state > span { background: oklch(93% .01 165); color: oklch(58% .015 165); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 @media (max-width: 900px) {
+    .shell:not(.embedded-reviewer-shell) { position: relative; }
+    .shell:not(.embedded-reviewer-shell) > .sidebar {
+        position: fixed;
+        z-index: 70;
+        inset: 0 auto 0 0;
+        width: min(320px, 86vw);
+        max-width: none;
+        height: 100dvh;
+        overflow-y: auto;
+        box-shadow: 12px 0 32px rgba(15, 23, 42, .24);
+    }
+    .shell:not(.embedded-reviewer-shell) > .sidebar-backdrop {
+        position: fixed;
+        z-index: 65;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgba(15, 23, 42, .48);
+        backdrop-filter: blur(1px);
+    }
+    .shell:not(.embedded-reviewer-shell) > .main { width: 100%; flex: 1 1 100%; }
     .assessment-hub-header {
         align-items: flex-start;
         padding-top: 2px;

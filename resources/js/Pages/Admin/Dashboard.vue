@@ -1609,6 +1609,7 @@ const logout = () => router.post(route('logout'));
     <Head :title="currentPageTitle" />
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
+        <button v-if="showSidebar" class="sidebar-backdrop" type="button" aria-label="ปิดเมนู" @click="showSidebar = false" />
         <div v-if="showSidebar" class="sidebar">
             <SidebarBrand />
 
@@ -1644,12 +1645,14 @@ const logout = () => router.post(route('logout'));
         <div class="main">
             <div class="topbar">
                 <button
-                    class="btn btn-s btn-sm"
-                    style="padding: 8px; min-width: 40px; justify-content: center; border: none; background: transparent"
+                    class="btn btn-s btn-sm menu-btn"
+                    :aria-label="showSidebar ? 'ซ่อนเมนู' : 'แสดงเมนู'"
+                    :aria-expanded="showSidebar"
+                    title="เมนูหลัก"
                     type="button"
                     @click="showSidebar = !showSidebar"
                 >
-                    ☰
+                    <span aria-hidden="true">{{ showSidebar ? '‹' : '☰' }}</span>
                 </button>
                 <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" style="margin-left: 8px" type="button" @click="logout">
@@ -2608,6 +2611,31 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.menu-btn {
+    position: relative;
+    z-index: 60;
+    display: inline-grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--border, #cbd5e1) !important;
+    border-radius: 10px;
+    background: var(--bg, #fff) !important;
+    color: var(--text, #172033) !important;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.menu-btn:hover { background: var(--border, #e2e8f0) !important; box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
+.menu-btn:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+.shell > .sidebar { z-index: 70; }
+
 .reviewer-template-form-error {
     margin: 14px 0 0;
     color: #b42318;
@@ -3940,5 +3968,28 @@ const logout = () => router.post(route('logout'));
         min-width: 0;
         text-align: left;
     }
+}
+@media (max-width: 900px) {
+    .shell { position: relative; }
+    .shell > .sidebar {
+        position: fixed;
+        z-index: 70;
+        inset: 0 auto 0 0;
+        width: min(320px, 86vw);
+        max-width: none;
+        height: 100dvh;
+        overflow-y: auto;
+        box-shadow: 12px 0 32px rgba(15, 23, 42, .24);
+    }
+    .shell > .sidebar-backdrop {
+        position: fixed;
+        z-index: 65;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgba(15, 23, 42, .48);
+        backdrop-filter: blur(1px);
+    }
+    .shell > .main { width: 100%; flex: 1 1 100%; }
 }
 </style>

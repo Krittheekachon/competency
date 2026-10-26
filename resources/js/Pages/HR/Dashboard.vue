@@ -617,7 +617,8 @@ const formatWeight = (weight) => {
 <template>
     <Head :title="currentPageTitle" />
 
-    <div class="shell">
+    <div class="shell" :class="{ 'sidebar-hidden': !isSidebarOpen }">
+        <button v-if="isSidebarOpen" class="sidebar-backdrop" type="button" aria-label="ปิดเมนู" @click="isSidebarOpen = false" />
         <aside v-if="isSidebarOpen" class="sidebar">
             <SidebarBrand />
 
@@ -650,11 +651,13 @@ const formatWeight = (weight) => {
             <header class="topbar">
                 <button
                     class="btn btn-s btn-sm hr-menu-button"
-                    :title="isSidebarOpen ? 'ซ่อนเมนู' : 'แสดงเมนู'"
+                    :aria-label="isSidebarOpen ? 'ซ่อนเมนู' : 'แสดงเมนู'"
+                    :aria-expanded="isSidebarOpen"
+                    title="เมนูหลัก"
                     type="button"
                     @click="isSidebarOpen = !isSidebarOpen"
                 >
-                    ☰
+                    <span aria-hidden="true">{{ isSidebarOpen ? '‹' : '☰' }}</span>
                 </button>
                 <PageTitleBlock :page-title="currentPageTitle" />
                 <button class="btn btn-s btn-sm" type="button" @click="logout">ออกจากระบบ</button>
@@ -1342,12 +1345,28 @@ const formatWeight = (weight) => {
 }
 
 .hr-menu-button {
-    min-width: 40px;
-    justify-content: center;
-    border: 0;
-    background: transparent;
-    padding: 8px;
+    position: relative;
+    z-index: 60;
+    display: inline-grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--border, #cbd5e1) !important;
+    border-radius: 10px;
+    background: var(--bg, #fff) !important;
+    color: var(--text, #172033) !important;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, .16);
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
 }
+.hr-menu-button:hover { background: var(--border, #e2e8f0) !important; box-shadow: 0 3px 10px rgba(15, 23, 42, .22); }
+.hr-menu-button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.sidebar-backdrop { display: none; }
+.shell > .sidebar { z-index: 70; }
 
 .content .btn.btn-p {
     background: var(--blue);
@@ -2830,18 +2849,36 @@ const formatWeight = (weight) => {
 
 @media (max-width: 768px) {
     .shell {
-        height: auto;
-        min-height: 100vh;
-        flex-direction: column;
-        overflow: visible;
+        height: 100vh;
+        min-height: 0;
+        flex-direction: row;
+        overflow: hidden;
     }
 
     .sidebar {
-        position: static;
-        width: 100%;
+        position: fixed;
+        z-index: 70;
+        inset: 0 auto 0 0;
+        width: min(320px, 86vw);
+        max-width: none;
+        height: 100dvh;
+        overflow-y: auto;
+        box-shadow: 12px 0 32px rgba(15, 23, 42, .24);
+    }
+
+    .sidebar-backdrop {
+        position: fixed;
+        z-index: 65;
+        inset: 0;
+        display: block;
+        border: 0;
+        background: rgba(15, 23, 42, .48);
+        backdrop-filter: blur(1px);
     }
 
     .main {
+        width: 100%;
+        flex: 1 1 100%;
         min-height: 0;
     }
 
