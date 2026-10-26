@@ -81,6 +81,7 @@ const showAssessmentTemplateCreate = ref(false);
 const activeAssessmentTemplateId = ref(null);
 const editingAssessmentTemplateId = ref(null);
 const assessmentTemplateMemberPick = ref('');
+const assessmentTemplateMemberSearch = ref('');
 const assessmentTemplateError = ref('');
 const isSavingAssessmentTemplate = ref(false);
 const reviewerSearchTerms = ref({});
@@ -92,6 +93,8 @@ const assessmentTemplateForm = ref({
     assignment_user_ids: [],
     reviewer_pick: '',
     user_pick: '',
+    reviewer_search: '',
+    user_search: '',
 });
 const userForm = ref({
     db_id: null,
@@ -649,7 +652,7 @@ const idpReviewerSummary = computed(() => {
         .join(' · ');
 });
 const userWorkflowIssues = computed(() => {
-    if (normalizeUserRoleKey(userForm.value.r) === 'admin') return [];
+    if (['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r))) return [];
 
     const issues = [];
     if (!selectedReviewerIds.value.length) {
@@ -678,6 +681,34 @@ const templateAssignmentUserOptions = computed(() => {
 
     return evaluatorOptions.value.filter((person) => !blocked.has(person.value));
 });
+const filterTemplatePeople = (people, search) => {
+    const term = String(search || '').trim().toLowerCase();
+    if (!term) return people;
+
+    return people.filter((person) => person.searchText.includes(term) || person.label.toLowerCase().includes(term));
+};
+const filteredTemplateReviewerOptions = computed(() => filterTemplatePeople(templateReviewerOptions.value, assessmentTemplateForm.value.reviewer_search));
+const filteredTemplateAssignmentUserOptions = computed(() => filterTemplatePeople(templateAssignmentUserOptions.value, assessmentTemplateForm.value.user_search));
+const filteredAssessmentTemplateMemberOptions = computed(() => filterTemplatePeople(selectedAssessmentTemplateUserOptions.value, assessmentTemplateMemberSearch.value));
+const templateSearchOpen = ref('');
+const closeTemplateSearchOnOutsideClick = (event) => {
+    if (!event.target.closest('.template-combobox')) {
+        templateSearchOpen.value = '';
+    }
+};
+const chooseTemplatePerson = (target, person) => {
+    if (target === 'reviewer') {
+        assessmentTemplateForm.value.reviewer_pick = person.value;
+        assessmentTemplateForm.value.reviewer_search = person.label;
+    } else if (target === 'user') {
+        assessmentTemplateForm.value.user_pick = person.value;
+        assessmentTemplateForm.value.user_search = person.label;
+    } else {
+        assessmentTemplateMemberPick.value = person.value;
+        assessmentTemplateMemberSearch.value = person.label;
+    }
+    templateSearchOpen.value = '';
+};
 const addTemplateReviewer = () => {
     const reviewerId = selectedEvaluatorId(assessmentTemplateForm.value.reviewer_pick);
     if (
@@ -689,6 +720,7 @@ const addTemplateReviewer = () => {
     assessmentTemplateError.value = '';
     assessmentTemplateForm.value.reviewer_ids = [...(assessmentTemplateForm.value.reviewer_ids || []), reviewerId];
     assessmentTemplateForm.value.reviewer_pick = '';
+    assessmentTemplateForm.value.reviewer_search = '';
 };
 const removeTemplateReviewer = (index) => {
     assessmentTemplateForm.value.reviewer_ids = (assessmentTemplateForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
@@ -704,6 +736,7 @@ const addTemplateAssignmentUser = () => {
     assessmentTemplateError.value = '';
     assessmentTemplateForm.value.assignment_user_ids = [...selectedTemplateUserIds.value, userId];
     assessmentTemplateForm.value.user_pick = '';
+    assessmentTemplateForm.value.user_search = '';
 };
 const removeTemplateAssignmentUser = (index) => {
     assessmentTemplateForm.value.assignment_user_ids = selectedTemplateUserIds.value.filter((_, itemIndex) => itemIndex !== index);
@@ -777,6 +810,7 @@ const openAssessmentTemplateDetail = (template) => {
     resetAssessmentTemplateForm();
     activeAssessmentTemplateId.value = template.id;
     assessmentTemplateMemberPick.value = '';
+    assessmentTemplateMemberSearch.value = '';
 };
 const closeAssessmentTemplateDetail = () => {
     activeAssessmentTemplateId.value = null;
@@ -801,6 +835,8 @@ const resetAssessmentTemplateForm = () => {
         assignment_user_ids: [],
         reviewer_pick: '',
         user_pick: '',
+        reviewer_search: '',
+        user_search: '',
     };
 };
 const addAssessmentTemplateMember = () => {
@@ -2234,7 +2270,7 @@ const logout = () => router.post(route('logout'));
     </div>
 
     <div v-if="activeReviewerTemplateModal" class="reviewer-modal-backdrop" @click.self="closeReviewerTemplateModal">
-        <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title">
+        <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title" @click="closeTemplateSearchOnOutsideClick">
             <div class="reviewer-modal-head">
                 <div>
                     <h3 id="reviewer-template-modal-title">{{ activeReviewerTemplateTitle }}</h3>
@@ -2443,16 +2479,15 @@ const logout = () => router.post(route('logout'));
                         </div>
 
                         <div class="template-picker-row">
-                            <select v-model="assessmentTemplateMemberPick" class="sel modal-input">
-                                <option value="">เพิ่มผู้ใช้{{ activeReviewerTemplateTitle }}</option>
-                                <option
-                                    v-for="person in selectedAssessmentTemplateUserOptions"
-                                    :key="`assessment-template-member-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
+                            <div class="template-combobox">
+                                <input v-model="assessmentTemplateMemberSearch" class="inp modal-input" type="search" placeholder="ค้นหาผู้ใช้ด้วยชื่อ ตำแหน่ง หรือหน่วยงาน" @focus="templateSearchOpen = 'member'" @input="templateSearchOpen = 'member'; assessmentTemplateMemberPick = ''" @keydown.escape="templateSearchOpen = ''" />
+                                <div v-if="templateSearchOpen === 'member'" class="template-search-results">
+                                    <button v-for="person in filteredAssessmentTemplateMemberOptions" :key="`member-${person.value}`" type="button" class="template-search-result" @mousedown.prevent="chooseTemplatePerson('member', person)">
+                                        <strong>{{ person.displayName }}</strong><small>{{ [person.p, person.w, person.d].filter(Boolean).join(' ? ') }}</small>
+                                    </button>
+                                    <div v-if="!filteredAssessmentTemplateMemberOptions.length" class="template-search-empty">ไม่พบรายชื่อที่ค้นหา</div>
+                                </div>
+                            </div>
                             <button class="btn btn-p" type="button" @click="addAssessmentTemplateMember">
                                 + เพิ่มสมาชิก
                             </button>
@@ -2511,16 +2546,15 @@ const logout = () => router.post(route('logout'));
                         </div>
 
                         <div class="template-picker-row">
-                            <select v-model="assessmentTemplateForm.reviewer_pick" class="sel modal-input">
-                                <option value="">เลือกผู้ประเมิน</option>
-                                <option
-                                    v-for="person in templateReviewerOptions"
-                                    :key="`template-reviewer-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
+                            <div class="template-combobox">
+                                <input v-model="assessmentTemplateForm.reviewer_search" class="inp modal-input" type="search" placeholder="ค้นหาผู้ประเมินด้วยชื่อ ตำแหน่ง หรือหน่วยงาน" @focus="templateSearchOpen = 'reviewer'" @input="templateSearchOpen = 'reviewer'; assessmentTemplateForm.reviewer_pick = ''" @keydown.escape="templateSearchOpen = ''" />
+                                <div v-if="templateSearchOpen === 'reviewer'" class="template-search-results">
+                                    <button v-for="person in filteredTemplateReviewerOptions" :key="`reviewer-${person.value}`" type="button" class="template-search-result" @mousedown.prevent="chooseTemplatePerson('reviewer', person)">
+                                        <strong>{{ person.displayName }}</strong><small>{{ [person.p, person.w, person.d].filter(Boolean).join(' ? ') }}</small>
+                                    </button>
+                                    <div v-if="!filteredTemplateReviewerOptions.length" class="template-search-empty">ไม่พบรายชื่อที่ค้นหา</div>
+                                </div>
+                            </div>
                             <button class="btn btn-s" type="button" @click="addTemplateReviewer">+ เพิ่มลำดับ</button>
                         </div>
 
@@ -2549,16 +2583,15 @@ const logout = () => router.post(route('logout'));
                         </div>
 
                         <div class="template-picker-row">
-                            <select v-model="assessmentTemplateForm.user_pick" class="sel modal-input">
-                                <option value="">เลือกผู้ใช้</option>
-                                <option
-                                    v-for="person in templateAssignmentUserOptions"
-                                    :key="`template-user-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
+                            <div class="template-combobox">
+                                <input v-model="assessmentTemplateForm.user_search" class="inp modal-input" type="search" placeholder="ค้นหาผู้ใช้ด้วยชื่อ ตำแหน่ง หรือหน่วยงาน" @focus="templateSearchOpen = 'user'" @input="templateSearchOpen = 'user'; assessmentTemplateForm.user_pick = ''" @keydown.escape="templateSearchOpen = ''" />
+                                <div v-if="templateSearchOpen === 'user'" class="template-search-results">
+                                    <button v-for="person in filteredTemplateAssignmentUserOptions" :key="`user-${person.value}`" type="button" class="template-search-result" @mousedown.prevent="chooseTemplatePerson('user', person)">
+                                        <strong>{{ person.displayName }}</strong><small>{{ [person.p, person.w, person.d].filter(Boolean).join(' ? ') }}</small>
+                                    </button>
+                                    <div v-if="!filteredTemplateAssignmentUserOptions.length" class="template-search-empty">ไม่พบรายชื่อที่ค้นหา</div>
+                                </div>
+                            </div>
                             <button class="btn btn-s" type="button" @click="addTemplateAssignmentUser">+ เพิ่มผู้ใช้</button>
                         </div>
 
@@ -3584,6 +3617,54 @@ const logout = () => router.post(route('logout'));
     gap: 10px;
 }
 
+.template-combobox {
+    position: relative;
+    min-width: 0;
+}
+
+.template-search-results {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid #d5deeb;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 12px 28px rgb(15 23 42 / 18%);
+}
+
+.template-search-result {
+    display: grid;
+    width: 100%;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 1px solid #edf1f6;
+    background: #fff;
+    color: #172033;
+    text-align: left;
+    cursor: pointer;
+}
+
+.template-search-result:hover,
+.template-search-result:focus-visible {
+    background: #f2f6fc;
+    outline: none;
+}
+
+.template-search-result small,
+.template-search-empty {
+    color: #64748b;
+    font-size: 12px;
+}
+
+.template-search-empty {
+    padding: 12px;
+}
+
 .template-chain-list {
     display: grid;
     gap: 8px;
@@ -3924,6 +4005,7 @@ const logout = () => router.post(route('logout'));
     .template-picker-row {
         grid-template-columns: 1fr;
     }
+
 
     .reviewer-step-row {
         grid-template-columns: 34px minmax(0, 1fr);

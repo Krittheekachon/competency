@@ -269,17 +269,28 @@ class HrPositionCompetencyTest extends TestCase
             'name' => 'รอบตำแหน่งกลาง', 'year' => 2570, 'is_active' => true,
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        DB::table('assessment_rounds')->insert([
+            'name' => 'older active round with newer id', 'year' => 2569, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
         $hrUser = User::factory()->create([
             'role_id' => DB::table('roles')->where('key', 'hr')->value('id'),
         ]);
+        DB::table('worklines')->insert([
+            'name' => 'สายงานทดสอบ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         [$firstPositionId, $competencyId] = $this->createPositionAndCompetency();
         $positionTitleId = app(PositionTitleResolver::class)->forPositionId($firstPositionId);
+        $jobFamilyId = (int) DB::table('positions')->where('id', $firstPositionId)->value('job_family_id');
         $worklineId = DB::table('job_families')
             ->join('positions', 'positions.job_family_id', '=', 'job_families.id')
             ->where('positions.id', $firstPositionId)
             ->value('job_families.workline_id');
         $firstLevelId = DB::table('levels')->insertGetId([
             'workline_id' => $worklineId,
+            'job_family_id' => $jobFamilyId,
             'name' => 'ระดับเริ่มต้น',
             'expected_level' => 2,
             'created_at' => now(),
@@ -287,6 +298,7 @@ class HrPositionCompetencyTest extends TestCase
         ]);
         $seniorLevelId = DB::table('levels')->insertGetId([
             'workline_id' => $worklineId,
+            'job_family_id' => $jobFamilyId,
             'name' => 'ระดับอาวุโส',
             'expected_level' => 4,
             'created_at' => now(),

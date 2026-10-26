@@ -213,7 +213,7 @@ class UserController extends Controller
             $data['p'] = $user->position;
             $data['l'] = $user->level;
             $data['_position_id'] = $user->position_id;
-            $data['_level_id'] = $user->level_id;
+            $data['_level_id'] = $this->canonicalLevelIdForUser($user) ?? $user->level_id;
         } elseif ($this->normalizeRoleKey((string) $data['r']) === 'admin') {
             $data['w'] = $data['d'] = $data['p'] = $data['l'] = null;
             $data['_position_id'] = null;
@@ -577,6 +577,35 @@ class UserController extends Controller
         }
 
         return (int) $levelId;
+    }
+
+    private function canonicalLevelIdForUser(User $user): ?int
+    {
+        if (blank($user->workline) || blank($user->level)) {
+            return null;
+        }
+
+        $worklineId = DB::table('worklines')->where('name', trim((string) $user->workline))->value('id');
+        if (! $worklineId) {
+            return null;
+        }
+
+        $positionFamilyId = $user->position_id
+            ? DB::table('positions')->where('id', $user->position_id)->value('job_family_id')
+            : null;
+
+        return DB::table('levels')
+            ->where('workline_id', $worklineId)
+            ->whereRaw('LOWER(TRIM(name)) = LOWER(TRIM(?))', [(string) $user->level])
+            ->whereNotNull('expected_level')
+            ->where(function ($query) use ($positionFamilyId): void {
+                $query->whereNull('job_family_id');
+                if ($positionFamilyId) {
+                    $query->orWhere('job_family_id', $positionFamilyId);
+                }
+            })
+            ->orderByRaw('CASE WHEN job_family_id = ? THEN 0 ELSE 1 END', [$positionFamilyId ?? 0])
+            ->value('id');
     }
 
     private function positionIdForJobFamily(int $jobFamilyId, string $positionName): ?int

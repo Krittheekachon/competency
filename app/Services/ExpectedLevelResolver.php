@@ -90,7 +90,25 @@ class ExpectedLevelResolver
 
         $expectedLevel = $levelIds->isEmpty()
             ? null
-            : DB::table('levels')->where('id', $levelIds->first())->value('expected_level');
+            : DB::table('levels')->whereIn('id', $levelIds)->whereNotNull('expected_level')->value('expected_level');
+
+        if ($expectedLevel === null && filled($user->level)) {
+            $expectedLevelQuery = DB::table('levels')
+                ->where('workline_id', $this->worklineIdFromUser($user))
+                ->where('name', trim((string) $user->level))
+                ->whereNotNull('expected_level')
+                ->where(function ($query) use ($user): void {
+                    $jobFamilyIds = $this->jobFamilyIdsForUser($user);
+                    $query->whereNull('job_family_id');
+                    if ($jobFamilyIds->isNotEmpty()) {
+                        $query->orWhereIn('job_family_id', $jobFamilyIds);
+                    }
+                });
+
+            $expectedLevel = $expectedLevelQuery
+                ->orderByRaw('CASE WHEN job_family_id IS NULL THEN 1 ELSE 0 END')
+                ->value('expected_level');
+        }
         $expectedLevel = $expectedLevel === null ? null : (int) $expectedLevel;
 
         foreach ($unresolvedIds as $competencyId) {
@@ -116,18 +134,24 @@ class ExpectedLevelResolver
             return $this->levelIdsCache[$cacheKey] = $levelIds;
         }
 
+        $jobFamilyIds = $this->jobFamilyIdsForUser($user);
+        $scopeLevel = fn () => DB::table('levels')
+            ->where('workline_id', $worklineId)
+            ->where(function ($query) use ($jobFamilyIds): void {
+                $query->whereNull('job_family_id');
+                if ($jobFamilyIds->isNotEmpty()) {
+                    $query->orWhereIn('job_family_id', $jobFamilyIds);
+                }
+            });
+
         if ($user->level_id) {
-            $levelIds = $levelIds->merge(DB::table('levels')
+            $levelIds = $levelIds->merge($scopeLevel()
                 ->where('id', $user->level_id)
-                ->where('workline_id', $worklineId)
-                ->whereNull('job_family_id')
                 ->pluck('id'));
         }
 
-        if ($user->level) {
-            $levelIds = $levelIds->merge(DB::table('levels')
-                ->where('workline_id', $worklineId)
-                ->whereNull('job_family_id')
+        if ($levelIds->isEmpty() && $user->level) {
+            $levelIds = $levelIds->merge($scopeLevel()
                 ->where('name', $user->level)
                 ->pluck('id'));
         }
@@ -234,9 +258,16 @@ class ExpectedLevelResolver
             'สายงาน'.$withoutPrefix,
         ])->filter()->unique()->values();
 
-        $id = DB::table('worklines')
-            ->whereIn('name', $candidates)
-            ->value('id');
+        $id = null;
+        foreach ($candidates as $candidate) {
+            $id = DB::table('worklines')
+                ->where('name', $candidate)
+                ->value('id');
+
+            if ($id) {
+                break;
+            }
+        }
 
         return $this->worklineIdCache[$workline] = $id ? (int) $id : null;
     }
@@ -252,7 +283,11 @@ class ExpectedLevelResolver
             return $this->activeRoundIdCache;
         }
 
-        $id = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
+        $id = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('id');
 
         $this->activeRoundIdResolved = true;
 

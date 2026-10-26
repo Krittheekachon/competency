@@ -332,6 +332,41 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
+    public function test_admin_edit_relinks_legacy_level_id_to_configured_level_from_same_workline(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $worklineId = DB::table('worklines')->insertGetId(['name' => 'academic-test', 'created_at' => now(), 'updated_at' => now()]);
+        $jobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId, 'name' => 'faculty-test', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $positionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $jobFamilyId, 'name' => 'position-test', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $configuredLevelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId, 'job_family_id' => null, 'name' => 'rank-test', 'expected_level' => 3,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $staleLevelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId, 'job_family_id' => $jobFamilyId, 'name' => 'rank-test', 'expected_level' => null,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $user = User::factory()->create([
+            'sso' => 'legacy-level-link', 'username' => 'legacy.level.link', 'role_id' => $this->roleId('employee'),
+            'workline' => 'academic-test', 'department' => 'faculty-test', 'position' => 'position-test',
+            'level' => 'rank-test', 'position_id' => $positionId, 'level_id' => $staleLevelId,
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('admin.users.update', $user), [
+                'sso' => 'legacy-level-link', 'username' => 'legacy.level.link', 'r' => 'employee',
+                'preserve_existing_structure' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($configuredLevelId, (int) $user->fresh()->level_id);
+    }
+
     public function test_admin_can_update_three_assessment_reviewer_steps(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
@@ -595,6 +630,59 @@ class AdminUserControllerTest extends TestCase
             'level_id' => null,
             'role_id' => $this->roleId('dean'),
             'role_key' => 'dean',
+        ]);
+    }
+
+    public function test_admin_can_create_dean_without_assessment_or_idp_reviewer_chains(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'r' => 'dean',
+                'sso' => 'dean-no-review-chains',
+                'username' => 'dean.no.review.chains',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $dean = User::query()->where('sso', 'dean-no-review-chains')->firstOrFail();
+        $this->assertDatabaseMissing('user_reviewer_steps', ['user_id' => $dean->id]);
+    }
+
+    public function test_admin_can_assign_optional_assessment_and_idp_chains_to_dean(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $assessmentReviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $idpReviewer = User::factory()->create(['role_id' => $this->roleId('dept_head')]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'r' => 'dean',
+                'sso' => 'dean-with-review-chains',
+                'username' => 'dean.with.review.chains',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
+                'reviewer_ids' => [$assessmentReviewer->id],
+                'idp_reviewer_ids' => [$idpReviewer->id],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $dean = User::query()->where('sso', 'dean-with-review-chains')->firstOrFail();
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $dean->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $assessmentReviewer->id,
+        ]);
+        $this->assertDatabaseHas('user_reviewer_steps', [
+            'user_id' => $dean->id,
+            'chain_type' => 'idp',
+            'step_order' => 1,
+            'reviewer_id' => $idpReviewer->id,
         ]);
     }
 
@@ -1204,6 +1292,18 @@ class AdminUserControllerTest extends TestCase
             'role_id' => $this->roleId('employee'),
             'is_active' => true,
         ]);
+        $oldReviewer = User::factory()->create([
+            'role_id' => $this->roleId('dean'),
+            'is_active' => true,
+        ]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'step_order' => 1,
+            'reviewer_id' => $oldReviewer->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
         $templateId = DB::table('reviewer_chain_templates')->insertGetId([
             'name' => 'ลำดับเพิ่มสมาชิก',
@@ -1261,6 +1361,11 @@ class AdminUserControllerTest extends TestCase
             'chain_type' => 'assessment',
             'step_order' => 2,
             'reviewer_id' => $reviewerB->id,
+        ]);
+        $this->assertDatabaseMissing('user_reviewer_steps', [
+            'user_id' => $assignedUser->id,
+            'chain_type' => 'assessment',
+            'reviewer_id' => $oldReviewer->id,
         ]);
     }
 
