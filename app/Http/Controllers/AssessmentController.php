@@ -159,7 +159,14 @@ class AssessmentController extends Controller
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
+                ->where('status', $decision['expected_status'])
                 ->pluck('id');
+
+            if ($assessmentIds->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'assessment' => 'ผลการประเมินยังไม่อยู่ในขั้นตอนที่คุณสามารถอนุมัติได้',
+                ]);
+            }
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
                 (int) $data['competency_id'],
@@ -235,7 +242,15 @@ class AssessmentController extends Controller
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
+                ->where('status', $decision['expected_status'])
                 ->pluck('id');
+
+            if ($assessmentIds->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'assessment' => 'ผลการประเมินยังไม่อยู่ในขั้นตอนที่คุณสามารถปฏิเสธได้',
+                ]);
+            }
+
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
                 (int) $data['competency_id'],
