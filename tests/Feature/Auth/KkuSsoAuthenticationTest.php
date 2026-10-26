@@ -77,6 +77,7 @@ class KkuSsoAuthenticationTest extends TestCase
         $this->assertNotNull($user->fresh()->email_verified_at);
         $this->assertSame('นักวิชาการคอมพิวเตอร์', $user->fresh()->sso_position_name);
         $this->assertSame('support', $user->fresh()->sso_workline_type);
+        $this->assertNotNull($user->fresh()->position_title_id);
         $this->assertDatabaseHas('position_titles', [
             'workline_type' => 'support',
             'name' => 'นักวิชาการคอมพิวเตอร์',

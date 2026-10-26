@@ -47,8 +47,8 @@ class AssessmentReviewerChainTest extends TestCase
                 ->where('assessmentApprovalModule.pendingCount', 1)
                 ->where('assessmentApprovalModule.items.0.employeeId', $employee->id)
                 ->where('assessmentApprovalModule.items.0.reviewStep', 1)
-                ->where('assessmentApprovalModule.items.0.organizationLabel', 'หน่วย')
-                ->where('assessmentApprovalModule.items.0.organization', 'ทดสอบหน่วย')
+                ->where('assessmentApprovalModule.items.0.organizationLabel', 'งาน / หน่วย')
+                ->where('assessmentApprovalModule.items.0.organization', 'งาน ทดสอบงาน · หน่วย ทดสอบหน่วย')
                 ->where('assessmentApprovalModule.items.0.competencies.0.competencyId', $competencyId)
                 ->where('reviewerTeamUsers', function ($users) use ($reviewer, $employee): bool {
                     $rows = collect($users);

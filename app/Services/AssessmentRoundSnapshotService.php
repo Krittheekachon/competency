@@ -19,6 +19,7 @@ class AssessmentRoundSnapshotService
                 'assessment_round_id' => $roundId,
                 'user_id' => $user->id,
                 'position_id' => $user->position_id,
+                'position_title_id' => $user->position_title_id,
                 'level_id' => $user->level_id,
                 'workline' => $user->workline,
                 'department' => $user->department,
@@ -73,6 +74,7 @@ class AssessmentRoundSnapshotService
         $snapshot = clone $user;
         $snapshot->forceFill([
             'position_id' => $profile->position_id,
+            'position_title_id' => $profile->position_title_id,
             'level_id' => $profile->level_id,
             'workline' => $profile->workline,
             'department' => $profile->department,

@@ -421,7 +421,7 @@ const primaryJobFamily = (department = '') => department.split(' > ')[0]?.trim()
 const personOption = (user) => ({
     key: user.db_id || user.sso || `${user.t || ''}${user.n}`,
     value: user.db_id,
-    label: `${user.t || ''}${user.n} · ${primaryJobFamily(user.d)} · ${roleLabel(user.r)}`,
+    label: `${user.t || ''}${user.n} · ${user.displayOrganization || user.organization?.display || primaryJobFamily(user.d)} · ${roleLabel(user.r)}`,
 });
 
 const evaluatorOptions = computed(() =>
@@ -532,7 +532,7 @@ const templateAssignedUsers = (template) => {
             id: Number(user.db_id),
             name: `${user.t || ''}${user.n}`,
             position: user.p || 'ไม่ระบุตำแหน่ง',
-            department: primaryJobFamily(user.d || ''),
+            department: user.displayOrganization || user.organization?.display || primaryJobFamily(user.d || ''),
         }));
 };
 const selectedAssessmentTemplateUserOptions = computed(() => {
@@ -1489,6 +1489,7 @@ const logout = () => router.post(route('logout'));
                     v-if="activePage === 'emp-assess'"
                     :user="currentProfileUser"
                     :set-users="setRef(users)"
+                    :assessment-window="page.props.selfAssessmentWindow || {}"
                 />
 
                 <EmployeeGap
@@ -1672,7 +1673,6 @@ const logout = () => router.post(route('logout'));
                             v-model="userForm.username"
                             autocomplete="off"
                             class="inp modal-input"
-                            placeholder="เช่น somchai.k"
                         />
                     </div>
                     <div class="fg">

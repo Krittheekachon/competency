@@ -32,7 +32,7 @@ const fullName = computed(() =>
     || 'โปรไฟล์บุคลากร',
 );
 const roleLine = computed(() =>
-    [props.profileUser?.p, props.profileUser?.l, props.profileUser?.d].filter(Boolean).join(' · ') || 'ยังไม่ได้ระบุข้อมูลตำแหน่ง',
+    [props.profileUser?.p, props.profileUser?.l, props.profileUser?.displayOrganization || props.profileUser?.organization?.display].filter(Boolean).join(' · ') || 'ยังไม่ได้ระบุข้อมูลตำแหน่ง',
 );
 
 const fieldGroups = computed(() => [
@@ -44,7 +44,7 @@ const fieldGroups = computed(() => [
     { key: 'last_name_en', label: 'Last Name', value: props.profileUser?.le },
     { key: 'email', label: 'อีเมล', value: props.profileUser?.em },
     { key: 'phone', label: 'เบอร์โทรศัพท์', value: props.profileUser?.ph },
-    { key: 'department', label: 'สังกัด/หน่วยงาน', value: props.profileUser?.d },
+    { key: 'department', label: 'สังกัด/หน่วยงาน', value: props.profileUser?.displayOrganization || props.profileUser?.organization?.display },
 ]);
 
 const goDashboard = (pageId) => {

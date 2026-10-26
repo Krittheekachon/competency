@@ -17,6 +17,21 @@ Implications:
 
 Historical context not available in the repository.
 
+## Use Canonical Position Titles For Assessment Configuration
+
+Decision: Competencies, FC selection rules, and expected levels are owned by the canonical position in `position_titles`, not by an organization-specific `positions` row.
+
+Status: current implementation with compatibility columns for historical records and the existing organization UI.
+
+Implications:
+
+- Users with the same canonical position receive the same competencies across departments, works, and units.
+- Organization hierarchy is for filtering, reporting, and reviewer-template assistance only.
+- SSO may assign `users.position_title_id` immediately from `positionName` without waiting for organization placement.
+- Historical `position_id` values remain readable during migration but must not be the source of truth for new assessment configuration.
+
+Historical context: confirmed business rule on 2026-10-24.
+
 ## Split Reviewer Chains By Workflow Type
 
 Decision: Reviewer chains and reviewer templates are separated by `chain_type`.

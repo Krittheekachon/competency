@@ -192,11 +192,16 @@
               </span>
             </td>
             <td class="center-cell">
-              <div class="user-status-stack">
-                <span class="readiness-status" :class="`status-${user.readiness?.key || 'structure'}`">
-                  {{ user.readiness?.label || 'รอตรวจสอบ' }}
+              <div
+                class="user-status-summary"
+                :class="[{ inactive: !isActive(user) }, `status-${user.readiness?.key || 'structure'}`]"
+                :title="`${user.readiness?.label || 'รอตรวจสอบ'} · ${isActive(user) ? 'บัญชีเปิดใช้งาน' : 'บัญชีถูกระงับ'}`"
+              >
+                <span class="status-indicator" aria-hidden="true"></span>
+                <span class="status-copy">
+                  <strong>{{ readinessLabel(user) }}</strong>
+                  <small>{{ isActive(user) ? 'บัญชีเปิดใช้งาน' : 'บัญชีถูกระงับ' }}</small>
                 </span>
-                <span class="account-status">{{ isActive(user) ? 'ใช้งานอยู่' : 'ระงับแล้ว' }}</span>
               </div>
             </td>
             <td class="right-cell">
@@ -249,6 +254,14 @@ type User = {
   structureStatus?: string;
   structureIssues?: string[];
   position_id?: number | null;
+  displayOrganization?: string;
+  organization?: {
+    type?: 'support' | 'academic';
+    departmentName?: string | null;
+    workName?: string | null;
+    unitName?: string | null;
+    display?: string;
+  };
   ssoProfile?: {
     workline?: string | null;
     worklineType?: string | null;
@@ -304,19 +317,47 @@ const roleOptions = [
 ];
 
 const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
-const organizationUnit = (user: User) => {
-  const parts = (user.d || '').split(' > ').map((part) => part.trim()).filter(Boolean);
-  if (!parts.length) return '';
+const organizationLabel = (value: string | null | undefined, prefix: 'หน่วย' | 'ภาควิชา') => {
+  const normalized = value?.trim();
+  if (!normalized) return '';
 
-  return user.w === 'สายสนับสนุน' || user.w === 'สายงานสนับสนุน'
-    ? parts[parts.length - 1]
-    : parts[0];
+  return normalized.startsWith(prefix) ? normalized : `${prefix} ${normalized}`;
+};
+const organizationUnit = (user: User) => {
+  if (user.organization?.type === 'support') {
+    return organizationLabel(user.organization.unitName, 'หน่วย') || 'ยังไม่ระบุหน่วย';
+  }
+
+  if (user.organization?.type === 'academic') {
+    return organizationLabel(user.organization.departmentName, 'ภาควิชา') || 'ยังไม่ระบุภาควิชา';
+  }
+
+  const parts = (user.d || '').split(' > ').map((part) => part.trim()).filter(Boolean);
+
+  if (user.w === 'สายสนับสนุน' || user.w === 'สายงานสนับสนุน') {
+    return organizationLabel(parts.length >= 2 ? parts[parts.length - 1] : null, 'หน่วย') || 'ยังไม่ระบุหน่วย';
+  }
+
+  return organizationLabel(parts[0], 'ภาควิชา') || 'ยังไม่ระบุภาควิชา';
 };
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
 const openReviewerTemplateModal = (chainType?: string) => props.openReviewerTemplateModal(chainType);
 const worklineOptions = computed(() => props.worklines || []);
 const isActive = (user: User) => user.act !== false;
+const readinessLabel = (user: User) => {
+  const labels: Record<string, string> = {
+    ready: 'พร้อมประเมิน',
+    position: 'ยังไม่มีตำแหน่ง',
+    competencies: 'ยังไม่มีสมรรถนะ',
+    expected_level: 'ยังไม่มีระดับคาดหวัง',
+    reviewers: 'ยังไม่มีผู้ประเมิน',
+    sso_changed: 'ข้อมูล SSO เปลี่ยน',
+    structure: 'รอตรวจสอบข้อมูล',
+  };
+
+  return labels[user.readiness?.key || 'structure'] || user.readiness?.label || 'รอตรวจสอบข้อมูล';
+};
 const isCurrentUser = (user: User) => Boolean(user.db_id && Number(user.db_id) === currentUserId.value);
 const statusActionTitle = (user: User) => {
   if (isCurrentUser(user) && isActive(user)) {
@@ -775,7 +816,7 @@ const toggleStatus = (user: User) => {
 }
 
 .col-status {
-  width: 7%;
+  width: 13%;
 }
 
 .col-actions {
@@ -852,40 +893,62 @@ const toggleStatus = (user: User) => {
   text-align: center;
 }
 
-.user-status-stack {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-}
-
-.readiness-status {
+.user-status-summary {
   display: inline-flex;
-  max-width: 132px;
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c;
-  font-size: 10px;
+  align-items: center;
+  gap: 9px;
+  min-width: 150px;
+  text-align: left;
+}
+
+.status-indicator {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: oklch(70% .16 55);
+  box-shadow: 0 0 0 4px oklch(95% .035 55);
+}
+
+.status-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.status-copy strong {
+  color: oklch(47% .13 45);
+  font-size: 11px;
   font-weight: 800;
-  line-height: 1.25;
-  text-align: center;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
-.readiness-status.status-ready {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.readiness-status.status-sso_changed {
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
-.account-status {
+.status-copy small {
   color: var(--text3);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 650;
+  line-height: 1.3;
+  white-space: nowrap;
 }
+
+.user-status-summary.status-ready .status-indicator {
+  background: oklch(63% .14 155);
+  box-shadow: 0 0 0 4px oklch(95% .035 155);
+}
+
+.user-status-summary.status-ready .status-copy strong { color: oklch(43% .11 155); }
+.user-status-summary.status-sso_changed .status-indicator {
+  background: oklch(60% .18 25);
+  box-shadow: 0 0 0 4px oklch(95% .035 25);
+}
+.user-status-summary.status-sso_changed .status-copy strong { color: oklch(45% .16 25); }
+.user-status-summary.inactive .status-indicator {
+  background: oklch(65% .015 250);
+  box-shadow: 0 0 0 4px oklch(94% .008 250);
+}
+.user-status-summary.inactive .status-copy strong,
+.user-status-summary.inactive .status-copy small { color: oklch(55% .018 250); }
 
 .right-cell {
   text-align: right;

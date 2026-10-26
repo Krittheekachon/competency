@@ -16,19 +16,73 @@ class FacultyAnalyticsDashboardTest extends TestCase
     {
         $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
         $dean = User::factory()->create(['role_id' => $this->roleId('dean')]);
+        $academicWorklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายวิชาการ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $academicDepartmentId = DB::table('job_families')->insertGetId([
+            'workline_id' => $academicWorklineId,
+            'name' => 'ภาควิชาวิศวกรรมคอมพิวเตอร์',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $academicPositionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $academicDepartmentId,
+            'name' => 'อาจารย์',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportDepartmentId = DB::table('support_departments')->insertGetId([
+            'name' => 'ฝ่ายบริหาร',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportWorkId = DB::table('support_works')->insertGetId([
+            'support_department_id' => $supportDepartmentId,
+            'name' => 'งานทรัพยากรบุคคล',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportUnitId = DB::table('support_units')->insertGetId([
+            'support_work_id' => $supportWorkId,
+            'name' => 'หน่วยพัฒนาบุคลากร',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportWorklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportJobFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $supportWorklineId,
+            'name' => 'กลุ่มตำแหน่งสายสนับสนุน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $supportPositionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $supportJobFamilyId,
+            'support_unit_id' => $supportUnitId,
+            'name' => 'นักวิชาการศึกษา',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $academic = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'name' => 'บุคลากรสายวิชาการ',
             'workline' => 'สายวิชาการ',
-            'department' => 'ภาควิชาวิศวกรรมคอมพิวเตอร์',
+            'department' => 'ข้อความภาควิชาเก่าที่ไม่ตรงกับโครงสร้าง',
             'position' => 'อาจารย์',
+            'position_id' => $academicPositionId,
         ]);
         $support = User::factory()->create([
             'role_id' => $this->roleId('employee'),
             'name' => 'บุคลากรสายสนับสนุน',
             'workline' => 'สายสนับสนุน',
-            'department' => 'ฝ่ายบริหาร > งานทรัพยากรบุคคล > หน่วยพัฒนาบุคลากร',
+            'department' => 'ข้อความฝ่ายเก่าที่ไม่ตรงกับโครงสร้าง',
             'position' => 'นักวิชาการศึกษา',
+            'position_id' => $supportPositionId,
         ]);
         User::factory()->create(['role_id' => $this->roleId('admin')]);
 
@@ -381,6 +435,31 @@ class FacultyAnalyticsDashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('facultyAnalytics.summary.totalEmployees', 2)
                 ->where('facultyAnalytics.summary.assessedEmployees', 1));
+    }
+
+    public function test_faculty_analytics_does_not_create_organizations_from_legacy_department_text(): void
+    {
+        $viewer = User::factory()->create(['role_id' => $this->roleId('hr')]);
+        User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'workline' => 'สายวิชาการ',
+            'department' => 'ภาควิชาที่ไม่มีอยู่ในโครงสร้างจริง',
+            'position_id' => null,
+        ]);
+        DB::table('assessment_rounds')->insert([
+            'name' => 'รอบทดสอบโครงสร้าง',
+            'year' => 2570,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($viewer)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('facultyAnalytics.worklines.0.organizations.0.label', 'ไม่ระบุภาควิชา')
+                ->missing('facultyAnalytics.worklines.0.organizations.1'));
     }
 
     private function assessment(int $roundId, int $userId): int

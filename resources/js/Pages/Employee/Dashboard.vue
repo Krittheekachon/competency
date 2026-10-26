@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
@@ -44,6 +44,15 @@ const implementedEmployeePages = new Set([
 
 const showSidebar = ref(true);
 const activePage = ref(implementedEmployeePages.has(requestedPage) ? requestedPage : 'emp-assess');
+
+watch(activePage, (nextPage) => {
+    if (typeof window === 'undefined' || !implementedEmployeePages.has(nextPage)) return;
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', nextPage);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}, { immediate: true });
+
 const currentRole = ref('employee');
 const page = usePage();
 const users = ref(page.props.currentUser ? [clone(page.props.currentUser)] : []);
@@ -134,16 +143,15 @@ const reviewerStepsForUser = (user) => {
 };
 const selfAssessmentBlockReasons = computed(() => {
     const user = currentProfileUser.value || {};
-    const rawStructureIssues = Array.isArray(user.structureIssues) ? user.structureIssues : [];
-    const reasons = rawStructureIssues.filter((reason) => reason !== 'ยังไม่ได้กำหนดลำดับ IDP');
+    const reasons = [];
     const hasAssignedEvaluator = reviewerStepsForUser(user).length > 0;
+
+    if (!user.position_title_id) {
+        reasons.push('ยังไม่ได้กำหนดตำแหน่งสำหรับการประเมิน');
+    }
 
     if (!hasAssignedEvaluator) {
         reasons.push('ยังไม่ได้กำหนดหัวหน้าอย่างน้อย 1 ลำดับ');
-    }
-
-    if (user.structureStatus === 'invalid' && rawStructureIssues.length === 0) {
-        reasons.push('ข้อมูลโครงสร้างยังต้องตรวจสอบ');
     }
 
     return Array.from(new Set(reasons.filter(Boolean)));
@@ -217,6 +225,7 @@ const logout = () => router.post(route('logout'));
                     :set-users="setRef(users)"
                     :competencies="assignedCompetencies"
                     :fc-topic-selection="fcTopicSelection"
+                    :assessment-window="page.props.selfAssessmentWindow || {}"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />

@@ -11,7 +11,7 @@ class AdminStructureControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_create_position_under_support_unit(): void
+    public function test_admin_can_create_and_remove_position_under_support_unit(): void
     {
         $admin = User::factory()->create([
             'role_id' => (int) DB::table('roles')->where('key', 'admin')->value('id'),
@@ -30,6 +30,18 @@ class AdminStructureControllerTest extends TestCase
         ])->assertRedirect()->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('positions', [
+            'support_unit_id' => $unitId,
+            'name' => 'นักทรัพยากรบุคคล',
+        ]);
+
+        $this->actingAs($admin)->delete(route('admin.structure.positions.destroy'), [
+            'division_name' => 'ฝ่ายบริหาร',
+            'work_name' => 'งานบุคคล',
+            'unit_name' => 'หน่วยพัฒนา',
+            'name' => 'นักทรัพยากรบุคคล',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertDatabaseMissing('positions', [
             'support_unit_id' => $unitId,
             'name' => 'นักทรัพยากรบุคคล',
         ]);
@@ -276,6 +288,37 @@ class AdminStructureControllerTest extends TestCase
             'workline_id' => $worklineId,
             'name' => 'ชำนาญการ',
         ]);
+    }
+
+    public function test_admin_cannot_delete_level_that_is_still_assigned_to_a_user(): void
+    {
+        $admin = $this->createAdmin();
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายที่ยังใช้งาน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $levelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'job_family_id' => null,
+            'name' => 'ระดับที่ยังใช้งาน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        User::factory()->create([
+            'workline' => 'สายที่ยังใช้งาน',
+            'level' => 'ระดับที่ยังใช้งาน',
+            'level_id' => $levelId,
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route('admin.structure.levels.destroy'), [
+                'workline_name' => 'สายที่ยังใช้งาน',
+                'name' => 'ระดับที่ยังใช้งาน',
+            ])
+            ->assertSessionHasErrors('name');
+
+        $this->assertDatabaseHas('levels', ['id' => $levelId]);
     }
 
     public function test_admin_cannot_scope_levels_to_a_job_family(): void

@@ -8,6 +8,7 @@ use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
 use App\Services\ExpectedLevelResolver;
 use App\Services\NotificationService;
+use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -23,6 +24,7 @@ class AssessmentController extends Controller
         private ReviewerChainResolver $reviewerChainResolver,
         private AssessmentRoundWindow $assessmentRoundWindow,
         private AssessmentRoundSnapshotService $roundSnapshot,
+        private PositionTitleResolver $positionTitles,
     )
     {
     }
@@ -294,6 +296,7 @@ class AssessmentController extends Controller
         $snapshot = $this->roundSnapshot->userForRound($user, $roundId);
         $user->forceFill([
             'position_id' => $snapshot->position_id,
+            'position_title_id' => $snapshot->position_title_id,
             'level_id' => $snapshot->level_id,
             'workline' => $snapshot->workline,
             'department' => $snapshot->department,
@@ -305,14 +308,14 @@ class AssessmentController extends Controller
 
     private function assertFcTopicsApprovedForAssessment($user, int $competencyId): void
     {
-        $positionId = (int) ($user->position_id ?? 0);
+        $positionTitleId = $this->positionTitles->forUser($user);
         $roundId = $this->activeAssessmentRoundId();
-        if ($positionId <= 0 || ! Schema::hasTable('position_fc_selection_rules')) {
+        if (! $positionTitleId || ! Schema::hasTable('position_fc_selection_rules')) {
             return;
         }
 
         $requiredCount = (int) DB::table('position_fc_selection_rules')
-            ->where('position_id', $positionId)
+            ->where('position_title_id', $positionTitleId)
             ->where('assessment_round_id', $roundId)
             ->value('required_fc_count');
 
@@ -323,7 +326,7 @@ class AssessmentController extends Controller
         $selection = Schema::hasTable('fc_topic_selections')
             ? DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
-                ->where('position_id', $positionId)
+                ->where('position_title_id', $positionTitleId)
                 ->where('assessment_round_id', $roundId)
                 ->first()
             : null;

@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\DB;
 
 class FacultyAnalyticsService
 {
+    public function __construct(
+        private PositionTitleResolver $positionTitles,
+        private UserOrganizationPresenter $organizationPresenter,
+    ) {}
+
     private const APPROVED_STATUSES = ['approved', 'dean_approved'];
 
     private const SELF_ASSESSMENT_ROLE_KEYS = [
@@ -44,6 +49,7 @@ class FacultyAnalyticsService
                 'users.name',
                 'users.position',
                 'users.position_id',
+                'users.position_title_id',
                 'users.department',
                 'users.workline',
             ]);
@@ -205,12 +211,14 @@ class FacultyAnalyticsService
     private function requiredAssessmentRows(Collection $assessments, Collection $employees, int $roundId): Collection
     {
         $positionByUser = $employees->mapWithKeys(fn (object $employee): array => [
-            (int) $employee->id => $employee->position_id ? (int) $employee->position_id : null,
+            (int) $employee->id => $employee->position_title_id
+                ? (int) $employee->position_title_id
+                : ($employee->position_id ? $this->positionTitles->forPositionId((int) $employee->position_id) : null),
         ]);
         $positionsUsingFcSelection = DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $roundId)
             ->where('required_fc_count', '>', 0)
-            ->pluck('position_id')
+            ->pluck('position_title_id')
             ->map(fn ($id): int => (int) $id)
             ->flip();
         $selectedFcByUser = DB::table('fc_topic_selections')
@@ -230,8 +238,8 @@ class FacultyAnalyticsService
             }
 
             $userId = (int) $assessment->user_id;
-            $positionId = $positionByUser->get($userId);
-            if (! $positionId || ! $positionsUsingFcSelection->has($positionId)) {
+            $positionTitleId = $positionByUser->get($userId);
+            if (! $positionTitleId || ! $positionsUsingFcSelection->has($positionTitleId)) {
                 return true;
             }
 
@@ -278,11 +286,14 @@ class FacultyAnalyticsService
         $groups = [];
 
         foreach ($users as $user) {
-            $parts = collect(explode(' > ', (string) $user->department))
-                ->map(fn (string $part): string => trim($part))
-                ->filter()
-                ->take($scopeKey === 'support' ? 3 : 1)
-                ->values();
+            $organization = $this->organizationPresenter->canonicalForUser($user);
+            $parts = $scopeKey === 'support'
+                ? collect([
+                    $organization['departmentName'] ?? null,
+                    $organization['workName'] ?? null,
+                    $organization['unitName'] ?? null,
+                ])->filter()->values()
+                : collect([$organization['departmentName'] ?? null])->filter()->values();
 
             if ($parts->isEmpty()) {
                 $parts = collect([$scopeKey === 'support' ? 'ไม่ระบุฝ่าย' : 'ไม่ระบุภาควิชา']);
@@ -476,7 +487,7 @@ class FacultyAnalyticsService
                     'userId' => (int) $gap->user_id,
                     'name' => trim(($user?->title ?: '').($user?->name ?: '')),
                     'position' => $user?->position ?: '',
-                    'organization' => $user?->department ?: '',
+                    'organization' => $user ? $this->organizationPresenter->forUser($user)['display'] : '',
                     'workline' => $user?->workline ?: '',
                     'expectedLevel' => $gap->expected_level !== null ? (int) $gap->expected_level : null,
                     'actualLevel' => $gap->actual_level !== null ? (float) $gap->actual_level : null,

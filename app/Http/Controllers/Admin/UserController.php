@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\PositionTitleResolver;
 use App\Services\ReviewerTemplateResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class UserController extends Controller
     public function __construct(
         private NotificationService $notifications,
         private ReviewerTemplateResolver $reviewerTemplateResolver,
+        private PositionTitleResolver $positionTitles,
     ) {}
 
     public function store(Request $request): RedirectResponse
@@ -237,6 +239,9 @@ class UserController extends Controller
             'position' => $data['p'] ?? null,
             'level' => $data['l'] ?? null,
             'position_id' => $data['_position_id'],
+            'position_title_id' => $data['_position_id']
+                ? $this->positionTitles->forPositionId((int) $data['_position_id'])
+                : null,
             'level_id' => $data['_level_id'],
             'role_id' => $role->id,
             'reviewer_template_id' => $data['reviewer_template_id'] ?? null,

@@ -134,19 +134,13 @@ class IdpApprovalController extends Controller
     private function reviewableItem(int $itemId): object
     {
         $item = DB::table('idp_items')
-            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
-            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
-            ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
-            ->join('users', 'idps.user_id', '=', 'users.id')
             ->where('idp_items.id', $itemId)
             ->select(
                 'idp_items.id',
                 'idp_items.idp_id',
                 'idp_items.status',
                 'idp_items.submission_version',
-                'idp_items.current_review_step',
-                'users.id as user_id',
-                'idps.assessment_round_id'
+                'idp_items.current_review_step'
             )
             ->lockForUpdate()
             ->first();
@@ -156,6 +150,26 @@ class IdpApprovalController extends Controller
                 'idpItemId' => 'ไม่พบแผนสมรรถนะ',
             ]);
         }
+
+        // PostgreSQL cannot apply FOR UPDATE to the nullable side of an outer join.
+        // Lock the canonical idp_items row first, then read its immutable review context.
+        $context = DB::table('idps')
+            ->join('users', 'idps.user_id', '=', 'users.id')
+            ->where('idps.id', $item->idp_id)
+            ->select(
+                'users.id as user_id',
+                'idps.assessment_round_id'
+            )
+            ->first();
+
+        if (! $context) {
+            throw ValidationException::withMessages([
+                'idpItemId' => 'ไม่พบข้อมูลเจ้าของแผนสมรรถนะ',
+            ]);
+        }
+
+        $item->user_id = $context->user_id;
+        $item->assessment_round_id = $context->assessment_round_id;
 
         $this->reviewWorkflow->assertCurrentReviewer($item, (int) auth()->id());
 

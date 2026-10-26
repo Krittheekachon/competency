@@ -26,6 +26,7 @@ class NotificationService
     public function __construct(
         private NotificationDigestService $digest,
         private ReviewerChainResolver $reviewerChainResolver,
+        private PositionTitleResolver $positionTitles,
     )
     {
     }
@@ -234,10 +235,10 @@ class NotificationService
             return false;
         }
 
-        if (Schema::hasColumn('users', 'position_id') && $user->position_id) {
+        if ($positionTitleId = $this->positionTitles->forUser($user)) {
             return ! DB::table('position_competencies')
                 ->where('assessment_round_id', $roundId)
-                ->where('position_id', $user->position_id)
+                ->where('position_title_id', $positionTitleId)
                 ->exists();
         }
 

@@ -260,26 +260,6 @@ const formatDate = (value?: string) => {
     <section v-if="selectedGroup" :key="selectedGroup.idpItemId" class="competency-section">
       <header class="competency-head">
         <div class="competency-copy"><span>{{ selectedGroup.code }}</span><div><small>สมรรถนะที่เลือก</small><h2>{{ selectedGroup.name }}</h2></div></div>
-        <div class="completion-actions">
-          <span class="status-pill" :class="completionMeta(selectedGroup.completion).className">{{ completionMeta(selectedGroup.completion).label }}</span>
-          <span class="topic-count">อัปเดตแล้ว {{ updatedTopicTotal(selectedGroup) }}/{{ topicTotal(selectedGroup) }} หัวข้อ</span>
-          <span
-            v-if="!isLocked(selectedGroup.completion)"
-            class="submit-completion-wrap"
-            :class="{ 'has-tooltip': !canSubmitCompletion(selectedGroup) }"
-            :tabindex="canSubmitCompletion(selectedGroup) ? undefined : 0"
-          >
-            <button
-              class="submit-completion"
-              type="button"
-              :disabled="processing || !canSubmitCompletion(selectedGroup)"
-              @click="requestSubmitCompletion(selectedGroup)"
-            >ส่งให้หัวหน้าตรวจ</button>
-            <span v-if="!canSubmitCompletion(selectedGroup)" class="submit-tooltip" role="tooltip">
-              ต้องเพิ่มอัปเดตให้ครบอีก {{ remainingTopicTotal(selectedGroup) }} หัวข้อ
-            </span>
-          </span>
-        </div>
       </header>
 
       <section v-if="selectedGroup.completion?.review" class="review-feedback" :class="selectedGroup.completion.review.decision">
@@ -332,6 +312,30 @@ const formatDate = (value?: string) => {
           </div>
         </section>
       </article>
+
+      <footer class="completion-actions">
+        <div class="completion-summary">
+          <strong>{{ selectedGroup.code }} · {{ completionMeta(selectedGroup.completion).label }}</strong>
+          <span>อัปเดตแล้ว {{ updatedTopicTotal(selectedGroup) }}/{{ topicTotal(selectedGroup) }} หัวข้อ</span>
+        </div>
+        <span class="status-pill" :class="completionMeta(selectedGroup.completion).className">{{ completionMeta(selectedGroup.completion).label }}</span>
+        <span
+          v-if="!isLocked(selectedGroup.completion)"
+          class="submit-completion-wrap"
+          :class="{ 'has-tooltip': !canSubmitCompletion(selectedGroup) }"
+          :tabindex="canSubmitCompletion(selectedGroup) ? undefined : 0"
+        >
+          <button
+            class="submit-completion"
+            type="button"
+            :disabled="processing || !canSubmitCompletion(selectedGroup)"
+            @click="requestSubmitCompletion(selectedGroup)"
+          >ส่งให้หัวหน้าตรวจ</button>
+          <span v-if="!canSubmitCompletion(selectedGroup)" class="submit-tooltip" role="tooltip">
+            ต้องเพิ่มอัปเดตให้ครบอีก {{ remainingTopicTotal(selectedGroup) }} หัวข้อ
+          </span>
+        </span>
+      </footer>
     </section>
 
     <div v-if="completionConfirmGroup" class="modal-backdrop confirm-backdrop" @click.self="!processing ? completionConfirmGroup = null : null">
@@ -458,12 +462,15 @@ const formatDate = (value?: string) => {
 .competency-tab-copy strong { font-size: 13px; font-weight: 800; line-height: 1.45; overflow-wrap: anywhere; }
 .competency-tab-copy small { color: #74827c; font-size: 10px; font-weight: 700; line-height: 1.4; white-space: normal; }
 .competency-section { border: 1px solid #cbdad5; border-radius: 10px; background: #eef3f1; box-shadow: 0 5px 18px rgba(35, 67, 57, .05); }
-.competency-head { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--progress-line); background: #edf5f2; padding: 13px 16px; }
+.competency-head { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 18px; border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--progress-line); background: #edf5f2; padding: 13px 16px; }
 .competency-copy { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .competency-copy > span { flex: 0 0 auto; border: 1px solid #9fc9bb; border-radius: 6px; background: #fbfdfc; padding: 6px 9px; color: var(--progress-green-dark); font-size: 13px; font-weight: 900; }
 .competency-copy small { color: #6e7f79; font-size: 11px; font-weight: 800; }
 .competency-copy h2 { overflow: hidden; margin: 2px 0 0; font-size: 16px; font-weight: 800; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
-.completion-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
+.completion-actions { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin: 12px; border: 1px solid #d7dfe8; border-radius: 8px; background: rgba(255,255,255,.96); padding: 13px 16px; box-shadow: 0 -8px 22px rgba(23,32,51,.08); backdrop-filter: blur(8px); }
+.completion-summary { display: grid; gap: 3px; min-width: 0; margin-right: auto; }
+.completion-summary strong { overflow: hidden; color: #263831; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.completion-summary > span { color: #7a8798; font-size: 11px; }
 .review-feedback { margin: 14px 16px 0; border: 1px solid #efc4bc; border-left: 4px solid #cf5b48; border-radius: 8px; background: #fff8f6; padding: 12px 14px; color: #49342f; }
 .review-feedback.approved { border-color: #b9d9cf; border-left-color: var(--progress-green); background: #f5fbf8; }
 .review-feedback > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
@@ -479,12 +486,12 @@ const formatDate = (value?: string) => {
 .status-pill.done { background: #dff5e7; color: #147745; }
 .submit-completion-wrap { position: relative; display: inline-flex; border-radius: 7px; }
 .submit-completion-wrap.has-tooltip { cursor: not-allowed; }
-.submit-tooltip { position: absolute; right: 0; top: calc(100% + 9px); width: max-content; max-width: 240px; border-radius: 7px; background: #2d3834; padding: 7px 10px; color: #f8fbfa; font-size: 11px; font-weight: 700; line-height: 1.45; pointer-events: none; opacity: 0; transform: translateY(-3px); transition: opacity .16s ease, transform .16s ease; }
-.submit-tooltip::before { position: absolute; right: 22px; bottom: 100%; border: 5px solid transparent; border-bottom-color: #2d3834; content: ''; }
+.submit-tooltip { position: absolute; right: 0; bottom: calc(100% + 9px); width: max-content; max-width: 240px; border-radius: 7px; background: #2d3834; padding: 7px 10px; color: #f8fbfa; font-size: 11px; font-weight: 700; line-height: 1.45; pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .16s ease, transform .16s ease; }
+.submit-tooltip::before { position: absolute; top: 100%; right: 22px; border: 5px solid transparent; border-top-color: #2d3834; content: ''; }
 .submit-completion-wrap.has-tooltip:hover .submit-tooltip,
 .submit-completion-wrap.has-tooltip:focus-visible .submit-tooltip { opacity: 1; transform: translateY(0); }
 .submit-completion-wrap:focus-visible { outline: 3px solid rgba(36, 114, 96, .2); outline-offset: 2px; }
-.submit-completion { border: 1px solid var(--progress-green); border-radius: 7px; background: var(--progress-green); padding: 7px 11px; color: #f9fffc; font: inherit; font-size: 12px; font-weight: 900; cursor: pointer; transition: background .18s ease, border-color .18s ease; }
+.submit-completion { min-width: 180px; border: 1px solid var(--progress-green); border-radius: 7px; background: var(--progress-green); padding: 10px 16px; color: #f9fffc; font: inherit; font-size: 12px; font-weight: 900; cursor: pointer; transition: background .18s ease, border-color .18s ease; }
 .submit-completion:hover { border-color: var(--progress-green-dark); background: var(--progress-green-dark); }
 .submit-completion:disabled { border-color: #cbd4d0; background: #e6ebe9; color: #7a8782; pointer-events: none; }
 .activity-block { overflow: hidden; margin: 12px; border: 1px solid #d2ded9; border-radius: 9px; background: #fff; box-shadow: 0 2px 8px rgba(35, 67, 57, .04); }
@@ -602,8 +609,8 @@ input:disabled { background: #eef2f0; color: #9aa5a0; }
   .topic-row { grid-template-columns: minmax(0, 1fr) auto; }
 }
 @media (max-width: 900px) {
-  .competency-head { grid-template-columns: 1fr; }
-  .completion-actions { justify-content: flex-start; }
+  .completion-actions { align-items: stretch; flex-direction: column; }
+  .completion-summary { margin-right: 0; }
   .topic-row { grid-template-columns: 1fr; grid-template-areas: 'summary' 'timeline' 'actions'; gap: 12px; }
   .topic-actions { justify-content: flex-start; }
   .timeline-entry { grid-template-columns: 1fr; }
@@ -618,6 +625,7 @@ input:disabled { background: #eef2f0; color: #9aa5a0; }
   .activity-block + .activity-block { margin-top: 12px; }
   .competency-head, .activity-head, .topic-row { padding: 12px; }
   .competency-copy { align-items: flex-start; }
+  .completion-actions { margin: 8px; }
   .completion-actions, .submit-completion-wrap, .submit-completion { width: 100%; }
   .submit-completion { text-align: center; }
   .topic-actions { display: grid; grid-template-columns: 1fr; }

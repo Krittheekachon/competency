@@ -9,7 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 class CompetencyAssessmentSyncService
 {
-    public function __construct(private NotificationService $notifications)
+    public function __construct(
+        private NotificationService $notifications,
+        private PositionTitleResolver $positionTitles,
+    )
     {
     }
 
@@ -138,48 +141,30 @@ class CompetencyAssessmentSyncService
             return collect();
         }
 
-        $levelIds = $this->levelIdsForUser($user);
-        $positionIds = $this->positionIdsForUser($user);
+        $positionTitleId = $this->positionTitles->forUser($user);
+        $positionIds = $positionTitleId
+            ? collect($this->positionTitles->positionIds($positionTitleId))
+            : $this->positionIdsForUser($user);
 
-        if ($levelIds->isEmpty() && $positionIds->isEmpty()) {
+        if (! $positionTitleId && $positionIds->isEmpty()) {
             return collect();
         }
 
-        $jobFamilyIds = $this->jobFamilyIdsForUser($user);
+        $mappingQuery = DB::table('position_competencies')
+            ->where('assessment_round_id', $roundId)
+            ->when(
+                $positionTitleId,
+                fn ($query) => $query->where('position_title_id', $positionTitleId),
+                fn ($query) => $query->whereIn('position_id', $positionIds),
+            );
 
-        $expectationIds = ($levelIds->isEmpty() || $jobFamilyIds->isEmpty())
-            ? collect()
-            : DB::table('hr_expectations')
-                ->where('assessment_round_id', $roundId)
-                ->whereIn('level_id', $levelIds)
-                ->whereIn('job_family_id', $jobFamilyIds)
-                ->pluck('competency_id');
-
-        $mappedPositionIds = $positionIds->isEmpty()
-            ? collect()
-            : DB::table('position_competencies')
-                ->where('assessment_round_id', $roundId)
-                ->whereIn('position_id', $positionIds)
-                ->pluck('position_id')
-                ->unique()
-                ->values();
-
-        $unmappedPositionIds = $positionIds->diff($mappedPositionIds)->values();
-
-        if ($unmappedPositionIds->isNotEmpty()) {
-            $this->notifyUnmappedPositions($user, $unmappedPositionIds);
+        if (! (clone $mappingQuery)->exists()) {
+            $this->notifyUnmappedPositions($user, $positionIds);
             $this->notifications->notifyHrUserWithUnmappedPosition($user);
         }
 
-        $positionCompetencyIds = $positionIds->isEmpty()
-            ? collect()
-            : DB::table('position_competencies')
-                ->where('assessment_round_id', $roundId)
-                ->whereIn('position_id', $positionIds)
-                ->pluck('competency_id');
-
-        return $expectationIds
-            ->merge($positionCompetencyIds)
+        return $mappingQuery
+            ->pluck('competency_id')
             ->unique()
             ->values();
     }

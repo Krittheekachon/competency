@@ -52,6 +52,7 @@ class SsoProfileSyncService
             $previousStructuralProfile = $this->structuralProfileFromUser($user);
             $incomingStructuralProfile = $this->structuralProfileFromSso($profile);
             $fingerprint = hash('sha256', json_encode($incomingStructuralProfile, JSON_UNESCAPED_UNICODE));
+            $positionTitleId = $this->syncPositionTitle($incomingStructuralProfile);
 
             $user->forceFill([
                 'sso' => $employeeId ?: $user->sso,
@@ -67,9 +68,9 @@ class SsoProfileSyncService
                 'sso_person_status' => $this->filledString($profile['personStatus'] ?? null),
                 'sso_profile_fingerprint' => $fingerprint,
                 'sso_profile_synced_at' => now(),
+                'position_title_id' => $positionTitleId ?: $user->position_title_id,
             ])->save();
 
-            $this->syncPositionTitle($incomingStructuralProfile);
             $this->syncLevel($incomingStructuralProfile);
 
             if ($isNew || $previousStructuralProfile !== $incomingStructuralProfile) {
@@ -157,10 +158,10 @@ class SsoProfileSyncService
     }
 
     /** @param array<string, ?string> $profile */
-    private function syncPositionTitle(array $profile): void
+    private function syncPositionTitle(array $profile): ?int
     {
         if (! $profile['worklineType'] || ! $profile['positionName']) {
-            return;
+            return null;
         }
 
         $normalizedName = $this->normalizeName($profile['positionName']);
@@ -179,10 +180,10 @@ class SsoProfileSyncService
                 'updated_at' => now(),
             ]);
 
-            return;
+            return (int) $existing->id;
         }
 
-        DB::table('position_titles')->insert([
+        return (int) DB::table('position_titles')->insertGetId([
             'workline_type' => $profile['worklineType'],
             'name' => $profile['positionName'],
             'normalized_name' => $normalizedName,

@@ -5,15 +5,17 @@ namespace App\Http\Controllers\Hr;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\CompetencyAssessmentSyncService;
+use App\Services\PositionTitleResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class PositionCompetencyController extends Controller
 {
-    public function __construct(private CompetencyAssessmentSyncService $competencyAssessmentSync)
-    {
-    }
+    public function __construct(
+        private CompetencyAssessmentSyncService $competencyAssessmentSync,
+        private PositionTitleResolver $positionTitles,
+    ) {}
 
     public function store(Request $request): RedirectResponse
     {
@@ -36,10 +38,12 @@ class PositionCompetencyController extends Controller
         }
 
         $now = now();
+        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
 
         $rows = $competencyIds->map(fn (int $competencyId) => [
             'assessment_round_id' => $data['assessment_round_id'],
             'position_id' => $data['position_id'],
+            'position_title_id' => $positionTitleId,
             'competency_id' => $competencyId,
             'created_at' => $now,
             'updated_at' => $now,
@@ -59,8 +63,9 @@ class PositionCompetencyController extends Controller
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
         ]);
 
+        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
         DB::table('position_competencies')
-            ->where('position_id', $data['position_id'])
+            ->where('position_title_id', $positionTitleId)
             ->where('competency_id', $data['competency_id'])
             ->where('assessment_round_id', $data['assessment_round_id'])
             ->delete();
@@ -77,10 +82,11 @@ class PositionCompetencyController extends Controller
             'required_fc_count' => ['required', 'integer', 'min:0'],
         ]);
 
+        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
         $availableFcCount = DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->where('position_competencies.position_id', $data['position_id'])
+            ->where('position_competencies.position_title_id', $positionTitleId)
             ->where('position_competencies.assessment_round_id', $data['assessment_round_id'])
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->count();
@@ -94,9 +100,10 @@ class PositionCompetencyController extends Controller
         DB::table('position_fc_selection_rules')->updateOrInsert(
             [
                 'assessment_round_id' => $data['assessment_round_id'],
-                'position_id' => $data['position_id'],
+                'position_title_id' => $positionTitleId,
             ],
             [
+                'position_id' => $data['position_id'],
                 'required_fc_count' => (int) $data['required_fc_count'],
                 'updated_at' => now(),
                 'created_at' => now(),
@@ -116,11 +123,10 @@ class PositionCompetencyController extends Controller
         $now = now();
         $sourceRows = DB::table('position_competencies')
             ->where('assessment_round_id', $data['source_round_id'])
-            ->get(['position_id', 'competency_id']);
+            ->get(['position_id', 'position_title_id', 'competency_id']);
         $sourceRules = DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $data['source_round_id'])
-            ->get(['position_id', 'required_fc_count']);
-
+            ->get(['position_id', 'position_title_id', 'required_fc_count']);
         DB::transaction(function () use ($data, $sourceRows, $sourceRules, $now): void {
             DB::table('position_competencies')
                 ->where('assessment_round_id', $data['target_round_id'])
@@ -133,6 +139,7 @@ class PositionCompetencyController extends Controller
                 DB::table('position_competencies')->insert($sourceRows->map(fn (object $row): array => [
                     'assessment_round_id' => $data['target_round_id'],
                     'position_id' => $row->position_id,
+                    'position_title_id' => $row->position_title_id,
                     'competency_id' => $row->competency_id,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -143,6 +150,7 @@ class PositionCompetencyController extends Controller
                 DB::table('position_fc_selection_rules')->insert([
                     'assessment_round_id' => $data['target_round_id'],
                     'position_id' => $rule->position_id,
+                    'position_title_id' => $rule->position_title_id,
                     'required_fc_count' => $rule->required_fc_count,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -171,6 +179,7 @@ class PositionCompetencyController extends Controller
 
     private function syncUsersForPosition(int $positionId): void
     {
+        $positionTitleId = $this->positionTitleId($positionId);
         $position = DB::table('positions')
             ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
             ->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
@@ -189,18 +198,24 @@ class PositionCompetencyController extends Controller
 
         User::query()
             ->where('is_active', true)
-            ->where(function ($query) use ($position) {
-                $query->where('position_id', $position->id)
+            ->where(function ($query) use ($position, $positionTitleId) {
+                $query->where('position_title_id', $positionTitleId)
+                    ->orWhereIn('position_id', $this->positionTitles->positionIds($positionTitleId))
                     ->orWhere(function ($nested) use ($position) {
                         $nested->where('position', $position->name)
-                            ->where('workline', $position->workline_name)
-                            ->where(function ($department) use ($position) {
-                                $department->where('department', $position->job_family_name)
-                                    ->orWhere('department', 'like', $position->job_family_name.' > %');
-                            });
+                            ->where('workline', $position->workline_name);
                     });
             })
             ->get()
             ->each(fn (User $user) => $this->competencyAssessmentSync->syncUser($user));
+    }
+
+    private function positionTitleId(int $positionId): int
+    {
+        $positionTitleId = $this->positionTitles->forPositionId($positionId);
+
+        abort_unless($positionTitleId, 422, 'ตำแหน่งนี้ยังไม่ได้เชื่อมกับตำแหน่งกลาง');
+
+        return $positionTitleId;
     }
 }

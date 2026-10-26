@@ -23,6 +23,8 @@ class NotificationDigestService
     private const UNMAPPED_POSITION_USERS_KEY = 'digest_unmapped_position_users';
     private const DAILY_SENT_KEY = 'digest_daily_sent_on';
 
+    public function __construct(private UserOrganizationPresenter $organizationPresenter) {}
+
     public function queueIncompleteUser(User $user): void
     {
         $users = Cache::get(self::NEW_USERS_KEY, []);
@@ -339,7 +341,7 @@ class NotificationDigestService
             'name' => $user->name,
             'email' => $user->email,
             'workline' => $user->workline,
-            'department' => $user->department,
+            'department' => $this->organizationPresenter->forUser($user)['display'],
             'position' => $user->position,
         ];
     }

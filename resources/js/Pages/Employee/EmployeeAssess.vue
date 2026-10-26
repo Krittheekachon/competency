@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 
 const props = defineProps<{
   user: any;
   setUsers: any;
   competencies?: any[];
   fcTopicSelection?: any;
+  assessmentWindow?: any;
   blocked?: boolean;
   blockReasons?: string[];
 }>();
 
+const page = usePage();
+const assessmentWindow = computed(() => props.assessmentWindow || {});
+const isSelfAssessmentClosed = computed(() => assessmentWindow.value.status === 'closed');
 const assignedCompetencies = computed(() => props.competencies || []);
 const fcTopicSelection = computed(() => props.fcTopicSelection || {});
 const requiredFcCount = computed(() => Number(fcTopicSelection.value.requiredCount || 0));
@@ -18,9 +22,23 @@ const fcSelectionRequired = computed(() => requiredFcCount.value > 0);
 const fcSelectionStatus = computed(() => fcTopicSelection.value.status || (fcSelectionRequired.value ? 'draft' : 'not_required'));
 const isFcSelectionApproved = computed(() => !fcSelectionRequired.value || fcSelectionStatus.value === 'approved');
 const availableFcCompetencies = computed(() => fcTopicSelection.value.availableCompetencies || []);
+const competencyTypeLabel = (type: string) => {
+  const normalized = String(type || '').toUpperCase();
+  if (normalized === 'CC') return 'สมรรถนะหลัก';
+  if (normalized === 'MC') return 'สมรรถนะด้านการบริหาร';
+  if (normalized.startsWith('FC')) return 'สมรรถนะตามสายงาน';
+  return 'ยังไม่ระบุประเภท';
+};
 const selectedFcIds = ref<number[]>([]);
 const selectedFcDetail = ref<any | null>(null);
 const isSubmittingFcSelection = ref(false);
+const fcSubmissionError = computed(() => (
+  page.props.errors?.competency_ids
+  || page.props.errors?.assessment
+  || page.props.errors?.supervisor
+  || page.props.errors?.position
+  || ''
+));
 const blockReasons = computed(() => props.blockReasons || []);
 const reviewerSteps = computed(() => {
   if (Array.isArray(props.user?.reviewerSteps) && props.user.reviewerSteps.length) return props.user.reviewerSteps;
@@ -30,10 +48,12 @@ const hasAssessmentReviewer = computed(() => reviewerSteps.value.length > 0);
 const structureIssues = computed(() => blockReasons.value.filter((reason) => !/ผู้ประเมิน|หัวหน้า/.test(reason)));
 const hasCompleteStructure = computed(() => structureIssues.value.length === 0);
 const hasAssignedCompetencies = computed(() => assignedCompetencies.value.length > 0);
+const hasExpectedLevels = computed(() => assignedCompetencies.value.every((item) => item.expectedLevel !== null && item.expectedLevel !== undefined));
 const isBaseAssessmentReady = computed(() =>
   hasAssessmentReviewer.value
   && hasCompleteStructure.value
-  && hasAssignedCompetencies.value,
+  && hasAssignedCompetencies.value
+  && hasExpectedLevels.value,
 );
 const fcSelectionBlockReason = computed(() => {
   if (!fcSelectionRequired.value || isFcSelectionApproved.value) return '';
@@ -82,6 +102,7 @@ const canSubmitFcSelection = computed(() =>
 );
 
 const toggleFcSelection = (id: number) => {
+  if (isSelfAssessmentClosed.value) return;
   if (!['draft', 'revision_required'].includes(fcSelectionStatus.value)) return;
 
   const current = new Set(selectedFcIds.value);
@@ -104,7 +125,7 @@ const closeFcDetail = () => {
 };
 
 const submitFcSelection = () => {
-  if (!canSubmitFcSelection.value) return;
+  if (isSelfAssessmentClosed.value || !canSubmitFcSelection.value) return;
 
   isSubmittingFcSelection.value = true;
   router.post(route('employee.fc-topic-selection.submit'), {
@@ -211,7 +232,7 @@ const autosaveSignature = computed(() => {
 });
 
 const saveDraft = async () => {
-  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return;
+  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return;
 
   autoSaveState.value = 'saving';
 
@@ -234,7 +255,7 @@ const saveDraft = async () => {
 };
 
 const openCompetencyDetail = async (item: any) => {
-  if (isAssessmentBlocked.value) return;
+  if (isSelfAssessmentClosed.value || isAssessmentBlocked.value) return;
 
   clearAutoSaveTimer();
   suppressAutoSave.value = true;
@@ -283,7 +304,7 @@ const closeCompetencyDetail = () => {
 };
 
 const openSubmitConfirm = () => {
-  if (!selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
+  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
   if (isSelectedCompetencyLocked.value) return;
   showSubmitConfirm.value = true;
 };
@@ -293,7 +314,7 @@ const cancelSubmitConfirm = () => {
 };
 
 const saveAndClose = async () => {
-  if (!selectedCompetency.value || isSaving.value || isAssessmentBlocked.value || isSelectedCompetencyLocked.value) return;
+  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSaving.value || isAssessmentBlocked.value || isSelectedCompetencyLocked.value) return;
   clearAutoSaveTimer();
   isSaving.value = true;
   showSubmitConfirm.value = false;
@@ -385,6 +406,20 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="employee-page">
+    <div v-if="isSelfAssessmentClosed" class="assessment-closed-banner" role="status">
+      <div class="assessment-closed-icon" aria-hidden="true">×</div>
+      <div>
+        <strong>ปิดรอบการประเมินแล้ว</strong>
+        <span>ไม่สามารถเลือกหัวข้อ FC แก้ไข หรือส่งผลการประเมินตนเองในรอบนี้ได้</span>
+      </div>
+    </div>
+
+    <div
+      class="assessment-page-content"
+      :class="{ 'is-round-closed': isSelfAssessmentClosed }"
+      :inert="isSelfAssessmentClosed || undefined"
+      :aria-disabled="isSelfAssessmentClosed ? 'true' : 'false'"
+    >
     <div class="page-head">
       <div>
         <h1>{{ fcSelectionRequired && !isFcSelectionApproved ? 'เริ่มกระบวนการประเมิน' : 'ประเมินตนเอง' }}</h1>
@@ -487,6 +522,11 @@ onBeforeUnmount(() => {
       <div v-if="fcTopicSelection.reviewComment && fcSelectionStatus === 'revision_required'" class="fc-revision-note">
         <strong>เหตุผลที่ส่งกลับ:</strong>
         <span>{{ fcTopicSelection.reviewComment }}</span>
+      </div>
+
+      <div v-if="fcSubmissionError" class="fc-submit-error" role="alert">
+        <strong>ยังส่งหัวข้อไม่ได้</strong>
+        <span>{{ fcSubmissionError }}</span>
       </div>
 
       <div class="fc-selection-meter">
@@ -633,6 +673,10 @@ onBeforeUnmount(() => {
           @click="openCompetencyDetail(item)"
         >
           <div class="competency-title">
+            <div class="competency-title-meta">
+              <span class="type-tag">{{ item.t || '-' }}</span>
+              <span>{{ competencyTypeLabel(item.t) }}</span>
+            </div>
             <strong>{{ item.n }}</strong>
           </div>
           <div class="row-actions">
@@ -788,11 +832,44 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .employee-page { display: grid; gap: 20px; }
+.assessment-page-content { display: grid; gap: 20px; }
+.assessment-page-content.is-round-closed {
+  filter: grayscale(.85);
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+}
+.assessment-closed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f1f5f9;
+  padding: 14px 16px;
+  color: #334155;
+}
+.assessment-closed-banner > div:last-child { display: grid; gap: 3px; }
+.assessment-closed-banner strong { font-size: 15px; font-weight: 900; }
+.assessment-closed-banner span { color: #64748b; font-size: 12px; }
+.assessment-closed-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  color: #475569;
+  font-size: 18px;
+  font-weight: 900;
+}
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-eyebrow { margin-bottom: 6px; color: var(--blue); font-size: 10px; font-weight: 900; letter-spacing: .12em; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 24px; font-weight: 900; }
@@ -914,6 +991,18 @@ onBeforeUnmount(() => {
   color: #991b1b;
   font-size: 13px;
 }
+.fc-submit-error {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff7f7;
+  padding: 11px 13px;
+  color: #991b1b;
+  font-size: 12px;
+}
+.fc-submit-error strong { font-size: 13px; font-weight: 900; }
 .fc-selection-meter {
   display: flex;
   align-items: center;
@@ -1079,10 +1168,18 @@ onBeforeUnmount(() => {
 .competency-row.status-draft:hover { border-left-color: #94a3b8; }
 .competency-title {
   display: grid;
-  gap: 4px;
+  gap: 7px;
   min-width: 0;
   color: var(--text);
   line-height: 1.35;
+}
+.competency-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
 }
 .competency-title strong {
   min-width: 0;

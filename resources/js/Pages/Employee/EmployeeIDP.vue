@@ -965,7 +965,7 @@ const submitSelectedPlan = () => {
           <div class="person">
             <span>{{ props.user?.sso || '-' }}</span>
             <strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong>
-            <small>{{ props.user?.p || props.user?.d || '-' }}</small>
+            <small>{{ props.user?.p || props.user?.displayOrganization || props.user?.organization?.display || '-' }}</small>
           </div>
           <div class="nav-heading">
             <strong>สมรรถนะที่ต้องพัฒนา</strong>
@@ -1067,11 +1067,11 @@ const submitSelectedPlan = () => {
             <div class="section-body goal-grid">
               <label>
                 <span>เป้าหมายในการพัฒนา</span>
-                <textarea v-model="selectedPlan.goal" :disabled="selectedPlanLocked" rows="3" placeholder="ผลลัพธ์ด้านพฤติกรรมที่ต้องการเห็นหลังจบแผน" />
+                <textarea v-model="selectedPlan.goal" :disabled="selectedPlanLocked" rows="3"  />
               </label>
               <label>
                 <span>ตัวชี้วัดความสำเร็จ</span>
-                <textarea v-model="selectedPlan.successCriteria" :disabled="selectedPlanLocked" rows="3" placeholder="ระบุหลักฐานหรือผลลัพธ์ที่ใช้ยืนยันความสำเร็จ" />
+                <textarea v-model="selectedPlan.successCriteria" :disabled="selectedPlanLocked" rows="3" />
               </label>
             </div>
           </section>

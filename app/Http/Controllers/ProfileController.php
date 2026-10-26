@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ReviewerChainResolver;
+use App\Services\UserOrganizationPresenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -10,7 +11,10 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    public function __construct(private ReviewerChainResolver $reviewerChainResolver) {}
+    public function __construct(
+        private ReviewerChainResolver $reviewerChainResolver,
+        private UserOrganizationPresenter $organizationPresenter,
+    ) {}
 
     /** Display the user's read-only profile. */
     public function edit(Request $request): Response
@@ -29,6 +33,8 @@ class ProfileController extends Controller
 
     private function profileData($user): array
     {
+        $organization = $this->organizationPresenter->forUser($user);
+
         return [
             'db_id' => $user->id,
             'sso' => $user->sso ?: (string) $user->id,
@@ -42,6 +48,8 @@ class ProfileController extends Controller
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $user->department ?: '',
+            'organization' => $organization,
+            'displayOrganization' => $organization['display'],
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'r' => $this->roleKeyForUser($user),
