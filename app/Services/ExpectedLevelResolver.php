@@ -87,7 +87,10 @@ class ExpectedLevelResolver
 
         $expectedLevel = $levelIds->isEmpty()
             ? null
-            : DB::table('levels')->where('id', $levelIds->first())->value('expected_level');
+            : DB::table('levels')
+                ->whereIn('id', $levelIds)
+                ->whereNotNull('expected_level')
+                ->value('expected_level');
         $expectedLevel = $expectedLevel === null ? null : (int) $expectedLevel;
 
         foreach ($unresolvedIds as $competencyId) {
@@ -113,20 +116,22 @@ class ExpectedLevelResolver
             return $this->levelIdsCache[$cacheKey] = $levelIds;
         }
 
-        if ($user->level_id) {
-            $levelIds = $levelIds->merge(DB::table('levels')
+        if ($user->level) {
+            $levelIds = DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->whereNull('job_family_id')
+                ->whereRaw('LOWER(TRIM(name)) = LOWER(TRIM(?))', [(string) $user->level])
+                ->orderBy('id')
+                ->limit(1)
+                ->pluck('id');
+        }
+
+        if ($levelIds->isEmpty() && $user->level_id) {
+            $levelIds = DB::table('levels')
                 ->where('id', $user->level_id)
                 ->where('workline_id', $worklineId)
                 ->whereNull('job_family_id')
-                ->pluck('id'));
-        }
-
-        if ($user->level) {
-            $levelIds = $levelIds->merge(DB::table('levels')
-                ->where('workline_id', $worklineId)
-                ->whereNull('job_family_id')
-                ->where('name', $user->level)
-                ->pluck('id'));
+                ->pluck('id');
         }
 
         return $this->levelIdsCache[$cacheKey] = $levelIds->filter()->unique()->values();
@@ -193,9 +198,14 @@ class ExpectedLevelResolver
             'สายงาน'.$withoutPrefix,
         ])->filter()->unique()->values();
 
-        $id = DB::table('worklines')
-            ->whereIn('name', $candidates)
-            ->value('id');
+        $id = null;
+        foreach ($candidates as $candidate) {
+            $id = DB::table('worklines')->where('name', $candidate)->value('id');
+
+            if ($id) {
+                break;
+            }
+        }
 
         return $this->worklineIdCache[$workline] = $id ? (int) $id : null;
     }
@@ -211,7 +221,11 @@ class ExpectedLevelResolver
             return $this->activeRoundIdCache;
         }
 
-        $id = DB::table('assessment_rounds')->where('is_active', true)->orderByDesc('id')->value('id');
+        $id = DB::table('assessment_rounds')
+            ->where('is_active', true)
+            ->orderByDesc('year')
+            ->orderByDesc('id')
+            ->value('id');
 
         $this->activeRoundIdResolved = true;
 
