@@ -608,7 +608,6 @@ class StructureController extends Controller
             ->value('id');
 
         $isInUse = DB::table('users')->where('level_id', $levelId)->exists()
-            || DB::table('hr_expectations')->where('level_id', $levelId)->exists()
             || (Schema::hasTable('user_round_profiles')
                 && DB::table('user_round_profiles')->where('level_id', $levelId)->exists());
 

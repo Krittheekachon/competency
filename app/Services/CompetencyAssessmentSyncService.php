@@ -22,50 +22,6 @@ class CompetencyAssessmentSyncService
         $this->syncUserAssessments($user->id, $competencyIds);
     }
 
-    public function syncScope(int $roundId, int $jobFamilyId, int $levelId): void
-    {
-        $competencyIds = DB::table('hr_expectations')
-            ->where('assessment_round_id', $roundId)
-            ->where('job_family_id', $jobFamilyId)
-            ->where('level_id', $levelId)
-            ->whereNull('position_id')
-            ->pluck('competency_id')
-            ->unique()
-            ->values();
-
-        $jobFamily = DB::table('job_families')
-            ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
-            ->where('job_families.id', $jobFamilyId)
-            ->select('job_families.name', 'worklines.name as workline_name')
-            ->first();
-
-        $levelName = DB::table('levels')->where('id', $levelId)->value('name');
-
-        if (! $jobFamily || ! $levelName) {
-            return;
-        }
-
-        $users = User::query()
-            ->where('is_active', true)
-            ->where('workline', $jobFamily->workline_name)
-            ->where(function ($query) use ($jobFamily) {
-                $query->where('department', $jobFamily->name)
-                    ->orWhere('department', 'like', $jobFamily->name.' > %')
-                    ->orWhere('position', $jobFamily->name)
-                    ->orWhere('level', $jobFamily->name);
-            })
-            ->where(function ($query) use ($levelId, $levelName) {
-                $query->where('level_id', $levelId)
-                    ->orWhere('level', $levelName)
-                    ->orWhere('position', $levelName);
-            })
-            ->get();
-
-        foreach ($users as $user) {
-            $this->syncUserAssessments($user->id, $competencyIds);
-        }
-    }
-
     public function syncAllActiveUsers(): void
     {
         User::query()
@@ -183,69 +139,6 @@ class CompetencyAssessmentSyncService
         }
 
         $names->each(fn (string $name) => $this->notifications->notifyHrUnmappedPosition($name));
-    }
-
-    private function levelIdsForUser(User $user): Collection
-    {
-        $levelIds = collect();
-        $worklineId = $user->workline
-            ? DB::table('worklines')->where('name', $user->workline)->value('id')
-            : null;
-
-        if (! $worklineId) {
-            return $levelIds;
-        }
-
-        if ($user->level_id) {
-            $levelIds = $levelIds->merge(DB::table('levels')
-                ->where('id', $user->level_id)
-                ->where('workline_id', $worklineId)
-                ->whereNull('job_family_id')
-                ->pluck('id'));
-        }
-
-        if ($user->level) {
-            $levelIds = $levelIds->merge(DB::table('levels')
-                ->where('workline_id', $worklineId)
-                ->whereNull('job_family_id')
-                ->where('name', $user->level)
-                ->pluck('id'));
-        }
-
-        return $levelIds->filter()->unique()->values();
-    }
-
-    private function jobFamilyIdsForUser(User $user): Collection
-    {
-        $jobFamilyIds = collect();
-
-        if ($user->position_id) {
-            $jobFamilyIds->push(DB::table('positions')->where('id', $user->position_id)->value('job_family_id'));
-        }
-
-        if ($user->workline) {
-            $worklineId = DB::table('worklines')->where('name', $user->workline)->value('id');
-
-            if ($worklineId) {
-                $names = collect([$user->department, $user->position, $user->level])
-                    ->filter()
-                    ->flatMap(fn (string $value) => collect(explode(' > ', $value))->map(fn (string $part) => trim($part)))
-                    ->filter()
-                    ->unique()
-                    ->values();
-
-                if ($names->isNotEmpty()) {
-                    $jobFamilyIds = $jobFamilyIds->merge(
-                        DB::table('job_families')
-                            ->where('workline_id', $worklineId)
-                            ->whereIn('name', $names)
-                            ->pluck('id')
-                    );
-                }
-            }
-        }
-
-        return $jobFamilyIds->filter()->unique()->values();
     }
 
     private function positionIdsForUser(User $user): Collection

@@ -36,7 +36,7 @@ route
 | Domain | Tables |
 | --- | --- |
 | Organization | `users`, `user_reviewer_steps`, `roles`, `worklines`, `job_families`, `positions`, `levels`, `support_departments`, `support_works`, `support_units` |
-| Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `position_fc_selection_rules`, `hr_expectations` |
+| Competency setup | `competency_types`, `competencies`, `competency_levels`, `comp_level_indicators`, `position_competencies`, `position_fc_selection_rules`, `levels.expected_level` |
 | FC topic approval | `fc_topic_selections`, `fc_topic_selection_items` |
 | Assessment | `assessments`, `assessment_indicator_results`, `scores` |
 | Gap | `competency_gaps` |

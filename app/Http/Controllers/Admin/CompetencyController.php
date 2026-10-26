@@ -62,10 +62,6 @@ class CompetencyController extends Controller
                     ->where('competency_id', $competency->id)
                     ->delete();
 
-                DB::table('hr_expectations')
-                    ->where('competency_id', $competency->id)
-                    ->delete();
-
                 $levelIds = $competency->levels()->pluck('id');
 
                 DB::table('comp_level_indicators')

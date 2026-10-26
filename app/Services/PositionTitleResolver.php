@@ -65,7 +65,7 @@ class PositionTitleResolver
             DB::table('users')->where('position_id', $positionId)->whereNull('position_title_id')->update([
                 'position_title_id' => $id,
             ]);
-            foreach (['position_competencies', 'position_fc_selection_rules', 'fc_topic_selections', 'hr_expectations'] as $table) {
+            foreach (['position_competencies', 'position_fc_selection_rules', 'fc_topic_selections'] as $table) {
                 DB::table($table)->where('position_id', $positionId)->whereNull('position_title_id')->update([
                     'position_title_id' => $id,
                 ]);

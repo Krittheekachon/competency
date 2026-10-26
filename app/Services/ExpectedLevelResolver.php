@@ -14,8 +14,6 @@ class ExpectedLevelResolver
 
     private array $levelIdsCache = [];
 
-    private array $jobFamilyIdsCache = [];
-
     private array $positionIdsCache = [];
 
     private array $worklineIdCache = [];
@@ -28,7 +26,6 @@ class ExpectedLevelResolver
     {
         $this->expectedLevelCache = [];
         $this->levelIdsCache = [];
-        $this->jobFamilyIdsCache = [];
         $this->positionIdsCache = [];
         $this->worklineIdCache = [];
         $this->activeRoundIdCache = null;
@@ -133,44 +130,6 @@ class ExpectedLevelResolver
         }
 
         return $this->levelIdsCache[$cacheKey] = $levelIds->filter()->unique()->values();
-    }
-
-    private function jobFamilyIdsForUser(User $user): Collection
-    {
-        $cacheKey = $this->userCacheKey($user);
-
-        if (isset($this->jobFamilyIdsCache[$cacheKey])) {
-            return $this->jobFamilyIdsCache[$cacheKey];
-        }
-
-        $jobFamilyIds = collect();
-
-        if ($user->position_id) {
-            $jobFamilyIds->push(DB::table('positions')->where('id', $user->position_id)->value('job_family_id'));
-        }
-
-        $worklineId = $this->worklineIdFromUser($user);
-
-        if ($worklineId) {
-            $names = collect([$user->department, $user->position, $user->level])
-                ->filter()
-                ->flatMap(fn (string $value) => collect(explode(' > ', $value))->map(fn (string $part) => trim($part)))
-                ->filter()
-                ->unique()
-                ->values();
-
-            if ($names->isNotEmpty()) {
-                $jobFamilyIds = $jobFamilyIds->merge(
-                    DB::table('job_families')
-                        ->where('workline_id', $worklineId)
-                        ->whereIn('name', $names)
-                        ->pluck('id')
-                );
-            }
-
-        }
-
-        return $this->jobFamilyIdsCache[$cacheKey] = $jobFamilyIds->filter()->unique()->values();
     }
 
     private function positionIdsForUser(User $user): Collection
