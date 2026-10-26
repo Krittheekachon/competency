@@ -168,18 +168,19 @@ class IdpActivityUpdateController extends Controller
         $submittedItemId = null;
         DB::transaction(function () use ($request, $data, &$submittedItemId): void {
             $item = DB::table('idp_items')
-                ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
-                ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
-                ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
                 ->where('idp_items.id', $data['idpItemId'])
-                ->where('idps.user_id', $request->user()->id)
                 ->where('idp_items.status', 'approved')
-                ->select('idp_items.id', 'idps.user_id', 'idps.assessment_round_id')
+                ->select('idp_items.id', 'idp_items.idp_id')
                 ->lockForUpdate()
                 ->first();
-            if (! $item) {
+            $context = $item
+                ? DB::table('idps')->where('id', $item->idp_id)->first(['user_id', 'assessment_round_id'])
+                : null;
+            if (! $item || ! $context || (int) $context->user_id !== (int) $request->user()->id) {
                 throw ValidationException::withMessages(['idpItemId' => 'ไม่พบสมรรถนะที่พร้อมส่งผลการพัฒนา']);
             }
+            $item->user_id = $context->user_id;
+            $item->assessment_round_id = $context->assessment_round_id;
 
             $activities = DB::table('idp_activities')->where('idp_item_id', $item->id)->get(['id', 'form_details']);
             $requiredTopics = $activities->sum(fn (object $activity): int => $this->topicCount($activity->form_details));
@@ -238,20 +239,32 @@ class IdpActivityUpdateController extends Controller
     private function ownedApprovedActivity(int $activityId): object
     {
         $activity = DB::table('idp_activities')
-            ->join('idp_items', 'idp_activities.idp_item_id', '=', 'idp_items.id')
-            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
-            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
-            ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('idp_activities.id', $activityId)
-            ->where('idps.user_id', auth()->id())
-            ->select('idp_activities.id', 'idp_activities.idp_item_id', 'idp_activities.form_code', 'idp_activities.form_details', 'idp_items.status as item_status', 'idps.user_id', 'idps.assessment_round_id')
+            ->select('idp_activities.id', 'idp_activities.idp_item_id', 'idp_activities.form_code', 'idp_activities.form_details')
             ->lockForUpdate()
             ->first();
-        if (! $activity || $activity->item_status !== 'approved') {
+        $context = $activity
+            ? DB::table('idp_items')
+                ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+                ->where('idp_items.id', $activity->idp_item_id)
+                ->first([
+                    'idp_items.status as item_status',
+                    'idps.user_id',
+                    'idps.assessment_round_id',
+                ])
+            : null;
+        if (! $activity
+            || ! $context
+            || $context->item_status !== 'approved'
+            || (int) $context->user_id !== (int) auth()->id()) {
             throw ValidationException::withMessages([
                 'activityId' => 'สามารถอัปเดตความก้าวหน้าได้หลังแผนผ่านการอนุมัติครบทุกลำดับแล้ว',
             ]);
         }
+
+        $activity->item_status = $context->item_status;
+        $activity->user_id = $context->user_id;
+        $activity->assessment_round_id = $context->assessment_round_id;
 
         return $activity;
     }

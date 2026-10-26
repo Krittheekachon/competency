@@ -188,10 +188,11 @@ class AssessmentRoundController extends Controller
         $now = now();
         $competencies = DB::table('position_competencies')
             ->where('assessment_round_id', $sourceRoundId)
-            ->get(['position_id', 'competency_id'])
+            ->get(['position_id', 'position_title_id', 'competency_id'])
             ->map(fn (object $row): array => [
                 'assessment_round_id' => $targetRoundId,
                 'position_id' => $row->position_id,
+                'position_title_id' => $row->position_title_id,
                 'competency_id' => $row->competency_id,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -204,15 +205,17 @@ class AssessmentRoundController extends Controller
 
         DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $sourceRoundId)
-            ->get(['position_id', 'required_fc_count'])
+            ->get(['position_id', 'position_title_id', 'required_fc_count'])
             ->each(function (object $rule) use ($targetRoundId, $now): void {
                 DB::table('position_fc_selection_rules')->insertOrIgnore([
                     'assessment_round_id' => $targetRoundId,
                     'position_id' => $rule->position_id,
+                    'position_title_id' => $rule->position_title_id,
                     'required_fc_count' => $rule->required_fc_count,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
             });
+
     }
 }

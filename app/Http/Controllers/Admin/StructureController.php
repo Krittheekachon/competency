@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -600,10 +601,26 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('levels')
-            ->where('workline_id', $this->worklineId($data['workline_name'] ?? null))
-            ->where('job_family_id', $jobFamilyId)
+        $levelId = DB::table('levels')
+            ->where('workline_id', $worklineId)
+            ->whereNull('job_family_id')
             ->where('name', $data['name'])
+            ->value('id');
+
+        $isInUse = DB::table('users')->where('level_id', $levelId)->exists()
+            || DB::table('hr_expectations')->where('level_id', $levelId)->exists()
+            || (Schema::hasTable('user_round_profiles')
+                && DB::table('user_round_profiles')->where('level_id', $levelId)->exists());
+
+        if ($isInUse) {
+            throw ValidationException::withMessages([
+                'name' => 'ไม่สามารถลบระดับตำแหน่งที่ยังมีผู้ใช้หรือข้อมูลการประเมินอ้างอิงอยู่ได้',
+            ]);
+        }
+
+        DB::table('levels')
+            ->where('id', $levelId)
+            ->whereNull('job_family_id')
             ->delete();
 
         return back()->with('success', 'ลบระดับตำแหน่งเรียบร้อยแล้ว');

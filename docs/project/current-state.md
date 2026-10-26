@@ -8,8 +8,9 @@
 - Reviewer chain templates for both assessment and IDP workflows.
 - Runtime reviewer chains through `user_reviewer_steps`.
 - Separate assessment and IDP reviewer chains with `chain_type`.
-- HR position competency assignment through `position_competencies`.
-- HR FC selection count configuration through `position_fc_selection_rules`.
+- Canonical assessment positions through `position_titles`, with legacy `positions` retained for organization placement compatibility.
+- HR position competency assignment through `position_competencies.position_title_id`.
+- HR FC selection count configuration through `position_fc_selection_rules.position_title_id`.
 - FC topic selection submission and first-reviewer approval.
 - Self-assessment draft, submit, reviewer approve, and reviewer reject.
 - Competency gap calculation and IDP requirement marking.

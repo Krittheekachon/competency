@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\ExpectedLevelResolver;
+use App\Services\PositionTitleResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -82,6 +84,7 @@ class HrPositionCompetencyTest extends TestCase
             'assessment_round_id' => $roundId,
             'competency_id' => $competencyId,
         ]);
+
     }
 
     public function test_hr_dashboard_loads_position_competency_mapping(): void
@@ -258,6 +261,92 @@ class HrPositionCompetencyTest extends TestCase
                 ->missing('currentUser.competencyGaps')
                 ->missing('currentUser.fcTopicSelection')
             );
+    }
+
+    public function test_same_position_title_uses_one_competency_mapping_across_organization_units(): void
+    {
+        $roundId = DB::table('assessment_rounds')->insertGetId([
+            'name' => 'รอบตำแหน่งกลาง', 'year' => 2570, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $hrUser = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'hr')->value('id'),
+        ]);
+        [$firstPositionId, $competencyId] = $this->createPositionAndCompetency();
+        $positionTitleId = app(PositionTitleResolver::class)->forPositionId($firstPositionId);
+        $worklineId = DB::table('job_families')
+            ->join('positions', 'positions.job_family_id', '=', 'job_families.id')
+            ->where('positions.id', $firstPositionId)
+            ->value('job_families.workline_id');
+        $firstLevelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ระดับเริ่มต้น',
+            'expected_level' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $seniorLevelId = DB::table('levels')->insertGetId([
+            'workline_id' => $worklineId,
+            'name' => 'ระดับอาวุโส',
+            'expected_level' => 4,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $otherFamilyId = DB::table('job_families')->insertGetId([
+            'workline_id' => $worklineId, 'name' => 'อีกหน่วยงานหนึ่ง',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $secondPositionId = DB::table('positions')->insertGetId([
+            'job_family_id' => $otherFamilyId,
+            'position_title_id' => $positionTitleId,
+            'name' => 'ตำแหน่งทดสอบ',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $employee = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'employee')->value('id'),
+            'position_id' => $secondPositionId,
+            'position_title_id' => $positionTitleId,
+            'workline' => 'สายทดสอบ',
+            'department' => 'อีกหน่วยงานหนึ่ง',
+            'level' => 'ระดับเริ่มต้น',
+            'level_id' => $firstLevelId,
+            'is_active' => true,
+        ]);
+        $seniorEmployee = User::factory()->create([
+            'role_id' => DB::table('roles')->where('key', 'employee')->value('id'),
+            'position_id' => $firstPositionId,
+            'position_title_id' => $positionTitleId,
+            'workline' => 'สายทดสอบ',
+            'level' => 'ระดับอาวุโส',
+            'level_id' => $seniorLevelId,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($hrUser)->post(route('hr.position-competencies.store'), [
+            'position_id' => $firstPositionId,
+            'assessment_round_id' => $roundId,
+            'competency_id' => $competencyId,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('position_competencies', [
+            'assessment_round_id' => $roundId,
+            'position_title_id' => $positionTitleId,
+            'competency_id' => $competencyId,
+        ]);
+        $this->assertDatabaseHas('assessments', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+        ]);
+        $this->assertDatabaseHas('assessments', [
+            'assessment_round_id' => $roundId,
+            'user_id' => $seniorEmployee->id,
+            'competency_id' => $competencyId,
+        ]);
+
+        app(ExpectedLevelResolver::class)->resetRequestCache();
+        $this->assertSame(2, app(ExpectedLevelResolver::class)->forUserCompetency($employee->fresh(), $competencyId));
+        $this->assertSame(4, app(ExpectedLevelResolver::class)->forUserCompetency($seniorEmployee->fresh(), $competencyId));
     }
 
     private function createPositionAndCompetency(): array

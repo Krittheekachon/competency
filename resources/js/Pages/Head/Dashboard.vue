@@ -799,12 +799,8 @@ const selectedGapApprovedRows = computed(() => selectedGapRows.value.filter(isCo
 const selectedGapFailedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) < 0).length);
 const selectedGapPassedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) >= 0).length);
 const selectedGapPendingCount = computed(() => selectedGapRows.value.length - selectedGapApprovedRows.value.length);
-const teamGapSearch = ref('');
-const teamGapFilter = ref('all');
 const teamGapPage = ref(1);
 const teamGapPageSize = 10;
-const selectedGapSearch = ref('');
-const selectedGapCompetencyFilter = ref('all');
 const selectedGapPage = ref(1);
 const selectedGapPageSize = 10;
 const formatTeamGap = (value) => {
@@ -856,29 +852,7 @@ const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
 const teamAssessedRows = computed(() => teamHeatmapRows.value.filter((row) => row.completed));
 const teamFailedRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount > 0));
 const teamTalentRows = computed(() => teamAssessedRows.value.filter((row) => row.missingCount === 0));
-const teamPendingRows = computed(() => teamHeatmapRows.value.filter((row) => !row.completed));
-const teamGapFilterOptions = computed(() => [
-    { key: 'all', label: 'ทั้งหมด', count: teamHeatmapRows.value.length },
-    { key: 'needs-development', label: 'ต้องพัฒนา', count: teamFailedRows.value.length },
-    { key: 'passed', label: 'ผ่านครบ', count: teamTalentRows.value.length },
-    { key: 'pending', label: 'ยังไม่เสร็จ', count: teamPendingRows.value.length },
-]);
-const filteredTeamGapRows = computed(() => {
-    const keyword = teamGapSearch.value.trim().toLocaleLowerCase('th');
-
-    return teamHeatmapRows.value.filter((row) => {
-        const matchesKeyword = !keyword || [row.t, row.n, row.p, row.d]
-            .filter(Boolean)
-            .join(' ')
-            .toLocaleLowerCase('th')
-            .includes(keyword);
-        const matchesStatus = teamGapFilter.value === 'all'
-            || (teamGapFilter.value === 'needs-development' && row.completed && row.missingCount > 0)
-            || (teamGapFilter.value === 'passed' && row.completed && row.missingCount === 0)
-            || (teamGapFilter.value === 'pending' && !row.completed);
-
-        return matchesKeyword && matchesStatus;
-    }).sort((left, right) => {
+const sortedTeamGapRows = computed(() => [...teamHeatmapRows.value].sort((left, right) => {
         const priority = (row) => {
             if (row.completed && row.missingCount > 0) return 0;
             if (!row.completed && row.started) return 1;
@@ -888,22 +862,13 @@ const filteredTeamGapRows = computed(() => {
 
         return priority(left) - priority(right)
             || String(left.n || '').localeCompare(String(right.n || ''), 'th');
-    });
-});
-const teamGapPageCount = computed(() => Math.max(1, Math.ceil(filteredTeamGapRows.value.length / teamGapPageSize)));
+    }));
+const teamGapPageCount = computed(() => Math.max(1, Math.ceil(sortedTeamGapRows.value.length / teamGapPageSize)));
 const paginatedTeamGapRows = computed(() => {
     const safePage = Math.min(teamGapPage.value, teamGapPageCount.value);
     const start = (safePage - 1) * teamGapPageSize;
-    return filteredTeamGapRows.value.slice(start, start + teamGapPageSize);
+    return sortedTeamGapRows.value.slice(start, start + teamGapPageSize);
 });
-const updateTeamGapSearch = (value) => {
-    teamGapSearch.value = value;
-    teamGapPage.value = 1;
-};
-const updateTeamGapFilter = (value) => {
-    teamGapFilter.value = value;
-    teamGapPage.value = 1;
-};
 const competencyResultMeta = (row) => {
     const status = normalizeAssessmentStatus(row?.status);
     if (isCompetencyApproved(row)) {
@@ -915,39 +880,20 @@ const competencyResultMeta = (row) => {
     if (status === 'draft') return { key: 'not-started', label: row?.lastDraftSavedAt ? 'บันทึกร่างแล้ว' : 'ยังไม่เริ่ม' };
     return { key: 'pending', label: 'อยู่ระหว่างตรวจ' };
 };
-const filteredSelectedGapRows = computed(() => {
-    const keyword = selectedGapSearch.value.trim().toLocaleLowerCase('th');
-    return selectedGapRows.value.filter((row) => {
-        const matchesKeyword = !keyword || [row.code, row.title, row.group]
-            .filter(Boolean)
-            .join(' ')
-            .toLocaleLowerCase('th')
-            .includes(keyword);
-        const approved = isCompetencyApproved(row);
-        const matchesFilter = selectedGapCompetencyFilter.value === 'all'
-            || (selectedGapCompetencyFilter.value === 'gap' && approved && Number(row.gap) < 0)
-            || (selectedGapCompetencyFilter.value === 'passed' && approved && Number(row.gap) >= 0)
-            || (selectedGapCompetencyFilter.value === 'pending' && !approved);
-
-        return matchesKeyword && matchesFilter;
-    });
-});
-const selectedGapPageCount = computed(() => Math.max(1, Math.ceil(filteredSelectedGapRows.value.length / selectedGapPageSize)));
+const selectedGapPageCount = computed(() => Math.max(1, Math.ceil(selectedGapRows.value.length / selectedGapPageSize)));
 const paginatedSelectedGapRows = computed(() => {
     const safePage = Math.min(selectedGapPage.value, selectedGapPageCount.value);
     const start = (safePage - 1) * selectedGapPageSize;
-    return filteredSelectedGapRows.value.slice(start, start + selectedGapPageSize);
+    return selectedGapRows.value.slice(start, start + selectedGapPageSize);
 });
 const selectedGapSummary = computed(() => teamHeatmapRows.value.find((row) => row.sso === selectedGapPerson.value?.sso) || null);
 watchEffect(() => {
     if (activePage.value !== 'sup-gap') return;
 
-    const selectionIsVisible = filteredTeamGapRows.value.some((row) => row.sso === selectedGapEmployee.value?.sso);
+    const selectionIsVisible = sortedTeamGapRows.value.some((row) => row.sso === selectedGapEmployee.value?.sso);
     if (selectionIsVisible) return;
 
-    selectedGapEmployee.value = filteredTeamGapRows.value.find((row) => row.completed) || filteredTeamGapRows.value[0] || null;
-    selectedGapSearch.value = '';
-    selectedGapCompetencyFilter.value = 'all';
+    selectedGapEmployee.value = sortedTeamGapRows.value.find((row) => row.completed) || sortedTeamGapRows.value[0] || null;
     selectedGapPage.value = 1;
 });
 const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
@@ -962,8 +908,6 @@ const idpOverviewRows = computed(() => idpRows.value.map((person, index) => {
     };
 }));
 const openGapDetail = (person) => {
-    selectedGapSearch.value = '';
-    selectedGapCompetencyFilter.value = 'all';
     selectedGapPage.value = 1;
     selectedGapEmployee.value = person;
 };
@@ -1279,6 +1223,7 @@ const logout = () => router.post(route('logout'));
                     :set-users="setRef(users)"
                     :competencies="page.props.currentUserCompetencies || []"
                     :fc-topic-selection="page.props.currentUserFcTopicSelection || {}"
+                    :assessment-window="page.props.selfAssessmentWindow || {}"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -1443,30 +1388,6 @@ const logout = () => router.post(route('logout'));
                                         <div class="ct">รายชื่อทีม</div>
                                     </div>
                                 </div>
-                                <div class="team-member-tools">
-                                    <label class="team-gap-search">
-                                        <span aria-hidden="true">⌕</span>
-                                        <input
-                                            :value="teamGapSearch"
-                                            type="search"
-                                            placeholder="ค้นหาชื่อหรือตำแหน่ง"
-                                            aria-label="ค้นหาบุคลากร"
-                                            @input="updateTeamGapSearch($event.target.value)"
-                                        >
-                                    </label>
-                                    <div class="team-member-filter" aria-label="กรองสถานะบุคลากร">
-                                        <button
-                                            v-for="option in teamGapFilterOptions"
-                                            :key="option.key"
-                                            type="button"
-                                            :class="{ active: teamGapFilter === option.key }"
-                                            :aria-pressed="teamGapFilter === option.key"
-                                            @click="updateTeamGapFilter(option.key)"
-                                        >
-                                            {{ option.label }} <span>{{ option.count }}</span>
-                                        </button>
-                                    </div>
-                                </div>
                                 <div v-if="paginatedTeamGapRows.length" class="team-member-list">
                                     <button
                                         v-for="row in paginatedTeamGapRows"
@@ -1486,8 +1407,8 @@ const logout = () => router.post(route('logout'));
                                         </span>
                                     </button>
                                 </div>
-                                <div v-else class="team-gap-empty">ไม่พบบุคลากรตามตัวกรอง</div>
-                                <div v-if="filteredTeamGapRows.length > teamGapPageSize" class="team-pagination compact-pagination">
+                                <div v-else class="team-gap-empty">ยังไม่มีรายชื่อทีม</div>
+                                <div v-if="sortedTeamGapRows.length > teamGapPageSize" class="team-pagination compact-pagination">
                                     <span>{{ Math.min(teamGapPage, teamGapPageCount) }}/{{ teamGapPageCount }}</span>
                                     <div>
                                         <button type="button" aria-label="หน้าก่อนหน้า" :disabled="teamGapPage <= 1" @click="teamGapPage -= 1">←</button>
@@ -1516,19 +1437,6 @@ const logout = () => router.post(route('logout'));
                                 </div>
 
                                 <template v-if="selectedGapRows.length">
-                                    <div class="team-competency-tools">
-                                        <div class="team-gap-filters" aria-label="กรองผลสมรรถนะ">
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'all' }" @click="selectedGapCompetencyFilter = 'all'; selectedGapPage = 1">ทั้งหมด {{ selectedGapRows.length }}</button>
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'gap' }" @click="selectedGapCompetencyFilter = 'gap'; selectedGapPage = 1">ต้องพัฒนา {{ selectedGapFailedCount }}</button>
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'passed' }" @click="selectedGapCompetencyFilter = 'passed'; selectedGapPage = 1">ผ่าน {{ selectedGapPassedCount }}</button>
-                                            <button type="button" :class="{ active: selectedGapCompetencyFilter === 'pending' }" @click="selectedGapCompetencyFilter = 'pending'; selectedGapPage = 1">รอดำเนินการ {{ selectedGapPendingCount }}</button>
-                                        </div>
-                                        <label class="team-gap-search compact">
-                                            <span aria-hidden="true">⌕</span>
-                                            <input v-model="selectedGapSearch" type="search" placeholder="ค้นหาสมรรถนะ" aria-label="ค้นหาสมรรถนะ" @input="selectedGapPage = 1">
-                                        </label>
-                                    </div>
-
                                     <div class="team-competency-list">
                                         <div class="team-competency-list-head">
                                             <span>สมรรถนะ</span><span>คาดหวัง</span><span>ผลจริง</span><span>Gap</span><span>ผล</span>
@@ -1548,9 +1456,8 @@ const logout = () => router.post(route('logout'));
                                             <strong :class="isCompetencyApproved(row) ? (Number(row.gap) < 0 ? 'rc' : 'gcc') : ''">{{ isCompetencyApproved(row) ? formatTeamGap(row.gap) : '-' }}</strong>
                                             <span class="team-result-status" :class="competencyResultMeta(row).key">{{ competencyResultMeta(row).label }}</span>
                                         </div>
-                                        <div v-if="filteredSelectedGapRows.length === 0" class="team-gap-empty">ไม่พบสมรรถนะตามตัวกรอง</div>
                                     </div>
-                                    <div v-if="filteredSelectedGapRows.length > selectedGapPageSize" class="team-pagination">
+                                    <div v-if="selectedGapRows.length > selectedGapPageSize" class="team-pagination">
                                         <span>หน้า {{ Math.min(selectedGapPage, selectedGapPageCount) }} จาก {{ selectedGapPageCount }}</span>
                                         <div>
                                             <button type="button" :disabled="selectedGapPage <= 1" @click="selectedGapPage -= 1">ก่อนหน้า</button>
@@ -1851,7 +1758,7 @@ const logout = () => router.post(route('logout'));
                                             </div>
                                             <div class="flex ic g8">
                                                 <span class="b" :class="competencyApprovalStatus(row).cls">{{ competencyApprovalStatus(row).label }}</span>
-                                                <span class="b bgr">Expected Level {{ row.expected ?? '-' }}</span>
+                                                <span class="b bgr">ระดับความคาดหวัง {{ row.expected ?? '-' }}</span>
                                                 <span class="b by">{{ row.checkedIndicatorCount || 0 }}/{{ totalIndicatorCount(row) }}</span>
                                             </div>
                                         </button>
@@ -1928,7 +1835,7 @@ const logout = () => router.post(route('logout'));
                                             <strong>{{ selectedSupervisorCompetency.code }}</strong>
                                         </div>
                                         <h2>{{ selectedSupervisorCompetency.title }}</h2>
-                                        <p>{{ supervisorApprovalName }} · Expected Level {{ selectedSupervisorCompetency.expected ?? '-' }}</p>
+                                        <p>{{ supervisorApprovalName }} · ระดับความคาดหวัง {{ selectedSupervisorCompetency.expected ?? '-' }}</p>
                                         <span class="b competency-current-status" :class="competencyApprovalStatus(selectedSupervisorCompetency).cls">
                                             {{ competencyApprovalStatus(selectedSupervisorCompetency).label }}
                                         </span>
@@ -4587,26 +4494,26 @@ const logout = () => router.post(route('logout'));
     justify-content: space-between;
     gap: 24px;
     padding: 8px 2px 22px;
-    border-bottom: 1px solid oklch(88% .012 165);
+    border-bottom: 1px solid #dbe3ec;
 }
 .assessment-hub-copy > span {
     display: block;
     margin-bottom: 4px;
-    color: oklch(49% .09 165);
+    color: #2563eb;
     font-size: 11px;
     font-weight: 900;
     letter-spacing: .04em;
 }
 .assessment-hub-copy h1 {
     margin: 0;
-    color: oklch(29% .018 165);
+    color: #1f2937;
     font-size: 26px;
     line-height: 1.3;
 }
 .assessment-hub-copy p {
     max-width: 68ch;
     margin: 5px 0 0;
-    color: oklch(57% .018 165);
+    color: #64748b;
     font-size: 14px;
 }
 .assessment-queue-status {
@@ -4630,22 +4537,22 @@ const logout = () => router.post(route('logout'));
     box-shadow: 0 0 0 4px oklch(92% .06 75);
 }
 .assessment-queue-status.clear {
-    border-color: oklch(86% .035 155);
-    background: oklch(97% .025 155);
-    color: oklch(44% .075 155);
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 .assessment-queue-status.clear > span {
-    background: oklch(62% .13 155);
-    box-shadow: 0 0 0 4px oklch(91% .05 155);
+    background: #3b82f6;
+    box-shadow: 0 0 0 4px #dbeafe;
 }
 .assessment-hub-tabs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     margin: 0 0 22px;
-    border: 1px solid oklch(87% .014 165);
+    border: 1px solid #dbe3ec;
     border-radius: 12px;
-    background: oklch(95.5% .012 165);
+    background: #f1f5f9;
     padding: 6px;
 }
 .assessment-hub-tabs button {
@@ -4658,24 +4565,24 @@ const logout = () => router.post(route('logout'));
     border-radius: 8px;
     background: transparent;
     padding: 10px 12px;
-    color: oklch(52% .015 165);
+    color: #64748b;
     font: inherit;
     text-align: left;
     cursor: pointer;
     transition: border-color .18s cubic-bezier(.25, 1, .5, 1), background-color .18s cubic-bezier(.25, 1, .5, 1), box-shadow .18s cubic-bezier(.25, 1, .5, 1), color .18s cubic-bezier(.25, 1, .5, 1);
 }
 .assessment-hub-tabs button:hover {
-    background: oklch(97.5% .01 165);
-    color: oklch(38% .055 165);
+    background: #f8fafc;
+    color: #334155;
 }
 .assessment-hub-tabs button.active {
-    border-color: oklch(82% .045 165);
-    background: oklch(99% .004 165);
-    box-shadow: 0 3px 10px oklch(32% .025 165 / .08);
-    color: oklch(42% .095 165);
+    border-color: #93c5fd;
+    background: #fff;
+    box-shadow: 0 3px 10px rgb(15 23 42 / .08);
+    color: #1d4ed8;
 }
 .assessment-hub-tabs button:focus-visible {
-    outline: 3px solid oklch(76% .08 165 / .38);
+    outline: 3px solid rgb(96 165 250 / .38);
     outline-offset: 2px;
 }
 .assessment-hub-tabs button > i {
@@ -4684,15 +4591,15 @@ const logout = () => router.post(route('logout'));
     height: 32px;
     place-items: center;
     border-radius: 8px;
-    background: oklch(90.5% .012 165);
-    color: oklch(53% .02 165);
+    background: #e2e8f0;
+    color: #64748b;
     font-size: 12px;
     font-style: normal;
     font-weight: 900;
 }
 .assessment-hub-tabs button.active > i {
-    background: oklch(50% .105 165);
-    color: oklch(98% .004 165);
+    background: #2563eb;
+    color: #fff;
 }
 .assessment-hub-tabs button > span {
     display: grid;
@@ -4713,16 +4620,16 @@ const logout = () => router.post(route('logout'));
     place-items: center;
     padding: 0 8px;
     border-radius: 999px;
-    background: oklch(90.5% .012 165);
-    color: oklch(52% .018 165);
+    background: #e2e8f0;
+    color: #64748b;
     font-size: 12px;
 }
 .assessment-hub-tabs button.active b {
-    background: oklch(91.5% .05 165);
-    color: oklch(42% .095 165);
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 .assessment-hub-tabs button small {
-    color: oklch(62% .014 165);
+    color: #64748b;
     font-size: 11px;
     font-weight: 600;
 }
@@ -4732,19 +4639,19 @@ const logout = () => router.post(route('logout'));
     justify-content: space-between;
     gap: 28px;
     margin-bottom: 18px;
-    border: 1px solid oklch(88% .012 165);
+    border: 1px solid #dbe3ec;
     border-radius: 12px;
-    background: oklch(98% .008 165);
+    background: #fff;
     padding: 16px 20px;
 }
 .assessment-results-overview h2 {
     margin: 0;
-    color: oklch(31% .018 165);
+    color: #1f2937;
     font-size: 17px;
 }
 .assessment-results-overview p {
     margin: 4px 0 0;
-    color: oklch(59% .014 165);
+    color: #64748b;
     font-size: 12px;
 }
 .assessment-status-summary {
@@ -4758,23 +4665,23 @@ const logout = () => router.post(route('logout'));
     align-items: baseline;
     min-width: 125px;
     padding: 2px 18px;
-    border-left: 1px solid oklch(88% .012 165);
+    border-left: 1px solid #dbe3ec;
 }
 .assessment-status-summary dt {
     grid-column: 1 / -1;
-    color: oklch(58% .016 165);
+    color: #64748b;
     font-size: 11px;
     font-weight: 800;
 }
 .assessment-status-summary dd {
     margin: 2px 5px 0 0;
-    color: oklch(42% .04 165);
+    color: #334155;
     font-size: 21px;
     font-weight: 900;
     line-height: 1;
 }
 .assessment-status-summary small {
-    color: oklch(62% .014 165);
+    color: #64748b;
     font-size: 10px;
 }
 .assessment-status-summary .pending dd { color: oklch(55% .13 67); }
@@ -4782,45 +4689,45 @@ const logout = () => router.post(route('logout'));
 .assessment-list-section {
     overflow: hidden;
     margin-bottom: 16px;
-    border: 1px solid oklch(87% .012 165);
+    border: 1px solid #dbe3ec;
     border-radius: 12px;
-    background: oklch(99% .004 165);
+    background: #fff;
 }
-.assessment-list-section.secondary { background: oklch(98% .006 165); }
+.assessment-list-section.secondary { background: #f8fafc; }
 .assessment-list-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 18px;
     padding: 15px 18px;
-    border-bottom: 1px solid oklch(88% .012 165);
+    border-bottom: 1px solid #dbe3ec;
 }
-.assessment-list-head h3 { margin: 0; color: oklch(31% .018 165); font-size: 15px; }
-.assessment-list-head p { margin: 3px 0 0; color: oklch(61% .014 165); font-size: 11px; }
+.assessment-list-head h3 { margin: 0; color: #1f2937; font-size: 15px; }
+.assessment-list-head p { margin: 3px 0 0; color: #64748b; font-size: 11px; }
 .assessment-list-head > span {
     flex: 0 0 auto;
     border-radius: 999px;
-    background: oklch(94% .012 165);
+    background: #f1f5f9;
     padding: 5px 9px;
-    color: oklch(49% .025 165);
+    color: #475569;
     font-size: 10px;
     font-weight: 900;
 }
 .assessment-list-section .approval-table-wrap { padding: 0; }
 .assessment-list-section .approval-table { min-width: 760px; table-layout: fixed; border-collapse: collapse; }
-.assessment-list-section .approval-table th { background: oklch(96.5% .008 165); color: oklch(55% .015 165); font-size: 11px; }
+.assessment-list-section .approval-table th { background: #f8fafc; color: #64748b; font-size: 11px; }
 .assessment-list-section .approval-table th:first-child { width: 30%; }
 .assessment-list-section .approval-table th:last-child { width: 118px; }
 .assessment-list-section .approval-table td { background: transparent; padding-block: 15px; }
-.assessment-list-section .approval-table tbody tr:hover td { background: oklch(97% .02 165); }
-.assessment-list-section .person-cell small { margin-top: 4px; color: oklch(61% .014 165); font-size: 11px; }
+.assessment-list-section .approval-table tbody tr:hover td { background: #f8fafc; }
+.assessment-list-section .person-cell small { margin-top: 4px; color: #64748b; font-size: 11px; }
 .assessment-row-action {
     min-height: 36px;
-    border: 1px solid oklch(55% .09 165);
+    border: 1px solid #2563eb;
     border-radius: 7px;
-    background: oklch(50% .105 165);
+    background: #2563eb;
     padding: 7px 12px;
-    color: oklch(98% .004 165);
+    color: #fff;
     font: inherit;
     font-size: 11px;
     font-weight: 900;
@@ -4828,10 +4735,10 @@ const logout = () => router.post(route('logout'));
     cursor: pointer;
     transition: background-color .18s cubic-bezier(.25, 1, .5, 1), border-color .18s cubic-bezier(.25, 1, .5, 1);
 }
-.assessment-row-action:hover { border-color: oklch(43% .1 165); background: oklch(43% .1 165); }
-.assessment-row-action.secondary { border-color: oklch(82% .02 165); background: oklch(98% .004 165); color: oklch(43% .065 165); }
-.assessment-row-action.secondary:hover { border-color: oklch(62% .055 165); background: oklch(96% .02 165); }
-.assessment-row-action:focus-visible { outline: 3px solid oklch(76% .08 165 / .38); outline-offset: 2px; }
+.assessment-row-action:hover { border-color: #1d4ed8; background: #1d4ed8; }
+.assessment-row-action.secondary { border-color: #cbd5e1; background: #fff; color: #334155; }
+.assessment-row-action.secondary:hover { border-color: #94a3b8; background: #f8fafc; }
+.assessment-row-action:focus-visible { outline: 3px solid rgb(96 165 250 / .38); outline-offset: 2px; }
 .assessment-empty-state {
     display: flex;
     align-items: center;

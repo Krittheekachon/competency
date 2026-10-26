@@ -16,13 +16,30 @@ class DemoFacultyAnalyticsSeeder extends Seeder
             $roundId = $this->activeRoundId($now);
             $employeeRoleId = $this->employeeRoleId();
             $competencies = $this->competencies($now);
+            $positionsByScope = $this->demoPositionsByScope();
+            $levelsByScope = $this->demoLevelsByScope();
+            $reviewerIds = $this->reviewerIds();
+            $positionOffsets = ['academic' => 0, 'support' => 0];
+            $levelOffsets = ['academic' => 0, 'support' => 0];
 
             foreach ($this->people() as $index => $person) {
-                $userId = $this->upsertPerson($employeeRoleId, $index + 1, $person, $now);
+                $scope = str_contains($person['workline'], 'วิชาการ') ? 'academic' : 'support';
+                $availablePositions = $positionsByScope[$scope];
+                $position = $availablePositions[$positionOffsets[$scope] % count($availablePositions)];
+                $positionOffsets[$scope]++;
+                $availableLevels = $levelsByScope[$scope];
+                $level = $availableLevels[$levelOffsets[$scope] % count($availableLevels)];
+                $levelOffsets[$scope]++;
+
+                $userId = $this->upsertPerson($employeeRoleId, $index + 1, $person, $position, $level, $now);
                 DB::table('idps')->where('user_id', $userId)->delete();
                 $gapIds = $this->seedAssessments($roundId, $userId, $person, $competencies, $now);
                 $this->seedIdp($roundId, $userId, $person, $gapIds, $now);
+                $this->syncReviewerChain($userId, $reviewerIds, 'assessment', $now);
+                $this->syncReviewerChain($userId, $reviewerIds, 'idp', $now);
             }
+
+            $this->syncDemoReviewer($positionsByScope['support'][0], $levelsByScope['support'][0], $now);
         });
     }
 
@@ -111,7 +128,7 @@ class DemoFacultyAnalyticsSeeder extends Seeder
         return $result;
     }
 
-    private function upsertPerson(int $roleId, int $sequence, array $person, $now): int
+    private function upsertPerson(int $roleId, int $sequence, array $person, array $position, array $level, $now): int
     {
         $email = sprintf('faculty.analytics.demo.%02d@test.com', $sequence);
 
@@ -119,16 +136,124 @@ class DemoFacultyAnalyticsSeeder extends Seeder
             'name' => $person['name'],
             'password' => Hash::make('password'),
             'role_id' => $roleId,
-            'workline' => $person['workline'],
-            'department' => $person['department'],
-            'position' => $person['position'],
-            'level' => str_contains($person['workline'], 'วิชาการ') ? 'อาจารย์' : 'ปฏิบัติการ',
+            'workline' => $position['workline'],
+            'department' => $position['department'],
+            'position' => $position['name'],
+            'position_id' => $position['id'],
+            'position_title_id' => $position['positionTitleId'],
+            'level' => $level['name'],
+            'level_id' => $level['id'],
             'is_active' => true,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
 
         return (int) DB::table('users')->where('email', $email)->value('id');
+    }
+
+    /** @return array{academic: array<int, array<string, mixed>>, support: array<int, array<string, mixed>>} */
+    private function demoPositionsByScope(): array
+    {
+        $positions = DB::table('positions')
+            ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
+            ->leftJoin('support_units', 'positions.support_unit_id', '=', 'support_units.id')
+            ->leftJoin('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+            ->leftJoin('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
+            ->whereNotNull('positions.position_title_id')
+            ->where(function ($query): void {
+                $query->where(function ($academic): void {
+                    $academic->where('worklines.name', 'like', '%วิชาการ%')
+                        ->whereNull('positions.support_unit_id');
+                })->orWhere(function ($support): void {
+                    $support->where('worklines.name', 'like', '%สนับสนุน%')
+                        ->whereNotNull('positions.support_unit_id');
+                });
+            })
+            ->orderBy('positions.id')
+            ->get([
+                'positions.id',
+                'positions.position_title_id',
+                'positions.name',
+                'positions.support_unit_id',
+                'worklines.name as workline',
+                'job_families.name as job_family',
+                'support_departments.name as support_department',
+                'support_works.name as support_work',
+                'support_units.name as support_unit',
+            ])
+            ->map(function (object $position): array {
+                $scope = $position->support_unit_id ? 'support' : 'academic';
+                $department = $scope === 'support'
+                    ? collect([$position->support_department, $position->support_work, $position->support_unit])
+                        ->filter()
+                        ->implode(' > ')
+                    : (string) $position->job_family;
+
+                return [
+                    'id' => (int) $position->id,
+                    'positionTitleId' => (int) $position->position_title_id,
+                    'name' => (string) $position->name,
+                    'scope' => $scope,
+                    'workline' => (string) $position->workline,
+                    'department' => $department,
+                ];
+            })
+            ->groupBy('scope');
+
+        $academic = $positions->get('academic', collect())->values()->all();
+        $support = $positions->get('support', collect())->values()->all();
+
+        if ($academic === [] || $support === []) {
+            throw new \RuntimeException('ต้องมีตำแหน่งในโครงสร้างจริงทั้งสายวิชาการและสายสนับสนุนก่อนสร้างข้อมูล Dashboard จำลอง');
+        }
+
+        return compact('academic', 'support');
+    }
+
+    /** @return array{academic: array<int, array{id: int, name: string}>, support: array<int, array{id: int, name: string}>} */
+    private function demoLevelsByScope(): array
+    {
+        $levels = DB::table('levels')
+            ->join('worklines', 'levels.workline_id', '=', 'worklines.id')
+            ->whereNull('levels.job_family_id')
+            ->orderBy('levels.id')
+            ->get([
+                'levels.id',
+                'levels.name',
+                'worklines.name as workline',
+            ])
+            ->map(fn (object $level): array => [
+                'id' => (int) $level->id,
+                'name' => (string) $level->name,
+                'scope' => str_contains((string) $level->workline, 'วิชาการ') ? 'academic' : 'support',
+            ])
+            ->groupBy('scope');
+
+        $academic = $levels->get('academic', collect())->values()->all();
+        $support = $levels->get('support', collect())->values()->all();
+
+        if ($academic === [] || $support === []) {
+            throw new \RuntimeException('ต้องมีระดับตำแหน่งในโครงสร้างจริงทั้งสายวิชาการและสายสนับสนุนก่อนสร้างข้อมูล Dashboard จำลอง');
+        }
+
+        return compact('academic', 'support');
+    }
+
+    private function syncDemoReviewer(array $position, array $level, $now): void
+    {
+        DB::table('users')
+            ->where('email', 'faculty.analytics.reviewer@test.com')
+            ->update([
+                'workline' => $position['workline'],
+                'department' => $position['department'],
+                'position' => $position['name'],
+                'position_id' => $position['id'],
+                'position_title_id' => $position['positionTitleId'],
+                'level' => $level['name'],
+                'level_id' => $level['id'],
+                'updated_at' => $now,
+            ]);
     }
 
     private function seedAssessments(int $roundId, int $userId, array $person, array $competencies, $now): array
@@ -310,5 +435,58 @@ class DemoFacultyAnalyticsSeeder extends Seeder
         return (int) DB::table('roles')
             ->where('key', 'employee')
             ->value('id');
+    }
+
+    /** @return array<int, int> */
+    private function reviewerIds(): array
+    {
+        $reviewersByEmail = DB::table('users')
+            ->whereIn('email', ['13@gmail.com', '12@gmail.com', '11@gmail.com'])
+            ->where('is_active', true)
+            ->pluck('id', 'email');
+
+        $reviewerIds = collect(['13@gmail.com', '12@gmail.com', '11@gmail.com'])
+            ->map(fn (string $email): int => (int) ($reviewersByEmail[$email] ?? 0))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($reviewerIds === []) {
+            $fallbackId = (int) DB::table('users')
+                ->where('email', 'faculty.analytics.reviewer@test.com')
+                ->where('is_active', true)
+                ->value('id');
+
+            if ($fallbackId > 0) {
+                $reviewerIds = [$fallbackId];
+            }
+        }
+
+        if ($reviewerIds === []) {
+            throw new \RuntimeException('ต้องมีผู้ประเมินที่เปิดใช้งานอย่างน้อย 1 คนก่อนสร้างข้อมูล Dashboard จำลอง');
+        }
+
+        return $reviewerIds;
+    }
+
+    /** @param array<int, int> $reviewerIds */
+    private function syncReviewerChain(int $userId, array $reviewerIds, string $chainType, $now): void
+    {
+        DB::table('user_reviewer_steps')
+            ->where('user_id', $userId)
+            ->where('chain_type', $chainType)
+            ->delete();
+
+        DB::table('user_reviewer_steps')->insert(collect($reviewerIds)
+            ->values()
+            ->map(fn (int $reviewerId, int $index): array => [
+                'user_id' => $userId,
+                'chain_type' => $chainType,
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewerId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ])
+            ->all());
     }
 }

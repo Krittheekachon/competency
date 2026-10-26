@@ -80,7 +80,13 @@ class NotificationDigestServiceTest extends TestCase
             'position' => 'Unmapped Position',
         ]);
 
+        $worklineId = DB::table('worklines')->insertGetId([
+            'name' => 'สายทดสอบการแจ้งเตือน',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         DB::table('levels')->insert([
+            'workline_id' => $worklineId,
             'name' => 'Missing Expected Level',
             'expected_level' => null,
             'created_at' => now(),

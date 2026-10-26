@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 
 class ExpectedLevelResolver
 {
+    public function __construct(private PositionTitleResolver $positionTitles) {}
+
     private array $expectedLevelCache = [];
 
     private array $levelIdsCache = [];
@@ -63,66 +65,37 @@ class ExpectedLevelResolver
             return $resolved;
         }
 
-        $levelIds = $this->levelIdsForUser($user);
-        $jobFamilyIds = $this->jobFamilyIdsForUser($user);
         $roundId = $this->activeRoundId();
+        $positionTitleId = $this->positionTitles->forUser($user);
+        $levelIds = $this->levelIdsForUser($user);
+        $positionIds = $positionTitleId
+            ? collect($this->positionTitles->positionIds($positionTitleId))
+            : $this->positionIdsForUser($user);
 
-        if (! $roundId || $levelIds->isEmpty()) {
-            foreach ($unresolvedIds as $competencyId) {
-                $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId] = null;
-            }
-
-            return $resolved;
-        }
-
-        $expectedLevels = $jobFamilyIds->isEmpty()
-            ? collect()
-            : DB::table('hr_expectations')
-                ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-                ->whereIn('hr_expectations.competency_id', $unresolvedIds)
-                ->where('hr_expectations.assessment_round_id', $roundId)
-                ->whereIn('hr_expectations.level_id', $levelIds)
-                ->whereIn('hr_expectations.job_family_id', $jobFamilyIds)
-                ->selectRaw('hr_expectations.competency_id, MAX(COALESCE(hr_expectations.expected_level, levels.expected_level)) as expected_level')
-                ->groupBy('hr_expectations.competency_id')
-                ->pluck('expected_level', 'hr_expectations.competency_id');
-
-        foreach ($expectedLevels as $competencyId => $expectedLevel) {
-            $competencyId = (int) $competencyId;
-            $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId]
-                = $expectedLevel === null ? null : (int) $expectedLevel;
-        }
-
-        $fallbackIds = $unresolvedIds
-            ->reject(fn (int $competencyId): bool => array_key_exists($competencyId, $resolved))
-            ->values();
-        if ($fallbackIds->isEmpty()) {
-            return $resolved;
-        }
-
-        $positionIds = $this->positionIdsForUser($user);
-        $positionCompetencyIds = $positionIds->isEmpty()
+        $assignedCompetencyIds = ! $roundId || (! $positionTitleId && $positionIds->isEmpty())
             ? collect()
             : DB::table('position_competencies')
-                ->whereIn('position_id', $positionIds)
-                ->whereIn('competency_id', $fallbackIds)
+                ->where(function ($query) use ($positionTitleId, $positionIds): void {
+                    if ($positionTitleId) {
+                        $query->where('position_title_id', $positionTitleId);
+                    } else {
+                        $query->whereIn('position_id', $positionIds);
+                    }
+                })
+                ->whereIn('competency_id', $unresolvedIds)
                 ->where('assessment_round_id', $roundId)
                 ->pluck('competency_id')
                 ->map(fn ($id): int => (int) $id)
                 ->flip();
 
-        $levelExpectedLevels = DB::table('levels')
-            ->whereIn('id', $levelIds)
-            ->pluck('expected_level')
-            ->filter(fn ($level) => $level !== null)
-            ->map(fn ($level): int => (int) $level);
-        $fallbackExpectedLevel = $levelExpectedLevels->isEmpty()
+        $expectedLevel = $levelIds->isEmpty()
             ? null
-            : $levelExpectedLevels->max();
+            : DB::table('levels')->where('id', $levelIds->first())->value('expected_level');
+        $expectedLevel = $expectedLevel === null ? null : (int) $expectedLevel;
 
-        foreach ($fallbackIds as $competencyId) {
+        foreach ($unresolvedIds as $competencyId) {
             $resolved[$competencyId] = $this->expectedLevelCache[$userCacheKey.':'.$competencyId]
-                = $positionCompetencyIds->has($competencyId) ? $fallbackExpectedLevel : null;
+                = $assignedCompetencyIds->has($competencyId) ? $expectedLevel : null;
         }
 
         return $resolved;

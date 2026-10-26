@@ -17,7 +17,7 @@ use Illuminate\Notifications\Notifiable;
     'workline', 'department', 'position',
     'level', 'password', 'role_id', 'role_key',
     'is_active', 'profile_photo',
-    'position_id', 'level_id',
+    'position_id', 'position_title_id', 'level_id',
     'reviewer_template_id', 'idp_reviewer_template_id',
     'profile_affiliation', 'profile_saved',
     'sso_workline', 'sso_workline_type', 'sso_faculty_name',

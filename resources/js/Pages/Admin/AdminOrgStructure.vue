@@ -74,8 +74,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const [activeInlineAdd, setActiveInlineAdd] = useState("");
     const [showAddModal, setShowAddModal] = useState(false);
     const [isSavingAddItem, setIsSavingAddItem] = useState(false);
+    const [deletingPositionName, setDeletingPositionName] = useState("");
     const [expandedSupportGroups, setExpandedSupportGroups] = useState<Record<string, boolean>>({});
     const [showAllSupportGroups, setShowAllSupportGroups] = useState(false);
+    const [positionCatalogSearch, setPositionCatalogSearch] = useState("");
+    const [positionCatalogWorkline, setPositionCatalogWorkline] = useState("all");
+    const [positionCatalogSource, setPositionCatalogSource] = useState("all");
+    const [positionCatalogUsage, setPositionCatalogUsage] = useState("all");
     const [addItemData, setAddItemData] = useState({
       category: "workline",
       type: "1",
@@ -86,6 +91,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       worklineName: "",
       parent: "",
       grandparent: "",
+      workName: "",
+      unitName: "",
+      existingPositions: [] as string[],
       worklineType: "support",
       positionTypeName: "",
       positionTitleId: ""
@@ -229,6 +237,64 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
       });
     };
+    const removePositionFromCurrentScope = (positionName: string) => {
+      const scopeName = isAcademicPositionModal() ? `ภาควิชา ${addItemData.value.parent}` : `หน่วย ${addItemData.value.unitName}`;
+      if (!window.confirm(`ยืนยันนำตำแหน่ง “${positionName}” ออกจาก${scopeName}\n\nตำแหน่งจะยังอยู่ในรายการตำแหน่งทั้งหมด`)) return;
+
+      setDeletingPositionName(positionName);
+      const payload = isAcademicPositionModal()
+        ? {
+            workline_name: addItemData.value.worklineName,
+            job_family_name: addItemData.value.parent,
+            name: positionName
+          }
+        : {
+            division_name: addItemData.value.grandparent,
+            work_name: addItemData.value.workName,
+            unit_name: addItemData.value.unitName,
+            name: positionName
+          };
+
+      router.delete(route("admin.structure.positions.destroy"), {
+        ...persistOptions,
+        data: payload,
+        onSuccess: (responsePage: any) => {
+          const remainingPositions = (addItemData.value.existingPositions || []).filter((name: string) => name !== positionName);
+          setAddItemData({ ...addItemData.value, existingPositions: remainingPositions });
+
+          if (isAcademicPositionModal()) {
+            const groups = groupMapForWorkline(addItemData.value.worklineName);
+            setGroupMapForWorkline(addItemData.value.worklineName, {
+              ...groups,
+              [addItemData.value.parent]: (groups[addItemData.value.parent] || []).filter((name) => name !== positionName)
+            });
+          } else {
+            supportOrg = {
+              ...supportOrg,
+              [addItemData.value.grandparent]: (supportOrg[addItemData.value.grandparent] || []).map((work: any) =>
+                work.work !== addItemData.value.workName ? work : {
+                  ...work,
+                  units: (work.units || []).map((unit: any) =>
+                    (typeof unit === "string" ? unit : unit.name) !== addItemData.value.unitName ? unit : {
+                      ...unit,
+                      positions: (unit.positions || []).filter((name: string) => name !== positionName)
+                    }
+                  )
+                }
+              )
+            };
+            setSupportOrg(supportOrg);
+          }
+
+          setDeletingPositionName("");
+          syncStructureFromPage(responsePage);
+        },
+        onError: (errors: any) => {
+          setDeletingPositionName("");
+          showPersistError(errors);
+        }
+      });
+    };
     const worklineNameFromType = (type: string) => {
       if (type === "1") return "สายวิชาการ";
       if (type === "2") return supportWorklineName();
@@ -249,6 +315,20 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         : "academic";
 
       return positionTitles.value.filter((item: any) => item.worklineType === worklineType);
+    };
+    const filteredPositionTitles = () => {
+      const keyword = positionCatalogSearch.value.trim().toLocaleLowerCase("th");
+
+      return positionTitles.value.filter((item: any) => {
+        const matchesSearch = !keyword || String(item.name || "").toLocaleLowerCase("th").includes(keyword);
+        const matchesWorkline = positionCatalogWorkline.value === "all" || item.worklineType === positionCatalogWorkline.value;
+        const matchesSource = positionCatalogSource.value === "all" ||
+          (positionCatalogSource.value === "sso" ? item.source === "sso" : item.source !== "sso");
+        const matchesUsage = positionCatalogUsage.value === "all" ||
+          (positionCatalogUsage.value === "used" ? !item.isUnassigned : item.isUnassigned);
+
+        return matchesSearch && matchesWorkline && matchesSource && matchesUsage;
+      });
     };
     const levelNameCollator = new Intl.Collator("th", {
       numeric: true,
@@ -785,6 +865,10 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setAddItemData(nextItem);
     };
 
+    const isOrganizationPositionModal = () => ["pos", "support-unit-position"].includes(addItemData.value.category);
+    const isAcademicPositionModal = () => addItemData.value.category === "pos" &&
+      normalizeWorklineName(addItemData.value.worklineName || "") === "วิชาการ";
+
     const getAddModalCopy = () => {
       const typeLabel = addItemData.value.worklineName ||
       (addItemData.value.type === "1" ?
@@ -796,7 +880,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       if (addItemData.value.category === "workline") return { title: "เพิ่มสายงาน", label: "ชื่อสายงาน" };
       if (addItemData.value.category === "position-title") return { title: "เพิ่มตำแหน่งทั้งหมด", label: "ชื่อตำแหน่ง" };
       if (addItemData.value.category === "support-dept") return { title: "เพิ่มฝ่าย", label: "ชื่อฝ่าย" };
-      if (addItemData.value.category === "support-unit-position") return { title: `เพิ่มตำแหน่งในหน่วย ${addItemData.value.parent}`, label: "ชื่อตำแหน่ง" };
+      if (addItemData.value.category === "support-unit-position") return { title: `เพิ่มตำแหน่งในหน่วย ${addItemData.value.unitName || ""}`, label: "ตำแหน่งที่ต้องการเพิ่ม" };
       if (addItemData.value.category === "support-global-position") return { title: "เพิ่มตำแหน่ง Global ในสายสนับสนุน", label: "ชื่อตำแหน่ง" };
       if (addItemData.value.category === "comp") return { title: "เพิ่มประเภทสมรรถนะ", label: "รหัสประเภทสมรรถนะ" };
       if (addItemData.value.category === "dept") {
@@ -806,8 +890,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       }
       if (addItemData.value.category === "pos") {
         return {
-          title: addItemData.value.parent ? `เพิ่มตำแหน่ง ${addItemData.value.parent}` : `เพิ่มตำแหน่ง${typeLabel}`,
-          label: "ชื่อตำแหน่ง"
+          title: addItemData.value.parent ? `เพิ่มตำแหน่งในภาควิชา ${addItemData.value.parent}` : `เพิ่มตำแหน่ง${typeLabel}`,
+          label: "ตำแหน่งที่ต้องการเพิ่ม"
         };
       }
       if (addItemData.value.category === "rank") return { title: `เพิ่มระดับตำแหน่ง${typeLabel}`, label: "ชื่อระดับตำแหน่ง" };
@@ -861,7 +945,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
         if (category === "support-unit-position") {
           const divisionName = addItemData.value.grandparent;
-          const [workName, unitName] = String(addItemData.value.parent || "").split("||| ");
+          const workName = addItemData.value.workName;
+          const unitName = addItemData.value.unitName;
           setIsSavingAddItem(true);
           postStructure("admin.structure.positions.store", {
             division_name: divisionName,
@@ -1009,9 +1094,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           <div class="sec-s">ภาควิชา โครงสร้างสายสนับสนุน ระดับตำแหน่ง และประเภทสมรรถนะ</div>
         </div>
       </div>
-
       <div class="structure-tabs mb20">
-	        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>โครงสร้างสายงาน</button>
+	        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>โครงสร้างองค์กร</button>
         <button class={`structure-tab ${activeTab.value === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>ตำแหน่งทั้งหมด</button>
         <button class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
         <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
@@ -1021,7 +1105,12 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "catalog" ? "catalog-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
           {activeTab.value === "workline" ?
           <div class="structure-pane">
-              <div class="structure-heading">โครงสร้างสายงาน</div>
+              <div class="workline-page-head">
+                <div>
+                  <div class="structure-heading">โครงสร้างองค์กร</div>
+                  <p>จัดลำดับสังกัดและตำแหน่งที่ใช้กับบุคลากรในระบบ</p>
+                </div>
+              </div>
               <div class="structure-stack workline-stack">
                 {worklines.map((wl) => {
 	                const groupMap = groupMapForWorkline(wl);
@@ -1030,7 +1119,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 	                return (
                   <section key={wl} class="structure-section workline-section">
                       <div class="structure-section-head">
-                        <div class="fw7 fs14 text-navy">{wl}</div>
+                        <div class="structure-section-title"><span class={`workline-mark ${isSupport ? "support" : "academic"}`}></span><div><strong>{wl}</strong><small>{isSupport ? `${Object.keys(supportOrg).length} ฝ่าย` : `${groupNames.length} ภาควิชา`}</small></div></div>
                         <div class="flex g8">
 	                          {!isSupport && <button
                           class="btn btn-s btn-sm"
@@ -1073,15 +1162,16 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                         </div>
                         <div class="support-columns">
 	                          {Object.entries(supportOrg).map(([division, works]: any) => <div key={division} class="support-column">
-	                            <div class="support-column-head"><div class="structure-name"><span class="structure-type-tag">ฝ่าย</span><strong>{division}</strong></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`work:${division}`)}>+ งาน</button><button class="btn-link" onClick={() => startEdit("support-dept", division)} title="แก้ไขฝ่าย">✎</button></div></div>
+	                            <div class="support-column-head"><div class="structure-name"><span class="structure-type-tag">ฝ่าย</span><div class="structure-label"><strong>{division}</strong><small>{(works || []).length} งาน</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`work:${division}`)}>+ เพิ่มงาน</button><button class="btn-link" onClick={() => startEdit("support-dept", division)} title="แก้ไขฝ่าย" aria-label={`แก้ไขฝ่าย ${division}`}>✎</button></div></div>
 	                            {activeInlineAdd.value === `work:${division}` && <div class="inline-add-composer"><input class="inp" value={newSupportWorkNames.value[division] || ""} onInput={(event: any) => setNewSupportWorkNames((current) => ({ ...current, [division]: event.target.value }))} placeholder="ชื่องาน" autofocus/><button class="btn btn-p btn-sm" onClick={() => addSupportWork(division)}>เพิ่ม</button><button class="btn btn-s btn-sm" onClick={() => setActiveInlineAdd("")}>ยกเลิก</button></div>}
 	                            {(works || []).map((work: any) => <div key={work.work} class="support-work-card">
-	                              <div class="support-work-head"><div class="structure-name"><span class="structure-type-tag muted">งาน</span><strong>{work.work}</strong></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`unit:${division}:${work.work}`)}>+ หน่วย</button><button class="btn-link" onClick={() => startEdit("support-work", work.work, { parent: division })} title="แก้ไขงาน">✎</button></div></div>
+	                              <div class="support-work-head"><div class="structure-name"><span class="structure-type-tag muted">งาน</span><div class="structure-label"><strong>{work.work}</strong><small>{(work.units || []).length} หน่วย</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`unit:${division}:${work.work}`)}>+ เพิ่มหน่วย</button><button class="btn-link" onClick={() => startEdit("support-work", work.work, { parent: division })} title="แก้ไขงาน" aria-label={`แก้ไขงาน ${work.work}`}>✎</button></div></div>
 	                              <div class="support-unit-list">
                                 {(work.units || []).map((rawUnit: any) => {
                                   const unit = typeof rawUnit === "string" ? { name: rawUnit, positions: [] } : rawUnit;
                                   return <div key={unit.name} class="support-unit-block">
-	                                    <div class="support-unit-row"><div class="structure-name"><span class="structure-type-tag quiet">หน่วย</span><span>{unit.name}</span></div><div class="structure-row-actions"><button class="compact-add subtle" onClick={() => {setAddItemData({ category: "support-unit-position", type: "2", name: "", worklineName: wl, parent: `${work.work}||| ${unit.name}`, grandparent: division });setShowAddModal(true);}}>+ ตำแหน่ง</button><button class="btn-link" onClick={() => startEdit("support-unit", unit.name, { parent: division, workName: work.work })} title="แก้ไขหน่วย">✎</button></div></div>
+	                                    <div class="support-unit-row"><div class="structure-name"><span class="structure-type-tag quiet">หน่วย</span><div class="structure-label"><strong>{unit.name}</strong><small>{(unit.positions || []).length} ตำแหน่ง</small></div></div><div class="structure-row-actions"><button class="compact-add subtle" onClick={() => {setAddItemData({ category: "support-unit-position", type: "2", name: "", worklineName: wl, parent: "", grandparent: division, workName: work.work, unitName: unit.name, existingPositions: [...(unit.positions || [])], positionTitleId: "" });setShowAddModal(true);}}>+ เพิ่มตำแหน่ง</button><button class="btn-link" onClick={() => startEdit("support-unit", unit.name, { parent: division, workName: work.work })} title="แก้ไขหน่วย" aria-label={`แก้ไขหน่วย ${unit.name}`}>✎</button></div></div>
+	                                    <div class="support-unit-row"><div class="structure-name"><span class="structure-type-tag quiet">หน่วย</span><div class="structure-label"><strong>{unit.name}</strong><small>{(unit.positions || []).length} ตำแหน่ง</small></div></div><div class="structure-row-actions"><button class="compact-add subtle" onClick={() => {setAddItemData({ category: "support-unit-position", type: "2", name: "", worklineName: wl, parent: "", grandparent: division, workName: work.work, unitName: unit.name, existingPositions: [...(unit.positions || [])], positionTitleId: "" });setShowAddModal(true);}}>+ เพิ่มตำแหน่ง</button><button class="btn-link" onClick={() => startEdit("support-unit", unit.name, { parent: division, workName: work.work })} title="แก้ไขหน่วย" aria-label={`แก้ไขหน่วย ${unit.name}`}>✎</button></div></div>
 	                                    {(unit.positions || []).length > 0 && <div class="support-position-inline">{(unit.positions || []).map((position: string) => <span key={position} class="support-position-chip editable-chip"><span>{position}</span><button class="btn-link" onClick={() => startEdit("support-unit-position", position, { parent: division, workName: work.work, unitName: unit.name })} title="แก้ไขตำแหน่ง">✎</button><button class="chip-remove" onClick={(event: any) => {event.stopPropagation(); deleteSupportUnitPosition(division, work.work, unit.name, position);}} title="ลบตำแหน่ง" aria-label={`ลบตำแหน่ง ${position}`}>×</button></span>)}</div>}
 	                                  </div>;
                                 })}
@@ -1095,9 +1185,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                           const positions = groupMap[department] || [];
                           return <div key={department} class="academic-department-card">
                             <div class="academic-department-row">
-                              <span>{department}</span>
+                              <div class="structure-name"><span class="structure-type-tag academic">ภาควิชา</span><div class="structure-label"><strong>{department}</strong><small>{positions.length} ตำแหน่ง</small></div></div>
                               <div class="structure-row-actions">
-                                <button class="compact-add" onClick={() => {setAddItemData({ category: "pos", type: "", name: "", worklineName: wl, parent: department, grandparent: "" });setShowAddModal(true);}}>+ ตำแหน่ง</button>
+                                <button class="compact-add" onClick={() => {setAddItemData({ category: "pos", type: "", name: "", worklineName: wl, parent: department, grandparent: "", existingPositions: [...positions], positionTitleId: "" });setShowAddModal(true);}}>+ ตำแหน่ง</button>
                                 <button class="btn-link" onClick={() => startEdit("custom-dept", department, { parent: wl })} title="แก้ไขภาควิชา">✎</button>
                               </div>
                             </div>
@@ -1127,25 +1217,53 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               <div class="level-page-head">
                 <div>
                   <div class="structure-heading">ตำแหน่งทั้งหมด</div>
-                  <div class="level-page-copy">ตำแหน่งจาก SSO จะเข้ามาในรายการนี้ก่อน และยังไม่กระทบโครงสร้างจนกว่า Admin จะนำไปจัดเข้าภาควิชา ฝ่าย งาน หรือหน่วย</div>
                 </div>
                 <button class="btn btn-p btn-sm" onClick={() => {
                   setAddItemData({ category: "position-title", type: "", name: "", worklineType: "support", positionTypeName: "", worklineName: "", parent: "", grandparent: "" });
                   setShowAddModal(true);
                 }}>+ เพิ่มตำแหน่ง</button>
               </div>
+              <div class="position-catalog-overview">
+                <div><span>ทั้งหมด</span><strong>{positionTitles.value.length}</strong></div>
+                <div><span>จาก SSO</span><strong>{positionTitles.value.filter((item: any) => item.source === "sso").length}</strong></div>
+                <div><span>กรอกเอง</span><strong>{positionTitles.value.filter((item: any) => item.source !== "sso").length}</strong></div>
+                <div class="attention"><span>ยังไม่ใช้ในโครงสร้าง</span><strong>{positionTitles.value.filter((item: any) => item.isUnassigned).length}</strong></div>
+              </div>
+              <div class="position-catalog-toolbar">
+                <input
+                  class="inp position-catalog-search"
+                  value={positionCatalogSearch.value}
+                  onInput={(event: any) => setPositionCatalogSearch(event.target.value)}
+                  placeholder="ค้นหาชื่อตำแหน่ง..."
+                  aria-label="ค้นหาชื่อตำแหน่ง"
+                />
+                <select class="sel" value={positionCatalogWorkline.value} onChange={(event: any) => setPositionCatalogWorkline(event.target.value)} aria-label="กรองสายงาน">
+                  <option value="all">ทุกสายงาน</option>
+                  <option value="academic">สายวิชาการ</option>
+                  <option value="support">สายสนับสนุน</option>
+                </select>
+                <select class="sel" value={positionCatalogSource.value} onChange={(event: any) => setPositionCatalogSource(event.target.value)} aria-label="กรองที่มา">
+                  <option value="all">ทุกที่มา</option>
+                  <option value="sso">SSO</option>
+                  <option value="manual">กรอกเอง</option>
+                </select>
+                <select class="sel" value={positionCatalogUsage.value} onChange={(event: any) => setPositionCatalogUsage(event.target.value)} aria-label="กรองการใช้งาน">
+                  <option value="all">ทุกสถานะ</option>
+                  <option value="used">ใช้ในโครงสร้างแล้ว</option>
+                  <option value="unused">ยังไม่ใช้</option>
+                </select>
+              </div>
               <div class="position-catalog-table">
-                <div class="position-catalog-head"><span>ตำแหน่ง</span><span>สายงาน</span><span>ประเภทตำแหน่ง</span><span>ที่มา</span><span>สถานะ</span></div>
-                {positionTitles.value.map((item: any) =>
+                <div class="position-catalog-head"><span>ตำแหน่ง</span><span>สายงาน</span><span>ที่มา</span><span>สถานะ</span></div>
+                {filteredPositionTitles().map((item: any) =>
                   <div key={item.id} class="position-catalog-row">
-                    <strong>{item.name}</strong>
+                    <strong class="position-catalog-name">{item.name}</strong>
                     <span>{item.worklineName}</span>
-                    <span>{item.positionTypeName || "—"}</span>
-                    <span class={`source-chip ${item.source === "sso" ? "sso" : "manual"}`}>{item.source === "sso" ? "SSO" : item.source === "legacy" ? "ข้อมูลเดิม" : "เพิ่มด้วยมือ"}</span>
-                    <span class={`source-chip ${item.isUnassigned ? "pending" : "ready"}`}>{item.isUnassigned ? "ยังไม่จัดโครงสร้าง" : `ใช้ ${item.placementCount} จุด`}</span>
+                    <span class={`source-chip ${item.source === "sso" ? "sso" : "manual"}`}>{item.source === "sso" ? "SSO" : "กรอกเอง"}</span>
+                    <span class={`source-chip ${item.isUnassigned ? "pending" : "ready"}`}>{item.isUnassigned ? "ยังไม่ใช้" : `ใช้แล้ว ${item.placementCount} จุด`}</span>
                   </div>
                 )}
-                {!positionTitles.value.length && <div class="structure-empty">ยังไม่มีตำแหน่งจาก SSO หรือที่เพิ่มด้วยมือ</div>}
+                {!filteredPositionTitles().length && <div class="position-catalog-empty">ไม่พบตำแหน่งที่ตรงกับตัวกรอง</div>}
               </div>
             </div> :
           activeTab.value === "dept" ?
@@ -1279,7 +1397,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                             <div class="level-matrix compact-level-matrix" role="table">
                               <div class="level-matrix-head" role="row">
                                 <div role="columnheader">ระดับตำแหน่ง</div>
-                                <div role="columnheader">Expected Level</div>
+                                <div role="columnheader">ระดับความคาดหวัง</div>
                                 <div role="columnheader"></div>
                               </div>
                               {matrixRows.map((row) => {
@@ -1343,12 +1461,46 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       {showAddModal.value &&
       <div class="mo">
-          <div class="mo-box anim-fade-in" style={{ width: "450px" }}>
+          <div
+            class={`mo-box anim-fade-in ${isOrganizationPositionModal() ? "organization-position-modal" : ""}`}
+            style={{
+              width: isOrganizationPositionModal() ? "840px" : "450px",
+              maxWidth: "calc(100vw - 32px)"
+            }}
+          >
             <div class="mo-h">
               <div class="fw8">{getAddModalCopy().title}</div>
               <button class="btn btn-s btn-sm" type="button" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
             <div class="mo-b">
+              {isOrganizationPositionModal() &&
+                <div class="modal-unit-positions" aria-label={isAcademicPositionModal() ? "ตำแหน่งในภาควิชานี้" : "ตำแหน่งในหน่วยนี้"}>
+                  <div class="modal-unit-positions-head">
+                    <span>{isAcademicPositionModal() ? "ตำแหน่งในภาควิชานี้" : "ตำแหน่งในหน่วยนี้"}</span>
+                    <small>{(addItemData.value.existingPositions || []).length} ตำแหน่ง</small>
+                  </div>
+                  {(addItemData.value.existingPositions || []).length > 0 ?
+                    <div class="modal-unit-position-list">
+                      {(addItemData.value.existingPositions || []).map((position: string) =>
+                        <span key={position} class="modal-unit-position-chip">
+                          <span>{position}</span>
+                          <button
+                            type="button"
+                            class="modal-unit-position-remove"
+                            disabled={Boolean(deletingPositionName.value)}
+                            aria-label={`ลบตำแหน่ง ${position}`}
+                            title={`นำ ${position} ออกจาก${isAcademicPositionModal() ? "ภาควิชานี้" : "หน่วยนี้"}`}
+                            onClick={() => removePositionFromCurrentScope(position)}
+                          >
+                            {deletingPositionName.value === position ? "…" : "×"}
+                          </button>
+                        </span>
+                      )}
+                    </div> :
+                    <div class="modal-unit-position-empty">{isAcademicPositionModal() ? "ภาควิชานี้ยังไม่มีตำแหน่ง" : "หน่วยนี้ยังไม่มีตำแหน่ง"}</div>
+                  }
+                </div>
+              }
               <div class="fg">
                 <label class="lbl fw8" style={{ color: "var(--navy)" }}>{getAddModalCopy().label}</label>
                 {(["pos", "support-unit-position"].includes(addItemData.value.category)) ?
@@ -1363,7 +1515,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   autoFocus
                 >
                   <option value="">เลือกจากตำแหน่งทั้งหมด</option>
-                  {catalogOptionsForAdd().map((item: any) => <option key={item.id} value={String(item.id)}>{item.name}{item.positionTypeName ? ` — ${item.positionTypeName}` : ""}</option>)}
+                  {catalogOptionsForAdd().map((item: any) => {
+                    const isAlreadyInUnit = isOrganizationPositionModal() &&
+                      (addItemData.value.existingPositions || []).includes(item.name);
+                    return <option key={item.id} value={String(item.id)} disabled={isAlreadyInUnit}>{item.name}{isAlreadyInUnit ? " — เพิ่มแล้ว" : ""}</option>;
+                  })}
                 </select> :
                 <input
                   ref={addNameInput}
@@ -1383,19 +1539,13 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                 }
               </div>
               {addItemData.value.category === "position-title" &&
-                <>
-                  <div class="fg">
-                    <label class="lbl fw8">สายงาน</label>
-                    <select class="sel" value={addItemData.value.worklineType} onChange={(e) => setAddItemData({ ...addItemData.value, worklineType: e.target.value })}>
-                      <option value="academic">สายวิชาการ</option>
-                      <option value="support">สายสนับสนุน</option>
-                    </select>
-                  </div>
-                  <div class="fg">
-                    <label class="lbl fw8">ประเภทตำแหน่ง (ถ้ามี)</label>
-                    <input class="inp" value={addItemData.value.positionTypeName} onChange={(e) => setAddItemData({ ...addItemData.value, positionTypeName: e.target.value })} placeholder="เช่น พนักงานมหาวิทยาลัย" />
-                  </div>
-                </>
+                <div class="fg">
+                  <label class="lbl fw8">สายงาน</label>
+                  <select class="sel" value={addItemData.value.worklineType} onChange={(e) => setAddItemData({ ...addItemData.value, worklineType: e.target.value })}>
+                    <option value="academic">สายวิชาการ</option>
+                    <option value="support">สายสนับสนุน</option>
+                  </select>
+                </div>
               }
               {addItemData.value.category === "comp" &&
             <>
@@ -1418,7 +1568,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                     )}
                   </select>
                   <div class="level-help-text">
-                    หมายเหตุ: การเลือกระดับ Level (1-5) ในส่วนนี้ ระบบจะนำไปใช้เป็น "ค่าความคาดหวังสมรรถนะเป้าหมาย (Expected Level)" พื้นฐานสำหรับบุคลากรในระดับตำแหน่งนี้โดยอัตโนมัติ
+                    หมายเหตุ: การเลือกระดับ Level (1-5) ในส่วนนี้ ระบบจะนำไปใช้เป็นระดับความคาดหวังพื้นฐานสำหรับบุคลากรในระดับตำแหน่งนี้โดยอัตโนมัติ
                   </div>
                 </div>
             }
@@ -1467,7 +1617,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
                   )}
                 </select>
                 <div class="level-help-text">
-                  หมายเหตุ: การเลือกระดับ Level (1-5) ในส่วนนี้ ระบบจะนำไปใช้เป็น "ค่าความคาดหวังสมรรถนะเป้าหมาย (Expected Level)" พื้นฐานสำหรับบุคลากรในระดับตำแหน่งนี้โดยอัตโนมัติ
+                  หมายเหตุ: การเลือกระดับ Level (1-5) ในส่วนนี้ ระบบจะนำไปใช้เป็นระดับความคาดหวังพื้นฐานสำหรับบุคลากรในระดับตำแหน่งนี้โดยอัตโนมัติ
                 </div>
               </div>
             }
@@ -1497,28 +1647,56 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .structure-shell.level-shell .structure-pane,
         .structure-shell.comp-shell .structure-pane { padding: 0; }
         .structure-pane { padding: 20px; }
-        .structure-heading { margin-bottom: 14px; color: var(--text); font-size: 15px; font-weight: 800; }
-        .position-catalog-table { overflow: hidden; border: 1px solid #dbe5f1; border-radius: 10px; background: #fff; }
-        .position-catalog-head, .position-catalog-row { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(110px, .7fr) minmax(160px, 1fr) minmax(90px, .55fr) minmax(140px, .8fr); align-items: center; gap: 12px; padding: 12px 14px; }
-        .position-catalog-head { border-bottom: 1px solid #dbe5f1; background: #f8fafc; color: var(--text3); font-size: 11px; font-weight: 800; }
-        .position-catalog-row { border-bottom: 1px solid #edf2f7; color: var(--text2); font-size: 12px; }
+        .structure-heading { color: var(--text); font-size: 18px; font-weight: 850; letter-spacing: -0.01em; }
+        .workline-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+        .workline-page-head p { margin: 5px 0 0; color: var(--text3); font-size: 12px; }
+        .position-catalog-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .position-catalog-overview > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; padding: 10px 14px; border: 1px solid oklch(90% .012 250); border-radius: 9px; background: oklch(98.5% .006 250); }
+        .position-catalog-overview span { color: oklch(52% .02 250); font-size: 11px; font-weight: 700; }
+        .position-catalog-overview strong { color: oklch(31% .03 250); font-size: 20px; font-weight: 850; }
+        .position-catalog-overview .attention { border-color: oklch(89% .035 55); background: oklch(97% .025 55); }
+        .position-catalog-overview .attention strong { color: oklch(48% .14 45); }
+        .position-catalog-toolbar { display: grid; grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(150px, 190px)); gap: 8px; margin-bottom: 12px; }
+        .position-catalog-toolbar .inp, .position-catalog-toolbar .sel { min-height: 40px; margin: 0; background-color: oklch(99% .003 250); font-size: 12px; }
+        .position-catalog-table { overflow: hidden; border: 1px solid oklch(88% .014 250); border-radius: 10px; background: oklch(99.5% .002 250); }
+        .position-catalog-head, .position-catalog-row { display: grid; grid-template-columns: minmax(260px, 1.7fr) minmax(150px, .8fr) minmax(100px, .45fr) minmax(150px, .7fr); align-items: center; gap: 16px; padding: 13px 18px; }
+        .position-catalog-head { border-bottom: 1px solid oklch(88% .014 250); background: oklch(96.5% .009 250); color: oklch(53% .02 250); font-size: 11px; font-weight: 800; letter-spacing: .01em; }
+        .position-catalog-row { min-height: 58px; border-bottom: 1px solid oklch(92% .009 250); color: oklch(43% .025 250); font-size: 12px; transition: background 140ms ease-out; }
+        .position-catalog-row:hover { background: oklch(98% .009 245); }
         .position-catalog-row:last-child { border-bottom: 0; }
-        .source-chip { justify-self: start; padding: 4px 7px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 10px; font-weight: 800; }
+        .position-catalog-name { color: oklch(31% .03 250); font-size: 13px; font-weight: 800; }
+        .position-catalog-empty { padding: 34px 18px; color: oklch(57% .018 250); font-size: 12px; text-align: center; }
+        .source-chip { justify-self: start; padding: 5px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 10px; font-weight: 800; }
         .source-chip.sso { background: #eff6ff; color: #1d4ed8; }
         .source-chip.pending { background: #fff7ed; color: #c2410c; }
         .source-chip.ready { background: #ecfdf5; color: #047857; }
         .structure-note { display: grid; gap: 4px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--blue-md); border-radius: 8px; background: var(--blue-lt); color: var(--text2); font-size: 12px; line-height: 1.55; }
         .add-modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; width: 100%; }
         .add-modal-actions .btn { flex: 0 0 auto; min-width: 96px; }
+        .organization-position-modal .mo-h { padding: 18px 22px; }
+        .organization-position-modal .mo-h > div { font-size: 19px; line-height: 1.35; }
+        .organization-position-modal .mo-b { display: grid; gap: 18px; padding: 22px; }
+        .organization-position-modal .fg { margin-bottom: 0; }
+        .organization-position-modal .lbl { margin-bottom: 8px; font-size: 14px; }
+        .organization-position-modal .sel { min-height: 48px; font-size: 15px; }
+        .organization-position-modal .add-modal-actions { margin-top: 4px; }
+        .organization-position-modal .add-modal-actions .btn { min-width: 118px; min-height: 44px; font-size: 14px; }
         .add-modal-submit { display: inline-flex !important; align-items: center; justify-content: center; min-width: 112px; background: var(--blue) !important; color: #fff !important; border-color: var(--blue) !important; opacity: 1 !important; visibility: visible !important; }
         .structure-note b { color: var(--blue); font-size: 13px; }
         .structure-stack { display: grid; gap: 0; }
         .structure-section { padding: 16px 0; border-top: 1px solid var(--border); }
         .structure-section:first-child { padding-top: 0; border-top: 0; }
-        .workline-stack { gap: 16px; }
-        .workline-section { padding: 18px; border: 1px solid var(--border); border-radius: var(--r); background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .workline-stack { gap: 18px; }
+        .workline-section { overflow: hidden; padding: 0; border: 1px solid oklch(88% .015 250); border-radius: 12px; background: oklch(99.2% .004 250); box-shadow: 0 4px 18px oklch(30% .02 250 / .05); }
         .workline-stack .workline-section:first-child { padding-top: 18px; border-top: 1px solid var(--border); }
-        .workline-section .structure-section-head { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #e5edf7; }
+        .workline-stack .workline-section:first-child { padding-top: 0; }
+        .workline-section .structure-section-head { min-height: 68px; margin: 0; padding: 14px 18px; border-bottom: 1px solid oklch(90% .012 250); background: oklch(97.5% .008 250); }
+        .structure-section-title { display: flex; align-items: center; gap: 11px; }
+        .structure-section-title > div { display: grid; gap: 2px; }
+        .structure-section-title strong { color: oklch(28% .025 250); font-size: 15px; }
+        .structure-section-title small { color: oklch(54% .02 250); font-size: 10px; font-weight: 700; }
+        .workline-mark { width: 10px; height: 10px; border-radius: 50%; background: oklch(57% .12 245); box-shadow: 0 0 0 5px oklch(93% .025 245); }
+        .workline-mark.support { background: oklch(58% .12 45); box-shadow: 0 0 0 5px oklch(94% .03 45); }
         .level-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
         .level-page-copy { color: var(--text3); font-size: 13px; line-height: 1.55; max-width: 720px; }
         .level-redesign .level-page-head { margin-bottom: 14px; }
@@ -1618,23 +1796,38 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .support-chain-item .sel { max-width: 280px; }
         .support-unit-add { display: flex; gap: 8px; width: min(100%, 360px); }
         .support-work-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); }
-        .support-work-card { display: grid; align-content: start; gap: 0; margin-left: 18px; border-top: 1px solid #e7ebf0; }
-        .support-work-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 4px 8px 18px; }
-        .support-unit-list { display: grid; margin-left: 36px; }
-        .support-unit-block { display: grid; gap: 0; border-top: 1px solid #edf0f4; }
+        .support-work-card { display: grid; align-content: start; gap: 0; margin: 0 0 10px 28px; border: 1px solid oklch(90% .012 250); border-radius: 9px; background: oklch(99.5% .003 250); }
+        .support-work-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 54px; padding: 9px 12px; }
+        .support-unit-list { display: grid; margin: 0 10px 10px 34px; border: 1px solid oklch(91% .01 250); border-radius: 8px; background: oklch(98.5% .006 250); }
+        .support-unit-block { display: grid; gap: 0; border-top: 1px solid oklch(91% .01 250); }
+        .support-unit-block:first-child { border-top: 0; }
         .structure-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-        .structure-type-tag { flex: 0 0 auto; min-width: 42px; padding: 3px 7px; border-radius: 999px; background: #e9f0f9; color: #365474; font-size: 10px; font-weight: 800; text-align: center; }
-        .structure-type-tag.muted { background: #f0f3f7; color: #5f6b79; }
-        .structure-type-tag.quiet { background: transparent; color: #8a96a5; padding-left: 0; text-align: left; }
+        .structure-label { display: grid; gap: 2px; min-width: 0; }
+        .structure-label strong { overflow: hidden; color: oklch(30% .022 250); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+        .structure-label small { color: oklch(58% .018 250); font-size: 10px; font-weight: 650; }
+        .structure-type-tag { flex: 0 0 auto; min-width: 46px; padding: 4px 8px; border-radius: 999px; background: oklch(92% .025 245); color: oklch(43% .07 245); font-size: 9px; font-weight: 850; text-align: center; }
+        .structure-type-tag.academic { min-width: 56px; background: oklch(92% .025 245); color: oklch(43% .07 245); }
+        .structure-type-tag.muted { background: oklch(94% .012 250); color: oklch(45% .025 250); }
+        .structure-type-tag.quiet { background: oklch(95.5% .008 250); color: oklch(50% .02 250); }
         .structure-row-actions { display: flex; align-items: center; gap: 6px; }
-        .compact-add { min-height: 30px; padding: 5px 9px; border: 1px solid #d6dee8; border-radius: 7px; background: #fff; color: #475569; cursor: pointer; font-size: 12px; font-weight: 700; }
-        .compact-add:hover { border-color: #d84a2f; color: #c43d25; background: #fff8f6; }
+        .compact-add { min-height: 34px; padding: 6px 10px; border: 1px solid oklch(87% .014 250); border-radius: 8px; background: oklch(99.5% .004 250); color: oklch(42% .035 250); cursor: pointer; font-size: 11px; font-weight: 750; transition: border-color 160ms ease-out, background 160ms ease-out, color 160ms ease-out; }
+        .compact-add:hover { border-color: oklch(68% .12 35); color: oklch(49% .16 35); background: oklch(97% .025 35); }
         .compact-add.subtle { min-height: 30px; border-color: #d6dee8; background: #fff; }
         .compact-add:focus-visible { outline: 2px solid #d84a2f; outline-offset: 2px; }
         .inline-add-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid #dbe5f1; border-radius: 8px; background: #f8fafc; }
-        .support-unit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 46px; padding: 7px 4px 7px 18px; color: var(--text); font-size: 13px; font-weight: 650; }
-        .support-position-inline { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px 70px; }
-        .support-position-chip { position: relative; padding: 5px 9px; border: 1px solid #e2e7ed; border-radius: 6px; background: #f7f9fb; color: #5a6675; font-size: 11px; font-weight: 650; }
+        .support-unit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 50px; padding: 8px 10px; color: var(--text); font-size: 13px; font-weight: 650; }
+        .support-position-inline { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 10px 10px 66px; }
+        .support-position-chip { position: relative; padding: 6px 9px; border: 1px solid oklch(89% .012 250); border-radius: 7px; background: oklch(99% .004 250); color: oklch(43% .025 250); font-size: 10px; font-weight: 700; }
+        .modal-unit-positions { display: grid; gap: 11px; padding: 15px 16px; border: 1px solid oklch(89% .014 250); border-radius: 9px; background: oklch(97.5% .008 250); }
+        .modal-unit-positions-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: oklch(35% .025 250); font-size: 14px; font-weight: 800; }
+        .modal-unit-positions-head small { color: oklch(55% .02 250); font-size: 12px; font-weight: 700; }
+        .modal-unit-position-list { display: flex; flex-wrap: wrap; gap: 7px; max-height: 132px; overflow-y: auto; }
+        .modal-unit-position-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 6px 6px 10px; border: 1px solid oklch(87% .018 250); border-radius: 7px; background: oklch(99% .004 250); color: oklch(42% .03 250); font-size: 13px; font-weight: 700; }
+        .modal-unit-position-remove { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: oklch(56% .035 250); cursor: pointer; font: inherit; font-size: 17px; line-height: 1; transition: background 140ms ease-out, color 140ms ease-out; }
+        .modal-unit-position-remove:hover:not(:disabled) { background: oklch(94% .04 25); color: oklch(50% .18 25); }
+        .modal-unit-position-remove:focus-visible { outline: 2px solid oklch(62% .16 25); outline-offset: 1px; }
+        .modal-unit-position-remove:disabled { cursor: wait; opacity: .45; }
+        .modal-unit-position-empty { padding: 7px 0 1px; color: oklch(58% .018 250); font-size: 13px; }
         .support-position-chip.removable-chip { display: inline-flex; align-items: center; gap: 6px; padding-right: 24px; }
         .support-global-position-panel { display: grid; gap: 10px; margin-bottom: 14px; padding: 12px; border: 1px solid #dbe5f1; border-radius: 8px; background: #fbfdff; }
         .support-global-position-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1646,17 +1839,17 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .support-head-select { display: grid; gap: 5px; }
         .support-add-card { min-height: 150px; border-style: dashed; background: #fbfdff; }
         .structure-empty { grid-column: 1 / -1; padding: 14px; border: 1px dashed var(--border); border-radius: 7px; color: var(--text3); font-size: 13px; text-align: center; }
-        .academic-department-list { display: grid; gap: 10px; }
-        .academic-department-card { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-        .academic-department-row { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 10px 14px; color: var(--text); font-size: 13px; font-weight: 700; }
-        .academic-position-list { display: grid; gap: 6px; padding: 10px 14px 14px; border-top: 1px solid #edf1f6; background: #fafbfd; }
+        .academic-department-list { display: grid; gap: 10px; padding: 14px; }
+        .academic-department-card { overflow: hidden; border: 1px solid oklch(89% .012 250); border-radius: 9px; background: oklch(99.5% .003 250); }
+        .academic-department-row { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 10px 12px; color: var(--text); font-size: 13px; font-weight: 700; }
+        .academic-position-list { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 12px 12px 68px; border-top: 1px solid oklch(91% .01 250); background: oklch(98.5% .006 250); }
         .academic-position-row { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 7px 10px; border: 1px solid #e3e9f1; border-radius: 7px; background: #fff; color: var(--text2); font-size: 12px; font-weight: 650; }
         .academic-position-empty { padding: 8px 10px; color: var(--text3); font-size: 12px; }
-        .support-columns { display: grid; gap: 12px; grid-template-columns: 1fr; }
+        .support-columns { display: grid; gap: 12px; padding: 14px; grid-template-columns: 1fr; }
         .support-group-more { justify-self: start; margin-top: 12px; border: 1px solid var(--border); border-radius: 7px; background: #fff; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; padding: 8px 10px; }
         .support-group-more:hover { border-color: var(--blue); background: var(--blue-lt); }
-        .support-column { display: grid; align-content: start; padding: 6px 14px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-        .support-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 54px; padding: 7px 4px; }
+        .support-column { display: grid; align-content: start; padding: 0 12px 2px; border: 1px solid oklch(88% .015 250); border-radius: 10px; background: oklch(99.5% .003 250); }
+        .support-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 62px; padding: 9px 4px; }
         .support-position-list { display: grid; align-content: start; gap: 7px; }
         .support-more { justify-self: start; border: 0; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; padding: 0; }
         .support-add { min-height: 34px; border: 1px dashed var(--border); border-radius: 7px; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; }
@@ -1664,8 +1857,9 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         .tbl-mini { width: 100%; border-collapse: collapse; font-size: 13px; }
         .tbl-mini td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: var(--text2); }
         .tbl-mini tr:hover td { background: #f8fafc; color: var(--blue); }
-        .btn-link { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 14px; opacity: 0.5; transition: 0.2s; }
-        .btn-link:hover { opacity: 1; transform: scale(1.2); }
+        .btn-link { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: oklch(52% .035 250); cursor: pointer; font-size: 13px; opacity: .72; transition: 160ms ease-out; }
+        .btn-link:hover { border-color: oklch(87% .014 250); background: oklch(97% .008 250); color: oklch(46% .12 35); opacity: 1; }
+        .btn-link:focus-visible { outline: 2px solid oklch(65% .14 35); outline-offset: 2px; }
         .inp-clean { border: none; background: transparent; outline: none; }
         @media (max-width: 1180px) {
           .level-layout { grid-template-columns: 220px minmax(0, 1fr); }
@@ -1673,6 +1867,11 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           .scoped-level-panel { max-height: 520px; }
         }
         @media (max-width: 840px) {
+          .position-catalog-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .position-catalog-toolbar { grid-template-columns: 1fr 1fr; }
+          .position-catalog-search { grid-column: 1 / -1; }
+          .position-catalog-table { overflow-x: auto; }
+          .position-catalog-head, .position-catalog-row { min-width: 720px; }
           .level-layout { grid-template-columns: 1fr; }
           .level-sidebar { position: static; }
           .level-nav-list { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }

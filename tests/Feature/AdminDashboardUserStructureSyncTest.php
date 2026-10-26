@@ -90,6 +90,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
                     return $user
                         && $user['structureStatus'] === 'invalid'
+                        && $user['displayOrganization'] === 'ยังไม่ระบุงาน/หน่วย'
                         && ($user['structureIssues'][0] ?? null) === 'กลุ่มงานนี้ไม่มีในโครงสร้างปัจจุบัน'
                         && ($user['structureIssues'][1] ?? null) === 'ตำแหน่งนี้ไม่มีในกลุ่มงานปัจจุบัน'
                         && ($user['structureIssues'][2] ?? null) === 'ระดับตำแหน่งนี้ไม่มีในโครงสร้างปัจจุบัน';
@@ -386,6 +387,14 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 
                     return $user
                         && $user['d'] === 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา'
+                        && $user['displayOrganization'] === 'งานบุคคล · หน่วยพัฒนา'
+                        && $user['organization'] === [
+                            'type' => 'support',
+                            'departmentName' => 'ฝ่ายบริหาร',
+                            'workName' => 'งานบุคคล',
+                            'unitName' => 'หน่วยพัฒนา',
+                            'display' => 'งานบุคคล · หน่วยพัฒนา',
+                        ]
                         && $user['structureStatus'] === 'ok'
                         && $user['structureIssues'] === [];
                 })

@@ -17,6 +17,32 @@ class FcTopicSelectionFlowTest extends TestCase
 
     private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
 
+    public function test_employee_dashboard_marks_the_self_assessment_window_as_closed_after_its_deadline(): void
+    {
+        DB::table('assessment_rounds')->insert([
+            'name' => 'รอบที่ปิดแล้ว',
+            'year' => 2569,
+            'self_assess_start' => now()->subMonths(2)->toDateString(),
+            'self_assess_end' => now()->subDay()->toDateString(),
+            'supervisor_assess_end' => now()->addMonth()->toDateString(),
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $employee = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($employee)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Employee/Dashboard')
+                ->where('selfAssessmentWindow.status', 'closed')
+                ->where('selfAssessmentWindow.endDate', now()->subDay()->toDateString()));
+    }
     public function test_employee_assigned_as_first_reviewer_sees_fc_topic_approval_module(): void
     {
         $roundId = DB::table('assessment_rounds')->insertGetId([

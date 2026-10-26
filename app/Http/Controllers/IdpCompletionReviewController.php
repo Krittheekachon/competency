@@ -134,17 +134,24 @@ class IdpCompletionReviewController extends Controller
     private function reviewableCompletion(string $publicId): object
     {
         $completion = DB::table('idp_item_completion_submissions')
-            ->join('idp_items', 'idp_item_completion_submissions.idp_item_id', '=', 'idp_items.id')
-            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
-            ->leftJoin('competency_gaps', 'idp_items.competency_gap_id', '=', 'competency_gaps.id')
-            ->leftJoin('assessments', 'competency_gaps.assessment_id', '=', 'assessments.id')
             ->where('idp_item_completion_submissions.public_id', $publicId)
             ->select(
                 'idp_item_completion_submissions.id',
                 'idp_item_completion_submissions.idp_item_id',
                 'idp_item_completion_submissions.status',
                 'idp_item_completion_submissions.submission_version',
-                'idp_item_completion_submissions.current_review_step',
+                'idp_item_completion_submissions.current_review_step'
+            )
+            ->lockForUpdate()
+            ->first();
+        if (! $completion) {
+            throw ValidationException::withMessages(['completionPublicId' => 'ไม่พบรายการปิดผลการพัฒนา']);
+        }
+
+        $context = DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idp_items.id', $completion->idp_item_id)
+            ->select(
                 'idp_items.idp_id',
                 'idp_items.competency_gap_id',
                 'idp_items.behavior_key',
@@ -153,10 +160,13 @@ class IdpCompletionReviewController extends Controller
                 'idps.user_id',
                 'idps.assessment_round_id'
             )
-            ->lockForUpdate()
             ->first();
-        if (! $completion) {
-            throw ValidationException::withMessages(['completionPublicId' => 'ไม่พบรายการปิดผลการพัฒนา']);
+        if (! $context) {
+            throw ValidationException::withMessages(['completionPublicId' => 'ไม่พบข้อมูลแผนสำหรับรายการปิดผลการพัฒนา']);
+        }
+
+        foreach ((array) $context as $key => $value) {
+            $completion->{$key} = $value;
         }
 
         $step = (int) ($completion->current_review_step ?? 0);

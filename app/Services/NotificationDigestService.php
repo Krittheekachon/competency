@@ -25,7 +25,10 @@ class NotificationDigestService
 
     private const DAILY_SENT_KEY = 'digest_daily_sent_on';
 
-    public function __construct(private NotificationRecipientResolver $recipientResolver) {}
+    public function __construct(
+        private UserOrganizationPresenter $organizationPresenter,
+        private NotificationRecipientResolver $recipientResolver,
+    ) {}
 
     public function queueIncompleteUser(User $user): void
     {
@@ -195,11 +198,12 @@ class NotificationDigestService
         $hasDivision = Schema::hasColumn('users', 'division_id');
         $hasJobFamily = Schema::hasColumn('users', 'job_family_id');
         $hasPosition = Schema::hasColumn('users', 'position_id');
+        $hasPositionTitle = Schema::hasColumn('users', 'position_title_id');
 
         return User::query()
             ->where('is_active', true)
-            ->where(function (Builder $query) use ($hasDivision, $hasJobFamily, $hasPosition): void {
-                if (! $hasDivision && ! $hasJobFamily && ! $hasPosition) {
+            ->where(function (Builder $query) use ($hasDivision, $hasJobFamily, $hasPosition, $hasPositionTitle): void {
+                if (! $hasDivision && ! $hasJobFamily && ! $hasPosition && ! $hasPositionTitle) {
                     $query->whereRaw('1 = 0');
 
                     return;
@@ -211,6 +215,15 @@ class NotificationDigestService
 
                 if ($hasJobFamily) {
                     $query->orWhereNull('job_family_id');
+                }
+
+                if ($hasPositionTitle && $hasPosition) {
+                    $query->orWhere(function (Builder $positionQuery): void {
+                        $positionQuery->whereNull('position_title_id')
+                            ->whereNull('position_id');
+                    });
+                } elseif ($hasPositionTitle) {
+                    $query->orWhereNull('position_title_id');
                 } elseif ($hasPosition) {
                     $query->orWhereNull('position_id');
                 }
@@ -247,7 +260,15 @@ class NotificationDigestService
 
     private function usersWithUnmappedPositionCompetencies(): Builder
     {
-        if (! Schema::hasTable('position_competencies') || ! Schema::hasColumn('users', 'position_id')) {
+        if (! Schema::hasTable('position_competencies')) {
+            return User::query()->whereRaw('1 = 0');
+        }
+
+        $hasPositionId = Schema::hasColumn('users', 'position_id');
+        $hasPositionTitleId = Schema::hasColumn('users', 'position_title_id')
+            && Schema::hasColumn('position_competencies', 'position_title_id');
+
+        if (! $hasPositionId && ! $hasPositionTitleId) {
             return User::query()->whereRaw('1 = 0');
         }
 
@@ -263,12 +284,37 @@ class NotificationDigestService
 
         return User::query()
             ->where('is_active', true)
-            ->whereNotNull('position_id')
-            ->whereNotExists(function ($query) use ($roundId): void {
+            ->where(function (Builder $query) use ($hasPositionId, $hasPositionTitleId): void {
+                if ($hasPositionTitleId) {
+                    $query->whereNotNull('position_title_id');
+                }
+
+                if ($hasPositionId) {
+                    $query->orWhereNotNull('position_id');
+                }
+            })
+            ->whereNotExists(function ($query) use ($roundId, $hasPositionId, $hasPositionTitleId): void {
                 $query->selectRaw('1')
                     ->from('position_competencies')
                     ->where('position_competencies.assessment_round_id', $roundId)
-                    ->whereColumn('position_competencies.position_id', 'users.position_id');
+                    ->where(function ($mappingQuery) use ($hasPositionId, $hasPositionTitleId): void {
+                        if ($hasPositionTitleId) {
+                            $mappingQuery->whereColumn('position_competencies.position_title_id', 'users.position_title_id');
+
+                            if ($hasPositionId && Schema::hasTable('positions')) {
+                                $mappingQuery->orWhereExists(function ($positionQuery): void {
+                                    $positionQuery->selectRaw('1')
+                                        ->from('positions')
+                                        ->whereColumn('positions.id', 'users.position_id')
+                                        ->whereColumn('positions.position_title_id', 'position_competencies.position_title_id');
+                                });
+                            }
+                        }
+
+                        if ($hasPositionId) {
+                            $mappingQuery->orWhereColumn('position_competencies.position_id', 'users.position_id');
+                        }
+                    });
             });
     }
 
@@ -363,7 +409,7 @@ class NotificationDigestService
             'name' => $user->name,
             'email' => $user->email,
             'workline' => $user->workline,
-            'department' => $user->department,
+            'department' => $this->organizationPresenter->forUser($user)['display'],
             'position' => $user->position,
         ];
     }

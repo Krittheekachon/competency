@@ -6,6 +6,8 @@ use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\AssessmentRoundReadinessService;
 use App\Services\ExpectedLevelResolver;
+use App\Services\PositionTitleResolver;
+use App\Services\UserOrganizationPresenter;
 use App\Services\FacultyAnalyticsService;
 use App\Services\ReviewerChainResolver;
 use App\Services\ReviewerTemplateResolver;
@@ -64,6 +66,8 @@ class DashboardController extends Controller
         private ExpectedLevelResolver $expectedLevelResolver,
         private FacultyAnalyticsService $facultyAnalyticsService,
         private AssessmentRoundReadinessService $assessmentRoundReadiness,
+        private PositionTitleResolver $positionTitles,
+        private UserOrganizationPresenter $organizationPresenter,
     ) {}
 
     /**
@@ -90,11 +94,24 @@ class DashboardController extends Controller
         $facultyAnalytics = in_array($role, ['hr', 'dean'], true)
             ? $this->facultyAnalyticsService->build($request->integer('assessment_round_id') ?: null)
             : null;
-        $activeCycleName = DB::table('assessment_rounds')
+        $activeRound = DB::table('assessment_rounds')
             ->where('is_active', true)
             ->orderByDesc('year')
             ->orderByDesc('id')
-            ->value('name') ?? 'รอบประเมินปัจจุบัน';
+            ->first(['id', 'name', 'self_assess_start', 'self_assess_end']);
+        $activeCycleName = $activeRound?->name ?? 'รอบประเมินปัจจุบัน';
+        $today = Carbon::today(config('app.timezone'));
+        $selfAssessmentWindow = [
+            'status' => ! $activeRound
+                ? 'unavailable'
+                : (! $activeRound->self_assess_start || ! $activeRound->self_assess_end
+                    ? 'unavailable'
+                    : ($today->lt(Carbon::parse($activeRound->self_assess_start)->startOfDay())
+                        ? 'upcoming'
+                        : ($today->gt(Carbon::parse($activeRound->self_assess_end)->startOfDay()) ? 'closed' : 'open'))),
+            'startDate' => $activeRound?->self_assess_start,
+            'endDate' => $activeRound?->self_assess_end,
+        ];
         $learningMethods = $this->canonicalLearningMethods();
         $managerSummary = [
             'totalUsers' => User::count(),
@@ -148,6 +165,7 @@ class DashboardController extends Controller
             : null;
         $selfServicePayload = [
             'activeCycleName' => $activeCycleName,
+            'selfAssessmentWindow' => $selfAssessmentWindow,
             'currentUser' => $this->currentUserPayload($currentUser),
             'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
             'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
@@ -410,7 +428,8 @@ class DashboardController extends Controller
         }
 
         $department = $this->currentDepartmentForUser($user);
-        $approvalOrganization = $this->approvalOrganizationForUser($user, $department);
+        $organization = $this->organizationPresenter->canonicalOrUnassignedForUser($user);
+        $approvalOrganization = $organization['display'];
         $roleKey = $this->roleKeyForUser($user);
         $assignedCompetencies = $this->assignedCompetenciesForUser($user);
         $competencyGaps = $this->competencyGapsForUser($user);
@@ -447,10 +466,12 @@ class DashboardController extends Controller
             'ph' => $user->phone ?: '',
             'w' => $user->workline ?: '',
             'd' => $department,
+            'organization' => $organization,
             'approvalOrg' => $approvalOrganization,
             'p' => $user->position ?: '',
             'l' => $user->level ?: '',
             'position_id' => $user->position_id,
+            'position_title_id' => $this->positionTitles->forUser($user),
             'level_id' => $user->level_id,
             'r' => $roleKey,
             'reviewer_template_id' => $user->reviewer_template_id,
@@ -739,20 +760,6 @@ class DashboardController extends Controller
         $suffix = $this->departmentSuffix($user->department ?: '');
 
         return $currentJobFamily.$suffix;
-    }
-
-    private function approvalOrganizationForUser(User $user, ?string $department = null): string
-    {
-        $department ??= $this->currentDepartmentForUser($user);
-        $parts = array_values(array_filter(array_map('trim', explode(' > ', $department))));
-        $isSupport = $this->usesSupportUnitStructure($user)
-            || in_array($user->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
-
-        if ($isSupport) {
-            return $parts[array_key_last($parts)] ?? $department;
-        }
-
-        return $parts[0] ?? $department;
     }
 
     private function currentJobFamilyNameForUser(User $user): ?string
@@ -1182,7 +1189,6 @@ class DashboardController extends Controller
                     ])
                     ->values()
                 : collect(),
-            'levels' => DB::table('levels')->orderBy('name')->pluck('name'),
             'levelsByWorkline' => DB::table('levels')
                 ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
                 ->select('levels.name', 'worklines.name as workline_name')
@@ -1215,10 +1221,23 @@ class DashboardController extends Controller
         unset($structure['levelsByWorkline']);
         unset($structure['levelExpectationsByWorkline']);
 
-        $structure['positionCompetencies'] = DB::table('position_competencies')
-            ->select('assessment_round_id', 'position_id', 'competency_id')
+        $positionCompetencyRows = DB::table('position_competencies')
+            ->select('assessment_round_id', 'position_id', 'position_title_id', 'competency_id')
             ->orderBy('competency_id')
             ->get()
+            ->flatMap(function (object $row) {
+                $positionIds = $row->position_title_id
+                    ? $this->positionTitles->positionIds((int) $row->position_title_id)
+                    : [(int) $row->position_id];
+
+                return collect($positionIds)->map(fn (int $positionId): object => (object) [
+                    'assessment_round_id' => $row->assessment_round_id,
+                    'position_id' => $positionId,
+                    'competency_id' => $row->competency_id,
+                ]);
+            });
+
+        $structure['positionCompetencies'] = $positionCompetencyRows
             ->groupBy('assessment_round_id')
             ->map(fn ($roundItems) => $roundItems
                 ->groupBy('position_id')
@@ -1227,8 +1246,19 @@ class DashboardController extends Controller
 
         $structure['positionFcSelectionRules'] = $this->schemaHasTable('position_fc_selection_rules')
             ? DB::table('position_fc_selection_rules')
-                ->select('assessment_round_id', 'position_id', 'required_fc_count')
+                ->select('assessment_round_id', 'position_id', 'position_title_id', 'required_fc_count')
                 ->get()
+                ->flatMap(function (object $rule) {
+                    $positionIds = $rule->position_title_id
+                        ? $this->positionTitles->positionIds((int) $rule->position_title_id)
+                        : [(int) $rule->position_id];
+
+                    return collect($positionIds)->map(fn (int $positionId): object => (object) [
+                        'assessment_round_id' => $rule->assessment_round_id,
+                        'position_id' => $positionId,
+                        'required_fc_count' => $rule->required_fc_count,
+                    ]);
+                })
                 ->groupBy('assessment_round_id')
                 ->map(fn ($roundRules) => $roundRules->mapWithKeys(fn (object $rule) => [
                     $rule->position_id => (int) $rule->required_fc_count,
@@ -1287,7 +1317,10 @@ class DashboardController extends Controller
         }
 
         $levelIds = collect();
-        $positionIds = $this->positionIdsForUser($user);
+        $positionTitleId = $this->positionTitles->forUser($user);
+        $positionIds = $positionTitleId
+            ? collect($this->positionTitles->positionIds($positionTitleId))
+            : $this->positionIdsForUser($user);
 
         if ($user->level_id) {
             $levelIds->push($user->level_id);
@@ -1340,32 +1373,20 @@ class DashboardController extends Controller
 
         $jobFamilyIds = $jobFamilyIds->filter()->unique()->values();
 
-        $expectationRows = $levelIds->isEmpty()
-            ? collect()
-            : DB::table('hr_expectations')
-                ->join('competencies', 'hr_expectations.competency_id', '=', 'competencies.id')
-                ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-                ->leftJoin('levels', 'hr_expectations.level_id', '=', 'levels.id')
-                ->whereIn('hr_expectations.level_id', $levelIds)
-                ->when($activeRoundId, fn ($query) => $query->where('hr_expectations.assessment_round_id', $activeRoundId))
-                ->when($jobFamilyIds->isNotEmpty(), fn ($query) => $query->whereIn('hr_expectations.job_family_id', $jobFamilyIds))
-                ->select(
-                    'competencies.id',
-                    'competencies.competency_type_id',
-                    'competencies.code',
-                    'competencies.name',
-                    'competencies.detail',
-                    'competency_types.code as type_code',
-                    DB::raw('COALESCE(hr_expectations.expected_level, levels.expected_level) as expected_level')
-                )
-                ->get();
+        $expectationRows = collect();
 
         $positionRows = $positionIds->isEmpty()
             ? collect()
             : DB::table('position_competencies')
                 ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
                 ->leftJoin('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-                ->whereIn('position_competencies.position_id', $positionIds)
+                ->where(function ($query) use ($positionTitleId, $positionIds): void {
+                    if ($positionTitleId) {
+                        $query->where('position_competencies.position_title_id', $positionTitleId);
+                    } else {
+                        $query->whereIn('position_competencies.position_id', $positionIds);
+                    }
+                })
                 ->when($activeRoundId, fn ($query) => $query->where('position_competencies.assessment_round_id', $activeRoundId))
                 ->select(
                     'competencies.id',
@@ -1445,9 +1466,10 @@ class DashboardController extends Controller
         }
 
         $positionId = (int) ($user->position_id ?? 0);
+        $positionTitleId = $this->positionTitles->forUser($user);
         $roundId = $this->activeRoundId();
 
-        if (! $roundId || $positionId <= 0 || ! $this->schemaHasTable('position_fc_selection_rules')) {
+        if (! $roundId || ! $positionTitleId || ! $this->schemaHasTable('position_fc_selection_rules')) {
             return $this->fcTopicSelectionCache[$cacheKey] = [
                 'requiredCount' => 0,
                 'status' => 'not_required',
@@ -1458,14 +1480,14 @@ class DashboardController extends Controller
         }
 
         $requiredCount = (int) DB::table('position_fc_selection_rules')
-            ->where('position_id', $positionId)
+            ->where('position_title_id', $positionTitleId)
             ->when($roundId, fn ($query) => $query->where('assessment_round_id', $roundId))
             ->value('required_fc_count');
 
         $availableCompetencies = DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->where('position_competencies.position_id', $positionId)
+            ->where('position_competencies.position_title_id', $positionTitleId)
             ->when($roundId, fn ($query) => $query->where('position_competencies.assessment_round_id', $roundId))
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->select(
@@ -1486,7 +1508,7 @@ class DashboardController extends Controller
         $selection = $this->schemaHasTable('fc_topic_selections')
             ? DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
-                ->where('position_id', $positionId)
+                ->where('position_title_id', $positionTitleId)
                 ->when($roundId, fn ($query) => $query->where('assessment_round_id', $roundId))
                 ->first()
             : null;
@@ -1505,6 +1527,7 @@ class DashboardController extends Controller
             'requiredCount' => $requiredCount,
             'status' => $requiredCount > 0 ? ($selection?->status ?? 'draft') : 'not_required',
             'positionId' => $positionId,
+            'positionTitleId' => $positionTitleId,
             'availableCompetencies' => $availableCompetencies,
             'selectedCompetencyIds' => $selectedIds,
             'submittedTo' => $selection?->submitted_to,
@@ -1624,21 +1647,15 @@ class DashboardController extends Controller
             'enabled' => true,
             'items' => $selections->map(function (object $selection) use ($employees, $topicsBySelection): array {
                 $employee = $employees->get($selection->user_id);
-                $department = $employee ? $this->currentDepartmentForUser($employee) : '';
-                $departmentParts = array_values(array_filter(array_map('trim', explode(' > ', $department))));
-                $isSupport = $employee && ($this->usesSupportUnitStructure($employee)
-                    || in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true));
-                $departmentDisplay = $isSupport
-                    ? ($departmentParts[array_key_last($departmentParts)] ?? $department)
-                    : ($departmentParts[0] ?? $department);
+                $organization = $employee ? $this->organizationPresenter->forUser($employee) : null;
 
                 return [
                     'id' => (int) $selection->id,
                     'employeeId' => (int) $selection->user_id,
                     'employeeName' => $employee ? trim(($employee->title ?: '').$employee->name) : '-',
                     'position' => $employee?->position ?: '-',
-                    'department' => $departmentDisplay ?: '-',
-                    'departmentLabel' => $isSupport ? 'หน่วยงาน' : 'ภาควิชา',
+                    'department' => $organization['display'] ?? '-',
+                    'departmentLabel' => ($organization['type'] ?? null) === 'support' ? 'งาน / หน่วย' : 'ภาควิชา',
                     'submittedAt' => $selection->submitted_at ? Carbon::parse($selection->submitted_at)->toISOString() : null,
                     'topics' => collect($topicsBySelection->get($selection->id, []))->map(fn (object $topic): array => [
                         'id' => (int) $topic->id,
@@ -1711,16 +1728,14 @@ class DashboardController extends Controller
                 $nextStatus = $this->reviewerChainResolver->nextStatusAfterStep($employee, $step);
                 $hasForwarded = $allCompetencies->contains(fn (array $gap): bool => ($gap['status'] ?? '') === $nextStatus);
 
-                $department = $this->currentDepartmentForUser($employee);
-                $isSupport = $this->usesSupportUnitStructure($employee)
-                    || in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
+                $organization = $this->organizationPresenter->forUser($employee);
 
                 return [
                     'employeeId' => (int) $employee->id,
                     'employeeName' => $this->displayNameForUser($employee),
                     'position' => $employee->position ?: '-',
-                    'organizationLabel' => $isSupport ? 'หน่วย' : 'ภาควิชา',
-                    'organization' => $this->approvalOrganizationForUser($employee, $department) ?: '-',
+                    'organizationLabel' => $organization['type'] === 'support' ? 'งาน / หน่วย' : 'ภาควิชา',
+                    'organization' => $organization['display'] ?: '-',
                     'reviewStep' => $step,
                     'totalSteps' => count($this->reviewerChainResolver->stepsForUser($employee)),
                     'nextStatus' => $nextStatus,
@@ -2420,8 +2435,9 @@ class DashboardController extends Controller
                 return [$item->assessment_round_id.':'.$item->owner_id => $this->reviewerChainPayloadForUser($owner, 'idp')];
             });
 
-        return $items->map(function (object $item) use ($activities, $history, $reviewer, $reviewerStepsByOwner): array {
+        return $items->map(function (object $item) use ($activities, $history, $reviewer, $reviewerStepsByOwner, $owners): array {
             $reviewerSteps = collect($reviewerStepsByOwner->get($item->assessment_round_id.':'.$item->owner_id, []));
+            $owner = $owners->get((int) $item->owner_id);
             $currentReviewer = $reviewerSteps->firstWhere('step', (int) $item->current_review_step);
             $latestRejection = ($history[$item->id] ?? collect())
                 ->first(fn (object $review): bool => $review->decision === 'rejected');
@@ -2432,7 +2448,7 @@ class DashboardController extends Controller
                 'userSso' => $item->user_sso ?: '',
                 'userName' => trim(($item->user_title ?: '').$item->user_name),
                 'userPosition' => $item->user_position ?: '',
-                'userDepartment' => $item->user_department ?: '',
+                'userDepartment' => $owner ? $this->organizationPresenter->forUser($owner)['display'] : '',
                 'competencyCode' => $item->competency_code,
                 'competencyName' => $item->competency_name,
                 'gap' => $item->gap === null ? null : (float) $item->gap,
@@ -2599,7 +2615,7 @@ class DashboardController extends Controller
                 return [$item->assessment_round_id.':'.$item->user_id => $this->reviewerChainPayloadForUser($owner, 'idp')];
             });
 
-        return $items->map(function (object $item) use ($assignments, $activities, $completionIds, $history, $reviewerStepsByOwner, $visibleUserIds): array {
+        return $items->map(function (object $item) use ($assignments, $activities, $completionIds, $history, $reviewerStepsByOwner, $visibleUserIds, $owners): array {
             $itemId = $item->item_id ? (int) $item->item_id : null;
             $planApproved = $item->plan_status === 'approved';
             $completionId = $itemId ? ($completionIds[$itemId] ?? null) : null;
@@ -2624,6 +2640,8 @@ class DashboardController extends Controller
             $currentReviewer = $item->current_review_step
                 ? $ownerReviewers->firstWhere('step', (int) $item->current_review_step)
                 : null;
+            $owner = $owners->get((int) $item->user_id);
+            $organization = $owner ? $this->organizationPresenter->forUser($owner)['display'] : '';
 
             return [
                 'id' => $itemId ?? 'gap-'.(int) $item->gap_id,
@@ -2645,7 +2663,8 @@ class DashboardController extends Controller
                     && $item->completion_status === 'review_step_'.$reviewerStep,
                 'userId' => (int) $item->user_id,
                 'userName' => trim(($item->user_title ?: '').$item->user_name),
-                'userPosition' => $item->user_position ?: $item->user_department ?: '',
+                'userPosition' => $item->user_position ?: $organization,
+                'userDepartment' => $organization,
                 'competencyCode' => $item->competency_code,
                 'competencyName' => $item->competency_name,
                 'goal' => $item->goal ?? '',

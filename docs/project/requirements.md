@@ -46,9 +46,13 @@ The Thai role naming currently used in UI is:
 
 ### Competency Setup
 
-- HR links competencies to positions through `position_competencies`.
-- Assigned CC, MC, and FC competencies form the base assessment topics for a user in that position.
-- Expected levels are configured in `hr_expectations`.
+- `position_titles` is the canonical position master for assessment behavior.
+- HR links competencies to canonical positions through `position_competencies.position_title_id`.
+- Assigned CC, MC, and FC competencies form the base assessment topics for every user with that canonical position, regardless of department, work, or unit.
+- Expected levels are configured in `hr_expectations` for assessment round + canonical position + competency.
+- Workline, department, work, and unit are organization filters/reporting metadata and must not select competencies or expected levels.
+- User-facing organization labels must resolve from `users.position_id`: support staff display `งาน… · หน่วย…`, while academic staff display `ภาควิชา…`.
+- Do not expose the legacy `ฝ่าย > งาน > หน่วย` path directly in user-facing screens; `users.department` is a fallback only.
 - Expected-level reads must go through `App\Services\ExpectedLevelResolver`.
 
 ### FC Topic Selection

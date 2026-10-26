@@ -336,6 +336,22 @@ const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filt
 const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
 const requiredFcCount = ref(0);
 const savedRequiredFcCount = computed(() => Number(positionFcRulesForRound.value?.[currentPositionId.value] || 0));
+const normalizedRequiredFcCount = computed(() => Number(requiredFcCount.value || 0));
+const fcSelectionRuleError = computed(() => {
+    if (!selectedConfigRoundId.value || !currentPositionId.value) return '';
+    if (assignedFcCompetencyCount.value === 0) return 'ยังไม่มี FC ในชุดสมรรถนะ กรุณาเพิ่ม FC จากพจนานุกรมก่อน';
+    if (normalizedRequiredFcCount.value < 0) return 'จำนวน FC ต้องไม่น้อยกว่า 0';
+    if (normalizedRequiredFcCount.value > assignedFcCompetencyCount.value) {
+        return `กำหนดได้สูงสุด ${assignedFcCompetencyCount.value} ข้อ ตามจำนวน FC ที่ผูกกับตำแหน่งนี้`;
+    }
+    return page.props.errors?.required_fc_count || '';
+});
+const fcSelectionRuleDisabled = computed(() => (
+    !selectedConfigRoundId.value
+    || !currentPositionId.value
+    || assignedFcCompetencyCount.value === 0
+    || Boolean(fcSelectionRuleError.value)
+));
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
@@ -553,12 +569,12 @@ const removeCompetency = (itemId) => {
 };
 
 const saveFcSelectionRule = () => {
-    if (!selectedConfigRoundId.value || !currentPositionId.value) return;
+    if (fcSelectionRuleDisabled.value) return;
 
     router.put(route('hr.position-fc-selection-rules.update'), {
         position_id: currentPositionId.value,
         assessment_round_id: selectedConfigRoundId.value,
-        required_fc_count: Number(requiredFcCount.value || 0),
+        required_fc_count: normalizedRequiredFcCount.value,
     }, {
         preserveScroll: true,
     });
@@ -668,6 +684,7 @@ const formatWeight = (weight) => {
                     :set-users="updateUsers"
                     :competencies="props.currentUserCompetencies"
                     :fc-topic-selection="props.currentUserFcTopicSelection"
+                    :assessment-window="page.props.selfAssessmentWindow || {}"
                     :blocked="isSelfAssessmentBlocked"
                     :block-reasons="selfAssessmentBlockReasons"
                 />
@@ -839,7 +856,7 @@ const formatWeight = (weight) => {
                             <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
                         </div>
                         <div class="position-card fc-rule-card">
-                            <div class="position-card-label">FC ที่ต้องให้ผู้ประเมินเลือก</div>
+                            <div class="position-card-label">จำนวน FC ที่บุคลากรต้องเลือก</div>
                             <div class="fc-rule-control">
                                 <input
                                     v-model.number="requiredFcCount"
@@ -847,19 +864,26 @@ const formatWeight = (weight) => {
                                     type="number"
                                     min="0"
                                     :max="assignedFcCompetencyCount"
-                                    :disabled="!selectedConfigRoundId || !currentPositionId"
+                                    :disabled="!selectedConfigRoundId || !currentPositionId || assignedFcCompetencyCount === 0"
                                 />
                                 <button
                                     class="btn btn-p btn-sm"
                                     type="button"
-                                    :disabled="!selectedConfigRoundId || !currentPositionId || requiredFcCount > assignedFcCompetencyCount"
+                                    :disabled="fcSelectionRuleDisabled"
                                     @click="saveFcSelectionRule"
                                 >
                                     บันทึก
                                 </button>
                             </div>
-                            <div class="position-card-sub">
-                                มี FC ในตำแหน่งนี้ {{ assignedFcCompetencyCount }} ข้อ · 0 คือไม่ใช้ flow เลือกหัวข้อ
+                            <div
+                                v-if="fcSelectionRuleError"
+                                class="position-card-sub fc-rule-message is-warning"
+                            >
+                                {{ fcSelectionRuleError }}
+                            </div>
+                            <div v-else class="position-card-sub fc-rule-message">
+                                บุคลากรเลือก {{ normalizedRequiredFcCount }} ข้อจาก FC {{ assignedFcCompetencyCount }} ข้อ
+                                แล้วส่งให้ผู้ประเมินลำดับแรกอนุมัติ · กำหนด 0 เพื่อไม่ใช้ขั้นตอนนี้
                             </div>
                         </div>
                     </div>
@@ -869,7 +893,7 @@ const formatWeight = (weight) => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
-                                    <div class="cs">รายการนี้จะถูกใช้เป็นฐานสำหรับกำหนดระดับความคาดหวัง</div>
+                                    <div class="cs">ระดับความคาดหวังของแต่ละคนดึงจากระดับตำแหน่งที่กำหนดไว้ในข้อมูลผู้ใช้</div>
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
@@ -1891,6 +1915,22 @@ const formatWeight = (weight) => {
     font-weight: 800;
 }
 
+.fc-rule-message {
+    margin-top: 7px;
+    line-height: 1.45;
+}
+
+.fc-rule-message.is-warning {
+    color: #b45309;
+    font-weight: 700;
+}
+
+.fc-rule-card .btn:disabled,
+.fc-rule-card .inp:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+}
+
 .position-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.75fr);
@@ -1950,6 +1990,13 @@ const formatWeight = (weight) => {
     display: flex;
     gap: 8px;
     align-items: center;
+}
+
+.expected-level-source {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .danger-text {
@@ -2660,6 +2707,10 @@ const formatWeight = (weight) => {
     color: #64748b;
     font-size: 11px;
     font-weight: 900;
+}
+
+.detail-indicator-head > :last-child {
+    text-align: right;
 }
 
 .indicator-number {

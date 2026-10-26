@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
 use App\Services\NotificationService;
+use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class FcTopicSelectionController extends Controller
         private AssessmentRoundWindow $assessmentRoundWindow,
         private AssessmentRoundSnapshotService $roundSnapshot,
         private NotificationService $notifications,
+        private PositionTitleResolver $positionTitles,
     )
     {
     }
@@ -29,12 +31,16 @@ class FcTopicSelectionController extends Controller
         $roundId = $this->activeRoundId();
         $user = $this->roundSnapshot->userForRound($user, $roundId);
         $positionId = (int) ($user->position_id ?? 0);
+        $positionTitleId = $this->positionTitles->forUser($user);
 
-        if ($positionId <= 0) {
+        if (! $positionTitleId) {
             throw ValidationException::withMessages([
                 'position' => 'ยังไม่พบตำแหน่งของคุณ กรุณาให้ Admin ตรวจสอบข้อมูลก่อนเลือกหัวข้อ FC',
             ]);
         }
+
+        // Ensure a newly resolved canonical title is included in a new round snapshot.
+        $user->setAttribute('position_title_id', $positionTitleId);
 
         $firstReviewerId = $this->firstReviewerId($user);
 
@@ -49,7 +55,7 @@ class FcTopicSelectionController extends Controller
             'competency_ids.*' => ['integer', 'exists:competencies,id'],
         ]);
 
-        $requiredCount = $this->requiredFcCount($positionId, $roundId);
+        $requiredCount = $this->requiredFcCount($positionTitleId, $roundId);
         if ($requiredCount <= 0) {
             throw ValidationException::withMessages([
                 'competency_ids' => 'ตำแหน่งนี้ยังไม่ได้กำหนดจำนวน FC ที่ต้องเลือก',
@@ -68,7 +74,7 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        $availableIds = $this->availableFcCompetencyIds($positionId, $roundId);
+        $availableIds = $this->availableFcCompetencyIds($positionTitleId, $roundId);
         $invalidIds = $selectedIds->diff($availableIds);
 
         if ($invalidIds->isNotEmpty()) {
@@ -87,15 +93,16 @@ class FcTopicSelectionController extends Controller
             ]);
         }
 
-        $selectionId = DB::transaction(function () use ($user, $positionId, $roundId, $selectedIds, $firstReviewerId): int {
+        $selectionId = DB::transaction(function () use ($user, $positionId, $positionTitleId, $roundId, $selectedIds, $firstReviewerId): int {
             $now = now();
             DB::table('fc_topic_selections')->updateOrInsert(
                 [
                     'user_id' => $user->id,
-                    'position_id' => $positionId,
+                    'position_title_id' => $positionTitleId,
                     'assessment_round_id' => $roundId,
                 ],
                 [
+                    'position_id' => $positionId ?: null,
                     'status' => 'submitted',
                     'submitted_to' => $firstReviewerId,
                     'submitted_at' => $now,
@@ -109,7 +116,7 @@ class FcTopicSelectionController extends Controller
 
             $selectionId = DB::table('fc_topic_selections')
                 ->where('user_id', $user->id)
-                ->where('position_id', $positionId)
+                ->where('position_title_id', $positionTitleId)
                 ->where('assessment_round_id', $roundId)
                 ->value('id');
 
@@ -132,10 +139,10 @@ class FcTopicSelectionController extends Controller
         return back()->with('success', 'ส่งหัวข้อ FC ให้หัวหน้า 1 อนุมัติแล้ว');
     }
 
-    private function requiredFcCount(int $positionId, int $roundId): int
+    private function requiredFcCount(int $positionTitleId, int $roundId): int
     {
         return (int) DB::table('position_fc_selection_rules')
-            ->where('position_id', $positionId)
+            ->where('position_title_id', $positionTitleId)
             ->where('assessment_round_id', $roundId)
             ->value('required_fc_count');
     }
@@ -145,12 +152,12 @@ class FcTopicSelectionController extends Controller
         return $this->reviewerChainResolver->firstReviewerId($user);
     }
 
-    private function availableFcCompetencyIds(int $positionId, int $roundId): \Illuminate\Support\Collection
+    private function availableFcCompetencyIds(int $positionTitleId, int $roundId): \Illuminate\Support\Collection
     {
         return DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
             ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->where('position_competencies.position_id', $positionId)
+            ->where('position_competencies.position_title_id', $positionTitleId)
             ->where('position_competencies.assessment_round_id', $roundId)
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->pluck('competencies.id')

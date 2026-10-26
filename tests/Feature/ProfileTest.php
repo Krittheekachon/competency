@@ -14,7 +14,10 @@ class ProfileTest extends TestCase
 
     public function test_profile_page_is_displayed(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'workline' => 'สายสนับสนุน',
+            'department' => 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา',
+        ]);
 
         $response = $this
             ->actingAs($user)
@@ -23,6 +26,7 @@ class ProfileTest extends TestCase
         $response->assertOk()->assertInertia(fn (Assert $page) => $page
             ->component('Profile/Edit')
             ->where('profileUser.db_id', $user->id)
+            ->where('profileUser.displayOrganization', 'งานบุคคล · หน่วยพัฒนา')
             ->missing('status')
         );
     }
