@@ -46,19 +46,37 @@ class UserController extends Controller
     public function update(Request $request, User $user): RedirectResponse
     {
         $usernameProvided = $request->exists('username');
+        $activeStatusProvided = $request->exists('act');
+        $assessmentTemplateProvided = $request->exists('reviewer_template_id');
+        $idpTemplateProvided = $request->exists('idp_reviewer_template_id');
+        $assessmentReviewersProvided = $request->exists('reviewer_ids') || $request->exists('reviewer_template_id');
+        $idpReviewersProvided = $request->exists('idp_reviewer_ids') || $request->exists('idp_reviewer_template_id');
         $data = $this->validatedData($request, $user);
 
-        DB::transaction(function () use ($user, $data, $usernameProvided): void {
+        DB::transaction(function () use ($user, $data, $usernameProvided, $activeStatusProvided, $assessmentTemplateProvided, $idpTemplateProvided, $assessmentReviewersProvided, $idpReviewersProvided): void {
             $attributes = $this->userAttributes($data);
             if (! $usernameProvided) {
                 unset($attributes['username']);
+            }
+            if (! $activeStatusProvided) {
+                unset($attributes['is_active']);
+            }
+            if (! $assessmentTemplateProvided) {
+                unset($attributes['reviewer_template_id']);
+            }
+            if (! $idpTemplateProvided) {
+                unset($attributes['idp_reviewer_template_id']);
             }
             if (filled($data['password'] ?? null)) {
                 $attributes['password'] = Hash::make($data['password']);
             }
             $user->update($attributes);
-            $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
-            $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
+            if ($assessmentReviewersProvided) {
+                $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
+            }
+            if ($idpReviewersProvided) {
+                $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
+            }
 
             if (! ($data['preserve_existing_structure'] ?? false)) {
                 DB::table('sso_profile_changes')
@@ -104,7 +122,10 @@ class UserController extends Controller
 
     private function validatedData(Request $request, ?User $user = null): array
     {
-        $preserveExistingStructure = $user && $request->boolean('preserve_existing_structure');
+        $preserveExistingStructure = $user && (
+            $request->boolean('preserve_existing_structure')
+            || ! $request->exists('w') && ! $request->exists('d') && ! $request->exists('p') && ! $request->exists('l')
+        );
         $request->merge([
             'r' => $this->normalizeRoleKey((string) $request->input('r', '')),
             'username' => Str::lower(trim((string) $request->input('username', ''))),
@@ -126,15 +147,19 @@ class UserController extends Controller
                 Rule::unique('users', 'sso')->ignore($user?->id),
             ],
             't' => ['nullable', 'string', 'max:30'],
-            'fn' => ['required', 'string', 'max:120'],
-            'ln' => ['required', 'string', 'max:120'],
+            'fn' => ['nullable', 'string', 'max:120'],
+            'ln' => ['nullable', 'string', 'max:120'],
             'fe' => ['nullable', 'string', 'max:120'],
             'le' => ['nullable', 'string', 'max:120'],
             'em' => [
-                'required',
+                'nullable',
                 'email',
                 'max:255',
                 function (string $attribute, mixed $value, \Closure $fail) use ($user): void {
+                    if (blank($value)) {
+                        return;
+                    }
+
                     $query = DB::table('users')->whereRaw('LOWER(email) = ?', [Str::lower((string) $value)]);
                     if ($user) {
                         $query->where('id', '!=', $user->id);
@@ -145,7 +170,7 @@ class UserController extends Controller
                 },
             ],
             'username' => [
-                Rule::requiredIf(fn (): bool => ! $user),
+                'required',
                 'nullable',
                 'string',
                 'min:3',
@@ -160,10 +185,10 @@ class UserController extends Controller
                 Password::min(8),
             ],
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
-            'w' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
-            'd' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:255'],
-            'p' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
-            'l' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
+            'w' => [Rule::excludeIf($preserveExistingStructure), 'nullable', 'string', 'max:120'],
+            'd' => [Rule::excludeIf($preserveExistingStructure), 'nullable', 'string', 'max:255'],
+            'p' => [Rule::excludeIf($preserveExistingStructure), 'nullable', 'string', 'max:120'],
+            'l' => [Rule::excludeIf($preserveExistingStructure), 'nullable', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
             'preserve_existing_structure' => ['sometimes', 'boolean'],
             'reviewer_ids' => ['nullable', 'array'],
@@ -187,8 +212,16 @@ class UserController extends Controller
             $data['l'] = $user->level;
             $data['_position_id'] = $user->position_id;
             $data['_level_id'] = $user->level_id;
-        } else {
+        } elseif ($this->normalizeRoleKey((string) $data['r']) === 'admin') {
+            $data['w'] = $data['d'] = $data['p'] = $data['l'] = null;
+            $data['_position_id'] = null;
+            $data['_level_id'] = null;
+        } elseif ($this->normalizeRoleKey((string) $data['r']) === 'dean') {
             $data = $this->validatedStructureData($data);
+        } elseif ($this->hasCompleteStructure($data)) {
+            $data = $this->validatedStructureData($data);
+        } else {
+            $data = $this->resolveOptionalStructureReferences($data);
         }
         $data['reviewer_ids'] = $this->normalizeReviewerIds($data, $user, 'reviewer_ids', 'reviewer_template_id', 'assessment');
         $data['idp_reviewer_ids'] = $this->normalizeReviewerIds($data, $user, 'idp_reviewer_ids', 'idp_reviewer_template_id', 'idp');
@@ -199,27 +232,66 @@ class UserController extends Controller
         return $data;
     }
 
-    private function allowsMissingPositionFields(Request $request): bool
+    private function hasCompleteStructure(array $data): bool
     {
-        $roleKey = $this->normalizeRoleKey((string) $request->input('r', ''));
-        if ($roleKey === 'dean') {
-            return true;
+        return filled($data['w'] ?? null)
+            && filled($data['d'] ?? null)
+            && filled($data['p'] ?? null)
+            && filled($data['l'] ?? null);
+    }
+
+    private function resolveOptionalStructureReferences(array $data): array
+    {
+        $data['_position_id'] = null;
+        $data['_level_id'] = null;
+        $worklineId = filled($data['w'] ?? null)
+            ? DB::table('worklines')->where('name', $data['w'])->value('id')
+            : null;
+
+        if (! $worklineId) {
+            return $data;
         }
 
-        if (! in_array($roleKey, ['division_head', 'dept_head'], true)) {
-            return false;
+        if (filled($data['l'] ?? null)) {
+            $data['_level_id'] = DB::table('levels')
+                ->where('workline_id', $worklineId)
+                ->where('name', $data['l'])
+                ->whereNull('job_family_id')
+                ->value('id');
         }
 
-        $workline = (string) $request->input('w', '');
-        if (! in_array($workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true)) {
-            return false;
+        if (! filled($data['d'] ?? null) || ! filled($data['p'] ?? null)) {
+            return $data;
         }
 
-        $pathCount = count(array_filter(array_map('trim', explode(' > ', (string) $request->input('d', '')))));
+        $path = array_values(array_filter(array_map('trim', explode(' > ', (string) $data['d']))));
+        $supportWorkline = in_array((string) $data['w'], [
+            'สายสนับสนุน',
+            'สายงานสนับสนุน',
+        ], true);
 
-        return $roleKey === 'division_head'
-            ? $pathCount >= 1 && $pathCount < 3
-            : $pathCount === 2;
+        if ($supportWorkline && count($path) >= 2) {
+            $data['_position_id'] = $this->positionIdForSupportWork(
+                (int) $worklineId,
+                $path[0],
+                $path[1],
+                (string) $data['p'],
+            );
+
+            return $data;
+        }
+
+        $jobFamilyName = $this->jobFamilyNameFromDepartment((string) $data['d']);
+        $jobFamilyId = DB::table('job_families')
+            ->where('workline_id', $worklineId)
+            ->where('name', $jobFamilyName)
+            ->value('id');
+
+        if ($jobFamilyId) {
+            $data['_position_id'] = $this->positionIdForJobFamily((int) $jobFamilyId, (string) $data['p']);
+        }
+
+        return $data;
     }
 
     private function assertReviewerTemplateIsValid(mixed $templateId, string $chainType, string $field): void
@@ -261,17 +333,26 @@ class UserController extends Controller
             ]);
         }
 
-        $name = trim($data['fn'].' '.$data['ln']);
+        $name = trim(implode(' ', array_filter([
+            trim((string) ($data['fn'] ?? '')),
+            trim((string) ($data['ln'] ?? '')),
+        ])));
+        if ($name === '') {
+            $name = (string) ($data['username'] ?: $data['sso']);
+        }
+        $email = filled($data['em'] ?? null)
+            ? Str::lower(trim((string) $data['em']))
+            : Str::lower((string) $data['username']).'@users.invalid';
         $attributes = [
             'sso' => $data['sso'],
             'username' => $data['username'] ?: null,
             'name' => $name,
             'title' => $data['t'] ?? null,
-            'first_name_th' => $data['fn'],
-            'last_name_th' => $data['ln'],
+            'first_name_th' => $data['fn'] ?? null,
+            'last_name_th' => $data['ln'] ?? null,
             'first_name_en' => $data['fe'] ?? null,
             'last_name_en' => $data['le'] ?? null,
-            'email' => $data['em'],
+            'email' => $email,
             'phone' => $data['ph'] ?? null,
             'workline' => $data['w'] ?? null,
             'department' => $data['d'] ?? null,

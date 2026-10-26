@@ -1168,25 +1168,8 @@ const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', '
 const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'division_head', 'academic_department_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
-const requiresOrganizationStructure = computed(() => !isDeanRole.value);
-const isDeptHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dept_head');
-const isDivisionHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'division_head');
-const requiresSupportWork = computed(() => !(isSupportWorkline.value && isDivisionHeadRole.value));
-const requiresSupportUnit = computed(() => !(isSupportWorkline.value && (isDivisionHeadRole.value || isDeptHeadRole.value)));
-const supportPathCount = computed(() =>
-    [userForm.value.dept, userForm.value.job, userForm.value.unit].filter(Boolean).length,
-);
-const allowsMissingPositionFields = computed(() => {
-    if (isDeanRole.value) return true;
-    if (!isSupportWorkline.value) return false;
-    if (isDivisionHeadRole.value) return supportPathCount.value >= 1 && supportPathCount.value < 3;
-    if (isDeptHeadRole.value) return supportPathCount.value === 2;
-
-    return false;
-});
-const requiresPositionFields = computed(() =>
-    requiresOrganizationStructure.value && Boolean(userForm.value.w) && !allowsMissingPositionFields.value,
-);
+const isAdminRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'admin');
+const requiresOrganizationStructure = computed(() => !isDeanRole.value && !isAdminRole.value);
 const showsPositionSection = computed(() =>
     requiresOrganizationStructure.value && Boolean(userForm.value.w),
 );
@@ -1290,7 +1273,7 @@ const handleRoleChange = () => {
         userForm.value.p = userForm.value.job;
     }
 
-    if (isDeanRole.value) {
+    if (isDeanRole.value || isAdminRole.value) {
         resetOrgSelection();
     }
 
@@ -1481,13 +1464,8 @@ const saveUser = () => {
     }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
-    if (!form.sso.trim() || !thaiName) {
-        alert('กรุณากรอก ID และชื่อผู้ใช้');
-        return;
-    }
-
-    if (!form.db_id && (!form.username.trim() || !form.password)) {
-        alert('กรุณากำหนด Username และ Password สำหรับเข้าสู่ระบบ');
+    if (!form.sso.trim() || !form.username.trim() || (!form.db_id && !form.password) || !form.r) {
+        alert('กรุณากรอก Role, ID, Username และ Password');
         return;
     }
 
@@ -1519,38 +1497,14 @@ const saveUser = () => {
         return;
     }
 
-    const missingOrganization = requiresOrganizationStructure.value && (
-        !form.w
-        || (!isSupportWorkline.value && !form.job)
-        || (isSupportWorkline.value && (
-            !form.dept
-            || (requiresSupportWork.value && !form.job)
-            || (requiresSupportUnit.value && !form.unit)
-        ))
-    );
-    const selectedOptionalPosition = !requiresPositionFields.value && canPickPosition.value && Boolean(form.p);
-    const missingPosition = requiresPositionFields.value && (!form.l || (canPickPosition.value && !form.p));
-    const incompleteOptionalPosition = selectedOptionalPosition && !form.l;
-    if (!preserveExistingStructure && requiresOrganizationStructure.value && (missingOrganization || missingPosition)) {
-        alert(isSupportWorkline.value
-            ? 'กรุณาเลือกสายงาน ฝ่าย งาน หน่วย ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน'
-            : 'กรุณาเลือกสายงาน ภาควิชา ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน');
-        return;
-    }
-
-    if (!preserveExistingStructure && incompleteOptionalPosition) {
-        alert('กรุณาเลือกระดับตำแหน่งก่อนบันทึกตำแหน่งนี้');
-        return;
-    }
-
-    if (!preserveExistingStructure && (requiresPositionFields.value || selectedOptionalPosition) && canPickPosition.value && !optionIncludes(positionOptions.value, form.p)) {
+    if (!preserveExistingStructure && canPickPosition.value && form.p && !optionIncludes(positionOptions.value, form.p)) {
         alert(isSupportWorkline.value
             ? 'กรุณาให้ Admin เพิ่มตำแหน่งในงานนี้ก่อนบันทึกผู้ใช้'
             : 'กรุณาให้ Admin เพิ่มตำแหน่งสำหรับภาควิชานี้ก่อนบันทึกผู้ใช้');
         return;
     }
 
-    if (!preserveExistingStructure && (requiresPositionFields.value || form.l) && !optionIncludes(levelOptions.value, form.l)) {
+    if (!preserveExistingStructure && form.l && !optionIncludes(levelOptions.value, form.l)) {
         alert('กรุณาให้ Admin เพิ่มระดับตำแหน่งในสายงานนี้ก่อนบันทึกผู้ใช้');
         return;
     }
@@ -1582,8 +1536,8 @@ const saveUser = () => {
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
-        p: (isDeanRole.value || !canPickPosition.value || (!requiresPositionFields.value && !form.p) ? '' : form.p).trim(),
-        l: (requiresPositionFields.value || form.p || form.l ? form.l : '').trim(),
+        p: (isDeanRole.value || !canPickPosition.value || !form.p ? '' : form.p).trim(),
+        l: (form.p || form.l ? form.l : '').trim(),
         reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
         idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
         reviewer_ids: selectedReviewerIds.value,
@@ -1887,7 +1841,7 @@ const logout = () => router.post(route('logout'));
                 </div>
                 <div class="modal-grid">
                     <div class="fg">
-                        <label class="lbl" :class="{ req: !userForm.db_id }">Username</label>
+                        <label class="lbl req">Username</label>
                         <input
                             v-model="userForm.username"
                             autocomplete="off"
@@ -1925,7 +1879,7 @@ const logout = () => router.post(route('logout'));
                 </div>
                 <div v-if="isChangingPassword" class="modal-grid single-col">
                     <div class="fg">
-                        <label class="lbl req">ยืนยัน Password</label>
+                        <label class="lbl">ยืนยัน Password</label>
                         <div class="admin-password-field">
                             <input
                                 v-model="userForm.password_confirmation"
@@ -1943,7 +1897,7 @@ const logout = () => router.post(route('logout'));
 
                 <div class="modal-grid">
                     <div class="fg">
-                        <label class="lbl req">คำนำหน้า</label>
+                        <label class="lbl">คำนำหน้า</label>
                         <select v-model="userForm.t" class="sel modal-input">
                             <option value="">— เลือกคำนำหน้า —</option>
                             <option value="นาย">นาย</option>
@@ -1959,29 +1913,29 @@ const logout = () => router.post(route('logout'));
 
                 <div class="modal-grid">
                     <div class="fg">
-                        <label class="lbl req">ชื่อ (ภาษาไทย)</label>
+                        <label class="lbl">ชื่อ (ภาษาไทย)</label>
                         <input v-model="userForm.fn" class="inp modal-input" placeholder="ชื่อจริง" />
                     </div>
                     <div class="fg">
-                        <label class="lbl req">นามสกุล (ภาษาไทย)</label>
+                        <label class="lbl">นามสกุล (ภาษาไทย)</label>
                         <input v-model="userForm.ln" class="inp modal-input" placeholder="นามสกุล" />
                     </div>
                 </div>
 
                 <div class="modal-grid">
                     <div class="fg">
-                        <label class="lbl req">First Name (English)</label>
+                        <label class="lbl">First Name (English)</label>
                         <input v-model="userForm.fe" class="inp modal-input" placeholder="First name in English" />
                     </div>
                     <div class="fg">
-                        <label class="lbl req">Last Name (English)</label>
+                        <label class="lbl">Last Name (English)</label>
                         <input v-model="userForm.le" class="inp modal-input" placeholder="Last name in English" />
                     </div>
                 </div>
 
                 <div class="modal-grid">
                     <div class="fg">
-                        <label class="lbl req">Email</label>
+                        <label class="lbl">Email</label>
                         <input v-model="userForm.em" class="inp modal-input" placeholder="name@example.com" type="email" />
                     </div>
                 </div>
@@ -1992,7 +1946,7 @@ const logout = () => router.post(route('logout'));
                 </div>
                 <div v-if="requiresOrganizationStructure" class="modal-grid" :class="{ 'single-col': !userForm.w }">
                     <div class="fg">
-                        <label class="lbl req">สายงาน</label>
+                        <label class="lbl">สายงาน</label>
                         <select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange">
                             <option value="">— เลือกสายงาน —</option>
                             <option v-for="workline in worklines" :key="workline" :value="workline">
@@ -2002,7 +1956,7 @@ const logout = () => router.post(route('logout'));
                     </div>
 
                     <div v-if="isSupportWorkline" class="fg">
-                        <label class="lbl req">ฝ่าย</label>
+                        <label class="lbl">ฝ่าย</label>
                         <select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange">
                             <option value="">— เลือกฝ่าย —</option>
                             <option v-if="legacyDeptOption" :value="legacyDeptOption">
@@ -2013,7 +1967,7 @@ const logout = () => router.post(route('logout'));
                     </div>
 
                     <div v-if="userForm.w && (!isSupportWorkline || userForm.dept)" class="fg">
-                        <label class="lbl" :class="{ req: !isSupportWorkline || requiresSupportWork }">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
+                        <label class="lbl">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
                             <option value="">— เลือก{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }} —</option>
                             <option v-if="legacyJobOption" :value="legacyJobOption">
@@ -2029,7 +1983,7 @@ const logout = () => router.post(route('logout'));
                     </div>
 
                     <div v-if="isSupportWorkline && userForm.job" class="fg">
-                        <label class="lbl" :class="{ req: requiresSupportUnit }">หน่วย</label>
+                        <label class="lbl">หน่วย</label>
                         <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
                             <option value="">— เลือกหน่วย —</option>
                             <option v-if="legacyUnitOption" :value="legacyUnitOption">
@@ -2043,7 +1997,7 @@ const logout = () => router.post(route('logout'));
                 <div v-if="showsPositionSection" class="modal-section-label">ข้อมูลตำแหน่ง</div>
                 <div v-if="showsPositionSection" class="modal-grid">
                     <div v-if="!isDeanRole" class="fg">
-                        <label class="lbl" :class="{ req: requiresPositionFields && canPickPosition }">ตำแหน่ง</label>
+                        <label class="lbl">ตำแหน่ง</label>
                         <select
                             v-model="userForm.p"
                             class="sel modal-input"
@@ -2074,7 +2028,7 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
                     <div class="fg">
-                        <label class="lbl" :class="{ req: requiresPositionFields }">ระดับตำแหน่ง</label>
+                        <label class="lbl">ระดับตำแหน่ง</label>
                         <select v-model="userForm.l" class="sel modal-input" :disabled="!levelOptions.length && !legacyLevelOption" @change="organizationDirty = true">
                             <option v-if="levelOptions.length" value="">— เลือกระดับตำแหน่ง —</option>
                             <option v-else value="">ยังไม่มีระดับตำแหน่งในสายงานหรือกลุ่มงาน</option>
@@ -2096,7 +2050,7 @@ const logout = () => router.post(route('logout'));
 
                 <div class="modal-divider"></div>
 
-                <div class="evaluator-section">
+                <div v-if="!isAdminRole" class="evaluator-section">
                     <section class="workflow-group">
                         <div class="workflow-group-head">
                             <div class="workflow-title-row">

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -18,7 +19,123 @@ class AdminUserControllerTest extends TestCase
 
         $this->actingAs($admin)
             ->post(route('admin.users.store'), [])
-            ->assertSessionHasErrors(['username', 'password']);
+            ->assertSessionHasErrors(['r', 'sso', 'username', 'password']);
+    }
+
+    public function test_admin_can_be_created_with_only_required_fields(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'r' => 'admin',
+                'sso' => 'admin-minimal-001',
+                'username' => 'admin.minimal',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $user = User::query()->where('sso', 'admin-minimal-001')->firstOrFail();
+        $this->assertSame($this->roleId('admin'), (int) $user->role_id);
+        $this->assertNull($user->workline);
+        $this->assertNull($user->department);
+        $this->assertNull($user->position_id);
+        $this->assertNull($user->level_id);
+        $this->assertSame('admin.minimal@users.invalid', $user->email);
+        $this->assertTrue(Hash::check('secure-password', $user->password));
+        $this->assertTrue(Auth::attempt(['id' => $user->id, 'password' => 'secure-password']));
+    }
+
+    public function test_admin_can_update_username_role_and_password_without_assessment_structure(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $target = User::factory()->create([
+            'sso' => 'admin-target-001',
+            'username' => 'admin.target',
+            'role_id' => $this->roleId('admin'),
+            'workline' => null,
+            'department' => null,
+            'position' => null,
+            'level' => null,
+            'position_id' => null,
+            'level_id' => null,
+        ]);
+
+        $this->actingAs($admin)
+            ->put(route('admin.users.update', $target), [
+                'r' => 'admin',
+                'sso' => 'admin-target-001',
+                'username' => 'admin.target.updated',
+                'password' => 'another-secure-password',
+                'password_confirmation' => 'another-secure-password',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $target->refresh();
+        $this->assertSame('admin.target.updated', $target->username);
+        $this->assertSame($this->roleId('admin'), (int) $target->role_id);
+        $this->assertTrue(Hash::check('another-secure-password', $target->password));
+        $this->assertNull($target->position_id);
+        $this->assertNull($target->level_id);
+    }
+
+    public function test_admin_can_update_without_password_or_assessment_structure(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $target = User::factory()->create([
+            'sso' => 'admin-target-002',
+            'username' => 'admin.target.two',
+            'role_id' => $this->roleId('admin'),
+            'workline' => null,
+            'department' => null,
+            'position' => null,
+            'level' => null,
+            'position_id' => null,
+            'level_id' => null,
+        ]);
+        $oldPasswordHash = $target->password;
+
+        $this->actingAs($admin)
+            ->put(route('admin.users.update', $target), [
+                'r' => 'admin',
+                'sso' => 'admin-target-002',
+                'username' => 'admin.target.two',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($oldPasswordHash, $target->refresh()->password);
+    }
+
+    public function test_non_admin_user_can_be_created_without_optional_profile_and_organization_fields(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), [
+                'r' => 'employee',
+                'sso' => 'employee-minimal-001',
+                'username' => 'employee.minimal',
+                'password' => 'secure-password',
+                'password_confirmation' => 'secure-password',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('users', [
+            'sso' => 'employee-minimal-001',
+            'username' => 'employee.minimal',
+            'email' => 'employee.minimal@users.invalid',
+            'first_name_th' => null,
+            'last_name_th' => null,
+            'workline' => null,
+            'department' => null,
+            'position_id' => null,
+            'level_id' => null,
+        ]);
     }
 
     public function test_admin_user_email_validation_is_case_insensitive(): void
@@ -141,6 +258,7 @@ class AdminUserControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.users.update', $user), [
                 'sso' => 'staff-002',
+                'username' => 'staff.002',
                 't' => 'นางสาว',
                 'fn' => 'แก้ไข',
                 'ln' => 'ข้อมูล',
@@ -174,6 +292,7 @@ class AdminUserControllerTest extends TestCase
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $user = User::factory()->create([
             'sso' => 'legacy-staff',
+            'username' => 'legacy.staff',
             'workline' => 'สายสนับสนุน',
             'department' => 'ฝ่ายเดิม > งานเดิม > หน่วยเดิม',
             'position' => 'ตำแหน่งเดิม',
@@ -186,6 +305,7 @@ class AdminUserControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.users.update', $user), [
                 'sso' => 'legacy-staff',
+                'username' => $user->username,
                 'fn' => 'ชื่อใหม่',
                 'ln' => 'นามสกุลใหม่',
                 'em' => 'legacy-updated@example.com',
@@ -218,6 +338,7 @@ class AdminUserControllerTest extends TestCase
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-three-evaluators',
+            'username' => 'staff.three',
             'role_id' => $this->roleId('employee'),
         ]);
         $supervisor = User::factory()->create([
@@ -239,6 +360,7 @@ class AdminUserControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.users.update', $user), [
                 'sso' => 'staff-three-evaluators',
+                'username' => $user->username,
                 't' => 'นาย',
                 'fn' => 'สาม',
                 'ln' => 'ระดับ',
@@ -272,12 +394,14 @@ class AdminUserControllerTest extends TestCase
         $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-manager-dept',
+            'username' => 'staff.manager.dept',
             'role_id' => $this->roleId('employee'),
         ]);
 
         $this->actingAs($admin)
             ->put(route('admin.users.update', $user), [
                 'sso' => 'staff-manager-dept',
+                'username' => $user->username,
                 't' => 'นาง',
                 'fn' => 'ผู้บังคับ',
                 'ln' => 'บัญชา',
@@ -307,6 +431,7 @@ class AdminUserControllerTest extends TestCase
         $this->createStructure('สายสนับสนุน', 'ฝ่ายบริหาร', 'นักวิชาการศึกษา', 'ปฏิบัติการ');
         $user = User::factory()->create([
             'sso' => 'staff-003',
+            'username' => 'staff.003',
             'name' => 'บุคลากร เดิม',
             'email' => 'staff003@example.com',
             'role_id' => $this->roleId('employee'),
@@ -325,6 +450,7 @@ class AdminUserControllerTest extends TestCase
         $this->actingAs($admin)
             ->put(route('admin.users.update', $user), [
                 'sso' => 'staff-003',
+                'username' => $user->username,
                 't' => 'นาย',
                 'fn' => 'บุคลากร',
                 'ln' => 'เดิม',
