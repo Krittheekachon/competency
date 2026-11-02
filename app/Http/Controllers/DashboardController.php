@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\AssessmentRoundReadinessService;
+use App\Services\AssessmentLevelEvidenceService;
 use App\Services\AssessmentMethodResolver;
 use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
@@ -76,6 +77,7 @@ class DashboardController extends Controller
         private AssessmentMethodResolver $assessmentMethods,
         private FacultyAssessmentPermissionResolver $facultyPermissions,
         private CompetencyGapCalculator $gapCalculator,
+        private AssessmentLevelEvidenceService $levelEvidences,
     ) {}
 
     /**
@@ -2027,6 +2029,9 @@ class DashboardController extends Controller
         $finalReviewerIndicatorKeys = $isFacultyMethod
             ? $this->latestFacultyReviewerIndicatorKeys($gapRows->pluck('assessment_id')->filter()->unique()->values())
             : collect();
+        $levelEvidencesByAssessmentCompetency = $isFacultyMethod
+            ? $this->levelEvidences->payloadsForAssessments($gapRows->pluck('assessment_id')->filter()->unique()->values())
+            : collect();
 
         $reviewHistoryByAssessmentCompetency = DB::table('scores')
             ->join('users as score_reviewers', 'scores.assessor_id', '=', 'score_reviewers.id')
@@ -2074,7 +2079,7 @@ class DashboardController extends Controller
                 ->all());
 
         return $this->competencyGapsCache[$cacheKey] = $gapRows
-            ->map(function (object $gap) use ($checkedIndicatorKeysByAssessmentCompetency, $resolvedExpectedLevels, $reviewHistoryByAssessmentCompetency, $user, $assessmentMethod, $isFacultyMethod, $finalReviewerIndicatorKeys): array {
+            ->map(function (object $gap) use ($checkedIndicatorKeysByAssessmentCompetency, $resolvedExpectedLevels, $reviewHistoryByAssessmentCompetency, $user, $assessmentMethod, $isFacultyMethod, $finalReviewerIndicatorKeys, $levelEvidencesByAssessmentCompetency): array {
                 $checkedIndicatorKeys = $checkedIndicatorKeysByAssessmentCompetency
                     ->get($gap->assessment_id.':'.$gap->competency_id, []);
                 $expected = $gap->expected_level === null
@@ -2138,6 +2143,8 @@ class DashboardController extends Controller
                     'levels' => $this->competencyLevelsPayload((int) $gap->competency_id),
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
                     'checkedIndicatorCount' => count($checkedIndicatorKeys),
+                    'levelEvidences' => $levelEvidencesByAssessmentCompetency
+                        ->get($gap->assessment_id.':'.$gap->competency_id, []),
                     'requiresIdp' => $requiresIdp,
                     'developmentRecommendation' => $requiresIdp
                         ? 'เห็นควรเข้าอบรมพัฒนาทักษะด้านนี้'

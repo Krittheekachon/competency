@@ -32,6 +32,8 @@ class FacultyAssessmentPermissionResolverTest extends TestCase
         return [
             'support CC by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'CC', true],
             'support FC by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC', true],
+            'support FC1 sub-type by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC1', true],
+            'support FC2 sub-type by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC2', true],
             'support by assistant is approval only' => ['assistant_dean', 'employee', 'สายสนับสนุน', 'CC', false],
             'support MC is never scored by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'MC', false],
             'academic CC by department head' => ['academic_department_head', 'employee', 'สายวิชาการ', 'CC', true],

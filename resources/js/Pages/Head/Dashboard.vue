@@ -652,7 +652,7 @@ const selectedSupervisorLevels = computed(() => {
     const row = selectedSupervisorCompetency.value;
     if (!row) return [];
 
-    return (row.levels || []).map((level, levelIndex) => {
+    return scoringLevelsForRow(row).map((level, levelIndex) => {
         const indicators = Array.isArray(level.indicators) ? level.indicators : [];
         const levelNumber = Number(level.lvl ?? level.level ?? levelIndex + 1);
         const rows = indicators.map((indicator, indicatorIndex) => ({
@@ -760,6 +760,9 @@ const gapResultRows = (person) => {
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                canEditScore: Boolean(row.canEditScore),
+                reviewerCheckedIndicatorKeys: row.reviewerCheckedIndicatorKeys || null,
+                levelEvidences: row.levelEvidences || [],
                 lastDraftSavedAt: row.lastDraftSavedAt || row.last_draft_saved_at || null,
                 updatedAt: row.updatedAt || row.updated_at || '',
                 failed: row.failed ?? row.requiresIdp ?? gap < 0,
@@ -1934,6 +1937,16 @@ const logout = () => router.post(route('logout'));
                                         </div>
                                     </details>
 
+                                    <section v-if="selectedSupervisorCompetency.levelEvidences?.length" class="approval-comment-box">
+                                        <div class="fs12 fw8">หลักฐานประกอบระดับ 5 ({{ selectedSupervisorCompetency.levelEvidences.length }} รายการ)</div>
+                                        <ul class="level-evidence-list">
+                                            <li v-for="evidence in selectedSupervisorCompetency.levelEvidences" :key="evidence.id">
+                                                <a :href="evidence.url" target="_blank" rel="noopener noreferrer">{{ evidence.name }}</a>
+                                                <small>{{ evidence.kind === 'link' ? 'ลิงก์' : 'ไฟล์' }}</small>
+                                            </li>
+                                        </ul>
+                                    </section>
+
                                     <article v-for="level in selectedSupervisorLevels" :key="level.id" class="detail-level-card">
                                         <header>
                                             <div><strong>ระดับที่ {{ level.number }}</strong><span>เลือกแล้ว {{ level.checkedCount }}/{{ level.rows.length }} พฤติกรรม</span></div>
@@ -1956,7 +1969,7 @@ const logout = () => router.post(route('logout'));
                                                     @click.stop
                                                     @change="toggleReviewerIndicator(selectedSupervisorCompetency, level, indicator.index)"
                                                 />
-                                                <span>{{ indicator.checked ? '✓' : '' }}</span>
+                                                <span v-else>{{ indicator.checked ? '✓' : '' }}</span>
                                                 <p><strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>{{ indicator.text }}</p>
                                             </div>
                                             <p v-if="level.rows.length === 0" class="muted">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</p>
@@ -2202,6 +2215,10 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.level-evidence-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.level-evidence-list li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.level-evidence-list a { min-width: 0; overflow: hidden; color: var(--blue); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.level-evidence-list small { color: var(--text3); font-size: 11px; }
 .embedded-reviewer-shell {
     display: block;
     width: 100%;
@@ -3440,6 +3457,8 @@ const logout = () => router.post(route('logout'));
 .detail-indicator-list > div > span { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #d6dbe0; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 900; }
 .detail-indicator-list > div.selected > span { border-color: var(--color-primary); background: var(--color-primary); }
 .detail-indicator-list p { margin: 0; font-size: 12px; line-height: 1.6; }
+.detail-indicator-list > div.editable { cursor: pointer; }
+.detail-indicator-list > div > input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--color-primary); }
 .detail-indicator-list p strong { display: inline-block; margin-right: 8px; color: inherit; }
 
 .competency-detail-actions {

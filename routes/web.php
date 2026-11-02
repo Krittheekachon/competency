@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\Admin\SsoProfileReviewController as AdminSsoProfileReviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AssessmentController;
+use App\Http\Controllers\AssessmentEvidenceController;
 use App\Http\Controllers\Auth\KkuSsoController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
@@ -114,6 +115,13 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/assessments/draft', [AssessmentController::class, 'draft'])->name('assessments.draft');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
+    Route::post('/assessments/evidence', [AssessmentEvidenceController::class, 'store'])->name('assessments.evidence.store');
+    Route::get('/assessments/evidence/{evidence}', [AssessmentEvidenceController::class, 'show'])
+        ->whereUuid('evidence')
+        ->name('assessments.evidence.show');
+    Route::delete('/assessments/evidence/{evidence}', [AssessmentEvidenceController::class, 'destroy'])
+        ->whereUuid('evidence')
+        ->name('assessments.evidence.destroy');
     Route::post('/assessments/approve', [AssessmentController::class, 'approve'])->name('assessments.approve');
     Route::post('/assessments/reject', [AssessmentController::class, 'reject'])->name('assessments.reject');
     Route::post('/employee/fc-topic-selection/submit', [EmployeeFcTopicSelectionController::class, 'submit'])->name('employee.fc-topic-selection.submit');

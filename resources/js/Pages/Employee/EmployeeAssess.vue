@@ -86,6 +86,12 @@ const competencyRejectComments = ref<Record<string, string>>({});
 const competencyRejectReviewerNames = ref<Record<string, string>>({});
 const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const draftSavedAt = ref<string>('');
+const competencyEvidences = ref<Record<string, any[]>>({});
+const evidenceLinkUrl = ref('');
+const evidenceLinkDescription = ref('');
+const evidenceError = ref('');
+const isUploadingEvidence = ref(false);
+const evidenceFileInput = ref<HTMLInputElement | null>(null);
 const suppressAutoSave = ref(false);
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -312,6 +318,7 @@ const openCompetencyDetail = async (item: any) => {
       ...(data.checked || {}),
     };
     competencyNotes.value[String(item.id)] = data.note || '';
+    competencyEvidences.value[String(item.id)] = data.evidences || [];
     competencyStatuses.value[String(item.id)] = data.status || 'draft';
     lockedCompetencies.value[String(item.id)] = Boolean(data.locked);
     draftSavedAt.value = data.lastDraftSavedAt || '';
@@ -341,6 +348,10 @@ const closeCompetencyDetail = () => {
 const openSubmitConfirm = () => {
   if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
   if (isSelectedCompetencyLocked.value) return;
+  if (isMissingLevelEvidence.value) {
+    evidenceError.value = 'ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง';
+    return;
+  }
   showSubmitConfirm.value = true;
 };
 
@@ -366,7 +377,11 @@ const saveAndClose = async () => {
       lockedCompetencies.value[String(selectedCompetency.value?.id || '')] = true;
       closeCompetencyDetail();
     },
-    onError: () => {
+    onError: (errors: Record<string, string>) => {
+      if (errors.evidence) {
+        evidenceError.value = errors.evidence;
+        return;
+      }
       alert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
     },
     onFinish: () => {
@@ -405,6 +420,67 @@ const currentScore = computed(() => usesFacultyMethod.value
   ? facultyScore.value.toFixed(2)
   : (selectedIndicators.value * 0.25).toFixed(2));
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
+const selectedEvidences = computed(() => competencyEvidences.value[noteKey.value] || []);
+const requiresLevelEvidence = computed(() => usesFacultyMethod.value && facultyScore.value >= 5);
+const isMissingLevelEvidence = computed(() => requiresLevelEvidence.value && selectedEvidences.value.length === 0);
+const showEvidenceSection = computed(() => usesFacultyMethod.value && (requiresLevelEvidence.value || selectedEvidences.value.length > 0));
+const evidenceRequestError = (error: any, fallback: string) => {
+  const errors = error?.response?.data?.errors || {};
+  const first = Object.values(errors).flat()[0];
+  return String(first || error?.response?.data?.message || fallback);
+};
+const uploadEvidence = async () => {
+  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isUploadingEvidence.value) return;
+  const files = Array.from(evidenceFileInput.value?.files || []);
+  const url = evidenceLinkUrl.value.trim();
+  if (!files.length && !url) {
+    evidenceError.value = 'กรุณาเลือกไฟล์หรือกรอกลิงก์หลักฐาน';
+    return;
+  }
+
+  evidenceError.value = '';
+  isUploadingEvidence.value = true;
+  const competencyId = String(selectedCompetency.value.id);
+  try {
+    if (!competencyDraftSavedAt.value[competencyId] && !draftSavedAt.value) {
+      clearAutoSaveTimer();
+      await saveDraft();
+      if (autoSaveState.value === 'error') throw new Error('draft');
+    }
+
+    const form = new FormData();
+    form.append('competency_id', competencyId);
+    files.forEach((file) => form.append('evidenceFiles[]', file));
+    if (url) {
+      form.append('evidenceLinks[0][url]', url);
+      form.append('evidenceLinks[0][description]', evidenceLinkDescription.value.trim());
+    }
+
+    const { data } = await (window as any).axios.post(route('assessments.evidence.store'), form);
+    competencyEvidences.value[competencyId] = data.evidences || [];
+    evidenceLinkUrl.value = '';
+    evidenceLinkDescription.value = '';
+    if (evidenceFileInput.value) evidenceFileInput.value.value = '';
+  } catch (error: any) {
+    evidenceError.value = evidenceRequestError(error, 'ไม่สามารถแนบหลักฐานได้ กรุณาลองใหม่');
+  } finally {
+    isUploadingEvidence.value = false;
+  }
+};
+const removeEvidence = async (evidence: any) => {
+  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isUploadingEvidence.value) return;
+  const competencyId = String(selectedCompetency.value.id);
+  evidenceError.value = '';
+  isUploadingEvidence.value = true;
+  try {
+    const { data } = await (window as any).axios.delete(route('assessments.evidence.destroy', evidence.id));
+    competencyEvidences.value[competencyId] = data.evidences || [];
+  } catch (error: any) {
+    evidenceError.value = evidenceRequestError(error, 'ไม่สามารถลบหลักฐานได้ กรุณาลองใหม่');
+  } finally {
+    isUploadingEvidence.value = false;
+  }
+};
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
 const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
@@ -857,7 +933,7 @@ onBeforeUnmount(() => {
                 </span>
 
                 <em
-                  v-if="isIndicatorUnlocked(level, index) && !checkedIndicators[indicatorKey(level, index)]"
+                  v-if="!usesFacultyMethod && isIndicatorUnlocked(level, index) && !checkedIndicators[indicatorKey(level, index)]"
                   class="next-pill"
                 >
                   ลำดับถัดไป
@@ -873,6 +949,51 @@ onBeforeUnmount(() => {
           <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
             <div class="reviewer-comment-label">ความคิดเห็นจาก {{ selectedRejectReviewerName || 'ผู้ประเมิน' }}</div>
             <p>{{ selectedRejectComment }}</p>
+          </section>
+
+          <section v-if="showEvidenceSection" class="emp-evidence-section" :class="{ missing: isMissingLevelEvidence }">
+            <div class="emp-evidence-head">
+              <div>
+                <h3>หลักฐานประกอบระดับ 5</h3>
+                <p>ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่งตรวจ</p>
+              </div>
+              <span class="emp-level-status" :class="{ idle: !selectedEvidences.length, done: selectedEvidences.length > 0 }">
+                {{ selectedEvidences.length ? `แนบแล้ว ${selectedEvidences.length} รายการ` : 'ยังไม่แนบ' }}
+              </span>
+            </div>
+
+            <ul v-if="selectedEvidences.length" class="emp-evidence-list">
+              <li v-for="evidence in selectedEvidences" :key="evidence.id">
+                <a :href="evidence.url" target="_blank" rel="noopener noreferrer">{{ evidence.name }}</a>
+                <small>{{ evidence.kind === 'link' ? 'ลิงก์' : 'ไฟล์' }}</small>
+                <button
+                  v-if="!isSelectedCompetencyLocked"
+                  class="btn btn-s btn-sm"
+                  type="button"
+                  :disabled="isUploadingEvidence"
+                  @click="removeEvidence(evidence)"
+                >
+                  ลบ
+                </button>
+              </li>
+            </ul>
+
+            <div v-if="!isSelectedCompetencyLocked" class="emp-evidence-form">
+              <input
+                ref="evidenceFileInput"
+                class="inp"
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+              />
+              <input v-model="evidenceLinkUrl" class="inp" type="url" placeholder="หรือวางลิงก์หลักฐาน https://..." />
+              <input v-model="evidenceLinkDescription" class="inp" type="text" maxlength="255" placeholder="คำอธิบายลิงก์ (ถ้ามี)" />
+              <button class="btn btn-p btn-sm" type="button" :disabled="isUploadingEvidence" @click="uploadEvidence">
+                {{ isUploadingEvidence ? 'กำลังแนบ...' : 'แนบหลักฐาน' }}
+              </button>
+              <small class="emp-evidence-hint">รองรับรูปภาพ PDF เอกสาร Office และไฟล์ข้อความ ขนาดไม่เกิน 10 MB ต่อไฟล์</small>
+            </div>
+            <p v-if="evidenceError" class="emp-evidence-error">{{ evidenceError }}</p>
           </section>
 
           <section v-if="selectedCompetency.levels?.length" class="emp-note-section">
@@ -897,7 +1018,7 @@ onBeforeUnmount(() => {
               {{ autoSaveText }}
             </small>
           </div>
-          <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked" @click="openSubmitConfirm">
+          <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked || isMissingLevelEvidence" @click="openSubmitConfirm">
             {{ selectedCompetencyStatusCopy || (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>
@@ -921,6 +1042,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .employee-page { display: grid; gap: 20px; }
+.emp-evidence-section { display: grid; gap: 12px; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; padding: 16px; }
+.emp-evidence-section.missing { border-color: #fecaca; background: #fef2f2; }
+.emp-evidence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.emp-evidence-head h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 900; }
+.emp-evidence-head p { margin: 4px 0 0; color: var(--text3); font-size: 12px; }
+.emp-evidence-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.emp-evidence-list li { display: flex; align-items: center; gap: 10px; min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 8px 10px; }
+.emp-evidence-list a { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--blue); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.emp-evidence-list small { color: var(--text3); font-size: 11px; }
+.emp-evidence-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.emp-evidence-form .btn { justify-self: start; }
+.emp-evidence-hint { grid-column: 1 / -1; color: var(--text3); font-size: 11px; }
+.emp-evidence-error { margin: 0; color: #b42318; font-size: 12px; font-weight: 800; }
+@media (max-width: 900px) {
+  .emp-evidence-form { grid-template-columns: minmax(0, 1fr); }
+}
 .assessment-page-content { display: grid; gap: 20px; }
 .assessment-page-content.is-round-closed {
   filter: grayscale(.85);

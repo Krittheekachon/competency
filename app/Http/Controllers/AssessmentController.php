@@ -6,6 +6,7 @@ use App\Models\Assessment;
 use App\Models\User;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
+use App\Services\AssessmentLevelEvidenceService;
 use App\Services\AssessmentMethodResolver;
 use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
@@ -34,6 +35,7 @@ class AssessmentController extends Controller
         private FacultyAssessmentScorer $facultyScorer,
         private FacultyAssessmentPermissionResolver $facultyPermissions,
         private CompetencyGapCalculator $gapCalculator,
+        private AssessmentLevelEvidenceService $levelEvidences,
     )
     {
     }
@@ -106,6 +108,7 @@ class AssessmentController extends Controller
 
         if (! $assessment) {
             return response()->json([
+                'evidences' => [],
                 'checked' => [],
                 'note' => '',
                 'score' => 0,
@@ -136,6 +139,7 @@ class AssessmentController extends Controller
             : null;
 
         return response()->json([
+            'evidences' => $this->levelEvidences->payloadsFor((int) $assessment->id, (int) $assessment->competency_id),
             'checked' => $indicators,
             'note' => $assessment->note ?? '',
             'score' => $assessment->score ?? 0,
@@ -196,6 +200,16 @@ class AssessmentController extends Controller
                     (int) $data['competency_id'],
                     $checked,
                 );
+
+                if ($reviewerScore >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
+                    && $assessmentIds->contains(fn ($assessmentId): bool => ! $this->levelEvidences->existsFor(
+                        (int) $assessmentId,
+                        (int) $data['competency_id'],
+                    ))) {
+                    throw ValidationException::withMessages([
+                        'checked' => 'ผลระดับ 5 ต้องมีหลักฐาน แต่บุคลากรยังไม่ได้แนบ กรุณาส่งกลับให้บุคลากรแนบหลักฐานก่อน',
+                    ]);
+                }
 
                 foreach ($assessmentIds as $assessmentId) {
                     $this->replaceReviewerIndicatorResults(
@@ -488,6 +502,15 @@ class AssessmentController extends Controller
         $actualLevel = $this->assessmentMethods->isFaculty($roundId)
             ? $this->facultyScorer->scoreForCompetency($competencyId, array_keys($checkedIndicators))
             : round((float) $data['score'], 2);
+
+        if ($submit
+            && $this->assessmentMethods->isFaculty($roundId)
+            && $actualLevel >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
+            && ! ($existingAssessment && $this->levelEvidences->existsFor((int) $existingAssessment->id, $competencyId))) {
+            throw ValidationException::withMessages([
+                'evidence' => 'ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง',
+            ]);
+        }
         $assessmentAttributes = [
             'user_id' => $userId,
             'competency_id' => $competencyId,

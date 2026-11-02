@@ -9,6 +9,8 @@ class FacultyAssessmentPermissionResolver
     public function canScore(User $reviewer, User $employee, string $competencyType): bool
     {
         $type = strtoupper(trim($competencyType));
+        // FC is stored as FC1/FC2 sub-types; permissions apply to the whole FC group.
+        $type = str_starts_with($type, 'FC') ? 'FC' : $type;
         $isSupport = in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
         $isAcademic = in_array($employee->workline, ['สายวิชาการ', 'สายงานวิชาการ'], true);
         $isExecutive = $employee->hasRole(['deputy_dean', 'assistant_dean']);
