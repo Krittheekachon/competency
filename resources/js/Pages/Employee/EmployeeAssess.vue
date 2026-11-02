@@ -274,7 +274,7 @@ const saveDraft = async () => {
   try {
     const { data } = await (window as any).axios.post(route('assessments.draft'), {
       competency_id: selectedCompetency.value.id,
-      checked_indicators: checkedIndicators.value,
+      checked_indicators: submittedCheckedIndicators(),
       note: competencyNotes.value[noteKey.value] || '',
       score: parseFloat(currentScore.value),
     });
@@ -356,7 +356,7 @@ const saveAndClose = async () => {
 
   router.post(route('assessments.save'), {
     competency_id: selectedCompetency.value.id,
-    checked_indicators: checkedIndicators.value,
+    checked_indicators: submittedCheckedIndicators(),
     note: competencyNotes.value[noteKey.value] || '',
     score: parseFloat(currentScore.value),
   }, {
@@ -376,9 +376,16 @@ const saveAndClose = async () => {
 };
 
 const indicatorKey = (level: any, index: number) => `${selectedCompetency.value?.id || 'item'}:${level.id || level.lvl}:${index}`;
+const FACULTY_SCORING_LEVELS = [1, 3, 5];
+const scoringLevels = computed(() => {
+  const levels = selectedCompetency.value?.levels || [];
+  return usesFacultyMethod.value
+    ? levels.filter((level: any) => FACULTY_SCORING_LEVELS.includes(Number(level.lvl)))
+    : levels;
+});
 const selectedCount = (level: any) => (level.indicators || []).filter((_: any, index: number) => checkedIndicators.value[indicatorKey(level, index)]).length;
-const totalIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
-const selectedIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + selectedCount(level), 0));
+const totalIndicators = computed(() => scoringLevels.value.reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
+const selectedIndicators = computed(() => scoringLevels.value.reduce((total: number, level: any) => total + selectedCount(level), 0));
 const facultyScore = computed(() => {
   const level = (value: number) => (selectedCompetency.value?.levels || []).find((item: any) => Number(item.lvl) === value);
   const levelOne = level(1);
@@ -414,13 +421,19 @@ const selectedRejectReviewerName = computed(() => competencyRejectReviewerNames.
 
 const flattenedIndicators = computed(() => {
   const rows: any[] = [];
-  (selectedCompetency.value?.levels || []).forEach((level: any, levelIndex: number) => {
+  scoringLevels.value.forEach((level: any, levelIndex: number) => {
     (level.indicators || []).forEach((indicator: string, indicatorIndex: number) => {
       rows.push({ level, levelIndex, indicator, indicatorIndex, key: indicatorKey(level, indicatorIndex) });
     });
   });
   return rows;
 });
+const submittedCheckedIndicators = () => {
+  if (!usesFacultyMethod.value) return checkedIndicators.value;
+  return Object.fromEntries(flattenedIndicators.value
+    .filter((row) => checkedIndicators.value[row.key])
+    .map((row) => [row.key, true]));
+};
 
 const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
   if (isSelectedCompetencyLocked.value) return false;
@@ -802,12 +815,12 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
+          <div v-if="!scoringLevels.length" class="empty-card compact">
             <div class="empty-title">ยังไม่มีรายละเอียดระดับ</div>
             <div class="empty-copy">เมื่อ Admin เพิ่มระดับและพฤติกรรม รายละเอียดจะแสดงที่นี่</div>
           </div>
 
-          <section v-for="level in selectedCompetency.levels" v-else :key="level.id || level.lvl" class="emp-level-section">
+          <section v-for="level in scoringLevels" v-else :key="level.id || level.lvl" class="emp-level-section">
             <div class="emp-level-head">
               <div>
                 <h3>{{ level.label || `ระดับ ${level.lvl}` }}</h3>

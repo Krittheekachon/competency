@@ -206,11 +206,6 @@ class AssessmentController extends Controller
                         $checked,
                     );
                 }
-
-                Assessment::whereIn('id', $assessmentIds)->update([
-                    'score' => $reviewerScore,
-                    'updated_at' => now(),
-                ]);
             }
 
             $reviewerScoreId = $this->upsertReviewerScore(
@@ -567,7 +562,11 @@ class AssessmentController extends Controller
             ->where('status', $status)
             ->get(['id', 'score'])
             ->each(function (Assessment $assessment) use ($competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
-                $actualLevel = round((float) ($assessment->score ?? 0), 2);
+                // assessments.score keeps the self score; faculty rounds use the latest authorized reviewer score.
+                $reviewerScore = $assessmentMethod === AssessmentMethodResolver::FACULTY
+                    ? $this->latestFacultyReviewerScore((int) $assessment->id, $competencyId)
+                    : null;
+                $actualLevel = round((float) ($reviewerScore ?? $assessment->score ?? 0), 2);
                 $gapResult = $this->gapCalculator->calculate($assessmentMethod, $actualLevel, $expectedLevel);
                 $attributes = [
                     'assessment_id' => $assessment->id,
@@ -715,6 +714,20 @@ class AssessmentController extends Controller
             ],
             $checked,
         ));
+    }
+
+    private function latestFacultyReviewerScore(int $assessmentId, int $competencyId): ?float
+    {
+        $score = DB::table('scores')
+            ->where('assessment_id', $assessmentId)
+            ->where('competency_id', $competencyId)
+            ->where('status', 'approved')
+            ->whereNotNull('score')
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
+            ->value('score');
+
+        return $score === null ? null : (float) $score;
     }
 
     private function competencyTypeCode(int $competencyId): string

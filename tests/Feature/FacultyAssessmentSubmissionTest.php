@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class FacultyAssessmentSubmissionTest extends TestCase
@@ -91,7 +92,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
         ]);
     }
 
-    public function test_authorized_academic_head_score_replaces_self_score_on_approval(): void
+    public function test_authorized_academic_head_score_becomes_actual_level_while_self_score_is_kept(): void
     {
         $reviewer = User::factory()->create(['role_id' => $this->roleId('academic_department_head')]);
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
@@ -114,7 +115,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
             'checked' => $checked,
         ])->assertSessionHasNoErrors();
 
-        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 4, 'status' => 'approved']);
+        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'approved']);
         $this->assertDatabaseHas('scores', [
             'assessment_id' => $assessmentId,
             'assessor_id' => $reviewer->id,
@@ -132,6 +133,76 @@ class FacultyAssessmentSubmissionTest extends TestCase
             'requires_idp' => false,
             'status' => 'approved',
         ]);
+    }
+
+    public function test_later_approval_only_step_keeps_the_authorized_reviewer_score(): void
+    {
+        $academicHead = User::factory()->create(['role_id' => $this->roleId('academic_department_head')]);
+        $assistantDean = User::factory()->create(['role_id' => $this->roleId('assistant_dean')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $roundId = $this->activeFacultyRound();
+        [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId);
+        $this->assignReviewer($employee, $academicHead, 1);
+        $this->assignReviewer($employee, $assistantDean, 2);
+        $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
+
+        $this->actingAs($academicHead)->post(route('assessments.approve'), [
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+            'checked' => [
+                "{$competencyId}:{$levelIds[1]}:0",
+                "{$competencyId}:{$levelIds[1]}:1",
+                "{$competencyId}:{$levelIds[1]}:2",
+                "{$competencyId}:{$levelIds[3]}:0",
+                "{$competencyId}:{$levelIds[3]}:1",
+                "{$competencyId}:{$levelIds[3]}:2",
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $this->actingAs($assistantDean)->post(route('assessments.approve'), [
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'approved']);
+        $this->assertDatabaseHas('competency_gaps', [
+            'assessment_id' => $assessmentId,
+            'actual_level' => 4,
+            'gap' => 1,
+            'requires_idp' => false,
+            'status' => 'approved',
+        ]);
+    }
+
+    public function test_dashboard_shows_self_score_and_faculty_missing_behaviors_from_reviewer_result(): void
+    {
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('academic_department_head')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $roundId = $this->activeFacultyRound();
+        [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId);
+        $this->assignReviewer($employee, $reviewer);
+        $this->submittedAssessment($employee, $roundId, $competencyId, 4);
+
+        $this->actingAs($reviewer)->post(route('assessments.approve'), [
+            'user_id' => $employee->id,
+            'competency_id' => $competencyId,
+            'checked' => [
+                "{$competencyId}:{$levelIds[1]}:0",
+                "{$competencyId}:{$levelIds[1]}:1",
+                "{$competencyId}:{$levelIds[1]}:2",
+            ],
+        ])->assertSessionHasNoErrors();
+
+        $this->actingAs($employee)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentUserCompetencyGaps.0.selfScore', 4)
+                ->where('currentUserCompetencyGaps.0.actual', 2)
+                ->where('currentUserCompetencyGaps.0.requiresIdp', true)
+                ->where('currentUserCompetencyGaps.0.missingIndicatorCount', 3)
+                ->where('currentUserCompetencyGaps.0.missingIndicators.0.level', 3)
+            );
     }
 
     public function test_approval_only_role_cannot_override_faculty_score_through_http_payload(): void
@@ -271,12 +342,12 @@ class FacultyAssessmentSubmissionTest extends TestCase
         return (int) DB::table('roles')->where('key', $key)->value('id');
     }
 
-    private function assignReviewer(User $employee, User $reviewer): void
+    private function assignReviewer(User $employee, User $reviewer, int $step = 1): void
     {
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $employee->id,
             'chain_type' => 'assessment',
-            'step_order' => 1,
+            'step_order' => $step,
             'reviewer_id' => $reviewer->id,
             'created_at' => now(),
             'updated_at' => now(),

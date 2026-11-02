@@ -35,6 +35,10 @@ const defaultPageForRole = () => 'emp-assess';
 
 const page = usePage();
 const activeCycleName = computed(() => page.props.activeCycleName || 'รอบประเมินปัจจุบัน');
+const usesFacultyMethod = computed(() => page.props.activeAssessmentMethod?.method === 'faculty');
+const FACULTY_SCORING_LEVELS = [1, 3, 5];
+const scoringLevelsForRow = (row) => (row?.levels || [])
+    .filter((level) => !usesFacultyMethod.value || FACULTY_SCORING_LEVELS.includes(Number(level.lvl)));
 const idpTeamTab = ref('approval');
 const uniqueIdpPersonCount = (items) => new Set(items.map((item) => String(item.userId || item.userSso || item.userName))).size;
 const idpApprovalCount = computed(() => uniqueIdpPersonCount(props.idpReviewItems.filter((item) => item.canReview)));
@@ -1041,6 +1045,11 @@ const reviewerCheckedIndicatorKeys = (row) => {
     return row.reviewerCheckedIndicatorKeys || row.checkedIndicatorKeys || [];
 };
 const checkedIndicatorSet = (row) => new Set(reviewerCheckedIndicatorKeys(row));
+const scoringIndicatorKeysForRow = (row) => {
+    const allowed = new Set(scoringLevelsForRow(row)
+        .flatMap((level) => (level.indicators || []).map((_, index) => checkedIndicatorKey(row, level, index))));
+    return reviewerCheckedIndicatorKeys(row).filter((key) => allowed.has(key));
+};
 const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
 const toggleReviewerIndicator = (row, level, index) => {
     if (!row?.canEditScore || !canDecideSupervisorCompetency(row)) return;
@@ -1054,7 +1063,7 @@ const toggleReviewerIndicator = (row, level, index) => {
         [draftKey]: [...next],
     };
 };
-const totalIndicatorCount = (row) => (row.levels || [])
+const totalIndicatorCount = (row) => scoringLevelsForRow(row)
     .reduce((total, level) => total + (level.indicators?.length || 0), 0);
 const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
     .map((indicator, index) => ({ indicator, index }))
@@ -1065,13 +1074,13 @@ const indicatorsForLevel = (row, level) => (level.indicators || [])
         index,
         checked: isIndicatorChecked(row, level, index),
     }));
-const checkedLevelsForRow = (row) => (row.levels || [])
+const checkedLevelsForRow = (row) => scoringLevelsForRow(row)
     .map((level) => ({
         ...level,
         checkedIndicators: checkedIndicatorsForLevel(row, level),
     }))
     .filter((level) => level.checkedIndicators.length > 0);
-const approvalLevelsForRow = (row) => (row.levels || [])
+const approvalLevelsForRow = (row) => scoringLevelsForRow(row)
     .map((level) => ({
         ...level,
         indicatorsWithStatus: indicatorsForLevel(row, level),
@@ -1124,7 +1133,7 @@ const submitApprovalDecision = () => {
         competency_id: competency.competencyId || competency.competency_id || competency.id,
         comment,
         ...(decision === 'approve' && competency.canEditScore
-            ? { checked: reviewerCheckedIndicatorKeys(competency) }
+            ? { checked: scoringIndicatorKeysForRow(competency) }
             : {}),
     }, {
         preserveScroll: true,

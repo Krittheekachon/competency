@@ -6,6 +6,7 @@ use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\AssessmentRoundReadinessService;
 use App\Services\AssessmentMethodResolver;
+use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
 use App\Services\PositionTitleResolver;
 use App\Services\UserOrganizationPresenter;
@@ -74,6 +75,7 @@ class DashboardController extends Controller
         private UserOrganizationPresenter $organizationPresenter,
         private AssessmentMethodResolver $assessmentMethods,
         private FacultyAssessmentPermissionResolver $facultyPermissions,
+        private CompetencyGapCalculator $gapCalculator,
     ) {}
 
     /**
@@ -2018,6 +2020,13 @@ class DashboardController extends Controller
             $user,
             $gapRows->whereNull('expected_level')->pluck('competency_id'),
         );
+        $assessmentMethod = $roundId
+            ? $this->assessmentMethods->forRoundId((int) $roundId)['method']
+            : AssessmentMethodResolver::STANDARD;
+        $isFacultyMethod = $assessmentMethod === AssessmentMethodResolver::FACULTY;
+        $finalReviewerIndicatorKeys = $isFacultyMethod
+            ? $this->latestFacultyReviewerIndicatorKeys($gapRows->pluck('assessment_id')->filter()->unique()->values())
+            : collect();
 
         $reviewHistoryByAssessmentCompetency = DB::table('scores')
             ->join('users as score_reviewers', 'scores.assessor_id', '=', 'score_reviewers.id')
@@ -2065,7 +2074,7 @@ class DashboardController extends Controller
                 ->all());
 
         return $this->competencyGapsCache[$cacheKey] = $gapRows
-            ->map(function (object $gap) use ($checkedIndicatorKeysByAssessmentCompetency, $resolvedExpectedLevels, $reviewHistoryByAssessmentCompetency, $user): array {
+            ->map(function (object $gap) use ($checkedIndicatorKeysByAssessmentCompetency, $resolvedExpectedLevels, $reviewHistoryByAssessmentCompetency, $user, $assessmentMethod, $isFacultyMethod, $finalReviewerIndicatorKeys): array {
                 $checkedIndicatorKeys = $checkedIndicatorKeysByAssessmentCompetency
                     ->get($gap->assessment_id.':'.$gap->competency_id, []);
                 $expected = $gap->expected_level === null
@@ -2078,7 +2087,21 @@ class DashboardController extends Controller
                 $achievementPercentage = $expected !== null && (float) $expected > 0
                     ? round(($actual / (float) $expected) * 100, 2)
                     : null;
-                $requiresIdp = (bool) $gap->requires_idp;
+                $requiresIdp = $gap->gap === null && $gapValue !== null
+                    ? $this->gapCalculator->calculate($assessmentMethod, $actual, $expected)['requiresIdp']
+                    : (bool) $gap->requires_idp;
+                $resultIndicatorKeys = $finalReviewerIndicatorKeys
+                    ->get($gap->assessment_id.':'.$gap->competency_id, $checkedIndicatorKeys);
+                $missingIndicators = $requiresIdp && $expected !== null
+                    ? $this->missingIndicatorsForAssessment(
+                        (int) $gap->assessment_id,
+                        (int) $gap->competency_id,
+                        (float) $expected,
+                        $actual,
+                        $resultIndicatorKeys,
+                        $isFacultyMethod,
+                    )
+                    : [];
 
                 $status = $gap->status === 'dean_approved' ? 'approved' : ($gap->status ?? 'draft');
                 $rejectReviewerName = trim(
@@ -2097,6 +2120,7 @@ class DashboardController extends Controller
                     'det' => $gap->detail ?? '',
                     'expected' => $expected,
                     'actual' => $actual,
+                    'selfScore' => $gap->score === null ? null : (float) $gap->score,
                     'gap' => $gapValue,
                     'achievementPercentage' => $achievementPercentage,
                     'note' => $gap->note ?? '',
@@ -2118,18 +2142,13 @@ class DashboardController extends Controller
                     'developmentRecommendation' => $requiresIdp
                         ? 'เห็นควรเข้าอบรมพัฒนาทักษะด้านนี้'
                         : null,
-                    'missingIndicators' => $requiresIdp && $expected !== null
-                        ? $this->missingIndicatorsForAssessment(
-                            (int) $gap->assessment_id,
-                            (int) $gap->competency_id,
-                            (float) $expected,
-                            $actual,
-                            $checkedIndicatorKeys,
-                        )
-                        : [],
-                    'missingIndicatorCount' => $requiresIdp && $gapValue !== null
-                        ? (int) ceil(abs($gapValue) / 0.25)
-                        : 0,
+                    'missingIndicators' => $missingIndicators,
+                    'missingIndicatorCount' => match (true) {
+                        ! $requiresIdp || $gapValue === null => 0,
+                        $isFacultyMethod => collect($missingIndicators)
+                            ->sum(fn (array $level): int => count($level['indicators'] ?? [])),
+                        default => (int) ceil(abs($gapValue) / 0.25),
+                    },
                     'status' => $status,
                     'workflow' => $this->assessmentWorkflowPayload(
                         $user,
@@ -2223,12 +2242,48 @@ class DashboardController extends Controller
         ];
     }
 
+    private function latestFacultyReviewerIndicatorKeys(Collection $assessmentIds): Collection
+    {
+        if ($assessmentIds->isEmpty()) {
+            return collect();
+        }
+
+        $latestScorers = DB::table('scores')
+            ->whereIn('assessment_id', $assessmentIds)
+            ->where('status', 'approved')
+            ->whereNotNull('score')
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
+            ->get(['assessment_id', 'competency_id', 'assessor_id'])
+            ->unique(fn (object $score): string => $score->assessment_id.':'.$score->competency_id);
+
+        if ($latestScorers->isEmpty()) {
+            return collect();
+        }
+
+        $results = DB::table('assessment_reviewer_indicator_results')
+            ->whereIn('assessment_id', $latestScorers->pluck('assessment_id'))
+            ->whereIn('reviewer_id', $latestScorers->pluck('assessor_id')->unique())
+            ->where('is_checked', true)
+            ->get(['assessment_id', 'competency_id', 'reviewer_id', 'indicator_key'])
+            ->groupBy(fn (object $row): string => $row->assessment_id.':'.$row->competency_id.':'.$row->reviewer_id);
+
+        return $latestScorers->mapWithKeys(fn (object $score): array => [
+            $score->assessment_id.':'.$score->competency_id => ($results
+                ->get($score->assessment_id.':'.$score->competency_id.':'.$score->assessor_id) ?? collect())
+                ->pluck('indicator_key')
+                ->values()
+                ->all(),
+        ]);
+    }
+
     private function missingIndicatorsForAssessment(
         int $assessmentId,
         int $competencyId,
         float $expectedLevel,
         float $actualLevel,
         ?array $checkedIndicatorKeys = null,
+        bool $facultyMethod = false,
     ): array
     {
         $checkedIndicatorKeys ??= DB::table('assessment_indicator_results')
@@ -2239,7 +2294,10 @@ class DashboardController extends Controller
             ->all();
         $checkedKeys = collect($checkedIndicatorKeys)->flip();
         $maxExpectedLevel = max(1, (int) ceil($expectedLevel));
-        $requiredIndicatorCount = max(0, (int) ceil(($expectedLevel - $actualLevel) / 0.25));
+        // Faculty levels come from cumulative level 1/3/5 behaviors, so every unchecked one up to Expected is a target.
+        $requiredIndicatorCount = $facultyMethod
+            ? ($actualLevel < $expectedLevel ? PHP_INT_MAX : 0)
+            : max(0, (int) ceil(($expectedLevel - $actualLevel) / 0.25));
 
         if ($requiredIndicatorCount === 0) {
             return [];
@@ -2247,6 +2305,7 @@ class DashboardController extends Controller
 
         $missingRows = collect($this->competencyLevelsPayload($competencyId))
             ->filter(fn (array $level): bool => (int) $level['lvl'] <= $maxExpectedLevel)
+            ->filter(fn (array $level): bool => ! $facultyMethod || in_array((int) $level['lvl'], [1, 3, 5], true))
             ->flatMap(function (array $level) use ($checkedKeys, $competencyId) {
                 return collect($level['indicators'] ?? [])
                     ->values()
