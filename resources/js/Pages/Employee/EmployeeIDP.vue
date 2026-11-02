@@ -313,10 +313,27 @@ const catalogMatchesExpectedLevel = (catalog: Catalog, gap: Gap | null) => {
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
 const toolFor = (activity: Activity) => activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
 const catalogFor = (activity: Activity) => activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
+// A faculty plan keeps only the course name and description for Formal Learning.
+const isFacultyFormal = (activity: Activity) => usesFacultyPlan.value && focusType(activity.methodKey) === 'formal';
+const facultyFormalDetails = (catalog: Catalog | undefined): FormDetails => ({
+  ...defaultFormDetails('form_10_training'),
+  planRows: [{ courseName: catalog?.name || '', courseDescription: catalog?.description || '' }],
+  _saved: true,
+  _courseOnly: true,
+});
 const syncCatalogSnapshot = (activity: Activity): Activity => {
   if (!activity.learningCatalogId) return activity;
   const catalog = activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
   if (!catalog) return activity;
+  if (isFacultyFormal(activity)) {
+    return {
+      ...activity,
+      activityName: catalog.name,
+      activityDescription: catalog.description || '',
+      formCode: 'form_10_training',
+      formDetails: facultyFormalDetails(catalog),
+    };
+  }
   const details = normalizeFormDetails(activity.formCode || catalog.formCode || 'form_10_training', activity.formDetails);
   const currentRow = details.planRows?.[0] || {};
   return {
@@ -382,7 +399,7 @@ const isTrainingForm = (activity: Activity | null) =>
   Boolean(activity && effectiveFormCode(activity) === 'form_10_training');
 const isReworkedActivityForm = (activity: Activity | null) =>
   isProjectAssignmentForm(activity) || isOjtForm(activity) || isCoachingForm(activity) || isMentoringForm(activity) || isGroupActivityForm(activity) || isFeedbackForm(activity) || isFieldTripForm(activity) || isTrainingForm(activity);
-const hasActivityForm = (activity: Activity) => Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
+const hasActivityForm = (activity: Activity) => !isFacultyFormal(activity) && Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
 const isFormSaved = (activity: Activity) => Boolean(activity.formDetails?._saved);
 const shouldShowDetailField = (field: { showWhen?: { key: string; value: string } }, detail: Record<string, any>) =>
   !field.showWhen || detail[field.showWhen.key] === field.showWhen.value;
@@ -476,6 +493,11 @@ const chooseCatalog = (activity: Activity) => {
   activity.activityName = catalog?.name || '';
   activity.activityDescription = catalog?.description || '';
   activity.formCode = formCodeForActivity(activity);
+  if (isFacultyFormal(activity)) {
+    activity.formCode = 'form_10_training';
+    activity.formDetails = facultyFormalDetails(catalog);
+    return;
+  }
   activity.formDetails = {
     ...defaultFormDetails(activity.formCode),
     planRows: defaultPlanRows(activity.formCode).map((row, index) => index === 0 ? {
@@ -930,7 +952,7 @@ const planIssue = (plan: Plan): string => {
         return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
       }
     }
-    if (isTrainingForm(activity)) {
+    if (isTrainingForm(activity) && !isFacultyFormal(activity)) {
       const rows = activity.formDetails?.planRows || [];
       if (!rows.length) {
         return `กิจกรรมที่ ${activityIndex + 1} · ${activity.activityName || 'Formal Learning'} ยังไม่มีรายละเอียดหลักสูตร`;
@@ -1226,6 +1248,12 @@ const submitSelectedPlan = async () => {
                     @input="updateActivityWeight(activity, $event)"
                   />
                 </label>
+                <div v-if="isFacultyFormal(activity)" class="activity-readonly-meta wide faculty-formal-course">
+                  <span>หลักสูตร</span>
+                  <strong>{{ activity.activityName || 'ยังไม่เลือกหลักสูตร' }}</strong>
+                  <small>{{ activity.activityDescription || 'ไม่มีคำอธิบายหลักสูตร' }}</small>
+                </div>
+                <template v-else>
                 <div class="activity-readonly-meta">
                   <strong>{{ isFormSaved(activity) ? 'บันทึกรายละเอียดกิจกรรมแล้ว' : 'กรุณากรอกรายละเอียดกิจกรรม' }}</strong>
                   <small>{{ isFormSaved(activity) ? 'ตรวจสอบรายละเอียดในแบบฟอร์มด้านล่าง' : 'กดปุ่มด้านล่างเพื่อกรอกแบบฟอร์มกิจกรรมให้ครบถ้วน' }}</small>
@@ -1245,6 +1273,7 @@ const submitSelectedPlan = async () => {
                     {{ selectedPlanLocked ? 'ดูรายละเอียดฟอร์ม' : 'กรอกรายละเอียดฟอร์ม' }}
                   </button>
                 </div>
+                </template>
                 </div>
               </article>
 
@@ -1305,10 +1334,11 @@ const submitSelectedPlan = async () => {
                     type="button"
                     @click="addCatalogActivity(selectedPlan, catalog)"
                   >
-                    <span class="activity-choice-code formal">{{ catalog.code || 'COURSE' }}</span>
+                    <span class="activity-choice-code formal">{{ usesFacultyPlan ? 'COURSE' : (catalog.code || 'COURSE') }}</span>
                     <span class="activity-choice-copy">
                       <strong>{{ catalog.name }}</strong>
-                      <small v-if="catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
+                      <small v-if="usesFacultyPlan && catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.description || 'ไม่มีคำอธิบายหลักสูตร' }}</small>
+                      <small v-else-if="catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
                       <small v-else>ใช้ไม่ได้ · รองรับระดับความคาดหวัง {{ catalog.expectedLevels?.join(', ') || '-' }}</small>
                     </span>
                     <span class="activity-choice-add">เลือก</span>
@@ -2087,6 +2117,7 @@ select:disabled { cursor: not-allowed; }
 .activity-readonly-meta span { color: #59677a; font-size: 11px; font-weight: 800; }
 .activity-readonly-meta strong { color: #273142; font-size: 12px; }
 .activity-readonly-meta small { color: #8793a3; font-size: 9px; font-weight: 700; }
+.faculty-formal-course small { color: #59677a; font-size: 11px; font-weight: 600; line-height: 1.5; white-space: pre-line; }
 .activity-detail-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #d7e4ee; border-radius: 7px; background: #fbfdff; padding: 12px; }
 .activity-detail-action strong, .activity-detail-action span { display: block; }
 .activity-detail-action strong { color: #172033; font-size: 12px; }

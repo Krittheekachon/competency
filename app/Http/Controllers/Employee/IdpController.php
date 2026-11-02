@@ -171,7 +171,7 @@ class IdpController extends Controller
             ->get(['id', 'code', 'name', 'delivery_type', 'cost', 'hours', 'expected_levels', 'description'])
             ->keyBy('id');
 
-        $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById);
+        $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById, $planGaps !== null);
 
         $this->validateActivities(
             $items,
@@ -319,16 +319,35 @@ class IdpController extends Controller
         }
     }
 
-    private function withAuthoritativeActivityData(Collection $items, Collection $toolsById, Collection $catalogsById): Collection
+    private function withAuthoritativeActivityData(Collection $items, Collection $toolsById, Collection $catalogsById, bool $facultyPlan = false): Collection
     {
-        return $items->map(function (array $item) use ($toolsById, $catalogsById): array {
-            $item['activities'] = collect($item['activities'] ?? [])->map(function (array $activity) use ($toolsById, $catalogsById): array {
+        return $items->map(function (array $item) use ($toolsById, $catalogsById, $facultyPlan): array {
+            $item['activities'] = collect($item['activities'] ?? [])->map(function (array $activity) use ($toolsById, $catalogsById, $facultyPlan): array {
                 $tool = ! empty($activity['developmentToolId'])
                     ? $toolsById->get($activity['developmentToolId'])
                     : null;
                 $catalog = ! empty($activity['learningCatalogId'])
                     ? $catalogsById->get($activity['learningCatalogId'])
                     : null;
+
+                // A faculty plan keeps only the course name and description; the single row stays trackable.
+                if ($catalog && $facultyPlan) {
+                    return [
+                        ...$activity,
+                        'activityName' => $catalog->name ?? '',
+                        'activityDescription' => $catalog->description ?? '',
+                        'formCode' => 'form_10_training',
+                        'formDetails' => [
+                            '_formCode' => 'form_10_training',
+                            '_saved' => true,
+                            '_courseOnly' => true,
+                            'planRows' => [[
+                                'courseName' => $catalog->name ?? '',
+                                'courseDescription' => $catalog->description ?? '',
+                            ]],
+                        ],
+                    ];
+                }
 
                 if ($catalog) {
                     $details = is_array($activity['formDetails'] ?? null) ? $activity['formDetails'] : [];
@@ -822,7 +841,7 @@ class IdpController extends Controller
                     }
                 }
 
-                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_10_training') {
+                if ($status === 'submitted' && $planGaps === null && ($activity['formCode'] ?? null) === 'form_10_training') {
                     $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
                     if ($rows->isEmpty()) {
                         throw ValidationException::withMessages([

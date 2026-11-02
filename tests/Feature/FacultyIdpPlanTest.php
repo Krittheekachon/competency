@@ -119,6 +119,31 @@ class FacultyIdpPlanTest extends TestCase
             ->assertSessionHasErrors('items.0.activities.0.learningCatalogId');
     }
 
+    public function test_formal_course_in_faculty_plan_keeps_only_course_name_and_description(): void
+    {
+        $courseId = $this->catalog('หลักสูตรทีม', 'CC-B');
+        DB::table('learning_catalogs')->where('id', $courseId)->update([
+            'code' => 'TEAM-01',
+            'description' => 'ฝึกการทำงานเป็นทีม',
+            'hours' => 6,
+            'cost' => 1500,
+        ]);
+
+        // Submitted without the training form: no dates, goal, hours or cost.
+        $this->actingAs($this->employee)
+            ->post(route('employee.idp.submit-item'), ['item' => $this->formalPlan($courseId)])
+            ->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->first();
+        $this->assertSame('หลักสูตรทีม', $activity->activity_name);
+        $this->assertSame('ฝึกการทำงานเป็นทีม', $activity->description);
+        $this->assertNull($activity->start_date);
+        $this->assertSame(
+            [['courseName' => 'หลักสูตรทีม', 'courseDescription' => 'ฝึกการทำงานเป็นทีม']],
+            json_decode($activity->form_details, true)['planRows'],
+        );
+    }
+
     public function test_reviewer_sees_the_plan_labelled_with_all_covered_competencies(): void
     {
         $this->actingAs($this->employee)
