@@ -236,7 +236,6 @@ export const NAV_CONFIG = {
       sec: "ระบบ",
       items: [
         { id: "admin-users", ic: "", lb: "จัดการผู้ใช้งาน" },
-        { id: "admin-assessment-methods", ic: "", lb: "วิธีการประเมิน" },
         { id: "admin-org-structure", ic: "", lb: "จัดการโครงสร้างองค์กร & สมรรถนะ" },
         { id: "admin-dict", ic: "", lb: "พจนานุกรมสมรรถนะ" },
         { id: "admin-idp-tools", ic: "", lb: "เครื่องมือ / แนวทาง สำหรับทำแผน IDP" }
@@ -275,7 +274,6 @@ export const PAGE_TITLES = {
   "hr-comp-overview": "ภาพรวม Competency คณะ",
   "hr-idp-overview": "ภาพรวม IDP คณะ",
   "admin-users": "จัดการผู้ใช้งาน",
-  "admin-assessment-methods": "กำหนดวิธีการประเมิน",
   "admin-org-structure": "จัดการโครงสร้างองค์กร & สมรรถนะ",
   "admin-dict": "พจนานุกรมสมรรถนะ",
   "admin-idp-tools": "เครื่องมือ / แนวทาง สำหรับทำแผน IDP"

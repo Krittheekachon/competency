@@ -9,7 +9,6 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
-import AdminAssessmentMethods from './AdminAssessmentMethods.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -347,7 +346,6 @@ const assessmentApprovalModule = computed(() => page.props.assessmentApprovalMod
 const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
 const visibleAdminPageIds = new Set([
     'admin-users',
-    'admin-assessment-methods',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -384,7 +382,6 @@ const implementedAdminPages = new Set([
     'emp-progress',
     'emp-idp-detail',
     'admin-users',
-    'admin-assessment-methods',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -1783,11 +1780,6 @@ const logout = () => router.post(route('logout'));
                     :support-depts="supportDeptsList"
                     :admin-depts="adminDepts"
                     :worklines="worklines"
-                />
-
-                <AdminAssessmentMethods
-                    v-else-if="activePage === 'admin-assessment-methods'"
-                    :rounds="page.props.assessmentRounds || []"
                 />
 
                 <AdminOrgStructure

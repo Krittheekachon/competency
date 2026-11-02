@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Services\AssessmentMethodResolver;
 use App\Services\AssessmentRoundReadinessService;
 use App\Services\CompetencyAssessmentSyncService;
 use Carbon\CarbonImmutable;
@@ -10,6 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AssessmentRoundController extends Controller
 {
@@ -23,8 +25,11 @@ class AssessmentRoundController extends Controller
         $data = $this->validated($request);
 
         DB::transaction(function () use ($data): void {
+            $method = $data['assessment_method'] ?? AssessmentMethodResolver::STANDARD;
             $roundId = DB::table('assessment_rounds')->insertGetId([
                 ...$this->roundValues($data, false),
+                'assessment_method' => $method,
+                'assessment_method_version' => AssessmentMethodResolver::CURRENT_VERSIONS[$method],
                 'snapshot_required' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -67,6 +72,7 @@ class AssessmentRoundController extends Controller
             DB::table('assessment_rounds')->lockForUpdate()->get(['id']);
             DB::table('assessment_rounds')->where('id', $round)->update([
                 ...$this->roundValues($data, false),
+                ...$this->methodValues($round, $data['assessment_method'] ?? null),
                 'updated_at' => now(),
             ]);
 
@@ -149,7 +155,9 @@ class AssessmentRoundController extends Controller
             'supervisor_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_end'],
             'is_active' => ['required', 'boolean'],
             'copy_from_round_id' => ['nullable', 'integer', 'exists:assessment_rounds,id'],
+            'assessment_method' => ['nullable', 'string', Rule::in(AssessmentMethodResolver::allowed())],
         ], [
+            'assessment_method.in' => 'วิธีการประเมินที่เลือกไม่ถูกต้อง',
             'name.required' => 'กรุณาระบุชื่อรอบการประเมิน',
             'name.unique' => 'ชื่อรอบการประเมินนี้ถูกใช้แล้ว',
             'self_assess_start.required' => 'กรุณาระบุวันเริ่มการประเมินก่อนเปิดใช้งานรอบ',
@@ -169,6 +177,32 @@ class AssessmentRoundController extends Controller
                 : ($storedYear ?: now()->year + 543));
 
         return $data;
+    }
+
+    /**
+     * The method can change only until the first self-assessment is submitted in the round.
+     */
+    private function methodValues(int $round, ?string $method): array
+    {
+        $current = DB::table('assessment_rounds')->where('id', $round)->value('assessment_method');
+        if ($method === null || $method === $current) {
+            return [];
+        }
+
+        $hasSubmittedAssessment = DB::table('assessments')
+            ->where('assessment_round_id', $round)
+            ->whereNotNull('self_submitted_at')
+            ->exists();
+        if ($hasSubmittedAssessment) {
+            throw ValidationException::withMessages([
+                'assessment_method' => 'ไม่สามารถเปลี่ยนวิธีการประเมินได้ เนื่องจากมีบุคลากรส่งแบบประเมินในรอบนี้แล้ว',
+            ]);
+        }
+
+        return [
+            'assessment_method' => $method,
+            'assessment_method_version' => AssessmentMethodResolver::CURRENT_VERSIONS[$method],
+        ];
     }
 
     private function roundValues(array $data, ?bool $isActive = null): array
