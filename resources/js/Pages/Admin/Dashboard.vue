@@ -9,6 +9,7 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
+import AdminAssessmentMethods from './AdminAssessmentMethods.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -187,6 +188,8 @@ const roleLabelsByKey = {
     dept_head: 'หัวหน้างาน',
     division_head: 'หัวหน้าฝ่าย',
     academic_department_head: 'หัวหน้าภาควิชา',
+    deputy_dean: 'รองคณบดี',
+    assistant_dean: 'ผู้ช่วยคณบดี',
     employee: 'บุคลากร',
     hr: 'งานทรัพยากรบุคคล',
     dean: 'ผู้บริหารคณะ',
@@ -197,6 +200,8 @@ const roleOptions = computed(() => (page.props.roles || [
     { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
     { id: 6, key: 'division_head', label: 'หัวหน้าฝ่าย' },
     { id: 7, key: 'academic_department_head', label: 'หัวหน้าภาควิชา' },
+    { id: 8, key: 'deputy_dean', label: 'รองคณบดี' },
+    { id: 9, key: 'assistant_dean', label: 'ผู้ช่วยคณบดี' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -342,6 +347,7 @@ const assessmentApprovalModule = computed(() => page.props.assessmentApprovalMod
 const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
 const visibleAdminPageIds = new Set([
     'admin-users',
+    'admin-assessment-methods',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -378,6 +384,7 @@ const implementedAdminPages = new Set([
     'emp-progress',
     'emp-idp-detail',
     'admin-users',
+    'admin-assessment-methods',
     'admin-org-structure',
     'admin-dict',
     'admin-idp-tools',
@@ -1776,6 +1783,11 @@ const logout = () => router.post(route('logout'));
                     :support-depts="supportDeptsList"
                     :admin-depts="adminDepts"
                     :worklines="worklines"
+                />
+
+                <AdminAssessmentMethods
+                    v-else-if="activePage === 'admin-assessment-methods'"
+                    :rounds="page.props.assessmentRounds || []"
                 />
 
                 <AdminOrgStructure

@@ -105,7 +105,7 @@ let activitySequence = 0;
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const idpGaps = computed(() => (props.gaps || [])
-  .filter((gap) => gap.requiresIdp && Number(gap.gap) < 0 && ['approved', 'dean_approved'].includes(gap.status || ''))
+  .filter((gap) => gap.requiresIdp && ['approved', 'dean_approved'].includes(gap.status || ''))
   .sort((a, b) => String(a.cd).localeCompare(String(b.cd))));
 const methods = computed(() => props.learningMethods || []);
 const activeTools = computed(() => (props.idpLearningMethods || []).filter((tool) => tool.isActive !== false));

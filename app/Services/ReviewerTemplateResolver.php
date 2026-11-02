@@ -230,6 +230,8 @@ class ReviewerTemplateResolver
             'dept_head' => 'หัวหน้างาน',
             'division_head' => 'หัวหน้าฝ่าย',
             'academic_department_head' => 'หัวหน้าภาควิชา',
+            'deputy_dean' => 'รองคณบดี',
+            'assistant_dean' => 'ผู้ช่วยคณบดี',
             'dean' => 'ผู้บริหารคณะ',
             'hr' => 'งานทรัพยากรบุคคล',
             'admin' => 'ผู้ดูแลระบบ',

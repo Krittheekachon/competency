@@ -105,7 +105,7 @@ const navSections = computed(() => {
             { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
         ],
     }];
-    const isHeadRole = ['dept_head', 'division_head', 'academic_department_head', 'supervisor'].includes(authRoleKey.value);
+    const isHeadRole = ['dept_head', 'division_head', 'academic_department_head', 'supervisor', 'deputy_dean', 'assistant_dean'].includes(authRoleKey.value);
 
     const assignedItems = [
         ...((fcTopicApprovalModule.value.enabled || assessmentApprovalModule.value.enabled)
@@ -443,6 +443,8 @@ const approvalRoleLabel = computed(() => ({
     dept_head: 'หัวหน้างาน',
     division_head: 'หัวหน้าฝ่าย',
     academic_department_head: 'หัวหน้าภาควิชา',
+    deputy_dean: 'รองคณบดี',
+    assistant_dean: 'ผู้ช่วยคณบดี',
 }[authRoleKey.value] || 'ผู้ประเมิน'));
 const supervisorPendingRows = computed(() => supervisorApprovalRows.value.filter((person) =>
     isPendingAssessmentReview(person),
@@ -577,6 +579,7 @@ const approvalDecision = ref(null);
 const approvalDecisionCompetency = ref(null);
 const approvalComment = ref('');
 const reviewerComments = ref({});
+const reviewerIndicatorDrafts = ref({});
 const isSubmittingApprovalDecision = ref(false);
 const allowIdpReview = false;
 const idpPhaseOverrides = ref({});
@@ -796,8 +799,8 @@ const selectedGapRows = computed(() => gapResultRows(selectedGapPerson.value));
 const isCompetencyApproved = (row) => row?.hasAssessment !== false
     && normalizeAssessmentStatus(row.status) === 'approved';
 const selectedGapApprovedRows = computed(() => selectedGapRows.value.filter(isCompetencyApproved));
-const selectedGapFailedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) < 0).length);
-const selectedGapPassedCount = computed(() => selectedGapApprovedRows.value.filter((row) => Number(row.gap) >= 0).length);
+const selectedGapFailedCount = computed(() => selectedGapApprovedRows.value.filter((row) => row.failed).length);
+const selectedGapPassedCount = computed(() => selectedGapApprovedRows.value.filter((row) => !row.failed).length);
 const selectedGapPendingCount = computed(() => selectedGapRows.value.length - selectedGapApprovedRows.value.length);
 const teamGapPage = ref(1);
 const teamGapPageSize = 10;
@@ -822,10 +825,10 @@ const teamHeatmapRows = computed(() => teamMembers.value.map((person) => {
     const completed = resultRows.length > 0 && resultRows.every(isCompetencyApproved);
     const started = resultRows.some((row) => row.hasAssessment || row.lastDraftSavedAt)
         || normalizeAssessmentStatus(person.evalStatus) !== 'draft';
-    const missingCount = completed ? resultRows.filter((row) => Number(row.gap) < 0).length : 0;
+    const missingCount = completed ? resultRows.filter((row) => row.failed).length : 0;
     const failedCompetencies = completed
         ? resultRows
-            .filter((row) => Number(row.gap) < 0)
+            .filter((row) => row.failed)
             .sort((left, right) => Number(left.gap) - Number(right.gap))
         : [];
 
@@ -872,7 +875,7 @@ const paginatedTeamGapRows = computed(() => {
 const competencyResultMeta = (row) => {
     const status = normalizeAssessmentStatus(row?.status);
     if (isCompetencyApproved(row)) {
-        return Number(row.gap) < 0
+        return row.failed
             ? { key: 'failed', label: 'ต้องพัฒนา' }
             : { key: 'passed', label: 'ผ่าน' };
     }
@@ -1028,8 +1031,29 @@ const closeSupervisorCompetencyModal = () => {
     approvalDecisionCompetency.value = null;
 };
 const checkedIndicatorKey = (row, level, index) => `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
-const checkedIndicatorSet = (row) => new Set(row.checkedIndicatorKeys || []);
+const reviewerIndicatorDraftKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${competencyIdentity(row)}`;
+const reviewerCheckedIndicatorKeys = (row) => {
+    if (!row?.canEditScore) return row?.checkedIndicatorKeys || [];
+    const key = reviewerIndicatorDraftKey(row);
+    if (Object.prototype.hasOwnProperty.call(reviewerIndicatorDrafts.value, key)) {
+        return reviewerIndicatorDrafts.value[key];
+    }
+    return row.reviewerCheckedIndicatorKeys || row.checkedIndicatorKeys || [];
+};
+const checkedIndicatorSet = (row) => new Set(reviewerCheckedIndicatorKeys(row));
 const isIndicatorChecked = (row, level, index) => checkedIndicatorSet(row).has(checkedIndicatorKey(row, level, index));
+const toggleReviewerIndicator = (row, level, index) => {
+    if (!row?.canEditScore || !canDecideSupervisorCompetency(row)) return;
+    const draftKey = reviewerIndicatorDraftKey(row);
+    const next = new Set(reviewerCheckedIndicatorKeys(row));
+    const indicatorKey = checkedIndicatorKey(row, level, index);
+    if (next.has(indicatorKey)) next.delete(indicatorKey);
+    else next.add(indicatorKey);
+    reviewerIndicatorDrafts.value = {
+        ...reviewerIndicatorDrafts.value,
+        [draftKey]: [...next],
+    };
+};
 const totalIndicatorCount = (row) => (row.levels || [])
     .reduce((total, level) => total + (level.indicators?.length || 0), 0);
 const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
@@ -1099,6 +1123,9 @@ const submitApprovalDecision = () => {
         user_id: selectedSupervisorApproval.value.db_id,
         competency_id: competency.competencyId || competency.competency_id || competency.id,
         comment,
+        ...(decision === 'approve' && competency.canEditScore
+            ? { checked: reviewerCheckedIndicatorKeys(competency) }
+            : {}),
     }, {
         preserveScroll: true,
         onSuccess: () => {
@@ -1452,7 +1479,7 @@ const logout = () => router.post(route('logout'));
                                             </div>
                                             <span>{{ row.expected }}</span>
                                             <span>{{ isCompetencyApproved(row) ? row.headScore : '-' }}</span>
-                                            <strong :class="isCompetencyApproved(row) ? (Number(row.gap) < 0 ? 'rc' : 'gcc') : ''">{{ isCompetencyApproved(row) ? formatTeamGap(row.gap) : '-' }}</strong>
+                                            <strong :class="isCompetencyApproved(row) ? (row.failed ? 'rc' : 'gcc') : ''">{{ isCompetencyApproved(row) ? formatTeamGap(row.gap) : '-' }}</strong>
                                             <span class="team-result-status" :class="competencyResultMeta(row).key">{{ competencyResultMeta(row).label }}</span>
                                         </div>
                                     </div>
@@ -1906,7 +1933,20 @@ const logout = () => router.post(route('logout'));
                                             </b>
                                         </header>
                                         <div class="detail-indicator-list">
-                                            <div v-for="indicator in level.rows" :key="indicator.index" :class="{ selected: indicator.checked }">
+                                            <div
+                                                v-for="indicator in level.rows"
+                                                :key="indicator.index"
+                                                :class="{ selected: indicator.checked, editable: selectedSupervisorCompetency.canEditScore && canDecideSupervisorCompetency(selectedSupervisorCompetency) }"
+                                                @click="toggleReviewerIndicator(selectedSupervisorCompetency, level, indicator.index)"
+                                            >
+                                                <input
+                                                    v-if="selectedSupervisorCompetency.canEditScore"
+                                                    :checked="indicator.checked"
+                                                    :disabled="!canDecideSupervisorCompetency(selectedSupervisorCompetency)"
+                                                    type="checkbox"
+                                                    @click.stop
+                                                    @change="toggleReviewerIndicator(selectedSupervisorCompetency, level, indicator.index)"
+                                                />
                                                 <span>{{ indicator.checked ? '✓' : '' }}</span>
                                                 <p><strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>{{ indicator.text }}</p>
                                             </div>
@@ -1933,7 +1973,9 @@ const logout = () => router.post(route('logout'));
                                 <footer class="competency-detail-actions">
                                     <span>
                                         {{ canDecideSupervisorCompetency(selectedSupervisorCompetency)
-                                            ? 'ตรวจสอบพฤติกรรมบ่งชี้ก่อนดำเนินการ'
+                                            ? (selectedSupervisorCompetency.canEditScore
+                                                ? 'คุณมีสิทธิ์แก้ผลติ๊ก คะแนนสุดท้ายจะคำนวณจากรายการนี้'
+                                                : 'ตรวจสอบพฤติกรรมบ่งชี้ก่อนดำเนินการ')
                                             : `ดูได้อย่างเดียว · ${competencyApprovalStatus(selectedSupervisorCompetency).label}` }}
                                     </span>
                                     <div v-if="canDecideSupervisorCompetency(selectedSupervisorCompetency)" class="flex g8">

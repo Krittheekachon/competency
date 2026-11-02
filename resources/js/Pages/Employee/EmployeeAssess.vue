@@ -14,6 +14,8 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
+const assessmentMethod = computed(() => String((page.props.activeAssessmentMethod as any)?.method || 'standard'));
+const usesFacultyMethod = computed(() => assessmentMethod.value === 'faculty');
 const assessmentWindow = computed(() => props.assessmentWindow || {});
 const isSelfAssessmentClosed = computed(() => assessmentWindow.value.status === 'closed');
 const assignedCompetencies = computed(() => props.competencies || []);
@@ -377,7 +379,24 @@ const indicatorKey = (level: any, index: number) => `${selectedCompetency.value?
 const selectedCount = (level: any) => (level.indicators || []).filter((_: any, index: number) => checkedIndicators.value[indicatorKey(level, index)]).length;
 const totalIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
 const selectedIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + selectedCount(level), 0));
-const currentScore = computed(() => (selectedIndicators.value * 0.25).toFixed(2));
+const facultyScore = computed(() => {
+  const level = (value: number) => (selectedCompetency.value?.levels || []).find((item: any) => Number(item.lvl) === value);
+  const levelOne = level(1);
+  const levelThree = level(3);
+  const levelFive = level(5);
+  const selectedOne = levelOne ? selectedCount(levelOne) : 0;
+  const selectedThree = levelThree ? selectedCount(levelThree) : 0;
+  const selectedFive = levelFive ? selectedCount(levelFive) : 0;
+
+  if (!selectedOne) return 0;
+  if (selectedOne < Number(levelOne?.indicators?.length || 0)) return 1;
+  if (!selectedThree) return 2;
+  if (selectedThree < Number(levelThree?.indicators?.length || 0)) return 3;
+  return selectedFive >= 2 ? 5 : 4;
+});
+const currentScore = computed(() => usesFacultyMethod.value
+  ? facultyScore.value.toFixed(2)
+  : (selectedIndicators.value * 0.25).toFixed(2));
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
@@ -405,6 +424,7 @@ const flattenedIndicators = computed(() => {
 
 const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
   if (isSelectedCompetencyLocked.value) return false;
+  if (usesFacultyMethod.value) return true;
   const key = indicatorKey(level, indicatorIndex);
   const position = flattenedIndicators.value.findIndex((row) => row.key === key);
   if (position <= 0) return true;
@@ -413,6 +433,7 @@ const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
 
 const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   if (isSelectedCompetencyLocked.value) return;
+  if (usesFacultyMethod.value) return;
   const key = indicatorKey(level, indicatorIndex);
   const position = flattenedIndicators.value.findIndex((row) => row.key === key);
 

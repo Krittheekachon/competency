@@ -341,6 +341,8 @@ const roleOptions = [
   'หัวหน้างาน',
   'หัวหน้าฝ่าย',
   'หัวหน้าภาควิชา',
+  'รองคณบดี',
+  'ผู้ช่วยคณบดี',
   'ผู้บริหารคณะ',
   'งานทรัพยากรบุคคล',
   'ผู้ดูแลระบบ',
@@ -579,6 +581,10 @@ const roleBadge = (role?: string): RoleBadge => {
       return { label: 'หัวหน้าฝ่าย', className: 'bg', style: { background: '#fef3c7', color: '#b45309' } };
     case 'academic_department_head':
       return { label: 'หัวหน้าภาควิชา', className: 'bg', style: { background: '#ecfeff', color: '#0e7490' } };
+    case 'deputy_dean':
+      return { label: 'รองคณบดี', className: 'bg', style: { background: '#fff7ed', color: '#9a3412' } };
+    case 'assistant_dean':
+      return { label: 'ผู้ช่วยคณบดี', className: 'bg', style: { background: '#f5f3ff', color: '#7c3aed' } };
     default:
       return { label: 'บุคลากร', className: 'bgr' };
   }

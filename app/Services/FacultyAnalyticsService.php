@@ -21,6 +21,8 @@ class FacultyAnalyticsService
         'dept_head',
         'division_head',
         'academic_department_head',
+        'deputy_dean',
+        'assistant_dean',
         'hr',
     ];
 

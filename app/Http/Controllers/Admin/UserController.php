@@ -304,6 +304,13 @@ class UserController extends Controller
     {
         $roleKey = $this->normalizeRoleKey($data['r']);
 
+        if (in_array($roleKey, ['deputy_dean', 'assistant_dean'], true)
+            && ! in_array($data['w'] ?? null, ['สายวิชาการ', 'สายงานวิชาการ'], true)) {
+            throw ValidationException::withMessages([
+                'w' => 'รองคณบดีและผู้ช่วยคณบดีต้องเป็นบุคลากรสายวิชาการ',
+            ]);
+        }
+
         if ($roleKey === 'dean' && (
             ! filled($data['w'] ?? null)
             || ! filled($data['d'] ?? null)

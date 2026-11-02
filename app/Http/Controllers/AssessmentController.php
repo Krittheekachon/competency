@@ -6,7 +6,11 @@ use App\Models\Assessment;
 use App\Models\User;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
+use App\Services\AssessmentMethodResolver;
+use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
+use App\Services\FacultyAssessmentScorer;
+use App\Services\FacultyAssessmentPermissionResolver;
 use App\Services\NotificationService;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
@@ -26,6 +30,10 @@ class AssessmentController extends Controller
         private AssessmentRoundSnapshotService $roundSnapshot,
         private \App\Services\AssessmentReadinessService $readiness,
         private PositionTitleResolver $positionTitles,
+        private AssessmentMethodResolver $assessmentMethods,
+        private FacultyAssessmentScorer $facultyScorer,
+        private FacultyAssessmentPermissionResolver $facultyPermissions,
+        private CompetencyGapCalculator $gapCalculator,
     )
     {
     }
@@ -148,6 +156,8 @@ class AssessmentController extends Controller
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
             'comment' => ['nullable', 'string'],
+            'checked' => ['nullable', 'array'],
+            'checked.*' => ['string'],
         ]);
         $this->assessmentRoundWindow->assertSupervisorAssessmentOpen();
         $comment = trim((string) ($data['comment'] ?? ''));
@@ -156,8 +166,17 @@ class AssessmentController extends Controller
         $employee = User::findOrFail((int) $data['user_id']);
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
         $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
+        $competencyType = $this->competencyTypeCode((int) $data['competency_id']);
+        $reviewerCanScore = $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())
+            && $this->facultyPermissions->canScore($request->user(), $employee, $competencyType);
 
-        DB::transaction(function () use ($data, $decision, $request, $comment, $employee): void {
+        if ($reviewerCanScore && ! array_key_exists('checked', $data)) {
+            throw ValidationException::withMessages([
+                'checked' => 'กรุณาตรวจสอบพฤติกรรมบ่งชี้ก่อนอนุมัติคะแนน',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $decision, $request, $comment, $employee, $reviewerCanScore): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -169,13 +188,39 @@ class AssessmentController extends Controller
                     'assessment' => 'ผลการประเมินยังไม่อยู่ในขั้นตอนที่คุณสามารถอนุมัติได้',
                 ]);
             }
+
+            $reviewerScore = null;
+            if ($reviewerCanScore) {
+                $checked = array_values(array_unique($data['checked'] ?? []));
+                $reviewerScore = $this->facultyScorer->scoreForCompetency(
+                    (int) $data['competency_id'],
+                    $checked,
+                );
+
+                foreach ($assessmentIds as $assessmentId) {
+                    $this->replaceReviewerIndicatorResults(
+                        (int) $assessmentId,
+                        (int) $data['competency_id'],
+                        (int) $request->user()->id,
+                        (int) $decision['review_step'],
+                        $checked,
+                    );
+                }
+
+                Assessment::whereIn('id', $assessmentIds)->update([
+                    'score' => $reviewerScore,
+                    'updated_at' => now(),
+                ]);
+            }
+
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
                 (int) $data['competency_id'],
                 (int) $request->user()->id,
                 $decision['review_step'],
                 $comment,
-                'approved'
+                'approved',
+                $reviewerScore,
             );
 
             $this->ensureCompetencyGapsForAssessments(
@@ -445,13 +490,16 @@ class AssessmentController extends Controller
         $submittedStatus = $submit
             ? $this->initialSubmittedStatusForUser($request->user())
             : ($existingStatus === 'revision_required' ? 'revision_required' : 'draft');
+        $actualLevel = $this->assessmentMethods->isFaculty($roundId)
+            ? $this->facultyScorer->scoreForCompetency($competencyId, array_keys($checkedIndicators))
+            : round((float) $data['score'], 2);
         $assessmentAttributes = [
             'user_id' => $userId,
             'competency_id' => $competencyId,
             'assessment_round_id' => $roundId,
         ];
         $assessmentValues = [
-            'score' => $data['score'],
+            'score' => $actualLevel,
             'note' => $data['note'] ?? '',
             'status' => $submittedStatus,
             'last_draft_saved_at' => $savedAt,
@@ -482,8 +530,11 @@ class AssessmentController extends Controller
             $request->user(),
             $competencyId
         );
-        $actualLevel = round((float) $data['score'], 2);
-        $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+        $gapResult = $this->gapCalculator->calculate(
+            $this->assessmentMethods->forRoundId($roundId)['method'],
+            $actualLevel,
+            $expectedLevel,
+        );
 
         DB::table('competency_gaps')->updateOrInsert(
             [
@@ -492,9 +543,9 @@ class AssessmentController extends Controller
             ],
             [
                 'expected_level' => $expectedLevel,
-                'actual_level' => $actualLevel,
-                'gap' => $gap,
-                'requires_idp' => $gap !== null && $gap < 0,
+                'actual_level' => $gapResult['actualLevel'],
+                'gap' => $gapResult['gap'],
+                'requires_idp' => $gapResult['requiresIdp'],
                 'status' => $submittedStatus,
                 'updated_at' => $savedAt,
             ]
@@ -507,24 +558,26 @@ class AssessmentController extends Controller
     {
         $now = now();
         $expectedLevel = $this->expectedLevelResolver->forUserCompetency($employee, $competencyId);
+        $roundId = $this->activeAssessmentRoundId();
+        $assessmentMethod = $this->assessmentMethods->forRoundId($roundId)['method'];
 
         Assessment::query()
             ->whereIn('id', $assessmentIds)
             ->where('competency_id', $competencyId)
             ->where('status', $status)
             ->get(['id', 'score'])
-            ->each(function (Assessment $assessment) use ($competencyId, $expectedLevel, $status, $now): void {
+            ->each(function (Assessment $assessment) use ($competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
                 $actualLevel = round((float) ($assessment->score ?? 0), 2);
-                $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+                $gapResult = $this->gapCalculator->calculate($assessmentMethod, $actualLevel, $expectedLevel);
                 $attributes = [
                     'assessment_id' => $assessment->id,
                     'competency_id' => $competencyId,
                 ];
                 $values = [
                     'expected_level' => $expectedLevel,
-                    'actual_level' => $actualLevel,
-                    'gap' => $gap,
-                    'requires_idp' => $gap !== null && $gap < 0,
+                    'actual_level' => $gapResult['actualLevel'],
+                    'gap' => $gapResult['gap'],
+                    'requires_idp' => $gapResult['requiresIdp'],
                     'status' => $status,
                     'updated_at' => $now,
                 ];
@@ -594,26 +647,31 @@ class AssessmentController extends Controller
         ];
     }
 
-    private function upsertReviewerScore($assessmentIds, int $competencyId, int $reviewerId, int $reviewStep, string $comment, string $status): ?int
+    private function upsertReviewerScore($assessmentIds, int $competencyId, int $reviewerId, int $reviewStep, string $comment, string $status, ?int $score = null): ?int
     {
         $scoreId = null;
         $now = now();
 
         foreach ($assessmentIds as $assessmentId) {
+            $values = [
+                'assessor_role' => 'supervisor_'.$reviewStep,
+                'comment' => $comment === '' ? null : $comment,
+                'status' => $status,
+                'submitted_at' => $now,
+                'updated_at' => $now,
+                'created_at' => $now,
+            ];
+            if ($score !== null) {
+                $values['score'] = $score;
+            }
+
             DB::table('scores')->updateOrInsert(
                 [
                     'assessment_id' => $assessmentId,
                     'competency_id' => $competencyId,
                     'assessor_id' => $reviewerId,
                 ],
-                [
-                    'assessor_role' => 'supervisor_'.$reviewStep,
-                    'comment' => $comment === '' ? null : $comment,
-                    'status' => $status,
-                    'submitted_at' => $now,
-                    'updated_at' => $now,
-                    'created_at' => $now,
-                ]
+                $values
             );
 
             $scoreId ??= (int) DB::table('scores')
@@ -624,6 +682,47 @@ class AssessmentController extends Controller
         }
 
         return $scoreId;
+    }
+
+    private function replaceReviewerIndicatorResults(
+        int $assessmentId,
+        int $competencyId,
+        int $reviewerId,
+        int $reviewStep,
+        array $checked,
+    ): void {
+        DB::table('assessment_reviewer_indicator_results')
+            ->where('assessment_id', $assessmentId)
+            ->where('competency_id', $competencyId)
+            ->where('reviewer_id', $reviewerId)
+            ->delete();
+
+        if ($checked === []) {
+            return;
+        }
+
+        $now = now();
+        DB::table('assessment_reviewer_indicator_results')->insert(array_map(
+            fn (string $indicatorKey): array => [
+                'assessment_id' => $assessmentId,
+                'competency_id' => $competencyId,
+                'reviewer_id' => $reviewerId,
+                'review_step' => $reviewStep,
+                'indicator_key' => $indicatorKey,
+                'is_checked' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            $checked,
+        ));
+    }
+
+    private function competencyTypeCode(int $competencyId): string
+    {
+        return (string) DB::table('competencies')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('competencies.id', $competencyId)
+            ->value('competency_types.code');
     }
 
     private function initialSubmittedStatusForUser($user): string

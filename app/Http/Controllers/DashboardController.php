@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\AssessmentRoundReadinessService;
+use App\Services\AssessmentMethodResolver;
 use App\Services\ExpectedLevelResolver;
 use App\Services\PositionTitleResolver;
 use App\Services\UserOrganizationPresenter;
 use App\Services\FacultyAnalyticsService;
+use App\Services\FacultyAssessmentPermissionResolver;
 use App\Services\ReviewerChainResolver;
 use App\Services\ReviewerTemplateResolver;
 use Carbon\Carbon;
@@ -26,6 +28,8 @@ class DashboardController extends Controller
         'dept_head',
         'division_head',
         'academic_department_head',
+        'deputy_dean',
+        'assistant_dean',
         'manager_dept',
         'hr',
     ];
@@ -68,6 +72,8 @@ class DashboardController extends Controller
         private AssessmentRoundReadinessService $assessmentRoundReadiness,
         private PositionTitleResolver $positionTitles,
         private UserOrganizationPresenter $organizationPresenter,
+        private AssessmentMethodResolver $assessmentMethods,
+        private FacultyAssessmentPermissionResolver $facultyPermissions,
     ) {}
 
     /**
@@ -98,7 +104,7 @@ class DashboardController extends Controller
             ->where('is_active', true)
             ->orderByDesc('year')
             ->orderByDesc('id')
-            ->first(['id', 'name', 'self_assess_start', 'self_assess_end']);
+            ->first(['id', 'name', 'assessment_method', 'assessment_method_version', 'self_assess_start', 'self_assess_end']);
         $activeCycleName = $activeRound?->name ?? 'รอบประเมินปัจจุบัน';
         $today = Carbon::today(config('app.timezone'));
         $selfAssessmentWindow = [
@@ -160,7 +166,7 @@ class DashboardController extends Controller
         $fcTopicApprovalModule = $this->fcTopicApprovalModuleForReviewer($currentUser);
         $assessmentApprovalModule = $this->assessmentApprovalModuleForReviewer($currentUser);
         $reviewerTeamUsers = ($assessmentApprovalModule['enabled'] ?? false)
-            && ! in_array($role, ['supervisor', 'dept_head', 'division_head', 'academic_department_head'], true)
+            && ! in_array($role, ['supervisor', 'dept_head', 'division_head', 'academic_department_head', 'deputy_dean', 'assistant_dean'], true)
             ? $this->dashboardUsersForReviewer($currentUser, ['assessment'])
             : null;
         $selfServicePayload = [
@@ -181,6 +187,15 @@ class DashboardController extends Controller
             'fcTopicApprovalModule' => $fcTopicApprovalModule,
             'assessmentApprovalModule' => $assessmentApprovalModule,
             'reviewerTeamUsers' => $reviewerTeamUsers,
+            'activeAssessmentMethod' => $activeRound ? [
+                'method' => $activeRound->assessment_method,
+                'version' => (int) $activeRound->assessment_method_version,
+                'label' => AssessmentMethodResolver::label($activeRound->assessment_method),
+            ] : [
+                'method' => AssessmentMethodResolver::STANDARD,
+                'version' => 1,
+                'label' => AssessmentMethodResolver::label(AssessmentMethodResolver::STANDARD),
+            ],
         ];
 
         return match ($role) {
@@ -197,6 +212,7 @@ class DashboardController extends Controller
                 'idpLearningMethods' => $this->idpLearningMethods(),
                 'idpDeliveryTypeSettings' => $this->idpDeliveryTypeSettings(),
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
+                'assessmentRounds' => $this->assessmentRoundsPayload(),
             ]),
             'supervisor' => Inertia::render('Super/Dashboard', [
                 ...$selfServicePayload,
@@ -244,6 +260,20 @@ class DashboardController extends Controller
                 ...$selfServicePayload,
                 'users' => $users,
                 'roleKey' => 'academic_department_head',
+                'currentUser' => $this->currentUserPayload($currentUser),
+                'fcTopicApprovalModule' => $fcTopicApprovalModule,
+                'assessmentApprovalModule' => $assessmentApprovalModule,
+                'currentUserCompetencies' => $this->assignedCompetenciesForUser($currentUser),
+                'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
+                'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
+                'idpReviewItems' => $idpReviewItems,
+                'idpProgressReviewItems' => $idpProgressReviewItems,
+                'currentUserApprovedIdpActivities' => $approvedIdpActivities,
+            ]),
+            'deputy_dean', 'assistant_dean' => Inertia::render('Super/Dashboard', [
+                ...$selfServicePayload,
+                'users' => $users,
+                'roleKey' => $role,
                 'currentUser' => $this->currentUserPayload($currentUser),
                 'fcTopicApprovalModule' => $fcTopicApprovalModule,
                 'assessmentApprovalModule' => $assessmentApprovalModule,
@@ -385,6 +415,8 @@ class DashboardController extends Controller
                 'assessment_rounds.id',
                 'assessment_rounds.name',
                 'assessment_rounds.year',
+                'assessment_rounds.assessment_method',
+                'assessment_rounds.assessment_method_version',
                 'assessment_rounds.self_assess_start',
                 'assessment_rounds.self_assess_end',
                 'assessment_rounds.supervisor_assess_end',
@@ -399,11 +431,15 @@ class DashboardController extends Controller
                 'id' => (int) $round->id,
                 'name' => $round->name,
                 'year' => (int) $round->year,
+                'assessmentMethod' => $round->assessment_method,
+                'assessmentMethodVersion' => (int) $round->assessment_method_version,
+                'assessmentMethodLabel' => AssessmentMethodResolver::label($round->assessment_method),
                 'selfAssessStart' => $round->self_assess_start,
                 'selfAssessEnd' => $round->self_assess_end,
                 'supervisorAssessEnd' => $round->supervisor_assess_end,
                 'isActive' => (bool) $round->is_active,
                 'submittedUserCount' => (int) $round->submitted_user_count,
+                'assessmentMethodLocked' => (int) $round->submitted_user_count > 0,
                 'eligibleUserCount' => (int) $eligibleUserCount,
                 'readiness' => $this->assessmentRoundReadiness->check((int) $round->id),
             ])
@@ -585,7 +621,7 @@ class DashboardController extends Controller
             return $users->map(fn (User $user): array => $this->dashboardUserPayload($user));
         }
 
-        if (! in_array($role, ['supervisor', 'dept_head', 'division_head', 'academic_department_head'], true)) {
+        if (! in_array($role, ['supervisor', 'dept_head', 'division_head', 'academic_department_head', 'deputy_dean', 'assistant_dean'], true)) {
             return collect();
         }
 
@@ -1696,7 +1732,7 @@ class DashboardController extends Controller
             ->keyBy('id');
 
         $items = $assignedSteps
-            ->map(function (object $assigned) use ($employees): ?array {
+            ->map(function (object $assigned) use ($employees, $reviewer): ?array {
                 $employee = $employees->get($assigned->user_id);
                 if (! $employee) {
                     return null;
@@ -1705,6 +1741,44 @@ class DashboardController extends Controller
                 $step = (int) $assigned->step_order;
                 $expectedStatus = $this->reviewerChainResolver->pendingStatusForStep($step);
                 $allCompetencies = collect($this->competencyGapsForUser($employee));
+                $assessmentIds = $allCompetencies->pluck('assessmentId')->filter()->unique()->values();
+                $reviewerIndicatorKeys = DB::table('assessment_reviewer_indicator_results')
+                    ->where('reviewer_id', $reviewer->id)
+                    ->whereIn('assessment_id', $assessmentIds)
+                    ->where('is_checked', true)
+                    ->get(['assessment_id', 'indicator_key'])
+                    ->groupBy('assessment_id')
+                    ->map(fn ($rows): array => $rows->pluck('indicator_key')->values()->all());
+                $reviewerScoredAssessmentIds = DB::table('scores')
+                    ->where('assessor_id', $reviewer->id)
+                    ->whereIn('assessment_id', $assessmentIds)
+                    ->whereNotNull('score')
+                    ->pluck('assessment_id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
+                $isFacultyMethod = $this->assessmentMethods->isFaculty($this->activeRoundId());
+                $allCompetencies = $allCompetencies->map(function (array $gap) use (
+                    $employee,
+                    $reviewerIndicatorKeys,
+                    $reviewerScoredAssessmentIds,
+                    $isFacultyMethod,
+                    $reviewer,
+                ): array {
+                    $assessmentId = (int) ($gap['assessmentId'] ?? 0);
+                    $hasReviewerScore = in_array($assessmentId, $reviewerScoredAssessmentIds, true);
+
+                    return [
+                        ...$gap,
+                        'canEditScore' => $isFacultyMethod && $this->facultyPermissions->canScore(
+                            $reviewer,
+                            $employee,
+                            (string) ($gap['t'] ?? ''),
+                        ),
+                        'reviewerCheckedIndicatorKeys' => $hasReviewerScore
+                            ? $reviewerIndicatorKeys->get($assessmentId, [])
+                            : ($gap['checkedIndicatorKeys'] ?? []),
+                    ];
+                });
                 $competencies = $allCompetencies
                     ->filter(fn (array $gap): bool => ($gap['status'] ?? 'draft') === $expectedStatus)
                     ->values()
@@ -2001,6 +2075,10 @@ class DashboardController extends Controller
                 $gapValue = $gap->gap === null && $expected !== null
                     ? round($actual - (float) $expected, 2)
                     : ($gap->gap === null ? null : (float) $gap->gap);
+                $achievementPercentage = $expected !== null && (float) $expected > 0
+                    ? round(($actual / (float) $expected) * 100, 2)
+                    : null;
+                $requiresIdp = (bool) $gap->requires_idp;
 
                 $status = $gap->status === 'dean_approved' ? 'approved' : ($gap->status ?? 'draft');
                 $rejectReviewerName = trim(
@@ -2009,6 +2087,7 @@ class DashboardController extends Controller
                 );
 
                 return [
+                    'assessmentId' => (int) $gap->assessment_id,
                     'id' => (int) $gap->competency_gap_id,
                     'competencyId' => (int) $gap->competency_id,
                     'cd' => $gap->code,
@@ -2019,6 +2098,7 @@ class DashboardController extends Controller
                     'expected' => $expected,
                     'actual' => $actual,
                     'gap' => $gapValue,
+                    'achievementPercentage' => $achievementPercentage,
                     'note' => $gap->note ?? '',
                     'reviewerComment' => $gap->evaluator_comment ?? '',
                     'reviewHistory' => $reviewHistoryByAssessmentCompetency
@@ -2034,8 +2114,11 @@ class DashboardController extends Controller
                     'levels' => $this->competencyLevelsPayload((int) $gap->competency_id),
                     'checkedIndicatorKeys' => $checkedIndicatorKeys,
                     'checkedIndicatorCount' => count($checkedIndicatorKeys),
-                    'requiresIdp' => $gapValue !== null && $gapValue < 0,
-                    'missingIndicators' => $gapValue !== null && $gapValue < 0 && $expected !== null
+                    'requiresIdp' => $requiresIdp,
+                    'developmentRecommendation' => $requiresIdp
+                        ? 'เห็นควรเข้าอบรมพัฒนาทักษะด้านนี้'
+                        : null,
+                    'missingIndicators' => $requiresIdp && $expected !== null
                         ? $this->missingIndicatorsForAssessment(
                             (int) $gap->assessment_id,
                             (int) $gap->competency_id,
@@ -2044,7 +2127,7 @@ class DashboardController extends Controller
                             $checkedIndicatorKeys,
                         )
                         : [],
-                    'missingIndicatorCount' => $gapValue !== null && $gapValue < 0
+                    'missingIndicatorCount' => $requiresIdp && $gapValue !== null
                         ? (int) ceil(abs($gapValue) / 0.25)
                         : 0,
                     'status' => $status,

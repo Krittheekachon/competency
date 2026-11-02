@@ -255,7 +255,7 @@ class NotificationDigestService
 
     private function staffUsers(): Builder
     {
-        return $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head']);
+        return $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head', 'deputy_dean', 'assistant_dean']);
     }
 
     private function usersWithUnmappedPositionCompetencies(): Builder

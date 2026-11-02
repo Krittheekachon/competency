@@ -97,6 +97,16 @@ class User extends Authenticatable
         return $this->hasRole('academic_department_head');
     }
 
+    public function isDeputyDean(): bool
+    {
+        return $this->hasRole('deputy_dean');
+    }
+
+    public function isAssistantDean(): bool
+    {
+        return $this->hasRole('assistant_dean');
+    }
+
     public function isDean(): bool
     {
         return $this->hasRole('dean');

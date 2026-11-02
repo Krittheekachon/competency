@@ -28,6 +28,12 @@ class DivisionHeadRoleTest extends TestCase
                 ) && collect($roles)->contains(
                     fn (array $role): bool => $role['key'] === 'academic_department_head'
                         && $role['label'] === 'หัวหน้าภาควิชา'
+                ) && collect($roles)->contains(
+                    fn (array $role): bool => $role['key'] === 'deputy_dean'
+                        && $role['label'] === 'รองคณบดี'
+                ) && collect($roles)->contains(
+                    fn (array $role): bool => $role['key'] === 'assistant_dean'
+                        && $role['label'] === 'ผู้ช่วยคณบดี'
                 ))
             );
     }
@@ -74,5 +80,28 @@ class DivisionHeadRoleTest extends TestCase
                 ->where('currentUser.r', 'academic_department_head')
                 ->where('activeCycleName', 'รอบประเมินปัจจุบัน')
             );
+    }
+
+    public function test_deputy_and_assistant_dean_roles_use_the_supervisor_dashboard(): void
+    {
+        foreach ([
+            'deputy_dean' => 'รองคณบดี',
+            'assistant_dean' => 'ผู้ช่วยคณบดี',
+        ] as $roleKey => $roleLabel) {
+            $role = DB::table('roles')->where('key', $roleKey)->first();
+
+            $this->assertNotNull($role);
+            $this->assertSame($roleLabel, $role->name_th);
+
+            $user = User::factory()->create(['role_id' => $role->id]);
+
+            $this->actingAs($user)
+                ->get(route('dashboard'))
+                ->assertOk()
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component('Super/Dashboard')
+                    ->where('roleKey', $roleKey)
+                    ->where('currentUser.r', $roleKey));
+        }
     }
 }

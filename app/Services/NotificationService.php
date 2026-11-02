@@ -187,7 +187,7 @@ class NotificationService
 
     public function remindPendingEmployees(): void
     {
-        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head'])
+        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head', 'deputy_dean', 'assistant_dean'])
             ->whereNotExists(function ($query): void {
                 $query->selectRaw('1')
                     ->from('assessments')
