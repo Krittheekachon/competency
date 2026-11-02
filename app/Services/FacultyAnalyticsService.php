@@ -11,6 +11,7 @@ class FacultyAnalyticsService
     public function __construct(
         private PositionTitleResolver $positionTitles,
         private UserOrganizationPresenter $organizationPresenter,
+        private FcSelectionRuleResolver $fcSelectionRules,
     ) {}
 
     private const APPROVED_STATUSES = ['approved', 'dean_approved'];
@@ -217,12 +218,7 @@ class FacultyAnalyticsService
                 ? (int) $employee->position_title_id
                 : ($employee->position_id ? $this->positionTitles->forPositionId((int) $employee->position_id) : null),
         ]);
-        $positionsUsingFcSelection = DB::table('position_fc_selection_rules')
-            ->where('assessment_round_id', $roundId)
-            ->where('required_fc_count', '>', 0)
-            ->pluck('position_title_id')
-            ->map(fn ($id): int => (int) $id)
-            ->flip();
+        $requiredFcCountByUser = $this->fcSelectionRules->requiredCountsForUsers($employees, $roundId);
         $selectedFcByUser = DB::table('fc_topic_selections')
             ->join('fc_topic_selection_items', 'fc_topic_selections.id', '=', 'fc_topic_selection_items.fc_topic_selection_id')
             ->where('fc_topic_selections.assessment_round_id', $roundId)
@@ -234,14 +230,14 @@ class FacultyAnalyticsService
                 ->map(fn ($id): int => (int) $id)
                 ->flip());
 
-        return $assessments->filter(function (object $assessment) use ($positionByUser, $positionsUsingFcSelection, $selectedFcByUser): bool {
+        return $assessments->filter(function (object $assessment) use ($positionByUser, $requiredFcCountByUser, $selectedFcByUser): bool {
             if (! str_starts_with(strtoupper((string) $assessment->competency_type), 'FC')) {
                 return true;
             }
 
             $userId = (int) $assessment->user_id;
             $positionTitleId = $positionByUser->get($userId);
-            if (! $positionTitleId || ! $positionsUsingFcSelection->has($positionTitleId)) {
+            if (! $positionTitleId || $requiredFcCountByUser->get($userId, 0) <= 0) {
                 return true;
             }
 

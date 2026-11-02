@@ -13,6 +13,7 @@ use App\Services\PositionTitleResolver;
 use App\Services\UserOrganizationPresenter;
 use App\Services\FacultyAnalyticsService;
 use App\Services\FacultyAssessmentPermissionResolver;
+use App\Services\FcSelectionRuleResolver;
 use App\Services\ReviewerChainResolver;
 use App\Services\ReviewerTemplateResolver;
 use Carbon\Carbon;
@@ -78,6 +79,7 @@ class DashboardController extends Controller
         private FacultyAssessmentPermissionResolver $facultyPermissions,
         private CompetencyGapCalculator $gapCalculator,
         private AssessmentLevelEvidenceService $levelEvidences,
+        private FcSelectionRuleResolver $fcSelectionRules,
     ) {}
 
     /**
@@ -1135,6 +1137,7 @@ class DashboardController extends Controller
                         'work' => $work->name,
                         'units' => ($supportUnitsByWork[$work->id] ?? collect())
                             ->map(fn (object $unit) => [
+                                'id' => (int) $unit->id,
                                 'key' => $supportUnitContextById['unit:'.$unit->id]['key'],
                                 'name' => $unit->name,
                                 'positions' => ($positionsBySupportUnit[$unit->id] ?? collect())->pluck('name')->values(),
@@ -1303,6 +1306,26 @@ class DashboardController extends Controller
                 ->map(fn ($roundRules) => $roundRules->mapWithKeys(fn (object $rule) => [
                     $rule->position_id => (int) $rule->required_fc_count,
                 ]))
+                ->all()
+            : [];
+
+        // {roundId: {positionId: {supportUnitId: requiredCount}}}
+        $structure['positionFcUnitRules'] = $this->schemaHasTable('position_fc_unit_rules')
+            ? DB::table('position_fc_unit_rules')
+                ->get(['assessment_round_id', 'position_title_id', 'support_unit_id', 'required_fc_count'])
+                ->flatMap(fn (object $rule) => collect($this->positionTitles->positionIds((int) $rule->position_title_id))
+                    ->map(fn (int $positionId): object => (object) [
+                        'assessment_round_id' => $rule->assessment_round_id,
+                        'position_id' => $positionId,
+                        'support_unit_id' => (int) $rule->support_unit_id,
+                        'required_fc_count' => (int) $rule->required_fc_count,
+                    ]))
+                ->groupBy('assessment_round_id')
+                ->map(fn ($roundRules) => $roundRules
+                    ->groupBy('position_id')
+                    ->map(fn ($positionRules) => $positionRules->mapWithKeys(fn (object $rule) => [
+                        $rule->support_unit_id => $rule->required_fc_count,
+                    ])))
                 ->all()
             : [];
 
@@ -1519,10 +1542,7 @@ class DashboardController extends Controller
             ];
         }
 
-        $requiredCount = (int) DB::table('position_fc_selection_rules')
-            ->where('position_title_id', $positionTitleId)
-            ->when($roundId, fn ($query) => $query->where('assessment_round_id', $roundId))
-            ->value('required_fc_count');
+        $requiredCount = $this->fcSelectionRules->requiredCount((int) $positionTitleId, $positionId ?: null, (int) $roundId);
 
         $availableCompetencies = DB::table('position_competencies')
             ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')

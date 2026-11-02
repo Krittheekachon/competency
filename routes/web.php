@@ -151,6 +151,8 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
         Route::post('/hr/position-competencies/copy-round', [HrPositionCompetencyController::class, 'copyFromRound'])->name('hr.position-competencies.copy-round');
         Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
+        Route::put('/hr/position-fc-unit-rules', [HrPositionCompetencyController::class, 'updateFcUnitRule'])->name('hr.position-fc-unit-rules.update');
+        Route::delete('/hr/position-fc-unit-rules', [HrPositionCompetencyController::class, 'destroyFcUnitRule'])->name('hr.position-fc-unit-rules.destroy');
         Route::post('/hr/assessment-rounds', [HrAssessmentRoundController::class, 'store'])->name('hr.assessment-rounds.store');
         Route::put('/hr/assessment-rounds/{round}', [HrAssessmentRoundController::class, 'update'])->name('hr.assessment-rounds.update');
         Route::patch('/hr/assessment-rounds/{round}/activate', [HrAssessmentRoundController::class, 'activate'])->name('hr.assessment-rounds.activate');

@@ -217,5 +217,19 @@ class AssessmentRoundController extends Controller
                 ]);
             });
 
+        DB::table('position_fc_unit_rules')
+            ->where('assessment_round_id', $sourceRoundId)
+            ->get(['position_title_id', 'support_unit_id', 'required_fc_count'])
+            ->each(function (object $rule) use ($targetRoundId, $now): void {
+                DB::table('position_fc_unit_rules')->insertOrIgnore([
+                    'assessment_round_id' => $targetRoundId,
+                    'position_title_id' => $rule->position_title_id,
+                    'support_unit_id' => $rule->support_unit_id,
+                    'required_fc_count' => $rule->required_fc_count,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            });
+
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
 use App\Services\NotificationService;
+use App\Services\FcSelectionRuleResolver;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,7 @@ class FcTopicSelectionController extends Controller
         private AssessmentRoundSnapshotService $roundSnapshot,
         private NotificationService $notifications,
         private PositionTitleResolver $positionTitles,
+        private FcSelectionRuleResolver $fcSelectionRules,
     )
     {
     }
@@ -55,7 +57,11 @@ class FcTopicSelectionController extends Controller
             'competency_ids.*' => ['integer', 'exists:competencies,id'],
         ]);
 
-        $requiredCount = $this->requiredFcCount($positionTitleId, $roundId);
+        $requiredCount = $this->fcSelectionRules->requiredCount(
+            $positionTitleId,
+            $user->position_id ? (int) $user->position_id : null,
+            $roundId,
+        );
         if ($requiredCount <= 0) {
             throw ValidationException::withMessages([
                 'competency_ids' => 'ตำแหน่งนี้ยังไม่ได้กำหนดจำนวน FC ที่ต้องเลือก',
@@ -137,14 +143,6 @@ class FcTopicSelectionController extends Controller
         $this->notifications->notifyFcTopicSelectionSubmitted($user, $selectionId);
 
         return back()->with('success', 'ส่งหัวข้อ FC ให้หัวหน้า 1 อนุมัติแล้ว');
-    }
-
-    private function requiredFcCount(int $positionTitleId, int $roundId): int
-    {
-        return (int) DB::table('position_fc_selection_rules')
-            ->where('position_title_id', $positionTitleId)
-            ->where('assessment_round_id', $roundId)
-            ->value('required_fc_count');
     }
 
     private function firstReviewerId($user): ?int

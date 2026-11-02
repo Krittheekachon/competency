@@ -39,6 +39,12 @@ class DemoFacultyAssessmentSeeder extends Seeder
             ]);
 
             $support = $this->organization('สายสนับสนุน', 'งานทดสอบสนับสนุน', 'นักวิชาการคอมพิวเตอร์', 'ชำนาญการ');
+            // Support staff sit in a unit so HR can try unit-specific FC counts.
+            $departmentId = $this->upsertAndGetId('support_departments', ['name' => 'ฝ่ายทดสอบวิธีคณะ'], []);
+            $workId = $this->upsertAndGetId('support_works', ['support_department_id' => $departmentId, 'name' => 'งานทดสอบสนับสนุน'], []);
+            $unitId = $this->upsertAndGetId('support_units', ['support_work_id' => $workId, 'name' => 'หน่วยระบบสารสนเทศ'], []);
+            $this->upsertAndGetId('support_units', ['support_work_id' => $workId, 'name' => 'หน่วยบริการการศึกษา'], []);
+            DB::table('positions')->where('id', $support['positionId'])->update(['support_unit_id' => $unitId]);
             $academic = $this->organization('สายวิชาการ', 'ภาควิชาทดสอบ', 'อาจารย์', 'ผู้ช่วยศาสตราจารย์');
 
             $cc1 = $this->competency('CC', 'CC-F01', 'การบริการที่ดี');

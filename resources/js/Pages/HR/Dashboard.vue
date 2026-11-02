@@ -61,6 +61,10 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    positionFcUnitRules: {
+        type: Object,
+        default: () => ({}),
+    },
     levelsByWorkline: {
         type: Object,
         default: () => ({}),
@@ -239,6 +243,7 @@ const supportGlobalPositions = computed(() => uniqueSortedPositions(
 const supportUnitScopes = computed(() => Object.entries(props.supportOrg || {}).flatMap(([division, works]) =>
     (works || []).flatMap((work) => (work.units || []).map((unit) => ({
         key: unit.key || [division, work.work, unit.name].join('|||'),
+        unitId: unit.id || null,
         label: unit.name,
         jobFamilyName: work.work,
         positions: uniqueSortedPositions([
@@ -346,6 +351,27 @@ const fcSelectionRuleError = computed(() => {
     }
     return page.props.errors?.required_fc_count || '';
 });
+// Support units may override how many FC topics the position must pick; the FC list stays per position.
+const selectedUnitId = computed(() => (isSupportWorkline.value ? Number(selectedScope.value?.unitId || 0) || null : null));
+const savedUnitRequiredFcCount = computed(() => {
+    const value = props.positionFcUnitRules?.[selectedConfigRoundId.value]?.[currentPositionId.value]?.[selectedUnitId.value];
+    return value === undefined || value === null ? null : Number(value);
+});
+const hasUnitFcRule = computed(() => savedUnitRequiredFcCount.value !== null);
+const unitRequiredFcCount = ref(0);
+const unitFcRuleError = computed(() => {
+    const value = Number(unitRequiredFcCount.value || 0);
+    if (value < 0) return 'จำนวน FC ต้องไม่น้อยกว่า 0';
+    if (value > assignedFcCompetencyCount.value) return `กำหนดได้สูงสุด ${assignedFcCompetencyCount.value} ข้อ`;
+    return page.props.errors?.unit_required_fc_count || '';
+});
+const unitFcRuleDisabled = computed(() => (
+    !selectedConfigRoundId.value
+    || !currentPositionId.value
+    || !selectedUnitId.value
+    || assignedFcCompetencyCount.value === 0
+    || Boolean(unitFcRuleError.value)
+));
 const fcSelectionRuleDisabled = computed(() => (
     !selectedConfigRoundId.value
     || !currentPositionId.value
@@ -425,6 +451,9 @@ watch(positionOptions, (next) => {
 
 watch([currentPositionId, savedRequiredFcCount], () => {
     requiredFcCount.value = savedRequiredFcCount.value;
+}, { immediate: true });
+watch([currentPositionId, selectedUnitId, savedUnitRequiredFcCount], () => {
+    unitRequiredFcCount.value = savedUnitRequiredFcCount.value ?? savedRequiredFcCount.value;
 }, { immediate: true });
 
 const openModal = (modal) => {
@@ -576,6 +605,26 @@ const saveFcSelectionRule = () => {
         assessment_round_id: selectedConfigRoundId.value,
         required_fc_count: normalizedRequiredFcCount.value,
     }, {
+        preserveScroll: true,
+    });
+};
+
+const unitFcRulePayload = () => ({
+    position_id: currentPositionId.value,
+    assessment_round_id: selectedConfigRoundId.value,
+    support_unit_id: selectedUnitId.value,
+});
+const saveUnitFcRule = () => {
+    if (unitFcRuleDisabled.value) return;
+    router.put(route('hr.position-fc-unit-rules.update'), {
+        ...unitFcRulePayload(),
+        required_fc_count: Number(unitRequiredFcCount.value || 0),
+    }, { preserveScroll: true });
+};
+const resetUnitFcRule = () => {
+    if (!hasUnitFcRule.value) return;
+    router.delete(route('hr.position-fc-unit-rules.destroy'), {
+        data: unitFcRulePayload(),
         preserveScroll: true,
     });
 };
@@ -883,6 +932,34 @@ const formatWeight = (weight) => {
                             <div v-else class="position-card-sub fc-rule-message">
                                 บุคลากรเลือก {{ normalizedRequiredFcCount }} ข้อจาก FC {{ assignedFcCompetencyCount }} ข้อ
                                 แล้วส่งให้ผู้ประเมินลำดับแรกอนุมัติ · กำหนด 0 เพื่อไม่ใช้ขั้นตอนนี้
+                            </div>
+
+                            <div v-if="selectedUnitId && currentPositionId" class="fc-unit-rule">
+                                <div class="position-card-label">เฉพาะ{{ String(selectedScope?.label || '').startsWith('หน่วย') ? selectedScope?.label : `หน่วย${selectedScope?.label || ''}` }}</div>
+                                <div class="fc-rule-control fc-unit-rule-control">
+                                    <input
+                                        v-model.number="unitRequiredFcCount"
+                                        class="inp fc-rule-input"
+                                        type="number"
+                                        min="0"
+                                        :max="assignedFcCompetencyCount"
+                                        :disabled="!selectedConfigRoundId || assignedFcCompetencyCount === 0"
+                                    />
+                                    <button class="btn btn-p btn-sm" type="button" :disabled="unitFcRuleDisabled" @click="saveUnitFcRule">
+                                        บันทึก
+                                    </button>
+                                    <button v-if="hasUnitFcRule" class="btn btn-s btn-sm" type="button" @click="resetUnitFcRule">
+                                        ใช้ค่าตามตำแหน่ง
+                                    </button>
+                                </div>
+                                <div v-if="unitFcRuleError" class="position-card-sub fc-rule-message is-warning">
+                                    {{ unitFcRuleError }}
+                                </div>
+                                <div v-else class="position-card-sub fc-rule-message">
+                                    {{ hasUnitFcRule
+                                        ? `หน่วยนี้ใช้ ${savedUnitRequiredFcCount} ข้อ แทนค่าตามตำแหน่ง (${savedRequiredFcCount} ข้อ)`
+                                        : `ยังไม่ได้กำหนด หน่วยนี้ใช้ค่าตามตำแหน่ง ${savedRequiredFcCount} ข้อ` }}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1918,6 +1995,16 @@ const formatWeight = (weight) => {
     min-height: 38px;
     font-size: 18px;
     font-weight: 800;
+}
+
+.fc-unit-rule {
+    margin-top: 12px;
+    border-top: 1px dashed #d9dee5;
+    padding-top: 10px;
+}
+
+.fc-unit-rule-control {
+    grid-template-columns: minmax(80px, 1fr) auto auto;
 }
 
 .fc-rule-message {

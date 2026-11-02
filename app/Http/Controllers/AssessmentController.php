@@ -12,6 +12,7 @@ use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
 use App\Services\FacultyAssessmentScorer;
 use App\Services\FacultyAssessmentPermissionResolver;
+use App\Services\FcSelectionRuleResolver;
 use App\Services\NotificationService;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
@@ -36,6 +37,7 @@ class AssessmentController extends Controller
         private FacultyAssessmentPermissionResolver $facultyPermissions,
         private CompetencyGapCalculator $gapCalculator,
         private AssessmentLevelEvidenceService $levelEvidences,
+        private FcSelectionRuleResolver $fcSelectionRules,
     )
     {
     }
@@ -488,10 +490,11 @@ class AssessmentController extends Controller
             return;
         }
 
-        $requiredCount = (int) DB::table('position_fc_selection_rules')
-            ->where('position_title_id', $positionTitleId)
-            ->where('assessment_round_id', $roundId)
-            ->value('required_fc_count');
+        $requiredCount = $this->fcSelectionRules->requiredCount(
+            (int) $positionTitleId,
+            $user->position_id ? (int) $user->position_id : null,
+            $roundId,
+        );
 
         if ($requiredCount <= 0) {
             return;
