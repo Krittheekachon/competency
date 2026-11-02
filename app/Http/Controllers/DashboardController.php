@@ -13,6 +13,7 @@ use App\Services\PositionTitleResolver;
 use App\Services\UserOrganizationPresenter;
 use App\Services\FacultyAnalyticsService;
 use App\Services\FacultyAssessmentPermissionResolver;
+use App\Services\FacultyIdpPlanService;
 use App\Services\FcSelectionRuleResolver;
 use App\Services\ReviewerChainResolver;
 use App\Services\ReviewerTemplateResolver;
@@ -80,6 +81,7 @@ class DashboardController extends Controller
         private CompetencyGapCalculator $gapCalculator,
         private AssessmentLevelEvidenceService $levelEvidences,
         private FcSelectionRuleResolver $fcSelectionRules,
+        private FacultyIdpPlanService $facultyIdpPlans,
     ) {}
 
     /**
@@ -2148,6 +2150,7 @@ class DashboardController extends Controller
                     'selfScore' => $gap->score === null ? null : (float) $gap->score,
                     'gap' => $gapValue,
                     'achievementPercentage' => $achievementPercentage,
+                    'assessmentMethod' => $assessmentMethod,
                     'note' => $gap->note ?? '',
                     'reviewerComment' => $gap->evaluator_comment ?? '',
                     'reviewHistory' => $reviewHistoryByAssessmentCompetency
@@ -2512,6 +2515,45 @@ class DashboardController extends Controller
         ];
     }
 
+    /**
+     * Faculty-method plan items cover several competencies; label them as one plan instead of
+     * their anchor competency. Progress rows for covered gaps without their own item are dropped.
+     */
+    private function withFacultyPlanLabels(array $rows, string $itemKey, bool $hideCoveredGapsWithoutItem = false): array
+    {
+        $labels = $this->facultyIdpPlans->labelsForItems(
+            collect($rows)->pluck($itemKey)->filter(fn ($id): bool => is_numeric($id))->map(fn ($id): int => (int) $id)->unique()->values()
+        );
+        if ($labels->isEmpty()) {
+            return $rows;
+        }
+
+        $coveredGapIds = $hideCoveredGapsWithoutItem
+            ? DB::table('idp_item_competency_gaps')
+                ->whereIn('idp_item_id', $labels->keys())
+                ->pluck('competency_gap_id')
+                ->map(fn ($id): int => (int) $id)
+                ->flip()
+            : collect();
+
+        return collect($rows)
+            ->reject(fn (array $row): bool => $hideCoveredGapsWithoutItem
+                && empty($row[$itemKey])
+                && $coveredGapIds->has((int) ($row['competencyGapId'] ?? 0)))
+            ->map(function (array $row) use ($labels, $itemKey): array {
+                $label = $labels->get((int) ($row[$itemKey] ?? 0));
+
+                return $label ? [
+                    ...$row,
+                    'competencyCode' => $label['code'],
+                    'competencyName' => $label['name'],
+                    'planCompetencies' => $label['competencies'],
+                ] : $row;
+            })
+            ->values()
+            ->all();
+    }
+
     private function idpReviewItemsForReviewer(User $reviewer, ?int $assessmentRoundId): array
     {
         $items = DB::table('idp_items')
@@ -2608,7 +2650,7 @@ class DashboardController extends Controller
                 return [$item->assessment_round_id.':'.$item->owner_id => $this->reviewerChainPayloadForUser($owner, 'idp')];
             });
 
-        return $items->map(function (object $item) use ($activities, $history, $reviewer, $reviewerStepsByOwner, $owners): array {
+        return $this->withFacultyPlanLabels($items->map(function (object $item) use ($activities, $history, $reviewer, $reviewerStepsByOwner, $owners): array {
             $reviewerSteps = collect($reviewerStepsByOwner->get($item->assessment_round_id.':'.$item->owner_id, []));
             $owner = $owners->get((int) $item->owner_id);
             $currentReviewer = $reviewerSteps->firstWhere('step', (int) $item->current_review_step);
@@ -2666,7 +2708,7 @@ class DashboardController extends Controller
                     ->values()
                     ->all(),
             ];
-        })->values()->all();
+        })->values()->all(), 'id');
     }
 
     private function idpActivityProgressReviewItems(
@@ -2788,7 +2830,7 @@ class DashboardController extends Controller
                 return [$item->assessment_round_id.':'.$item->user_id => $this->reviewerChainPayloadForUser($owner, 'idp')];
             });
 
-        return $items->map(function (object $item) use ($assignments, $activities, $completionIds, $history, $reviewerStepsByOwner, $visibleUserIds, $owners): array {
+        return $this->withFacultyPlanLabels($items->map(function (object $item) use ($assignments, $activities, $completionIds, $history, $reviewerStepsByOwner, $visibleUserIds, $owners): array {
             $itemId = $item->item_id ? (int) $item->item_id : null;
             $planApproved = $item->plan_status === 'approved';
             $completionId = $itemId ? ($completionIds[$itemId] ?? null) : null;
@@ -2863,7 +2905,7 @@ class DashboardController extends Controller
 
             return [$left['dueDate'] ?: '9999-12-31', $left['userName'], $left['competencyCode']]
                 <=> [$right['dueDate'] ?: '9999-12-31', $right['userName'], $right['competencyCode']];
-        })->values()->all();
+        })->values()->all(), 'itemId', hideCoveredGapsWithoutItem: true);
     }
 
     private function idpSchedulePayload(array $activities, string $completionStatus, ?string $submittedAt): array
@@ -2954,7 +2996,7 @@ class DashboardController extends Controller
         );
         $progressByActivity = collect($progress)->flatten(1)->keyBy('id');
 
-        return $activityRows->map(function (object $activity) use ($progressByActivity): array {
+        return $this->withFacultyPlanLabels($activityRows->map(function (object $activity) use ($progressByActivity): array {
             $activityProgress = $progressByActivity[(int) $activity->id] ?? [];
 
             return [
@@ -2978,7 +3020,7 @@ class DashboardController extends Controller
                 'updates' => $activityProgress['updates'] ?? [],
                 'completion' => $activityProgress['completion'] ?? null,
             ];
-        })->values()->all();
+        })->values()->all(), 'idpItemId');
     }
 
     private function progressActivitiesForItems(array $itemIds, bool $includeDrafts): array

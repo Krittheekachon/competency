@@ -369,10 +369,17 @@ class FacultyAnalyticsService
             return collect();
         }
 
+        // Faculty plan items cover extra gaps through idp_item_competency_gaps.
+        $coveredItems = DB::table('idp_item_competency_gaps')
+            ->join('idp_items', 'idp_item_competency_gaps.idp_item_id', '=', 'idp_items.id')
+            ->whereIn('idp_item_competency_gaps.competency_gap_id', $gapIds)
+            ->get(['idp_items.id', 'idp_item_competency_gaps.competency_gap_id', 'idp_items.status']);
         $items = DB::table('idp_items')
             ->whereIn('competency_gap_id', $gapIds)
-            ->orderBy('id')
             ->get(['id', 'competency_gap_id', 'status'])
+            ->concat($coveredItems)
+            ->unique(fn (object $row): string => $row->id.':'.$row->competency_gap_id)
+            ->sortBy('id')
             ->groupBy('competency_gap_id')
             ->map(fn (Collection $rows): object => $rows->last());
         $itemIds = $items->pluck('id')->map(fn ($id): int => (int) $id)->all();

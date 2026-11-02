@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
+use App\Services\FacultyIdpPlanService;
 use App\Services\IdpItemReviewWorkflow;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,7 @@ class IdpController extends Controller
         private readonly IdpItemReviewWorkflow $reviewWorkflow,
         private readonly AssessmentRoundWindow $assessmentRoundWindow,
         private readonly NotificationService $notifications,
+        private readonly FacultyIdpPlanService $facultyPlans,
     ) {
     }
 
@@ -106,6 +108,24 @@ class IdpController extends Controller
         }
         $roundId = (int) ($roundIds->first() ?: $this->assessmentRoundWindow->activeRound()->id);
 
+        // Faculty rounds keep one plan per person covering every failed competency; the server picks
+        // the anchor gap and the covered gaps, never the client.
+        $planGaps = null;
+        if ($this->facultyPlans->isFacultyRound($roundId)) {
+            if ($items->count() > 1) {
+                throw ValidationException::withMessages([
+                    'items' => 'วิธีประเมินของคณะจัดทำ IDP เป็นแผนเดียวต่อคน',
+                ]);
+            }
+
+            $planGaps = $this->facultyPlans->failedGaps((int) auth()->id(), $roundId);
+            if ($items->isNotEmpty()) {
+                $anchorGapId = $this->facultyPlanAnchorGapId($roundId, $planGaps, (int) $items->first()['competencyGapId']);
+                $items = $items->map(fn (array $item): array => [...$item, 'competencyGapId' => $anchorGapId]);
+                $validGaps = $planGaps;
+            }
+        }
+
         if ($status === 'submitted' && $items->isEmpty()) {
             throw ValidationException::withMessages([
                 'items' => 'ไม่มีรายการ Gap ที่ต้องจัดทำ IDP',
@@ -161,6 +181,7 @@ class IdpController extends Controller
             $toolsById,
             $catalogCompetencies,
             $catalogsById,
+            $planGaps,
         );
         $owner = DB::table('users')
             ->where('id', auth()->id())
@@ -168,7 +189,7 @@ class IdpController extends Controller
         $owner->assessment_round_id = $roundId;
 
         $submittedItemIds = [];
-        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId, &$submittedItemIds): void {
+        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId, $planGaps, &$submittedItemIds): void {
             $idpId = $this->currentUserIdpId($roundId);
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
@@ -193,7 +214,9 @@ class IdpController extends Controller
                         ? 'revision_required'
                         : 'draft');
                 $values = [
-                    'behavior_key' => 'competency-gap:'.$item['competencyGapId'],
+                    'behavior_key' => $planGaps !== null
+                        ? FacultyIdpPlanService::BEHAVIOR_KEY
+                        : 'competency-gap:'.$item['competencyGapId'],
                     'behavior_description' => null,
                     'goal' => $item['goal'] ?? null,
                     'success_criteria' => $item['successCriteria'] ?? null,
@@ -230,6 +253,10 @@ class IdpController extends Controller
                         ...$values,
                         'created_at' => now(),
                     ]);
+                }
+
+                if ($planGaps !== null) {
+                    $this->facultyPlans->syncCompetencyGaps($itemId, $planGaps->keys());
                 }
 
                 if ($isSubmission) {
@@ -368,6 +395,7 @@ class IdpController extends Controller
         Collection $toolsById,
         Collection $catalogCompetencies,
         Collection $catalogsById,
+        ?Collection $planGaps = null,
     ): void {
         foreach ($items as $itemIndex => $item) {
             $activities = collect($item['activities'] ?? [])->values();
@@ -380,13 +408,16 @@ class IdpController extends Controller
 
             if ($status === 'submitted' && round((float) $activities->sum('weightPercent'), 2) !== 100.0) {
                 throw ValidationException::withMessages([
-                    "items.$itemIndex.activities" => 'น้ำหนักกิจกรรมของแต่ละสมรรถนะต้องรวม 100%',
+                    "items.$itemIndex.activities" => $planGaps !== null
+                        ? 'น้ำหนักกิจกรรมในแผนต้องรวม 100%'
+                        : 'น้ำหนักกิจกรรมของแต่ละสมรรถนะต้องรวม 100%',
                 ]);
             }
 
-            $gap = $validGaps[$item['competencyGapId']] ?? null;
-            $competencyId = (int) ($gap->competency_id ?? 0);
-            $expectedLevel = (int) ($gap->expected_level ?? 0);
+            // A faculty plan accepts Formal courses linked to any competency it covers.
+            $coveredGaps = $planGaps ?? collect([$validGaps[$item['competencyGapId']] ?? null])->filter();
+            $competencyIds = $coveredGaps->pluck('competency_id')->map(fn ($id): int => (int) $id)->values();
+            $expectedLevels = $coveredGaps->pluck('expected_level')->map(fn ($level): int => (int) $level)->values();
 
             foreach ($activities as $activityIndex => $activity) {
                 $prefix = "items.$itemIndex.activities.$activityIndex";
@@ -433,13 +464,13 @@ class IdpController extends Controller
                             "$prefix.learningCatalogId" => 'กรุณาเลือกหลักสูตรจาก Learning Catalog',
                         ]);
                     }
-                    if ($catalogId && (! $catalog || ! ($catalogCompetencies[$catalogId] ?? collect())->contains($competencyId))) {
+                    if ($catalogId && (! $catalog || ($catalogCompetencies[$catalogId] ?? collect())->intersect($competencyIds)->isEmpty())) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่ได้ผูกกับสมรรถนะที่ต้องพัฒนา',
                         ]);
                     }
                     $catalogExpectedLevels = $this->decodeExpectedLevels($catalog?->expected_levels ?? null);
-                    if ($catalogId && $catalogExpectedLevels && ! in_array($expectedLevel, $catalogExpectedLevels, true)) {
+                    if ($catalogId && $catalogExpectedLevels && $expectedLevels->intersect($catalogExpectedLevels)->isEmpty()) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่รองรับระดับความคาดหวังของผู้ใช้',
                         ]);
@@ -831,6 +862,23 @@ class IdpController extends Controller
             'formal-learning' => 'formal',
             default => '',
         };
+    }
+
+    private function facultyPlanAnchorGapId(int $roundId, Collection $planGaps, int $requestedGapId): int
+    {
+        $existingAnchor = (int) DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idps.user_id', auth()->id())
+            ->where('idps.assessment_round_id', $roundId)
+            ->where('idp_items.behavior_key', FacultyIdpPlanService::BEHAVIOR_KEY)
+            ->orderByDesc('idp_items.id')
+            ->value('idp_items.competency_gap_id');
+
+        if ($existingAnchor) {
+            return $existingAnchor;
+        }
+
+        return $planGaps->has($requestedGapId) ? $requestedGapId : (int) $planGaps->keys()->first();
     }
 
     private function validGapsForCurrentUser(Collection $gapIds): Collection

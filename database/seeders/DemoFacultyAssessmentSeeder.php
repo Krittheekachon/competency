@@ -71,9 +71,11 @@ class DemoFacultyAssessmentSeeder extends Seeder
             $supportStaff = $this->user('support.faculty@test.com', 'บุคลากรสายสนับสนุน ทดสอบ', 'employee', $support);
             $academicStaff = $this->user('academic.faculty@test.com', 'อาจารย์ ทดสอบ', 'employee', $academic);
 
-            $this->chain($supportStaff, [$deputy, $assistant]);
-            $this->chain($academicStaff, [$academicHead, $dean]);
-            $this->chain($deputy, [$academicHead, $dean]);
+            foreach (['assessment', 'idp'] as $chainType) {
+                $this->chain($supportStaff, [$deputy, $assistant], $chainType);
+                $this->chain($academicStaff, [$academicHead, $dean], $chainType);
+                $this->chain($deputy, [$academicHead, $dean], $chainType);
+            }
         });
     }
 
@@ -160,13 +162,13 @@ class DemoFacultyAssessmentSeeder extends Seeder
         ]);
     }
 
-    private function chain(int $userId, array $reviewerIds): void
+    private function chain(int $userId, array $reviewerIds, string $chainType): void
     {
-        DB::table('user_reviewer_steps')->where('user_id', $userId)->where('chain_type', 'assessment')->delete();
+        DB::table('user_reviewer_steps')->where('user_id', $userId)->where('chain_type', $chainType)->delete();
         foreach (array_values($reviewerIds) as $index => $reviewerId) {
             DB::table('user_reviewer_steps')->insert([
                 'user_id' => $userId,
-                'chain_type' => 'assessment',
+                'chain_type' => $chainType,
                 'step_order' => $index + 1,
                 'reviewer_id' => $reviewerId,
                 'created_at' => now(),
