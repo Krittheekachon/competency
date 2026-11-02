@@ -321,6 +321,7 @@ const workflowStatusClass = (key) => ({
     self_pending: 'bgr',
     pending_review: 'by',
     revision_required: 'br',
+    evidence_required: 'by',
     approved: 'bg',
 }[key] || 'bgr');
 const fallbackWorkflowFor = (person, row) => {
@@ -337,6 +338,9 @@ const fallbackWorkflowFor = (person, row) => {
     } else if (status === 'revision_required') {
         key = 'revision_required';
         label = row?.rejectReviewerName ? `ถูกส่งกลับโดย ${row.rejectReviewerName}` : 'ถูกส่งกลับแก้ไข';
+    } else if (status === 'evidence_required') {
+        key = 'evidence_required';
+        label = 'รอบุคลากรแนบหลักฐานระดับ 5';
     } else if (status === 'approved') {
         key = 'approved';
         label = 'ผ่านครบทุกลำดับ';
@@ -760,6 +764,8 @@ const gapResultRows = (person) => {
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                rejectComment: row.rejectComment || '',
+                reviewHistory: row.reviewHistory || [],
                 canEditScore: Boolean(row.canEditScore),
                 reviewerCheckedIndicatorKeys: row.reviewerCheckedIndicatorKeys || null,
                 levelEvidences: row.levelEvidences || [],
@@ -887,6 +893,7 @@ const competencyResultMeta = (row) => {
             : { key: 'passed', label: 'ผ่าน' };
     }
     if (status === 'revision_required') return { key: 'revision', label: 'ส่งกลับแก้ไข' };
+    if (status === 'evidence_required') return { key: 'pending', label: 'รอแนบหลักฐาน' };
     if (status === 'draft') return { key: 'not-started', label: row?.lastDraftSavedAt ? 'บันทึกร่างแล้ว' : 'ยังไม่เริ่ม' };
     return { key: 'pending', label: 'อยู่ระหว่างตรวจ' };
 };
@@ -1937,6 +1944,14 @@ const logout = () => router.post(route('logout'));
                                         </div>
                                     </details>
 
+                                    <section
+                                        v-if="selectedSupervisorCompetency.rejectComment && canDecideSupervisorCompetency(selectedSupervisorCompetency)"
+                                        class="approval-comment-box returned-for-review"
+                                    >
+                                        <div class="fs12 fw8">ส่งกลับให้ประเมินใหม่โดย {{ selectedSupervisorCompetency.rejectReviewerName || 'ผู้พิจารณาลำดับถัดไป' }}</div>
+                                        <div>{{ selectedSupervisorCompetency.rejectComment }}</div>
+                                    </section>
+
                                     <section v-if="selectedSupervisorCompetency.levelEvidences?.length" class="approval-comment-box">
                                         <div class="fs12 fw8">หลักฐานประกอบระดับ 5 ({{ selectedSupervisorCompetency.levelEvidences.length }} รายการ)</div>
                                         <ul class="level-evidence-list">
@@ -2215,6 +2230,7 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.returned-for-review { border-color: #fecaca; background: #fef2f2; }
 .level-evidence-list { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
 .level-evidence-list li { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .level-evidence-list a { min-width: 0; overflow: hidden; color: var(--blue); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }

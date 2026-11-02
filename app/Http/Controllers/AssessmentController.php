@@ -173,6 +173,7 @@ class AssessmentController extends Controller
         $competencyType = $this->competencyTypeCode((int) $data['competency_id']);
         $reviewerCanScore = $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())
             && $this->facultyPermissions->canScore($request->user(), $employee, $competencyType);
+        $evidenceRequested = false;
 
         if ($reviewerCanScore && ! array_key_exists('checked', $data)) {
             throw ValidationException::withMessages([
@@ -180,7 +181,7 @@ class AssessmentController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($data, $decision, $request, $comment, $employee, $reviewerCanScore): void {
+        DB::transaction(function () use ($data, $decision, $request, $comment, $employee, $reviewerCanScore, &$evidenceRequested): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -201,16 +202,6 @@ class AssessmentController extends Controller
                     $checked,
                 );
 
-                if ($reviewerScore >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
-                    && $assessmentIds->contains(fn ($assessmentId): bool => ! $this->levelEvidences->existsFor(
-                        (int) $assessmentId,
-                        (int) $data['competency_id'],
-                    ))) {
-                    throw ValidationException::withMessages([
-                        'checked' => 'ผลระดับ 5 ต้องมีหลักฐาน แต่บุคลากรยังไม่ได้แนบ กรุณาส่งกลับให้บุคลากรแนบหลักฐานก่อน',
-                    ]);
-                }
-
                 foreach ($assessmentIds as $assessmentId) {
                     $this->replaceReviewerIndicatorResults(
                         (int) $assessmentId,
@@ -220,6 +211,18 @@ class AssessmentController extends Controller
                         $checked,
                     );
                 }
+
+                $evidenceRequested = $reviewerScore >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
+                    && $assessmentIds->contains(fn ($assessmentId): bool => ! $this->levelEvidences->existsFor(
+                        (int) $assessmentId,
+                        (int) $data['competency_id'],
+                    ));
+            }
+
+            if ($evidenceRequested) {
+                $this->requestLevelEvidence($assessmentIds, $data, $decision, $request->user()->id, $comment, $reviewerScore);
+
+                return;
             }
 
             $reviewerScoreId = $this->upsertReviewerScore(
@@ -262,6 +265,12 @@ class AssessmentController extends Controller
                 ]);
         });
 
+        if ($evidenceRequested) {
+            $this->notifications->notifyEmployeeStatusUpdate($employee, 'evidence_required', $comment);
+
+            return back();
+        }
+
         $this->notifications->notifyEmployeeStatusUpdate($employee, $decision['approved_status']);
 
         if ($decision['approved_status'] !== 'approved') {
@@ -293,8 +302,9 @@ class AssessmentController extends Controller
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
         $employee = User::findOrFail((int) $data['user_id']);
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
+        $returnStatus = $this->returnStatusForRejection($employee, (int) $data['competency_id'], (int) $decision['review_step']);
 
-        DB::transaction(function () use ($data, $decision, $request, $comment): void {
+        DB::transaction(function () use ($data, $decision, $request, $comment, $returnStatus): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -320,7 +330,7 @@ class AssessmentController extends Controller
                 ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
-                    'status' => 'revision_required',
+                    'status' => $returnStatus,
                     'updated_at' => now(),
                 ]);
 
@@ -329,7 +339,7 @@ class AssessmentController extends Controller
                 ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
-                    'status' => 'revision_required',
+                    'status' => $returnStatus,
                     'supervisor_2_score_id' => $reviewerScoreId,
                     'rejected_by' => $request->user()->id,
                     'reject_comment' => $comment,
@@ -338,9 +348,74 @@ class AssessmentController extends Controller
                 ]);
         });
 
+        if ($returnStatus !== 'revision_required') {
+            $this->notifications->notifyNextReviewerForAssessment(
+                $employee,
+                $this->competencyName((int) $data['competency_id']),
+                $returnStatus,
+            );
+
+            return back();
+        }
+
         $this->notifications->notifyEmployeeStatusUpdate($employee, 'revision_required', $comment);
 
         return back();
+    }
+
+    /**
+     * Faculty rounds return a rejected result to the latest scorer before the rejecting step;
+     * without one, the employee revises it as in the standard method.
+     */
+    private function returnStatusForRejection(User $employee, int $competencyId, int $reviewStep): string
+    {
+        if (! $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+            return 'revision_required';
+        }
+
+        $scorerStep = $this->facultyPermissions->latestScorerStepBefore(
+            $employee,
+            $this->competencyTypeCode($competencyId),
+            $this->reviewerChainResolver->stepsForUser($employee),
+            $reviewStep,
+        );
+
+        return $scorerStep !== null
+            ? $this->reviewerChainResolver->pendingStatusForStep($scorerStep)
+            : 'revision_required';
+    }
+
+    private function requestLevelEvidence($assessmentIds, array $data, array $decision, int $reviewerId, string $comment, int $reviewerScore): void
+    {
+        $now = now();
+        $competencyId = (int) $data['competency_id'];
+        $scoreId = $this->upsertReviewerScore(
+            $assessmentIds,
+            $competencyId,
+            $reviewerId,
+            $decision['review_step'],
+            $comment,
+            'evidence_requested',
+            $reviewerScore,
+        );
+
+        Assessment::whereIn('id', $assessmentIds)
+            ->where('competency_id', $competencyId)
+            ->where('status', $decision['expected_status'])
+            ->update(['status' => 'evidence_required', 'updated_at' => $now]);
+
+        DB::table('competency_gaps')
+            ->whereIn('assessment_id', $assessmentIds)
+            ->where('competency_id', $competencyId)
+            ->where('status', $decision['expected_status'])
+            ->update([
+                'status' => 'evidence_required',
+                'supervisor_2_score_id' => $scoreId,
+                'rejected_by' => $reviewerId,
+                'reject_comment' => $comment === '' ? null : $comment,
+                'decided_at' => $now,
+                'updated_at' => $now,
+            ]);
     }
 
     private function assertCanSelfAssess($user): void

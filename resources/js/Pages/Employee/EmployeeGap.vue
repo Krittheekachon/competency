@@ -95,6 +95,7 @@ const developmentStatusLabel = (row: any) => {
   if (hasFinalResult(row)) return row.requiresIdp ? 'ต้องพัฒนา' : 'ผ่านเกณฑ์';
   if (isApproved(row)) return 'อนุมัติแล้ว';
   if (status === 'revision_required') return 'ถูกส่งกลับให้แก้ไข';
+  if (status === 'evidence_required') return 'รอแนบหลักฐานระดับ 5';
   if (status === 'self_submitted') return 'รอผู้ประเมินลำดับที่ 1';
   if (status === 'unit_evaluated') return 'รอผู้ประเมินลำดับที่ 2';
   if (status === 'dept_evaluated') return 'รอผู้ประเมินลำดับที่ 3';
@@ -109,7 +110,7 @@ const developmentStatusLabel = (row: any) => {
 const statusTone = (row: any) => {
   if (hasFinalResult(row)) return row.requiresIdp ? 'failed' : 'passed';
   if (isApproved(row)) return 'pending';
-  if (row?.status === 'revision_required') return 'revision';
+  if (['revision_required', 'evidence_required'].includes(row?.status)) return 'revision';
   if (row?.status === 'draft' && !row?.lastDraftSavedAt) return 'not-started';
   if (row?.status === 'draft') return 'draft';
   return 'pending';

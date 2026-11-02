@@ -98,21 +98,66 @@ class AssessmentLevelEvidenceTest extends TestCase
         $this->assertSame(1, DB::table('assessment_level_evidences')->count());
     }
 
-    public function test_reviewer_cannot_approve_level_five_without_employee_evidence(): void
+    public function test_reviewer_level_five_without_evidence_waits_for_employee_evidence_then_returns_to_scorer(): void
     {
         [$employee, $competencyId, $levelIds, $reviewer] = $this->employeeWithFacultyCompetency();
         $assessmentId = $this->submittedAssessment($employee, $this->roundId, $competencyId, 4);
+        $levelFive = $this->levelFiveKeys($competencyId, $levelIds, asMap: false);
 
         $this->actingAs($reviewer)
             ->post(route('assessments.approve'), [
                 'user_id' => $employee->id,
                 'competency_id' => $competencyId,
-                'checked' => $this->levelFiveKeys($competencyId, $levelIds, asMap: false),
+                'comment' => 'ขอหลักฐานผลงาน',
+                'checked' => $levelFive,
             ])
-            ->assertSessionHasErrors('checked');
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 4, 'status' => 'evidence_required']);
+        $this->assertDatabaseHas('competency_gaps', [
+            'assessment_id' => $assessmentId,
+            'status' => 'evidence_required',
+            'reject_comment' => 'ขอหลักฐานผลงาน',
+        ]);
+        $this->assertDatabaseHas('scores', [
+            'assessment_id' => $assessmentId,
+            'assessor_id' => $reviewer->id,
+            'score' => 5,
+            'status' => 'evidence_requested',
+        ]);
+
+        // While evidence is pending the employee cannot change the scorer's result.
+        $this->actingAs($employee)
+            ->postJson(route('assessments.draft'), [
+                'competency_id' => $competencyId,
+                'checked_indicators' => [],
+                'score' => 0,
+            ])
+            ->assertUnprocessable();
+        $this->actingAs($employee)
+            ->post(route('assessments.evidence.submit'), ['competency_id' => $competencyId])
+            ->assertSessionHasErrors('evidence');
+
+        $this->attachLink($employee, $competencyId);
+        $this->actingAs($employee)
+            ->post(route('assessments.evidence.submit'), ['competency_id' => $competencyId])
+            ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'status' => 'self_submitted']);
-        $this->assertDatabaseMissing('scores', ['assessment_id' => $assessmentId]);
+
+        $this->actingAs($reviewer)
+            ->post(route('assessments.approve'), [
+                'user_id' => $employee->id,
+                'competency_id' => $competencyId,
+                'checked' => $levelFive,
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('competency_gaps', [
+            'assessment_id' => $assessmentId,
+            'actual_level' => 5,
+            'status' => 'approved',
+        ]);
     }
 
     public function test_reviewer_can_open_evidence_but_unrelated_user_cannot(): void

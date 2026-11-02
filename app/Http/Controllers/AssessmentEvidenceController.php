@@ -6,8 +6,11 @@ use App\Models\Assessment;
 use App\Services\AssessmentLevelEvidenceService;
 use App\Services\AssessmentMethodResolver;
 use App\Services\AssessmentRoundWindow;
+use App\Services\FacultyAssessmentPermissionResolver;
+use App\Services\NotificationService;
 use App\Services\ReviewerChainResolver;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -24,6 +27,8 @@ class AssessmentEvidenceController extends Controller
         private AssessmentMethodResolver $assessmentMethods,
         private AssessmentLevelEvidenceService $evidences,
         private ReviewerChainResolver $reviewerChainResolver,
+        private FacultyAssessmentPermissionResolver $facultyPermissions,
+        private NotificationService $notifications,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -129,6 +134,64 @@ class AssessmentEvidenceController extends Controller
         ]);
     }
 
+    public function submit(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'competency_id' => ['required', 'integer', 'exists:competencies,id'],
+        ]);
+        $competencyId = (int) $data['competency_id'];
+        $assessment = $this->editableAssessment($request, $competencyId);
+        $status = $this->assessmentStatus($assessment, $competencyId);
+
+        if ($status !== 'evidence_required') {
+            throw ValidationException::withMessages(['evidence' => 'ผลการประเมินนี้ไม่ได้อยู่ระหว่างรอหลักฐาน']);
+        }
+        if (! $this->evidences->existsFor((int) $assessment->id, $competencyId)) {
+            throw ValidationException::withMessages(['evidence' => 'กรุณาแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง']);
+        }
+
+        $employee = $request->user();
+        $employee->setAttribute('assessment_round_id', (int) $assessment->assessment_round_id);
+        $competency = DB::table('competencies')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('competencies.id', $competencyId)
+            ->first(['competencies.name', 'competency_types.code']);
+        // Return to the scorer who asked for the evidence.
+        $requestedBy = (int) DB::table('competency_gaps')
+            ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $competencyId)
+            ->value('rejected_by');
+        $steps = $this->reviewerChainResolver->stepsForUser($employee);
+        $scorerStep = ($requestedBy ? $this->reviewerChainResolver->stepForReviewer($employee, $requestedBy) : null)
+            ?? $this->facultyPermissions->latestScorerStepBefore($employee, (string) ($competency->code ?? ''), $steps, PHP_INT_MAX)
+            ?? 1;
+        $nextStatus = $this->reviewerChainResolver->pendingStatusForStep($scorerStep);
+
+        DB::transaction(function () use ($assessment, $competencyId, $nextStatus): void {
+            $now = now();
+            Assessment::where('id', $assessment->id)
+                ->where('status', 'evidence_required')
+                ->update(['status' => $nextStatus, 'updated_at' => $now]);
+            DB::table('competency_gaps')
+                ->where('assessment_id', $assessment->id)
+                ->where('competency_id', $competencyId)
+                ->where('status', 'evidence_required')
+                ->update([
+                    'status' => $nextStatus,
+                    'rejected_by' => null,
+                    'reject_comment' => null,
+                    'updated_at' => $now,
+                ]);
+        });
+
+        $this->notifications->notifyNextReviewerForAssessment($employee, (string) ($competency->name ?? ''), $nextStatus);
+
+        return back()->with('flash', [
+            'type' => 'success',
+            'message' => 'ส่งหลักฐานให้ผู้ประเมินตรวจสอบแล้ว',
+        ]);
+    }
+
     public function show(Request $request, string $evidence): BinaryFileResponse
     {
         $record = DB::table('assessment_level_evidences')
@@ -160,7 +223,7 @@ class AssessmentEvidenceController extends Controller
 
     private function editableAssessment(Request $request, int $competencyId): Assessment
     {
-        $round = $this->assessmentRoundWindow->assertSelfAssessmentOpen();
+        $round = $this->assessmentRoundWindow->activeRound();
         if (! $this->assessmentMethods->isFaculty((int) $round->id)) {
             throw ValidationException::withMessages(['evidence' => 'รอบประเมินนี้ไม่ได้ใช้การแนบหลักฐานระดับ 5']);
         }
@@ -173,16 +236,26 @@ class AssessmentEvidenceController extends Controller
             throw ValidationException::withMessages(['evidence' => 'กรุณาบันทึกผลการประเมินก่อนแนบหลักฐาน']);
         }
 
-        $status = DB::table('competency_gaps')
-            ->where('assessment_id', $assessment->id)
-            ->where('competency_id', $competencyId)
-            ->value('status') ?? $assessment->status;
-        if (! in_array($status, ['draft', 'revision_required'], true)) {
+        $status = $this->assessmentStatus($assessment, $competencyId);
+        if (! in_array($status, ['draft', 'revision_required', 'evidence_required'], true)) {
             throw ValidationException::withMessages([
                 'evidence' => 'ผลการประเมินนี้ถูกส่งแล้ว ไม่สามารถแก้ไขหลักฐานได้จนกว่าจะถูกส่งกลับมาแก้ไข',
             ]);
         }
 
+        // Evidence requested by a reviewer is collected during the reviewer window.
+        $status === 'evidence_required'
+            ? $this->assessmentRoundWindow->assertSupervisorAssessmentOpen()
+            : $this->assessmentRoundWindow->assertSelfAssessmentOpen();
+
         return $assessment;
+    }
+
+    private function assessmentStatus(Assessment $assessment, int $competencyId): string
+    {
+        return DB::table('competency_gaps')
+            ->where('assessment_id', $assessment->id)
+            ->where('competency_id', $competencyId)
+            ->value('status') ?? $assessment->status;
     }
 }

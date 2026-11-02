@@ -24,10 +24,10 @@ trait BuildsFacultyAssessment
         ]);
     }
 
-    protected function makeAssessable(User $employee, int $roundId): array
+    protected function makeAssessable(User $employee, int $roundId, string $workline = 'สายวิชาการ'): array
     {
         $worklineId = DB::table('worklines')->insertGetId([
-            'name' => 'สายวิชาการ', 'created_at' => now(), 'updated_at' => now(),
+            'name' => $workline, 'created_at' => now(), 'updated_at' => now(),
         ]);
         $jobFamilyId = DB::table('job_families')->insertGetId([
             'workline_id' => $worklineId,
@@ -93,7 +93,7 @@ trait BuildsFacultyAssessment
         ]);
 
         $employee->forceFill([
-            'workline' => 'สายวิชาการ',
+            'workline' => $workline,
             'department' => 'ภาควิชาทดสอบ',
             'position' => 'อาจารย์',
             'level' => 'ระดับวิชาการ',

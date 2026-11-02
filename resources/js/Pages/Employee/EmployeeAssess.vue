@@ -200,7 +200,7 @@ const submittedAssessmentCount = computed(() =>
   assignedCompetencies.value.reduce((total: number, item: any) => {
     const status = competencyStatus(item);
     if (status === 'revision_required') return total - 1;
-    if (status === 'self_submitted' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
+    if (status === 'self_submitted' || status === 'evidence_required' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
     return total;
   }, 0),
 );
@@ -209,6 +209,7 @@ const competencyStatusLabel = (item: any) => {
   if (isReviewInProgressStatus(status)) return reviewProgressLabel(status);
   if (isFinalApprovedStatus(status)) return 'อนุมัติครบทุกลำดับแล้ว';
   if (status === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
+  if (status === 'evidence_required') return 'ผู้ประเมินขอหลักฐานระดับ 5 · รอแนบหลักฐาน';
   return '';
 };
 
@@ -345,6 +346,31 @@ const closeCompetencyDetail = () => {
   draftSavedAt.value = '';
 };
 
+const submitRequestedEvidence = () => {
+  if (!selectedCompetency.value || !isEvidenceRequested.value || isSaving.value) return;
+  if (!selectedEvidences.value.length) {
+    evidenceError.value = 'กรุณาแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง';
+    return;
+  }
+
+  const competencyId = String(selectedCompetency.value.id);
+  isSaving.value = true;
+  router.post(route('assessments.evidence.submit'), { competency_id: competencyId }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      delete competencyStatuses.value[competencyId];
+      lockedCompetencies.value[competencyId] = true;
+      closeCompetencyDetail();
+    },
+    onError: (errors: Record<string, string>) => {
+      evidenceError.value = errors.evidence || 'ไม่สามารถส่งหลักฐานได้ กรุณาลองใหม่';
+    },
+    onFinish: () => {
+      isSaving.value = false;
+    },
+  });
+};
+
 const openSubmitConfirm = () => {
   if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
   if (isSelectedCompetencyLocked.value) return;
@@ -423,14 +449,17 @@ const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const selectedEvidences = computed(() => competencyEvidences.value[noteKey.value] || []);
 const requiresLevelEvidence = computed(() => usesFacultyMethod.value && facultyScore.value >= 5);
 const isMissingLevelEvidence = computed(() => requiresLevelEvidence.value && selectedEvidences.value.length === 0);
-const showEvidenceSection = computed(() => usesFacultyMethod.value && (requiresLevelEvidence.value || selectedEvidences.value.length > 0));
+const isEvidenceRequested = computed(() => selectedCompetencyStatus.value === 'evidence_required');
+const canEditEvidence = computed(() => !isSelectedCompetencyLocked.value || isEvidenceRequested.value);
+const showEvidenceSection = computed(() => usesFacultyMethod.value
+  && (requiresLevelEvidence.value || isEvidenceRequested.value || selectedEvidences.value.length > 0));
 const evidenceRequestError = (error: any, fallback: string) => {
   const errors = error?.response?.data?.errors || {};
   const first = Object.values(errors).flat()[0];
   return String(first || error?.response?.data?.message || fallback);
 };
 const uploadEvidence = async () => {
-  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isUploadingEvidence.value) return;
+  if (!selectedCompetency.value || !canEditEvidence.value || isUploadingEvidence.value) return;
   const files = Array.from(evidenceFileInput.value?.files || []);
   const url = evidenceLinkUrl.value.trim();
   if (!files.length && !url) {
@@ -442,7 +471,7 @@ const uploadEvidence = async () => {
   isUploadingEvidence.value = true;
   const competencyId = String(selectedCompetency.value.id);
   try {
-    if (!competencyDraftSavedAt.value[competencyId] && !draftSavedAt.value) {
+    if (!isEvidenceRequested.value && !competencyDraftSavedAt.value[competencyId] && !draftSavedAt.value) {
       clearAutoSaveTimer();
       await saveDraft();
       if (autoSaveState.value === 'error') throw new Error('draft');
@@ -468,7 +497,7 @@ const uploadEvidence = async () => {
   }
 };
 const removeEvidence = async (evidence: any) => {
-  if (!selectedCompetency.value || isSelectedCompetencyLocked.value || isUploadingEvidence.value) return;
+  if (!selectedCompetency.value || !canEditEvidence.value || isUploadingEvidence.value) return;
   const competencyId = String(selectedCompetency.value.id);
   evidenceError.value = '';
   isUploadingEvidence.value = true;
@@ -490,6 +519,7 @@ const selectedCompetencyStatusCopy = computed(() => {
     return 'อนุมัติครบทุกลำดับแล้ว';
   }
   if (selectedCompetencyStatus.value === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
+  if (isEvidenceRequested.value) return 'ผู้ประเมินขอหลักฐานระดับ 5 · รอแนบหลักฐาน';
   return '';
 });
 const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
@@ -869,6 +899,7 @@ onBeforeUnmount(() => {
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
             <p v-if="isReviewInProgressStatus(selectedCompetencyStatus)" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
             <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
+            <p v-else-if="isEvidenceRequested" class="revision-copy">{{ selectedCompetencyStatusCopy }}</p>
             <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว จะแก้ไขได้เมื่อหัวหน้างานส่งกลับมาแก้ไข</p>
             <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">{{ selectedCompetencyStatusCopy }}</p>
           </div>
@@ -946,7 +977,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
+          <section v-if="['revision_required', 'evidence_required'].includes(selectedCompetencyStatus) && selectedRejectComment" class="reviewer-comment-section">
             <div class="reviewer-comment-label">ความคิดเห็นจาก {{ selectedRejectReviewerName || 'ผู้ประเมิน' }}</div>
             <p>{{ selectedRejectComment }}</p>
           </section>
@@ -955,7 +986,8 @@ onBeforeUnmount(() => {
             <div class="emp-evidence-head">
               <div>
                 <h3>หลักฐานประกอบระดับ 5</h3>
-                <p>ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่งตรวจ</p>
+                <p v-if="isEvidenceRequested">ผู้ประเมินปรับผลเป็นระดับ 5 กรุณาแนบหลักฐานแล้วกดส่งหลักฐาน ระหว่างนี้แก้ไขผลการติ๊กไม่ได้</p>
+                <p v-else>ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่งตรวจ</p>
               </div>
               <span class="emp-level-status" :class="{ idle: !selectedEvidences.length, done: selectedEvidences.length > 0 }">
                 {{ selectedEvidences.length ? `แนบแล้ว ${selectedEvidences.length} รายการ` : 'ยังไม่แนบ' }}
@@ -967,7 +999,7 @@ onBeforeUnmount(() => {
                 <a :href="evidence.url" target="_blank" rel="noopener noreferrer">{{ evidence.name }}</a>
                 <small>{{ evidence.kind === 'link' ? 'ลิงก์' : 'ไฟล์' }}</small>
                 <button
-                  v-if="!isSelectedCompetencyLocked"
+                  v-if="canEditEvidence"
                   class="btn btn-s btn-sm"
                   type="button"
                   :disabled="isUploadingEvidence"
@@ -978,7 +1010,7 @@ onBeforeUnmount(() => {
               </li>
             </ul>
 
-            <div v-if="!isSelectedCompetencyLocked" class="emp-evidence-form">
+            <div v-if="canEditEvidence" class="emp-evidence-form">
               <input
                 ref="evidenceFileInput"
                 class="inp"
@@ -1018,7 +1050,16 @@ onBeforeUnmount(() => {
               {{ autoSaveText }}
             </small>
           </div>
-          <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked || isMissingLevelEvidence" @click="openSubmitConfirm">
+          <button
+            v-if="isEvidenceRequested"
+            class="btn btn-t"
+            type="button"
+            :disabled="isSaving || !selectedEvidences.length"
+            @click="submitRequestedEvidence"
+          >
+            {{ isSaving ? 'กำลังส่ง...' : 'ส่งหลักฐานให้ผู้ประเมิน' }}
+          </button>
+          <button v-else class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked || isMissingLevelEvidence" @click="openSubmitConfirm">
             {{ selectedCompetencyStatusCopy || (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>

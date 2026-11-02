@@ -2194,12 +2194,16 @@ class DashboardController extends Controller
             $label = $rejectReviewerName !== ''
                 ? 'ถูกส่งกลับโดย '.$rejectReviewerName
                 : 'ถูกส่งกลับแก้ไข';
+        } elseif ($status === 'evidence_required') {
+            $key = 'evidence_required';
+            $label = 'รอบุคลากรแนบหลักฐานระดับ 5';
         } elseif ($status === 'approved') {
             $key = 'approved';
             $label = 'ผ่านครบทุกลำดับ';
         } elseif ($currentReviewer) {
             $key = 'pending_review';
-            $label = 'รอการประเมินลำดับที่ '.(int) $currentReviewer['step'].' · '.$currentReviewer['name'];
+            $label = ($rejectReviewerName !== '' ? 'ส่งกลับให้ประเมินใหม่ · ' : '')
+                .'รอการประเมินลำดับที่ '.(int) $currentReviewer['step'].' · '.$currentReviewer['name'];
         } else {
             $key = 'pending_review';
             $label = 'อยู่ระหว่างการประเมิน';
@@ -2211,7 +2215,7 @@ class DashboardController extends Controller
             'label' => 'ประเมินตนเอง',
             'name' => $this->displayNameForUser($user),
             'position' => $user->position ?: '',
-            'state' => in_array($status, ['draft', 'revision_required'], true) ? 'active' : 'complete',
+            'state' => in_array($status, ['draft', 'revision_required', 'evidence_required'], true) ? 'active' : 'complete',
         ]];
 
         foreach ($reviewerSteps as $reviewerStep) {
@@ -2223,7 +2227,7 @@ class DashboardController extends Controller
             } elseif ($currentReviewer) {
                 $currentStep = (int) $currentReviewer['step'];
                 $state = $step < $currentStep ? 'complete' : ($step === $currentStep ? 'active' : 'waiting');
-            } elseif ($status === 'revision_required' && $rejectStep !== null) {
+            } elseif (in_array($status, ['revision_required', 'evidence_required'], true) && $rejectStep !== null) {
                 $state = $step < $rejectStep ? 'complete' : ($step === $rejectStep ? 'returned' : 'waiting');
             }
 

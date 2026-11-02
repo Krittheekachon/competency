@@ -116,6 +116,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
     Route::post('/assessments/evidence', [AssessmentEvidenceController::class, 'store'])->name('assessments.evidence.store');
+    Route::post('/assessments/evidence/submit', [AssessmentEvidenceController::class, 'submit'])->name('assessments.evidence.submit');
     Route::get('/assessments/evidence/{evidence}', [AssessmentEvidenceController::class, 'show'])
         ->whereUuid('evidence')
         ->name('assessments.evidence.show');
