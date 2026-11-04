@@ -38,6 +38,7 @@ class ReviewerTemplateResolver
                 'description' => $template->description ?: '',
                 'chainType' => $template->chain_type ?? 'assessment',
                 'isDefault' => (bool) $template->is_default,
+                'structureDefault' => (bool) $template->is_default && ($template->chain_type ?? 'assessment') === 'assessment',
                 'steps' => ($steps->get($template->id) ?? collect())
                     ->map(fn (object $step): array => [
                         'step' => (int) $step->step_order,

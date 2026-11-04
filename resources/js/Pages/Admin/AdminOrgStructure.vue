@@ -1,5 +1,6 @@
 ﻿<script lang="tsx">
-import { defineComponent, ref, watchEffect, type PropType } from "vue";
+import { defineComponent, ref, watch, watchEffect, type PropType } from "vue";
+import OrganizationChart from "./OrganizationChart.vue";
 import { router } from "@inertiajs/vue3";
 const useState = (initial: any) => {
   const state = ref(typeof initial === "function" ? initial() : initial);
@@ -29,7 +30,7 @@ interface AdminOrgStructureProps {academicDepts: string[];setAcademicDepts: any;
   setCompetencyTypes: any;
 }
 
-const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "positionTitles", "setPositionTitles", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes"], setup(__props) {const {
+const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["organizationChart", "academicDepts", "setAcademicDepts", "supportDepts", "supportPositionGroups", "setSupportPositionGroups", "adminDepts", "setAdminDepts", "supportOrg", "setSupportOrg", "users", "academicPos", "setAcademicPos", "supportPos", "setSupportPos", "adminPos", "setAdminPos", "jobFamiliesByWorkline", "setJobFamiliesByWorkline", "levelsByWorkline", "setLevelsByWorkline", "levelExpectationsByWorkline", "setLevelExpectationsByWorkline", "positionTitles", "setPositionTitles", "academicRank", "setAcademicRank", "supportRank", "setSupportRank", "worklines", "setWorklines", "competencyTypes", "setCompetencyTypes"], setup(__props) {const {
       setAcademicDepts,
       setSupportPositionGroups,
       setAdminDepts,
@@ -62,7 +63,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const POSITION_PREVIEW_LIMIT = 4;
     const SUPPORT_GROUP_PREVIEW_LIMIT = 4;
     const competencyTypeList = ref<any[]>([...((__props as any).competencyTypes || [])]);
-    const [activeTab, setActiveTab] = useState("workline");
+    const [activeTab, setActiveTab] = useState("chart");
     const [activeLevelWorkline, setActiveLevelWorkline] = useState("");
     const [editingItem, setEditingId] = useState<any>(null);
     const [newValue, setNewValue] = useState("");
@@ -99,10 +100,23 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       positionTitleId: ""
     });
     const [structureVersion, setStructureVersion] = useState(0);
+    // Chart actions update Inertia props without remounting this catalog.
+    watch(() => [__props.worklines, __props.jobFamiliesByWorkline, __props.supportOrg, __props.levelsByWorkline, __props.levelExpectationsByWorkline, __props.positionTitles, __props.academicDepts, __props.supportDepts, __props.supportPositionGroups, __props.adminDepts, __props.academicPos, __props.adminPos], () => {
+      worklines = [...(__props.worklines || [])];
+      jobFamiliesByWorkline = { ...(__props.jobFamiliesByWorkline || {}) };
+      supportOrg = { ...(__props.supportOrg || {}) };
+      levelsByWorkline = { ...(__props.levelsByWorkline || {}) };
+      levelExpectationsByWorkline = { ...(__props.levelExpectationsByWorkline || {}) };
+      positionTitles.value = [...(__props.positionTitles || [])];
+      academicDepts = [...(__props.academicDepts || [])];
+      supportDepts = [...(__props.supportDepts || [])];
+      supportPositionGroups = { ...(__props.supportPositionGroups || {}) };
+      adminDepts = [...(__props.adminDepts || [])];
+      academicPos = [...(__props.academicPos || [])];
+      adminPos = [...(__props.adminPos || [])];
+      setStructureVersion((current: number) => current + 1);
+    });
     const addNameInput = ref<HTMLInputElement | null>(null);
-    const dean = users.find((user) => user.r === "manager")?.n || "";
-    const deptManagers = users.filter((user) => ["dept_head", "manager_dept", "division_head", "academic_department_head", "deputy_dean", "assistant_dean"].includes(user.r));
-    const supervisors = users.filter((user) => user.r === "supervisor");
     const getCompetencyTypeCode = (item: any) => typeof item === "string" ? item : item?.code || item?.name || "";
     const getCompetencyTypeFullName = (item: any) => typeof item === "string" ? "" : item?.fullName || item?.label || "";
     const getCompetencyTypeDesc = (item: any) => typeof item === "string" ? "" : item?.desc || "";
@@ -1095,7 +1109,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         </div>
       </div>
       <div class="structure-tabs mb20">
-	        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>โครงสร้างองค์กร</button>
+        <button class={`structure-tab ${activeTab.value === "chart" ? "active" : ""}`} onClick={() => setActiveTab("chart")}>แผนผังองค์กร</button>
+	        <button class={`structure-tab ${activeTab.value === "workline" ? "active" : ""}`} onClick={() => setActiveTab("workline")}>จัดการรายการองค์กร</button>
         <button class={`structure-tab ${activeTab.value === "catalog" ? "active" : ""}`} onClick={() => setActiveTab("catalog")}>ตำแหน่งทั้งหมด</button>
         <button class={`structure-tab ${activeTab.value === "pos" ? "active" : ""}`} onClick={() => setActiveTab("pos")}>ระดับตำแหน่ง</button>
         <button class={`structure-tab ${activeTab.value === "comp" ? "active" : ""}`} onClick={() => setActiveTab("comp")}>ประเภทสมรรถนะ</button>
@@ -1103,7 +1118,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
       <div class="anim-fade-in" data-structure-version={structureVersion.value}>
         <div class={`structure-shell ${activeTab.value === "workline" ? "workline-shell" : ""} ${activeTab.value === "catalog" ? "catalog-shell" : ""} ${activeTab.value === "pos" ? "level-shell" : ""} ${activeTab.value === "comp" ? "comp-shell" : ""}`}>
-          {activeTab.value === "workline" ?
+          {activeTab.value === "chart" ? <OrganizationChart data={(__props as any).organizationChart} /> : activeTab.value === "workline" ?
           <div class="structure-pane">
               <div class="workline-page-head">
                 <div>

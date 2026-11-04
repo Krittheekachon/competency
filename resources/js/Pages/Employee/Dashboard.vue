@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import MobileSidebarClose from '../../Components/MobileSidebarClose.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import {
     NAV_CONFIG,
@@ -176,6 +177,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
+            <MobileSidebarClose @close="showSidebar = false" />
             <SidebarBrand />
 
             <button class="sb-user on" type="button" @click="goProfile">

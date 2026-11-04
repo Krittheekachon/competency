@@ -6,10 +6,13 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\FacultyAssessmentPermissionResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 class FacultyAssessmentPermissionResolverTest extends TestCase
 {
+    use RefreshDatabase;
     #[DataProvider('permissionCases')]
     public function test_scoring_permission_depends_on_reviewer_target_and_competency_type(
         string $reviewerRole,
@@ -50,6 +53,12 @@ class FacultyAssessmentPermissionResolverTest extends TestCase
     {
         $role = new Role(['key' => $key]);
         $user = new User(['workline' => $workline]);
+        if ($workline !== null) {
+            $user->position_title_id = DB::table('position_titles')->insertGetId([
+                'name' => 'QA '.$key, 'normalized_name' => 'qa-'.$key,
+                'workline_type' => match ($workline) { 'สายสนับสนุน' => 'support', 'สายวิชาการ' => 'academic', default => 'unknown' },
+            ]);
+        }
         $user->setRelation('role', $role);
 
         return $user;

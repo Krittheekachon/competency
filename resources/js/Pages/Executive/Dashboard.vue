@@ -2,6 +2,7 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import MobileSidebarClose from '../../Components/MobileSidebarClose.vue';
 import FacultyOverview from '../Analytics/FacultyOverview.vue';
 import HeadDashboard from '../Head/Dashboard.vue';
 
@@ -78,6 +79,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell manager-shell">
         <aside v-if="isSidebarOpen" class="sidebar">
+            <MobileSidebarClose @close="isSidebarOpen = false" />
             <SidebarBrand />
 
             <button class="sb-user on" type="button">

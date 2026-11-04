@@ -2,6 +2,7 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import MobileSidebarClose from '../../Components/MobileSidebarClose.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
 import EmployeeAssess from '../Employee/EmployeeAssess.vue';
 import EmployeeGap from '../Employee/EmployeeGap.vue';
@@ -684,6 +685,7 @@ const formatWeight = (weight) => {
 
     <div class="shell">
         <aside v-if="isSidebarOpen" class="sidebar">
+            <MobileSidebarClose @close="isSidebarOpen = false" />
             <SidebarBrand />
 
             <button class="sb-user" type="button">

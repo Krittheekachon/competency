@@ -185,6 +185,8 @@ class DashboardController extends Controller
             'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
             'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
             'currentUserIdp' => $this->currentUserIdpPayload($currentUser),
+            'facultyIdpReadiness' => $activeRound && $this->facultyIdpPlans->isFacultyRound((int) $activeRound->id)
+                ? $this->facultyIdpPlans->readiness((int) $currentUser->id, (int) $activeRound->id) : null,
             'learningMethods' => $learningMethods,
             'hrCatalogItems' => $this->learningCatalogItems(),
             'idpLearningMethods' => $this->idpLearningMethods(),
@@ -210,6 +212,8 @@ class DashboardController extends Controller
             'admin' => Inertia::render('Admin/Dashboard', [
                 ...$selfServicePayload,
                 'users' => $users,
+                'organizationChart' => app(\App\Services\OrganizationChartService::class)->payload(),
+                'organizationReviewerDefaults' => app(\App\Services\OrganizationReviewerDefaults::class)->payload(),
                 'roles' => $this->rolesPayload(),
                 'reviewerChainTemplates' => $this->reviewerTemplateResolver->payload(),
                 'competencyTypes' => $competencyTypes,
@@ -1159,7 +1163,7 @@ class DashboardController extends Controller
         ]);
 
         return [
-            'worklines' => collect(['สายวิชาการ', 'สายสนับสนุน']),
+            'worklines' => DB::table('worklines')->orderBy('name')->pluck('name'),
             'jobFamiliesByWorkline' => $jobFamiliesWithPositions
                 ->groupBy('worklineName')
                 ->map(fn ($families) => $families->mapWithKeys(fn (array $family) => [

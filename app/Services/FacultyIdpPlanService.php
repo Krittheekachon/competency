@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Faculty-method IDP: one plan item per person and round covering every failed competency.
@@ -23,6 +25,71 @@ class FacultyIdpPlanService
         return $this->assessmentMethods->isFaculty($roundId);
     }
 
+    /** Required topics come from the round/position assignment, not merely existing approved rows. */
+    public function readiness(int $userId, int $roundId): array
+    {
+        $user = app(AssessmentRoundSnapshotService::class)->userForRound(User::findOrFail($userId), $roundId);
+        $titleId = $user->position_title_id ?: ($user->position_id
+            ? DB::table('positions')->where('id', $user->position_id)->value('position_title_id') : null);
+        $required = DB::table('position_competencies as pc')
+            ->join('competencies as c', 'c.id', '=', 'pc.competency_id')
+            ->join('competency_types as t', 't.id', '=', 'c.competency_type_id')
+            ->where('pc.assessment_round_id', $roundId)
+            ->when($titleId, fn ($q) => $q->where('pc.position_title_id', $titleId),
+                fn ($q) => $q->where('pc.position_id', $user->position_id ?: 0))
+            ->get(['c.id', 'c.code', 't.code as type'])->unique('id');
+        $pending = [];
+        if ($required->isEmpty()) $pending[] = 'ยังไม่ได้กำหนดสมรรถนะประจำตำแหน่งในรอบนี้';
+        $requiresSnapshot = (bool) DB::table('assessment_rounds')->where('id', $roundId)->value('snapshot_required');
+        if ($requiresSnapshot && ! DB::table('user_round_profiles')->where('user_id', $userId)->where('assessment_round_id', $roundId)->exists()) {
+            $pending[] = 'ยังไม่มีข้อมูลตำแหน่งและสายผู้ประเมินประจำรอบ';
+        }
+        $fcCount = app(FcSelectionRuleResolver::class)->requiredCount((int) $titleId, $user->position_id, $roundId);
+        if ($fcCount > 0) {
+            $selection = DB::table('fc_topic_selections')->where('user_id', $userId)->where('assessment_round_id', $roundId)
+                ->where('position_title_id', $titleId)->orderByDesc('id')->first();
+            $selected = $selection && $selection->status === 'approved'
+                ? DB::table('fc_topic_selection_items')->where('fc_topic_selection_id', $selection->id)->pluck('competency_id') : collect();
+            $availableFc = $required->filter(fn ($r) => str_starts_with($r->type, 'FC'))->pluck('id');
+            if ($selected->count() !== $fcCount || $selected->diff($availableFc)->isNotEmpty()) {
+                $pending[] = 'หัวข้อ FC ที่ต้องเลือกยังไม่ได้รับอนุมัติครบ';
+            }
+            $required = $required->filter(fn ($r) => ! str_starts_with($r->type, 'FC') || $selected->contains($r->id));
+        }
+        $results = DB::table('assessments as a')->leftJoin('competency_gaps as g', function ($q) {
+                $q->on('g.assessment_id', '=', 'a.id')->on('g.competency_id', '=', 'a.competency_id');
+            })->where('a.user_id', $userId)->where('a.assessment_round_id', $roundId)
+            ->get(['a.competency_id', 'a.status', 'g.status as gap_status', 'g.expected_level', 'g.actual_level'])->keyBy('competency_id');
+        foreach ($required as $topic) {
+            $result = $results->get($topic->id);
+            if (! $result || ! in_array($result->status, ['approved', 'dean_approved'], true)
+                || ! in_array($result->gap_status, ['approved', 'dean_approved'], true)
+                || ! ($result->expected_level > 0) || $result->actual_level === null) $pending[] = $topic->code;
+        }
+        $lockedItems = DB::table('idp_items as i')->join('idps as p', 'p.id', '=', 'i.idp_id')
+            ->where('p.user_id', $userId)->where('p.assessment_round_id', $roundId)->where('i.behavior_key', self::BEHAVIOR_KEY)
+            ->whereNotIn('i.status', ['draft', 'revision_required'])->pluck('i.id');
+        $missing = collect();
+        foreach ($lockedItems as $itemId) {
+            $covered = DB::table('idp_item_competency_gaps')->where('idp_item_id', $itemId)->pluck('competency_gap_id');
+            $missing = $missing->merge($this->failedGaps($userId, $roundId)->whereNotIn('id', $covered)->map(fn ($g) => [
+                'itemId' => (int) $itemId, 'gapId' => (int) $g->id, 'competencyId' => (int) $g->competency_id,
+                'code' => DB::table('competencies')->where('id', $g->competency_id)->value('code'),
+            ]));
+        }
+        $message = $missing->isNotEmpty()
+            ? 'แผนที่ส่งแล้วมีสมรรถนะตกหล่น: '.$missing->pluck('code')->unique()->implode(', ').' กรุณาติดต่อ HR ตรวจสอบแผนเดิม ระบบจะไม่แก้แผนที่ส่งแล้วอัตโนมัติ'
+            : ($pending !== [] ? 'ยังส่งแผนรวมไม่ได้ ผลประเมินหรือข้อมูลยังไม่ครบ: '.implode(', ', $pending) : '');
+        return ['ready' => $pending === [] && $missing->isEmpty(), 'message' => $message,
+            'pending' => $pending, 'missingGaps' => $missing->values()->all(), 'requiredCompetencyIds' => $required->pluck('id')->values()->all()];
+    }
+
+    public function assertReadyToSubmit(int $userId, int $roundId): void
+    {
+        $state = $this->readiness($userId, $roundId);
+        if (! $state['ready']) throw ValidationException::withMessages(['items' => $state['message']]);
+    }
+
     /** Approved gaps of the user in the round that require IDP, ordered by competency code. */
     public function failedGaps(int $userId, int $roundId): Collection
     {
@@ -34,6 +101,7 @@ class FacultyIdpPlanService
             ->where('competency_gaps.requires_idp', true)
             ->where('competency_gaps.gap', '<', 0)
             ->whereIn('competency_gaps.status', ['approved', 'dean_approved'])
+            ->whereIn('assessments.status', ['approved', 'dean_approved'])
             ->orderBy('competencies.code')
             ->get([
                 'competency_gaps.id',

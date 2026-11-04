@@ -87,7 +87,13 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'exists:worklines,name'],
         ]);
 
-        DB::table('worklines')->where('name', $data['name'])->delete();
+        DB::transaction(function () use ($data): void {
+            $nodeId = DB::table('worklines')->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('workline:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'workline:'.$nodeId)->delete();
+
+            DB::table('worklines')->where('name', $data['name'])->delete();
+        });
 
         return back()->with('success', 'ลบสายงานเรียบร้อยแล้ว');
     }
@@ -165,10 +171,16 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('job_families')
-            ->where('workline_id', $worklineId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $worklineId): void {
+            $nodeId = DB::table('job_families')->where('workline_id', $worklineId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('family:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'family:'.$nodeId)->delete();
+
+            DB::table('job_families')
+                ->where('workline_id', $worklineId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบกลุ่มงานเรียบร้อยแล้ว');
     }
@@ -314,9 +326,13 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'max:255', Rule::unique('support_departments', 'name')->ignore($request->old_name, 'name')],
         ]);
 
-        DB::table('support_departments')
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data): void {
+            DB::table('support_departments')
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['old_name'], $data['name']);
+        });
 
         return back()->with('success', 'อัปเดตฝ่ายเรียบร้อยแล้ว');
     }
@@ -327,7 +343,13 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'exists:support_departments,name'],
         ]);
 
-        DB::table('support_departments')->where('name', $data['name'])->delete();
+        DB::transaction(function () use ($data): void {
+            $nodeId = DB::table('support_departments')->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('department:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'department:'.$nodeId)->delete();
+
+            DB::table('support_departments')->where('name', $data['name'])->delete();
+        });
 
         return back()->with('success', 'ลบฝ่ายเรียบร้อยแล้ว');
     }
@@ -382,10 +404,14 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_works')
-            ->where('support_department_id', $supportDepartmentId)
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data, $supportDepartmentId): void {
+            DB::table('support_works')
+                ->where('support_department_id', $supportDepartmentId)
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['division_name'].' > '.$data['old_name'], $data['division_name'].' > '.$data['name']);
+        });
 
         return back()->with('success', 'อัปเดตงานเรียบร้อยแล้ว');
     }
@@ -403,10 +429,16 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_works')
-            ->where('support_department_id', $supportDepartmentId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $supportDepartmentId): void {
+            $nodeId = DB::table('support_works')->where('support_department_id', $supportDepartmentId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('work:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'work:'.$nodeId)->delete();
+
+            DB::table('support_works')
+                ->where('support_department_id', $supportDepartmentId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบงานเรียบร้อยแล้ว');
     }
@@ -471,10 +503,14 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_units')
-            ->where('support_work_id', $supportWorkId)
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data, $supportWorkId): void {
+            DB::table('support_units')
+                ->where('support_work_id', $supportWorkId)
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['division_name'].' > '.$data['work_name'].' > '.$data['old_name'], $data['division_name'].' > '.$data['work_name'].' > '.$data['name']);
+        });
 
         return back()->with('success', 'อัปเดตหน่วยงานเรียบร้อยแล้ว');
     }
@@ -497,10 +533,16 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_units')
-            ->where('support_work_id', $supportWorkId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $supportWorkId): void {
+            $nodeId = DB::table('support_units')->where('support_work_id', $supportWorkId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('unit:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'unit:'.$nodeId)->delete();
+
+            DB::table('support_units')
+                ->where('support_work_id', $supportWorkId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบหน่วยงานเรียบร้อยแล้ว');
     }

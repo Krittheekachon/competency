@@ -35,7 +35,12 @@ trait BuildsFacultyAssessment
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $titleId = DB::table('position_titles')->insertGetId([
+            'name' => 'QA Faculty '.$employee->id, 'normalized_name' => 'qa-faculty-'.$employee->id,
+            'workline_type' => in_array($workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true) ? 'support' : 'academic',
+        ]);
         $positionId = DB::table('positions')->insertGetId([
+            'position_title_id' => $titleId,
             'job_family_id' => $jobFamilyId,
             'name' => 'อาจารย์',
             'created_at' => now(),
@@ -85,6 +90,7 @@ trait BuildsFacultyAssessment
         }
 
         DB::table('position_competencies')->insert([
+            'position_title_id' => $titleId,
             'assessment_round_id' => $roundId,
             'position_id' => $positionId,
             'competency_id' => $competencyId,
@@ -93,6 +99,7 @@ trait BuildsFacultyAssessment
         ]);
 
         $employee->forceFill([
+            'position_title_id' => $titleId,
             'workline' => $workline,
             'department' => 'ภาควิชาทดสอบ',
             'position' => 'อาจารย์',

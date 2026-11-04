@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class FacultyAssessmentPermissionResolver
 {
@@ -37,8 +38,16 @@ class FacultyAssessmentPermissionResolver
         $type = strtoupper(trim($competencyType));
         // FC is stored as FC1/FC2 sub-types; permissions apply to the whole FC group.
         $type = str_starts_with($type, 'FC') ? 'FC' : $type;
-        $isSupport = in_array($employee->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
-        $isAcademic = in_array($employee->workline, ['สายวิชาการ', 'สายงานวิชาการ'], true);
+        // Use the persisted canonical position classification, never a display name or SSO guess.
+        $titleId = $employee->position_title_id;
+        if (! $titleId && $employee->position_id) {
+            $titleId = DB::table('positions')->where('id', $employee->position_id)->value('position_title_id');
+        }
+        $worklineType = $titleId
+            ? DB::table('position_titles')->where('id', $titleId)->value('workline_type')
+            : null;
+        $isSupport = $worklineType === 'support';
+        $isAcademic = $worklineType === 'academic';
         $isExecutive = $employee->hasRole(['deputy_dean', 'assistant_dean']);
 
         if ($isSupport) {

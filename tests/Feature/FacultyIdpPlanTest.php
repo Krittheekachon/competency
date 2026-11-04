@@ -26,6 +26,8 @@ class FacultyIdpPlanTest extends TestCase
     private array $gapIds = [];
 
     private int $toolId;
+    private int $titleId;
+    private int $positionId;
 
     protected function setUp(): void
     {
@@ -44,6 +46,11 @@ class FacultyIdpPlanTest extends TestCase
         ]);
         $this->reviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
         $this->employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $this->titleId = DB::table('position_titles')->insertGetId(['workline_type' => 'academic', 'name' => 'QA Faculty IDP', 'normalized_name' => 'qa-faculty-idp']);
+        $worklineId = DB::table('worklines')->insertGetId(['name' => 'QA faculty line']);
+        $familyId = DB::table('job_families')->insertGetId(['workline_id' => $worklineId, 'name' => 'QA faculty family']);
+        $this->positionId = DB::table('positions')->insertGetId(['job_family_id' => $familyId, 'position_title_id' => $this->titleId, 'name' => 'QA faculty position']);
+        $this->employee->forceFill(['position_title_id' => $this->titleId, 'position_id' => $this->positionId])->save();
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $this->employee->id,
             'reviewer_id' => $this->reviewer->id,
@@ -144,6 +151,31 @@ class FacultyIdpPlanTest extends TestCase
         );
     }
 
+    public function test_complete_formal_draft_edits_reload_with_all_activities_and_failed_gaps(): void
+    {
+        $courseId = $this->catalog('หลักสูตรทีม', 'CC-B');
+        $plan = $this->formalPlan($courseId);
+        $this->actingAs($this->employee)->postJson(route('employee.idp.draft'), ['items' => [$plan]])->assertOk();
+
+        $plan['goal'] = 'เป้าหมายฉบับแก้ไข';
+        $plan['successCriteria'] = 'เกณฑ์ฉบับแก้ไข';
+        $plan['activities'][0]['weightPercent'] = 60;
+        $plan['activities'][] = [...$plan['activities'][0], 'weightPercent' => 40];
+        $this->postJson(route('employee.idp.draft'), ['items' => [$plan]])->assertOk();
+
+        $this->get('/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->has('currentUserIdp.items', 1)
+            ->where('currentUserIdp.items.0.status', 'draft')
+            ->where('currentUserIdp.items.0.goal', 'เป้าหมายฉบับแก้ไข')
+            ->where('currentUserIdp.items.0.successCriteria', 'เกณฑ์ฉบับแก้ไข')
+            ->has('currentUserIdp.items.0.activities', 2)
+            ->where('currentUserIdp.items.0.activities.0.activityName', 'หลักสูตรทีม')
+            ->where('currentUserIdp.items.0.activities.0.weightPercent', 60)
+            ->where('currentUserIdp.items.0.activities.1.weightPercent', 40));
+        $this->assertDatabaseCount('idp_items', 1);
+        $this->assertDatabaseCount('idp_item_competency_gaps', 2);
+    }
+
     public function test_reviewer_sees_the_plan_labelled_with_all_covered_competencies(): void
     {
         $this->actingAs($this->employee)
@@ -179,6 +211,7 @@ class FacultyIdpPlanTest extends TestCase
             'updated_at' => now(),
         ]);
         $this->competencyIds[$code] = $competencyId;
+        DB::table('position_competencies')->insert(['assessment_round_id' => $this->roundId, 'position_title_id' => $this->titleId, 'position_id' => $this->positionId, 'competency_id' => $competencyId]);
         $this->gapIds[$code] = DB::table('competency_gaps')->insertGetId([
             'assessment_id' => $assessmentId,
             'competency_id' => $competencyId,

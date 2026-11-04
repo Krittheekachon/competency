@@ -183,7 +183,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     const [name, setName] = useState("");
     const [desc, setDesc] = useState("");
 
-    const generateLevel = (l: string) => ({ lvl: l, items: ["", "", "", ""], weights: ["0.25", "0.25", "0.25", "0.25"] });
+    const generateLevel = (l: string) => ({ lvl: l, description: "", items: ["", "", "", ""], weights: ["0.25", "0.25", "0.25", "0.25"] });
     const [levels, setLevels] = useState([generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")]);
 
     const clearForm = () => {
@@ -208,8 +208,9 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       if (c.levels) {
         setLevels(c.levels.map((l: any) => ({
           lvl: String(l.lvl),
-          items: l.indicators.length >= 4 ? l.indicators.slice(0, 4) : [...l.indicators, ...Array(4 - l.indicators.length).fill("")],
-          weights: l.weights && l.weights.length >= 4 ? l.weights.map(String).slice(0, 4) : ["0.25", "0.25", "0.25", "0.25"]
+          description: l.description || "",
+          items: l.indicators.length ? [...l.indicators] : [""],
+          weights: Array.from({ length: Math.max(1, l.indicators.length) }, (_, index) => l.weights?.[index] == null ? "" : String(l.weights[index]))
         })));
       } else {
         setLevels([generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")]);
@@ -249,11 +250,11 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
         detail: desc.value.trim(),
         levels: levels.value.map((l) => ({
           level: parseInt(l.lvl),
-          description: "",
-          indicators: l.items.filter((it) => it.trim()).map((indicator, index) => ({
+          description: l.description,
+          indicators: l.items.map((indicator, index) => ({
             description: indicator.trim(),
-            weight: parseFloat(l.weights[index]) || 0
-          }))
+            weight: l.weights[index] === "" || l.weights[index] == null ? null : parseFloat(l.weights[index])
+          })).filter((indicator) => indicator.description)
         }))
       };
 

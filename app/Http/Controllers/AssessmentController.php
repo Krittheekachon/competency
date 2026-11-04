@@ -169,7 +169,7 @@ class AssessmentController extends Controller
         $comment = trim((string) ($data['comment'] ?? ''));
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
-        $employee = User::findOrFail((int) $data['user_id']);
+        $employee = $this->roundSnapshot->userForRound(User::findOrFail((int) $data['user_id']), $this->activeAssessmentRoundId());
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
         $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
         $competencyType = $this->competencyTypeCode((int) $data['competency_id']);
@@ -184,6 +184,8 @@ class AssessmentController extends Controller
         }
 
         DB::transaction(function () use ($data, $decision, $request, $comment, $employee, $reviewerCanScore, &$evidenceRequested): void {
+            User::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            DB::table('competencies')->where('id', $data['competency_id'])->lockForUpdate()->first();
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -236,6 +238,12 @@ class AssessmentController extends Controller
                 'approved',
                 $reviewerScore,
             );
+
+            if ($decision['approved_status'] === 'approved' && $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+                foreach ($assessmentIds as $assessmentId) {
+                    $this->assertFacultyScoresComplete($employee, (int) $assessmentId, (int) $data['competency_id']);
+                }
+            }
 
             $this->ensureCompetencyGapsForAssessments(
                 $assessmentIds,
@@ -550,6 +558,8 @@ class AssessmentController extends Controller
     {
         $userId = auth()->id();
         $competencyId = (int) $data['competency_id'];
+        User::whereKey($userId)->lockForUpdate()->firstOrFail();
+        DB::table('competencies')->where('id', $competencyId)->lockForUpdate()->first();
         $roundId = $this->activeAssessmentRoundId();
         $checkedIndicators = collect($data['checked_indicators'])
             ->filter()
@@ -662,10 +672,10 @@ class AssessmentController extends Controller
             ->where('competency_id', $competencyId)
             ->where('status', $status)
             ->get(['id', 'score'])
-            ->each(function (Assessment $assessment) use ($competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
+            ->each(function (Assessment $assessment) use ($employee, $competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
                 // assessments.score keeps the self score; faculty rounds use the latest authorized reviewer score.
                 $reviewerScore = $assessmentMethod === AssessmentMethodResolver::FACULTY
-                    ? $this->latestFacultyReviewerScore((int) $assessment->id, $competencyId)
+                    ? $this->latestFacultyReviewerScore($employee, (int) $assessment->id, $competencyId)
                     : null;
                 $actualLevel = round((float) ($reviewerScore ?? $assessment->score ?? 0), 2);
                 $gapResult = $this->gapCalculator->calculate($assessmentMethod, $actualLevel, $expectedLevel);
@@ -817,13 +827,47 @@ class AssessmentController extends Controller
         ));
     }
 
-    private function latestFacultyReviewerScore(int $assessmentId, int $competencyId): ?float
+    private function facultyScorerSteps(User $employee, int $competencyId): array
     {
+        $type = $this->competencyTypeCode($competencyId);
+        $steps = $this->reviewerChainResolver->stepsForUser($employee);
+        $reviewers = User::with('role')->whereIn('id', array_column($steps, 'reviewer_id'))->get()->keyBy('id');
+
+        return array_values(array_filter($steps, function (array $step) use ($reviewers, $employee, $type): bool {
+            $reviewer = $reviewers->get((int) $step['reviewer_id']);
+            return $reviewer && $reviewer->is_active && $this->facultyPermissions->canScore($reviewer, $employee, $type);
+        }));
+    }
+
+    private function assertFacultyScoresComplete(User $employee, int $assessmentId, int $competencyId): void
+    {
+        $steps = $this->facultyScorerSteps($employee, $competencyId);
+        if ($steps === []) {
+            throw ValidationException::withMessages(['assessment' => 'ยังอนุมัติสุดท้ายไม่ได้: ไม่พบผู้มีสิทธิ์ให้คะแนนสมรรถนะนี้ในสายผู้ประเมิน กรุณาตรวจตำแหน่งและสายผู้ประเมิน']);
+        }
+        foreach ($steps as $step) {
+            if (! DB::table('scores')->where('assessment_id', $assessmentId)->where('competency_id', $competencyId)
+                ->where('assessor_id', $step['reviewer_id'])->where('assessor_role', 'supervisor_'.$step['step'])
+                ->where('status', 'approved')->whereNotNull('score')->exists()) {
+                throw ValidationException::withMessages(['assessment' => 'ยังอนุมัติสุดท้ายไม่ได้: ผู้ให้คะแนนลำดับที่ '.$step['step'].' ยังให้คะแนนสมรรถนะนี้ไม่ครบ']);
+            }
+        }
+    }
+
+    private function latestFacultyReviewerScore(User $employee, int $assessmentId, int $competencyId): ?float
+    {
+        $steps = $this->facultyScorerSteps($employee, $competencyId);
+        if ($steps === []) return null;
         $score = DB::table('scores')
             ->where('assessment_id', $assessmentId)
             ->where('competency_id', $competencyId)
             ->where('status', 'approved')
             ->whereNotNull('score')
+            ->where(function ($query) use ($steps): void {
+                foreach ($steps as $step) {
+                    $query->orWhere(fn ($q) => $q->where('assessor_id', $step['reviewer_id'])->where('assessor_role', 'supervisor_'.$step['step']));
+                }
+            })
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
             ->value('score');

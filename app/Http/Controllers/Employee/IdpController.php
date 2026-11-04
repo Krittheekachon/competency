@@ -190,6 +190,27 @@ class IdpController extends Controller
 
         $submittedItemIds = [];
         DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId, $planGaps, &$submittedItemIds): void {
+            // Serialize both first creation and subsequent edits for this owner, including legacy plans.
+            DB::table('users')->where('id', $owner->id)->lockForUpdate()->first();
+            if ($planGaps !== null) {
+                DB::table('assessments')->where('user_id', $owner->id)->where('assessment_round_id', $roundId)->orderBy('id')->lockForUpdate()->get(['id']);
+                $state = $this->facultyPlans->readiness((int) $owner->id, $roundId);
+                if ($state['missingGaps'] !== [] || $status === 'submitted') {
+                    $this->facultyPlans->assertReadyToSubmit((int) $owner->id, $roundId);
+                }
+                $planGaps = $this->facultyPlans->failedGaps((int) $owner->id, $roundId);
+                if ($items->isNotEmpty() && $planGaps->isEmpty()) {
+                    throw ValidationException::withMessages(['items' => 'ไม่พบ Gap ที่อนุมัติแล้วและต้องจัดทำ IDP ในรอบนี้']);
+                }
+                if ($items->isNotEmpty()) {
+                    $anchor = $this->facultyPlanAnchorGapId($roundId, $planGaps, (int) $items->first()['competencyGapId']);
+                    $items = $items->map(fn ($item) => [...$item, 'competencyGapId' => $anchor]);
+                }
+                $freshCatalogCompetencies = DB::table('learning_catalog_competency')
+                    ->whereIn('learning_catalog_id', $catalogsById->keys())->get()->groupBy('learning_catalog_id')
+                    ->map(fn ($rows) => $rows->pluck('competency_id')->map(fn ($id) => (int) $id));
+                $this->validateActivities($items, $status, $planGaps, $methodIdsByKey, $toolsById, $freshCatalogCompetencies, $catalogsById, $planGaps);
+            }
             $idpId = $this->currentUserIdpId($roundId);
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
@@ -197,6 +218,7 @@ class IdpController extends Controller
                     ->where('idp_id', $idpId)
                     ->where('competency_gap_id', $gapId)
                     ->orderByDesc('id')
+                    ->lockForUpdate()
                     ->first();
 
                 if ($existing && ($existing->status === 'approved'
@@ -913,6 +935,7 @@ class IdpController extends Controller
             ->where('competency_gaps.requires_idp', true)
             ->where('competency_gaps.gap', '<', 0)
             ->whereIn('competency_gaps.status', ['approved', 'dean_approved'])
+            ->whereIn('assessments.status', ['approved', 'dean_approved'])
             ->get([
                 'competency_gaps.id',
                 'competency_gaps.competency_id',
@@ -947,7 +970,8 @@ class IdpController extends Controller
             return (int) $existing;
         }
 
-        return (int) DB::table('idps')->insertGetId([
+        // ON CONFLICT DO NOTHING avoids aborting PostgreSQL's transaction on a unique collision.
+        DB::table('idps')->insertOrIgnore([
             'user_id' => auth()->id(),
             'assessment_round_id' => $roundId,
             'year' => $year,
@@ -956,6 +980,7 @@ class IdpController extends Controller
             'updated_at' => now(),
             'created_at' => now(),
         ]);
+        return (int) DB::table('idps')->where('user_id', auth()->id())->where('assessment_round_id', $roundId)->value('id');
     }
 
 }

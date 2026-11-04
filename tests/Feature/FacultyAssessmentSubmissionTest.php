@@ -216,7 +216,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
         $this->assignReviewer($employee, $reviewer);
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
-        $this->actingAs($reviewer)->post(route('assessments.approve'), [
+        $this->actingAs($reviewer)->postJson(route('assessments.approve'), [
             'user_id' => $employee->id,
             'competency_id' => $competencyId,
             'checked' => [
@@ -227,15 +227,10 @@ class FacultyAssessmentSubmissionTest extends TestCase
                 "{$competencyId}:{$levelIds[3]}:1",
                 "{$competencyId}:{$levelIds[3]}:2",
             ],
-        ])->assertSessionHasNoErrors();
+        ])->assertUnprocessable()->assertJsonValidationErrors('assessment');
 
-        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'approved']);
-        $this->assertDatabaseHas('scores', [
-            'assessment_id' => $assessmentId,
-            'assessor_id' => $reviewer->id,
-            'score' => null,
-            'status' => 'approved',
-        ]);
+        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'self_submitted']);
+        $this->assertDatabaseMissing('scores', ['assessment_id' => $assessmentId, 'assessor_id' => $reviewer->id]);
         $this->assertDatabaseMissing('assessment_reviewer_indicator_results', [
             'assessment_id' => $assessmentId,
             'reviewer_id' => $reviewer->id,

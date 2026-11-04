@@ -92,6 +92,7 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
+const facultyIdpReadiness = computed(() => page.props.facultyIdpReadiness as { ready: boolean; message: string } | null);
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
 const activeFormActivityKey = ref<string | null>(null);
@@ -754,8 +755,7 @@ const scheduleAutoSave = (delay = 1000, force = false) => {
 };
 
 const performAutoSave = async (force = false): Promise<boolean> => {
-  if (!force && (activeFormActivityKey.value !== null
-    || (selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value)))) {
+  if (!force && activeFormActivityKey.value !== null) {
     queuedSave.value = false;
     return false;
   }
@@ -801,10 +801,8 @@ const performAutoSave = async (force = false): Promise<boolean> => {
     saveState.value = 'error';
   } finally {
     const retryWithForce = forceQueuedSave.value;
-    const shouldRetry = retryWithForce || (
-      !(selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value))
-      && (queuedSave.value || signature() !== lastSavedSignature.value)
-    );
+    const shouldRetry = retryWithForce || queuedSave.value
+      || (saved && signature() !== lastSavedSignature.value);
     queuedSave.value = false;
     forceQueuedSave.value = false;
     if (shouldRetry) {
@@ -818,7 +816,6 @@ const performAutoSave = async (force = false): Promise<boolean> => {
 watch(plans, () => {
   if (activeFormActivityKey.value !== null
     || plans.value.every((plan) => isPlanLocked(plan))
-    || (selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value))
     || signature() === lastSavedSignature.value) return;
   saveState.value = 'idle';
   scheduleAutoSave();
@@ -995,11 +992,12 @@ const planNavDetail = (plan: Plan) => {
   return planIssue(plan) || 'ข้อมูลครบแล้ว พร้อมส่งอนุมัติ';
 };
 const selectedPlanIssue = computed(() => selectedPlan.value && !selectedPlanLocked.value
-  ? planIssue(selectedPlan.value)
+  ? (facultyIdpReadiness.value && !facultyIdpReadiness.value.ready ? facultyIdpReadiness.value.message : planIssue(selectedPlan.value))
   : '');
 const submitSelectedPlan = async () => {
   if (!selectedPlan.value || selectedPlanLocked.value) return;
-  const issue = planIssue(selectedPlan.value);
+  const issue = facultyIdpReadiness.value && !facultyIdpReadiness.value.ready
+    ? facultyIdpReadiness.value.message : planIssue(selectedPlan.value);
   if (issue) {
     window.alert(issue);
     return;
@@ -1035,6 +1033,9 @@ const submitSelectedPlan = async () => {
 
 <template>
   <section class="idp-page">
+    <div v-if="facultyIdpReadiness && !facultyIdpReadiness.ready" class="revision-alert" role="alert" data-testid="faculty-idp-readiness">
+      {{ facultyIdpReadiness.message }}
+    </div>
     <header class="page-header">
       <div>
         <h1>แผนพัฒนา IDP</h1>
@@ -1951,8 +1952,8 @@ const submitSelectedPlan = async () => {
         <span v-else-if="selectedPlan && !selectedPlanLocked" class="submit-ready" role="status">ข้อมูลครบแล้ว พร้อมส่งอนุมัติ</span>
         <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
         <span v-else-if="selectedPlanLocked">สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้</span>
-        <span v-else-if="selectedPlanIssue">ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก</span>
-        <span v-else>บันทึกฟอร์มล่าสุดแล้ว และหยุดบันทึกอัตโนมัติ</span>
+        <span v-else-if="saveState === 'saved'">บันทึกร่างล่าสุดแล้ว</span>
+        <span v-else>ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก</span>
       </div>
       <button type="button" :aria-describedby="submitError || selectedPlanIssue || saveState === 'saving' ? 'idp-submit-reason' : undefined" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!selectedPlanIssue" @click="submitSelectedPlan">
         {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : (usesFacultyPlan ? 'ส่งแผนให้ผู้อนุมัติ' : 'ส่งสมรรถนะนี้ให้หัวหน้า') }}

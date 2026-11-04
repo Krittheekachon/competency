@@ -2,6 +2,7 @@
 import { computed, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
+import MobileSidebarClose from '../../Components/MobileSidebarClose.vue';
 import AssessmentSummaryBand from '../../Components/AssessmentSummaryBand.vue';
 import FacultyOverview from '../Analytics/FacultyOverview.vue';
 import { NAV_CONFIG, PAGE_TITLES, ROLES_CONFIG } from '../../data';
@@ -1223,6 +1224,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar && !props.embedded, 'embedded-reviewer-shell': props.embedded }">
         <div v-if="showSidebar && !props.embedded" class="sidebar">
+            <MobileSidebarClose @close="showSidebar = false" />
             <SidebarBrand />
 
             <button class="sb-user on" type="button" @click="goProfile">

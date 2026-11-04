@@ -29,6 +29,11 @@ class CompetencyGapCalculatorTest extends TestCase
             'three of four is seventy five percent' => [3, 4, true],
             'four of five is exactly eighty percent' => [4, 5, false],
             'three of three is one hundred percent' => [3, 3, false],
+            'below before actual rounding' => [3.999, 5, true],
+            'below but display rounds to eighty' => [3.9999, 5, true],
+            'above before rounding' => [4.0001, 5, false],
+            'expected must not be rounded before comparison' => [1.6, 2.0001, true],
+            'above with fractional expected' => [1.6, 1.9999, false],
         ];
     }
 
@@ -50,5 +55,31 @@ class CompetencyGapCalculatorTest extends TestCase
 
         $this->assertFalse($calculator->calculate(AssessmentMethodResolver::FACULTY, 0, null)['requiresIdp']);
         $this->assertFalse($calculator->calculate(AssessmentMethodResolver::FACULTY, 0, 0)['requiresIdp']);
+    }
+
+    #[DataProvider('invalidExpectedLevels')]
+    public function test_invalid_expected_level_has_no_ratio_or_classification(?float $expected): void
+    {
+        foreach ([AssessmentMethodResolver::FACULTY, AssessmentMethodResolver::STANDARD] as $method) {
+            $result = (new CompetencyGapCalculator())->calculate($method, 3, $expected);
+            $this->assertNull($result['expectedLevel']);
+            $this->assertNull($result['gap']);
+            $this->assertNull($result['percentage']);
+            $this->assertFalse($result['requiresIdp']);
+        }
+    }
+
+    public static function invalidExpectedLevels(): array
+    {
+        return ['missing' => [null], 'zero' => [0.0], 'negative' => [-1.0],
+            'not a number' => [NAN], 'positive infinity' => [INF], 'negative infinity' => [-INF]];
+    }
+
+    public function test_display_rounding_does_not_change_the_faculty_decision(): void
+    {
+        $result = (new CompetencyGapCalculator())->calculate('faculty', 3.9999, 5);
+        $this->assertSame(4.0, $result['actualLevel']);
+        $this->assertSame(80.0, $result['percentage']);
+        $this->assertTrue($result['requiresIdp']);
     }
 }

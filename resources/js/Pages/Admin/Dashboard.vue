@@ -617,6 +617,7 @@ const reviewerChainTypeLabel = (chainType = 'assessment') => ({
 }[chainType] || chainType);
 const reviewerTemplateDescription = computed(() => {
     if (!selectedReviewerTemplate.value) return 'ยังไม่ได้เลือก template';
+    if (selectedReviewerTemplate.value.structureDefault) return 'ใช้หัวหน้าจากสังกัดจริง ไล่จากหน่วยงานใกล้ที่สุดขึ้นไป เป็นค่าตั้งต้นที่แก้ไขได้ก่อนบันทึก';
 
     const stepText = (selectedReviewerTemplate.value.steps || [])
         .map((step) => `${step.step}. ${templateStepLabel(step)}`)
@@ -968,6 +969,7 @@ const applyReviewerTemplate = () => {
     userForm.value.reviewer_ids = ids.length ? ids : [''];
     clearReviewerSearch();
 };
+const structureReviewerMessage = ref('');
 const applyIdpReviewerTemplate = () => {
     const template = selectedIdpReviewerTemplate.value;
 
@@ -985,7 +987,36 @@ const applyIdpReviewerTemplate = () => {
 
     userForm.value.idp_reviewer_ids = ids;
 };
-const selectReviewerTemplate = (templateId) => {
+const selectReviewerTemplate = (templateId, selectElement = null) => {
+    const previousTemplateId = userForm.value.reviewer_template_id;
+    const template = assessmentReviewerTemplates.value.find(item => Number(item.id) === Number(templateId));
+    structureReviewerMessage.value = '';
+    if (template?.structureDefault) {
+        const preview = page.props.organizationReviewerDefaults?.[userForm.value.db_id];
+        if (!preview || organizationDirty.value) {
+            structureReviewerMessage.value = 'กรุณาบันทึกสังกัดของผู้ถูกประเมินก่อน แล้วเปิดฟอร์มอีกครั้ง เพื่อใช้สังกัดจริงที่บันทึกแล้ว';
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        const messages = [...(preview.warnings || [])];
+        if (preview.error) {
+            structureReviewerMessage.value = [preview.error, ...messages].join('\n');
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        if (preview.reviewerIds.length !== (template.steps || []).length) {
+            messages.push(`ได้ ${preview.reviewerIds.length} ขั้นจากโครงสร้าง เทียบกับ template ${template.steps.length} ขั้น — ใช้หัวหน้าที่พบครบทุกคน ไม่ตัดรายชื่อ และแก้ไขต่อได้`);
+        }
+        if (selectedReviewerIds.value.length && !window.confirm('แทนที่ลำดับผู้ประเมินที่กรอกไว้ด้วยหัวหน้าตามโครงสร้างหรือไม่? ยังไม่บันทึกจนกดบันทึกข้อมูล')) {
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
+        userForm.value.reviewer_ids = [...preview.reviewerIds];
+        clearReviewerSearch();
+        structureReviewerMessage.value = [`เติมหัวหน้าจาก ${preview.path.join(' → ')} แล้ว กรุณาตรวจลำดับก่อนบันทึก`, ...messages].join('\n');
+        return;
+    }
     userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
 
     if (userForm.value.reviewer_template_id) {
@@ -1020,14 +1051,17 @@ const normalizeReviewerList = () => {
     activeReviewerDropdown.value = null;
 };
 const addReviewerStep = () => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = [...(userForm.value.reviewer_ids || []), ''];
 };
 const removeReviewerStep = (index) => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = (userForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
 };
 const updateReviewerStep = (index, value) => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     const next = [...(userForm.value.reviewer_ids || [])];
     next[index] = selectedEvaluatorId(value);
     userForm.value.reviewer_ids = next;
@@ -1308,6 +1342,7 @@ const normalizeAcademicTitle = (title) => ({
 }[title] || title || '');
 
 const resetUserForm = (data = null) => {
+    structureReviewerMessage.value = '';
     const org = parseOrgPath(data?.d || '');
     const supportWorkline = normalizeWorklineName(data?.w || '') === 'สนับสนุน';
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
@@ -1660,6 +1695,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
+            <button class="admin-mobile-close btn btn-s" type="button" aria-label="ปิดเมนู" @click="showSidebar = false">×</button>
             <SidebarBrand />
 
             <button class="sb-user" type="button" @click="goProfile">
@@ -1697,6 +1733,8 @@ const logout = () => router.post(route('logout'));
                     class="btn btn-s btn-sm"
                     style="padding: 8px; min-width: 40px; justify-content: center; border: none; background: transparent"
                     type="button"
+                    :aria-label="showSidebar ? 'ซ่อนเมนู' : 'เปิดเมนู'"
+                    :aria-expanded="showSidebar"
                     @click="showSidebar = !showSidebar"
                 >
                     ☰
@@ -1784,6 +1822,7 @@ const logout = () => router.post(route('logout'));
 
                 <AdminOrgStructure
                     v-else-if="activePage === 'admin-org-structure'"
+                    :organization-chart="page.props.organizationChart"
                     :academic-depts="academicPositions"
                     :set-academic-depts="setRef(academicPositions)"
                     :support-depts="supportJobFamilies"
@@ -2121,7 +2160,7 @@ const logout = () => router.post(route('logout'));
                                 <select
                                     :value="userForm.reviewer_template_id"
                                     class="sel modal-input"
-                                    @change="selectReviewerTemplate($event.target.value)"
+                                    @change="selectReviewerTemplate($event.target.value, $event.target)"
                                 >
                                     <option value="">— ไม่ใช้ template —</option>
                                     <option
@@ -2136,6 +2175,7 @@ const logout = () => router.post(route('logout'));
                             <div class="modal-help workflow-template-help">
                                 {{ reviewerTemplateDescription }}
                             </div>
+                            <div v-if="structureReviewerMessage" class="modal-help warning" role="status" style="white-space: pre-line">{{ structureReviewerMessage }}</div>
                         </div>
                     </section>
 
@@ -2658,6 +2698,10 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.admin-mobile-close { display: none; }
+@media (max-width: 900px) {
+    .admin-mobile-close { display: block; position: absolute; top: 10px; right: 10px; z-index: 2; width: 36px; height: 36px; padding: 0; font-size: 24px; }
+}
 .reviewer-template-form-error {
     margin: 14px 0 0;
     color: #b42318;

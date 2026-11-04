@@ -61,6 +61,7 @@ if (app()->environment('local') && config('app.mock_sso_enabled')) {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('role:admin')->group(function () {
+        Route::put('/admin/organization-chart/people', [\App\Http\Controllers\Admin\OrganizationChartController::class, 'update'])->name('admin.organization-chart.people.update');
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
         Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
