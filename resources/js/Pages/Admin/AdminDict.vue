@@ -81,7 +81,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
 
     const deleteComp = (c: any) => {
       if (!c.id) return;
-      if (!window.confirm(`ต้องการลบสมรรถนะ ${c.cd} ใช่หรือไม่`)) return;
+      if (!window.confirm(`ต้องการลบสมรรถนะ ${methodOf(c) === 'faculty' ? c.n : c.cd} ใช่หรือไม่`)) return;
 
       router.delete(route("admin.competencies.destroy", c.id), {
         preserveScroll: true,
@@ -262,9 +262,9 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       const selectedType = competencyTypes.find((t: any) => getCompetencyTypeCode(t) === type.value);
       const selectedTypeId = selectedType?.id || null;
       if (!selectedTypeId) {showStatus("e", "กรุณาเพิ่มประเภทสมรรถนะก่อน");return;}
-      if (!codeTail.value.trim()) {showStatus("e", "กรุณากรอกรหัสสมรรถนะ");return;}
+      if (!isFaculty.value && !codeTail.value.trim()) {showStatus("e", "กรุณากรอกรหัสสมรรถนะ");return;}
       if (!name.value.trim()) {showStatus("e", "กรุณากรอกชื่อสมรรถนะ");return;}
-      if (!desc.value.trim()) {showStatus("e", "กรุณากรอกรายละเอียดสมรรถนะ");return;}
+      if (!desc.value.trim()) {showStatus("e", isFaculty.value ? "กรุณากรอกคุณลักษณะเชิงพฤติกรรม" : "กรุณากรอกรายละเอียดสมรรถนะ");return;}
 
       for (let i = 0; i < levels.value.length; i++) {
         const lv = levels.value[i];
@@ -276,14 +276,15 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
         }
       }
 
-      const alreadyExistsCode = competencyList.value.some((c) => c.cd === code && c.cd !== editId.value);
+      const alreadyExistsCode = !isFaculty.value && competencyList.value.some((c) => c.cd === code && c.cd !== editId.value);
       const alreadyExistsName = competencyList.value.some((c) => c.n === name.value && c.cd !== editId.value);
       if (alreadyExistsCode) {showStatus("e", `รหัสสมรรถนะ ${code} มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น`);return;}
       if (alreadyExistsName) {showStatus("e", `ชื่อสมรรถนะ "${name.value}" มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น`);return;}
 
       const payload = {
         competency_type_id: selectedTypeId,
-        code,
+        // Faculty-format competencies have no code; the server keeps an internal one.
+        code: isFaculty.value ? null : code,
         name: name.value.trim(),
         detail: desc.value.trim(),
         assessment_method: format.value,
@@ -400,6 +401,11 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                     {competencyTypes.map((t) => <option key={getCompetencyTypeCode(t)} value={getCompetencyTypeCode(t)}>{getCompetencyTypeLabel(t)}</option>)}
                   </select>
                 </div>
+                {isFaculty.value ?
+                <div class="fg flex-1">
+                  <label class="lbl">2. ชื่อสมรรถนะ</label>
+                  <input class="inp dict-name-input" placeholder="กรอกชื่อสมรรถนะ..." value={name.value} onChange={(e) => {setName(e.target.value);setIsDirty(true);}} />
+                </div> :
                 <div class="fg flex-1">
                   <label class="lbl">2. รหัสและชื่อสมรรถนะ (Code & Name)</label>
                   <div class="dict-code-name-fields">
@@ -410,10 +416,11 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                     <input class="inp dict-name-input" placeholder="กรอกชื่อสมรรถนะ..." value={name.value} onChange={(e) => {setName(e.target.value);setIsDirty(true);}} />
                   </div>
                 </div>
+                }
               </div>
               <div class="fg">
-                <label class="lbl">3. รายละเอียดสมรรถนะ (Description)</label>
-                <textarea class="inp" rows={3} placeholder="กรอกคำอธิบายความหมายของสมรรถนะ..." value={desc.value} onChange={(e) => {setDesc(e.target.value);setIsDirty(true);}}></textarea>
+                <label class="lbl">{isFaculty.value ? '3. คุณลักษณะเชิงพฤติกรรม' : '3. รายละเอียดสมรรถนะ (Description)'}</label>
+                <textarea class="inp" rows={3} placeholder={isFaculty.value ? 'กรอกคุณลักษณะเชิงพฤติกรรมของสมรรถนะ...' : 'กรอกคำอธิบายความหมายของสมรรถนะ...'} value={desc.value} onChange={(e) => {setDesc(e.target.value);setIsDirty(true);}}></textarea>
               </div>
             </div>
           </div>
@@ -523,7 +530,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                 class="inp dict-search-input"
                 value={searchTerm.value}
                 onInput={(e) => setSearchTerm((e.target as HTMLInputElement).value)}
-                placeholder="ค้นหารหัส ชื่อ ประเภท หรือคำอธิบาย"
+                placeholder={isFaculty.value ? "ค้นหาชื่อ ประเภท หรือคุณลักษณะเชิงพฤติกรรม" : "ค้นหารหัส ชื่อ ประเภท หรือคำอธิบาย"}
               />
             </div>
             <div class="dict-filter-field">
@@ -555,7 +562,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
               <label class="dict-filter-label">เรียงตาม</label>
               <select class="sel" value={sortBy.value} onChange={(e) => setSortBy(e.target.value)}>
                 <option value="newest">ค่าเริ่มต้น</option>
-                <option value="code">รหัสสมรรถนะ</option>
+                {!isFaculty.value && <option value="code">รหัสสมรรถนะ</option>}
                 <option value="name">ชื่อสมรรถนะ</option>
                 <option value="type">ประเภทสมรรถนะ</option>
               </select>
@@ -579,7 +586,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                   }}>
                   
                     <div class="dict-info">
-                      <span class="dict-code">{c.cd}</span>
+                      {methodOf(c) !== 'faculty' && <span class="dict-code">{c.cd}</span>}
                       <span class="dict-name">{c.n}</span>
                       <span class={`dict-tag ${getCompTag(c)}`}>{getCompType(c)}</span>
                     </div>

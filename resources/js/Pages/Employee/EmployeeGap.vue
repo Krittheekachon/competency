@@ -203,8 +203,8 @@ const formatGap = (value: unknown) => {
                 <div class="table-competency">
                   <span class="type-tag">{{ row.t || '-' }}</span>
                   <div class="competency-copy">
-                    <strong>{{ row.cd }}</strong>
-                    <small>{{ row.n }}</small>
+                    <strong>{{ row.cd || row.n }}</strong>
+                    <small v-if="row.cd">{{ row.n }}</small>
                   </div>
                 </div>
               </td>
@@ -234,7 +234,7 @@ const formatGap = (value: unknown) => {
             <div>
               <div class="modal-code-line">
                 <span class="type-tag">{{ selectedRow.t || '-' }}</span>
-                <strong>{{ selectedRow.cd }}</strong>
+                <strong v-if="selectedRow.cd">{{ selectedRow.cd }}</strong>
               </div>
               <h2 :id="`competency-title-${rowKey(selectedRow)}`">{{ selectedRow.n }}</h2>
               <p>{{ employeeName }} · ระดับความคาดหวัง {{ formatLevel(selectedRow.expected) }}</p>

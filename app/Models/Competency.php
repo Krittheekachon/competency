@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Competency extends Model
 {
+    /** Faculty-format competencies have no user-facing code; screens show the name instead. */
+    public const DISPLAY_CODE_SQL = "CASE WHEN competencies.assessment_method = 'faculty' THEN '' ELSE competencies.code END";
+
     protected $fillable = [
         'competency_type_id',
         'code',

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Competency;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +111,7 @@ class FacultyAnalyticsService
                 'assessments.user_id',
                 'competencies.id as competency_id',
                 'competencies.code as competency_code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as display_code'),
                 'competencies.name as competency_name',
                 'competency_types.code as competency_type',
                 'competency_gaps.expected_level',
@@ -348,6 +350,7 @@ class FacultyAnalyticsService
                 return [
                     'competencyId' => (int) $first->competency_id,
                     'code' => $first->competency_code,
+                    'displayCode' => (string) $first->display_code,
                     'name' => $first->competency_name,
                     'type' => $first->competency_type,
                     'peopleCount' => $rows->pluck('user_id')->unique()->count(),
@@ -467,6 +470,7 @@ class FacultyAnalyticsService
             return [
                 'competencyId' => (int) $first->competency_id,
                 'code' => $first->competency_code,
+                'displayCode' => (string) $first->display_code,
                 'name' => $first->competency_name,
                 'type' => $first->competency_type,
                 ...$cells,
@@ -515,6 +519,7 @@ class FacultyAnalyticsService
             return [
                 'competencyId' => $row['competencyId'],
                 'code' => $row['code'],
+                'displayCode' => $row['displayCode'],
                 'name' => $row['name'],
                 'needsIdp' => $row['faculty']['peopleCount'],
                 'overdueCount' => $row['faculty']['overdueCount'],
@@ -545,6 +550,7 @@ class FacultyAnalyticsService
             return [
                 'competencyId' => $row['competencyId'],
                 'code' => $row['code'],
+                'displayCode' => $row['displayCode'],
                 'name' => $row['name'],
                 'peopleCount' => $cell['peopleCount'],
                 'averageGap' => $cell['averageGap'],

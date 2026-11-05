@@ -235,7 +235,7 @@ const reject = (item) => {
                     <span class="queue-column-label">แผนที่รอตรวจ</span>
                     <strong>{{ group.visibleItems.length }} สมรรถนะ · {{ group.visibleItems.reduce((total, item) => total + item.activities.length, 0) }} กิจกรรม</strong>
                     <div class="queue-competency-codes">
-                        <span v-for="item in group.visibleItems" :key="item.id">{{ item.competencyCode }}</span>
+                        <span v-for="item in group.visibleItems" :key="item.id">{{ item.competencyCode || item.competencyName }}</span>
                     </div>
                 </div>
 
@@ -281,7 +281,7 @@ const reject = (item) => {
                         type="button"
                         @click="openItem(item.id)"
                     >
-                        <span class="topic-code">{{ item.competencyCode }}</span>
+                        <span v-if="item.competencyCode" class="topic-code">{{ item.competencyCode }}</span>
                         <span class="topic-copy"><strong>{{ item.competencyName }}</strong><small>{{ item.activities.length }} กิจกรรม</small></span>
                         <span class="topic-status" :class="`is-${statusTone(item)}`">{{ statusLabel(item) }}</span>
                         <span class="topic-action">ตรวจสอบ ›</span>
@@ -298,7 +298,7 @@ const reject = (item) => {
                 </div>
                 <div class="competency">
                     <span class="review-step">{{ statusLabel(selectedItem) }}</span>
-                    <span>{{ selectedItem.competencyCode }}</span>
+                    <span v-if="selectedItem.competencyCode">{{ selectedItem.competencyCode }}</span>
                     <strong>{{ selectedItem.competencyName }}</strong>
                 </div>
             </div>
@@ -359,7 +359,7 @@ const reject = (item) => {
                 <div class="activity-detail-head">
                     <div class="activity-detail-copy">
                         <div class="activity-detail-meta">
-                            <span>{{ selectedItem.competencyCode }}</span>
+                            <span v-if="selectedItem.competencyCode">{{ selectedItem.competencyCode }}</span>
                             <span v-if="selectedActivity.documentReferenceNumber" class="document-reference">เอกสาร {{ selectedActivity.documentReferenceNumber }}</span>
                         </div>
                         <strong>{{ selectedActivity.name }}</strong>

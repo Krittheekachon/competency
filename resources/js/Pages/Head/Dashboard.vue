@@ -484,7 +484,7 @@ const fcTopicNameList = (selection) => {
 
     return (selection?.availableCompetencies || [])
         .filter((item) => selectedIds.has(Number(item.id)))
-        .map((item) => `${item.cd} · ${item.n}`);
+        .map((item) => (item.cd ? `${item.cd} · ${item.n}` : item.n));
 };
 const openFcTopicDecision = (person, decision) => {
     selectedFcTopicApproval.value = person;
@@ -1514,7 +1514,7 @@ const logout = () => router.post(route('logout'));
                                         >
                                             <div class="team-competency-name">
                                                 <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                                <div><strong>{{ row.code || '-' }}</strong><small>{{ row.title }}</small></div>
+                                                <div><strong>{{ row.code || row.title }}</strong><small v-if="row.code">{{ row.title }}</small></div>
                                             </div>
                                             <span>{{ row.expected }}</span>
                                             <span>{{ isCompetencyApproved(row) ? row.headScore : '-' }}</span>
@@ -1818,7 +1818,7 @@ const logout = () => router.post(route('logout'));
                                         >
                                             <div class="flex ic g10">
                                                 <span class="tag-cc" :class="{ 'tag-fc': row.group === 'FC' }">{{ row.group }}</span>
-                                                <span>{{ row.code }} · {{ row.title }}</span>
+                                                <span>{{ row.code ? `${row.code} · ${row.title}` : row.title }}</span>
                                                 <span class="approval-accordion-icon">{{ isSupervisorCompetencyOpen(row) ? 'ซ่อน' : 'ดูรายละเอียด' }}</span>
                                             </div>
                                             <div class="flex ic g8">
@@ -1897,7 +1897,7 @@ const logout = () => router.post(route('logout'));
                                     <div>
                                         <div class="flex ic g10">
                                             <span class="tag-cc" :class="{ 'tag-fc': selectedSupervisorCompetency.group === 'FC' }">{{ selectedSupervisorCompetency.group }}</span>
-                                            <strong>{{ selectedSupervisorCompetency.code }}</strong>
+                                            <strong v-if="selectedSupervisorCompetency.code">{{ selectedSupervisorCompetency.code }}</strong>
                                         </div>
                                         <h2>{{ selectedSupervisorCompetency.title }}</h2>
                                         <p>{{ supervisorApprovalName }} · ระดับความคาดหวัง {{ selectedSupervisorCompetency.expected ?? '-' }}</p>

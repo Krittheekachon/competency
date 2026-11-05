@@ -406,6 +406,7 @@ const heatTone = (cell: any) => {
 const openCell = (row: any, scope: any) => {
   selectedCell.value = {
     competencyCode: row.code,
+    displayCode: row.displayCode,
     competencyName: row.name,
     scopeKey: scope.key,
     scopeLabel: scope.label,
@@ -752,7 +753,7 @@ onBeforeUnmount(() => {
           <tbody>
             <tr v-for="row in visibleHeatmap" :key="row.competencyId">
               <th scope="row">
-                <span>{{ row.code }} · {{ row.type }}</span>
+                <span>{{ row.displayCode ? `${row.displayCode} · ${row.type}` : row.type }}</span>
                 <strong>{{ row.name }}</strong>
               </th>
               <td v-for="scope in scopes" :key="scope.key">
@@ -785,7 +786,7 @@ onBeforeUnmount(() => {
               <header>
                 <div>
                   <span>{{ selectedCell.scopeLabel }}</span>
-                  <h3 id="cell-detail-title">{{ selectedCell.competencyCode }} · {{ selectedCell.competencyName }}</h3>
+                  <h3 id="cell-detail-title">{{ selectedCell.displayCode ? `${selectedCell.displayCode} · ` : '' }}{{ selectedCell.competencyName }}</h3>
                 </div>
                 <button type="button" aria-label="ปิดรายละเอียด" @click="closeCell">×</button>
               </header>
@@ -909,7 +910,7 @@ onBeforeUnmount(() => {
                   <span
                     v-for="competency in person.competencies.slice(0, 2)"
                     :key="competency.code"
-                    :title="`${competency.code} · ${competency.name}`"
+                    :title="competency.name"
                   >{{ competency.name }}</span>
                   <b v-if="person.competencies.length > 2">+{{ formatNumber(person.competencies.length - 2) }}</b>
                   <small>{{ formatNumber(person.competencies.length) }} สมรรถนะ</small>

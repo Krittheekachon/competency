@@ -222,7 +222,7 @@ const topicTimelineEntries = (activity: any, topicIndex: number, completion: any
           :aria-pressed="group.id === selectedGroupId"
           @click="selectedGroupId = group.id"
         >
-          <span>{{ group.code }}</span>
+          <span v-if="group.code">{{ group.code }}</span>
           <div><strong>{{ group.name }}</strong><small>{{ completionMeta(group.completion).label }}</small></div>
         </button>
       </nav>
@@ -230,7 +230,7 @@ const topicTimelineEntries = (activity: any, topicIndex: number, completion: any
       <section v-if="selectedGroup" class="record">
         <header class="record-head">
           <div class="record-identity">
-            <span>{{ selectedGroup.code }}</span>
+            <span v-if="selectedGroup.code">{{ selectedGroup.code }}</span>
             <div><small>สมรรถนะที่ต้องพัฒนา</small><h2>{{ selectedGroup.name }}</h2></div>
           </div>
           <strong class="status" :class="completionMeta(selectedGroup.completion).tone">{{ completionMeta(selectedGroup.completion).label }}</strong>

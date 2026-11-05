@@ -406,7 +406,7 @@ const formatDateTime = (value) => {
                 <div class="competency-list">
                     <article v-for="item in group.items" :key="item.id" class="competency-row">
                         <div class="competency-summary">
-                            <span>{{ item.competencyCode }}</span>
+                            <span v-if="item.competencyCode">{{ item.competencyCode }}</span>
                             <h3>{{ item.competencyName }}</h3>
                             <small v-if="item.planStatus !== 'approved'">{{ planStatusLabel(item) }}</small>
                         </div>
@@ -445,7 +445,7 @@ const formatDateTime = (value) => {
                         <span>{{ selectedItem.userPosition || 'ไม่ระบุตำแหน่ง' }}</span>
                     </div>
                     <div class="dialog-title-row">
-                        <span class="dialog-code">{{ selectedItem.competencyCode }}</span>
+                        <span v-if="selectedItem.competencyCode" class="dialog-code">{{ selectedItem.competencyCode }}</span>
                         <h2 id="progress-dialog-title">{{ selectedItem.competencyName }}</h2>
                         <span class="review-status" :class="statusTone(selectedItem)">{{ selectedItem.planStatus === 'approved' ? 'แผนอนุมัติแล้ว' : planStatusLabel(selectedItem) }}</span>
                     </div>
@@ -461,7 +461,7 @@ const formatDateTime = (value) => {
                     :aria-pressed="selectedItem?.id === item.id"
                     @click="open(item)"
                 >
-                    <span>{{ item.competencyCode }}</span>
+                    <span v-if="item.competencyCode">{{ item.competencyCode }}</span>
                     <strong>{{ item.competencyName }}</strong>
                 </button>
             </nav>
@@ -588,7 +588,7 @@ const formatDateTime = (value) => {
             <article class="plan-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-plan-dialog-title">
                 <header class="plan-dialog-header">
                     <div>
-                        <span>{{ selectedItem.competencyCode }} · แผนกิจกรรม</span>
+                        <span>{{ selectedItem.competencyCode || selectedItem.competencyName }} · แผนกิจกรรม</span>
                         <h2 id="activity-plan-dialog-title">แผนที่ผู้ใช้กรอก</h2>
                         <p>{{ selectedActivity.name || 'ไม่ระบุชื่อกิจกรรม' }}</p>
                     </div>

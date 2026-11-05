@@ -186,8 +186,8 @@ class FacultyIdpPlanTest extends TestCase
             ->get('/dashboard')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('idpReviewItems.0.competencyCode', 'IDP')
-                ->where('idpReviewItems.0.competencyName', 'แผนพัฒนารายบุคคล · CC-A, CC-B')
+                ->where('idpReviewItems.0.competencyCode', '')
+                ->where('idpReviewItems.0.competencyName', 'แผนพัฒนารายบุคคล · สมรรถนะ CC-A, สมรรถนะ CC-B')
                 ->has('idpReviewItems.0.planCompetencies', 2)
             );
     }

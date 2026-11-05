@@ -121,7 +121,7 @@ const idpGaps = computed<Gap[]>(() => {
   const anchor = failedGaps.value.find((gap) => savedGapIds.has(gap.id)) || failedGaps.value[0];
   return [{
     ...anchor,
-    cd: 'IDP',
+    cd: '',
     n: 'แผนพัฒนารายบุคคล',
     planGaps: failedGaps.value,
   }];
@@ -1094,7 +1094,7 @@ const submitSelectedPlan = async () => {
             type="button"
             @click="selectedGapId = plan.competencyGapId"
           >
-            <span class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
+            <span v-if="gapForPlan(plan)?.cd" class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
             <span class="competency-copy">
               <strong>{{ gapForPlan(plan)?.n }}</strong>
               <small>{{ planNavDetail(plan) }}</small>
@@ -1115,7 +1115,7 @@ const submitSelectedPlan = async () => {
         <template v-else>
           <section class="competency-header">
             <div>
-              <span class="type-tag">{{ selectedGap.cd }}</span>
+              <span v-if="selectedGap.cd" class="type-tag">{{ selectedGap.cd }}</span>
               <h2>{{ selectedGap.n }}</h2>
               <p v-if="usesFacultyPlan" class="faculty-plan-copy">
                 รวมทุกสมรรถนะที่ต่ำกว่า 80% ไว้ในแผนเดียว กรอกกิจกรรมและส่งอนุมัติทั้งแผนครั้งเดียว
@@ -1123,7 +1123,7 @@ const submitSelectedPlan = async () => {
             </div>
             <ul v-if="usesFacultyPlan" class="faculty-plan-competencies">
               <li v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
-                <span class="competency-code">{{ gap.cd }}</span>
+                <span v-if="gap.cd" class="competency-code">{{ gap.cd }}</span>
                 <strong>{{ gap.n }}</strong>
                 <small>Actual {{ formatNumber(gap.actual) }} / Expected {{ formatNumber(gap.expected) }}<template v-if="gap.achievementPercentage !== null && gap.achievementPercentage !== undefined"> · {{ formatNumber(gap.achievementPercentage) }}%</template></small>
               </li>
@@ -1169,7 +1169,7 @@ const submitSelectedPlan = async () => {
             <div class="section-body indicator-list">
               <template v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
                 <div v-if="usesFacultyPlan" class="indicator-group-title">
-                  <strong>{{ gap.cd }} · {{ gap.n }}</strong>
+                  <strong>{{ gap.cd ? `${gap.cd} · ${gap.n}` : gap.n }}</strong>
                   <small v-if="gap.developmentRecommendation">{{ gap.developmentRecommendation }}</small>
                 </div>
                 <div v-for="indicator in missingIndicators(gap)" :key="`${gap.id}-${indicator.level}-${indicator.code}`" class="indicator-row">
@@ -1405,7 +1405,7 @@ const submitSelectedPlan = async () => {
               <span>จากสมรรถนะที่ต้องพัฒนา</span>
             </header>
             <div class="form-grid three">
-              <label>
+              <label v-if="selectedGap.cd">
                 <span>รหัส</span>
                 <input :value="selectedGap.cd" disabled />
               </label>
@@ -1941,7 +1941,7 @@ const submitSelectedPlan = async () => {
 
     <footer v-if="hasIdpReviewerSteps && idpGaps.length" class="submit-bar">
       <div>
-        <strong>{{ selectedPlan ? `${selectedGap?.cd} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
+        <strong>{{ selectedPlan ? `${selectedGap?.cd || selectedGap?.n} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
         <span v-if="submitError" id="idp-submit-reason" class="submit-reason" role="alert">
           {{ submitError }}
         </span>

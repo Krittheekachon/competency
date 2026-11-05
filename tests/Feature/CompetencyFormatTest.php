@@ -6,10 +6,12 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\Feature\Concerns\BuildsFacultyAssessment;
 use Tests\TestCase;
 
 class CompetencyFormatTest extends TestCase
 {
+    use BuildsFacultyAssessment;
     use RefreshDatabase;
 
     private int $typeId;
@@ -26,12 +28,14 @@ class CompetencyFormatTest extends TestCase
 
     public function test_admin_creates_a_faculty_format_competency_with_three_behaviours_at_levels_one_three_five(): void
     {
+        // The faculty format has no code; the server keeps an internal one.
+        $payload = [...$this->payload('', 'faculty', $this->facultyLevels()), 'code' => null, 'name' => 'การทำงานเป็นทีม'];
         $this->actingAs($this->admin())
-            ->post(route('admin.competencies.store'), $this->payload('ENG-CC-01', 'faculty', $this->facultyLevels()))
+            ->post(route('admin.competencies.store'), $payload)
             ->assertSessionHasNoErrors();
 
-        $competencyId = DB::table('competencies')->where('code', 'ENG-CC-01')->value('id');
-        $this->assertDatabaseHas('competencies', ['id' => $competencyId, 'assessment_method' => 'faculty']);
+        $competencyId = DB::table('competencies')->where('name', 'การทำงานเป็นทีม')->value('id');
+        $this->assertDatabaseHas('competencies', ['id' => $competencyId, 'code' => 'ENG-CC-001', 'assessment_method' => 'faculty']);
         $this->assertSame([1, 3, 5], DB::table('competency_levels')->where('competency_id', $competencyId)->orderBy('level')->pluck('level')->map(fn ($l) => (int) $l)->all());
         $this->assertSame(9, DB::table('comp_level_indicators')
             ->join('competency_levels', 'competency_levels.id', '=', 'comp_level_indicators.competency_level_id')
@@ -157,6 +161,21 @@ class CompetencyFormatTest extends TestCase
                 ->where('competencies.0.method', 'standard')
                 ->where('competencies.1.cd', 'ENG-CC-01')
                 ->where('competencies.1.method', 'faculty'));
+    }
+
+    public function test_employee_sees_faculty_competency_by_name_without_a_code(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        DB::table('competency_types')->delete(); // the faculty builder creates its own CC type
+        [$competencyId] = $this->makeAssessable($employee, $this->activeFacultyRound());
+        DB::table('competencies')->where('id', $competencyId)->update(['assessment_method' => 'faculty']);
+
+        $this->actingAs($employee)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentUserCompetencies.0.id', $competencyId)
+                ->where('currentUserCompetencies.0.cd', ''));
     }
 
     private function payload(string $code, string $method, array $levels): array

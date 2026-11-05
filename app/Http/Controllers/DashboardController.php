@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Competency;
 use App\Models\CompetencyType;
 use App\Models\User;
 use App\Services\AssessmentRoundReadinessService;
@@ -1484,7 +1485,7 @@ class DashboardController extends Controller
                 ->select(
                     'competencies.id',
                     'competencies.competency_type_id',
-                    'competencies.code',
+                    DB::raw(Competency::DISPLAY_CODE_SQL.' as code'),
                     'competencies.name',
                     'competencies.detail',
                     'competency_types.code as type_code',
@@ -1583,7 +1584,7 @@ class DashboardController extends Controller
             ->select(
                 'competencies.id',
                 'competencies.competency_type_id',
-                'competencies.code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as code'),
                 'competencies.name',
                 'competencies.detail',
                 'competency_types.code as type_code',
@@ -1726,7 +1727,7 @@ class DashboardController extends Controller
                     'fc_topic_selection_items.fc_topic_selection_id as selection_id',
                     'competencies.id',
                     'competencies.competency_type_id',
-                    'competencies.code',
+                    DB::raw(Competency::DISPLAY_CODE_SQL.' as code'),
                     'competencies.name',
                     'competencies.detail',
                     'competency_types.code as type_code',
@@ -2041,7 +2042,7 @@ class DashboardController extends Controller
                 'assessments.id as assessment_id',
                 'competency_gaps.id as competency_gap_id',
                 'competencies.id as competency_id',
-                'competencies.code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as code'),
                 'competencies.name',
                 'competencies.detail',
                 'competency_types.code as type_code',
@@ -2622,7 +2623,7 @@ class DashboardController extends Controller
                 'users.title as user_title',
                 'users.position as user_position',
                 'users.department as user_department',
-                'competencies.code as competency_code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as competency_code'),
                 'competencies.name as competency_name',
                 'competency_gaps.gap'
             )
@@ -2797,7 +2798,7 @@ class DashboardController extends Controller
                 'idp_items.current_review_step as plan_current_review_step',
                 'idp_items.goal',
                 'idp_items.success_criteria',
-                'competencies.code as competency_code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as competency_code'),
                 'competencies.name as competency_name',
                 'assessments.assessment_round_id',
                 'users.id as user_id',
@@ -3011,7 +3012,7 @@ class DashboardController extends Controller
                 'competency_gaps.expected_level',
                 'competency_gaps.actual_level',
                 'competency_gaps.gap',
-                'competencies.code as competency_code',
+                DB::raw(Competency::DISPLAY_CODE_SQL.' as competency_code'),
                 'competencies.name as competency_name'
             )
             ->orderBy('competencies.code')

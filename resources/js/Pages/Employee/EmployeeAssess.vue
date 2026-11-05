@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
         >
           <div class="fc-choice-main">
             <span class="fc-choice-copy">
-              <span class="fc-code">{{ item.cd }}</span>
+              <span v-if="item.cd" class="fc-code">{{ item.cd }}</span>
               <strong>{{ item.n }}</strong>
               <button class="fc-detail-link" type="button" @click.stop="openFcDetail(item)" @keydown.stop>อ่านรายละเอียด</button>
             </span>
@@ -810,7 +810,7 @@ onBeforeUnmount(() => {
           <div>
             <div class="fc-detail-meta">
               <span>{{ selectedFcDetail.t || 'FC' }}</span>
-              <strong>{{ selectedFcDetail.cd }}</strong>
+              <strong>{{ selectedFcDetail.cd || selectedFcDetail.n }}</strong>
             </div>
             <h2 id="fc-detail-title">{{ selectedFcDetail.n }}</h2>
           </div>
@@ -919,7 +919,7 @@ onBeforeUnmount(() => {
           <div>
             <div class="modal-code">
               <span class="type-tag">{{ selectedCompetency.t || '-' }}</span>
-              <span>{{ selectedCompetency.cd }}</span>
+              <span v-if="selectedCompetency.cd">{{ selectedCompetency.cd }}</span>
             </div>
             <h2>{{ selectedCompetency.n }}</h2>
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
@@ -937,7 +937,7 @@ onBeforeUnmount(() => {
             <div class="detail-card-top">
               <div class="detail-card-meta">
                 <span class="type-tag">{{ selectedCompetency.t || '-' }}</span>
-                <span>{{ selectedCompetency.cd || '-' }}</span>
+                <span v-if="selectedCompetency.cd">{{ selectedCompetency.cd }}</span>
               </div>
               <span class="level-pill">ความคาดหวังคะแนนของคุณ : {{ selectedCompetency.expectedLevel || '-' }}</span>
             </div>

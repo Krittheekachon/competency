@@ -341,6 +341,8 @@ const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRoun
 const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
+// Faculty-format competencies have no user-facing code.
+const codeOf = (item) => ((item?.method || 'standard') === 'faculty' ? '' : (item?.cd || ''));
 const mismatchedAssignedCompetencies = computed(() => assignedCompetencies.value
     .filter((item) => (item.method || 'standard') !== selectedRoundMethod.value));
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
@@ -1006,7 +1008,7 @@ const formatWeight = (weight) => {
                             </div>
                             <div v-if="mismatchedAssignedCompetencies.length" class="format-mismatch-note" role="alert">
                                 รอบนี้ใช้สมรรถนะ{{ selectedRoundFormatLabel }} กรุณาลบรายการที่เป็นรูปแบบอื่นก่อนเปิดใช้รอบ:
-                                {{ mismatchedAssignedCompetencies.map((item) => item.cd).join(', ') }}
+                                {{ mismatchedAssignedCompetencies.map((item) => codeOf(item) || item.n).join(', ') }}
                             </div>
                             <div class="assigned-list">
                                 <div v-if="!assignedCompetencies.length" class="assigned-empty">
@@ -1018,7 +1020,7 @@ const formatWeight = (weight) => {
                                 </div>
                                 <div v-for="item in assignedCompetencies" v-else :key="item.id" class="assigned-row">
                                     <div>
-                                        <div class="dictionary-code">{{ item.cd }} <span class="b bgr">{{ item.t }}</span></div>
+                                        <div class="dictionary-code">{{ codeOf(item) }} <span class="b bgr">{{ item.t }}</span></div>
                                         <div class="dictionary-name">{{ item.n }}</div>
                                     </div>
                                     <div class="assigned-actions">
@@ -1052,7 +1054,7 @@ const formatWeight = (weight) => {
                                 <div v-for="item in filteredCompetencies" v-else :key="item.id" class="dictionary-row">
                                     <div class="dictionary-main">
                                         <div class="dictionary-code">
-                                            <span>{{ item.cd }}</span>
+                                            <span v-if="codeOf(item)">{{ codeOf(item) }}</span>
                                             <span class="b bgr">{{ item.t }}</span>
                                             <button class="dictionary-detail-button" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
                                         </div>
@@ -1200,7 +1202,7 @@ const formatWeight = (weight) => {
                             <div class="cs">เลือกชุดข้อมูลที่จะนำมาใช้กับ {{ selectedConfigRound?.name }}</div>
                         </template>
                         <template v-else-if="activeModal === 'competency-detail' && selectedDetailCompetency">
-                            <div class="ct">{{ selectedDetailCompetency.cd }} · {{ selectedDetailCompetency.n }}</div>
+                            <div class="ct">{{ codeOf(selectedDetailCompetency) ? `${codeOf(selectedDetailCompetency)} · ` : '' }}{{ selectedDetailCompetency.n }}</div>
                             <div class="cs">รายละเอียดระดับและพฤติกรรมบ่งชี้ของสมรรถนะ</div>
                         </template>
                         <template v-else>
@@ -1239,7 +1241,7 @@ const formatWeight = (weight) => {
                                 <div class="detail-title">{{ selectedDetailCompetency.n }}</div>
                                 <div class="detail-meta-row">
                                     <span>{{ selectedDetailCompetency.t }}<template v-if="selectedDetailCompetency.typeName"> - {{ selectedDetailCompetency.typeName }}</template></span>
-                                    <span>{{ selectedDetailCompetency.cd }}</span>
+                                    <span v-if="codeOf(selectedDetailCompetency)">{{ codeOf(selectedDetailCompetency) }}</span>
                                 </div>
                                 <div class="detail-description">{{ selectedDetailCompetency.det || 'ไม่มีคำอธิบายสมรรถนะ' }}</div>
                             </section>
@@ -1318,7 +1320,7 @@ const formatWeight = (weight) => {
                                 >
                                     <span class="catalog-checkbox" aria-hidden="true"></span>
                                     <span class="catalog-competency-copy">
-                                        <span>{{ competency.cd }}</span>
+                                        <span v-if="codeOf(competency)">{{ codeOf(competency) }}</span>
                                         <strong>{{ competency.n }}</strong>
                                     </span>
                                     <span class="b bgr">{{ competency.t }}</span>

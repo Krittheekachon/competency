@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\Competency;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -42,7 +43,7 @@ class FacultyIdpPlanService
                 fn ($q) => $q->where('pc.position_title_id', $titleId),
                 fn ($q) => $q->where('pc.position_id', $user->position_id ?: 0),
             )
-            ->get(['c.id', 'c.code', 't.code as type'])
+            ->get(['c.id', 'c.code', 'c.name', 't.code as type'])
             ->unique('id');
         $pending = [];
         if ($required->isEmpty()) {
@@ -85,7 +86,7 @@ class FacultyIdpPlanService
             if (! $result || ! in_array($result->status, ['approved', 'dean_approved'], true)
                 || ! in_array($result->gap_status, ['approved', 'dean_approved'], true)
                 || ! ($result->expected_level > 0) || $result->actual_level === null) {
-                $pending[] = $topic->code;
+                $pending[] = $topic->name;
             }
         }
         $lockedItems = DB::table('idp_items as i')
@@ -107,11 +108,12 @@ class FacultyIdpPlanService
                     'gapId' => (int) $gap->id,
                     'competencyId' => (int) $gap->competency_id,
                     'code' => $gap->code,
+                    'name' => $gap->name,
                 ]));
             }
         }
         $message = $missing->isNotEmpty()
-            ? 'แผนที่ส่งแล้วมีสมรรถนะตกหล่น: '.$missing->pluck('code')->unique()->implode(', ').' กรุณาติดต่อ HR ตรวจสอบแผนเดิม ระบบจะไม่แก้แผนที่ส่งแล้วอัตโนมัติ'
+            ? 'แผนที่ส่งแล้วมีสมรรถนะตกหล่น: '.$missing->pluck('name')->unique()->implode(', ').' กรุณาติดต่อ HR ตรวจสอบแผนเดิม ระบบจะไม่แก้แผนที่ส่งแล้วอัตโนมัติ'
             : ($pending !== [] ? 'ยังส่งแผนรวมไม่ได้ ผลประเมินหรือข้อมูลยังไม่ครบ: '.implode(', ', $pending) : '');
         return [
             'ready' => $pending === [] && $missing->isEmpty(),
@@ -147,6 +149,7 @@ class FacultyIdpPlanService
                 'competency_gaps.id',
                 'competency_gaps.competency_id',
                 'competencies.code',
+                'competencies.name',
                 'competency_gaps.expected_level',
                 'assessments.assessment_round_id',
             ])
@@ -185,11 +188,12 @@ class FacultyIdpPlanService
             ->join('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
             ->whereIn('idp_item_competency_gaps.idp_item_id', $itemIds)
             ->orderBy('competencies.code')
-            ->get(['idp_item_competency_gaps.idp_item_id', 'competencies.code', 'competencies.name'])
+            ->get(['idp_item_competency_gaps.idp_item_id', DB::raw(Competency::DISPLAY_CODE_SQL.' as code'), 'competencies.name'])
             ->groupBy('idp_item_id')
+            // The plan is named by its failed competencies' names; faculty competencies carry no code.
             ->map(fn (Collection $rows): array => [
-                'code' => 'IDP',
-                'name' => 'แผนพัฒนารายบุคคล · '.$rows->pluck('code')->implode(', '),
+                'code' => '',
+                'name' => 'แผนพัฒนารายบุคคล · '.$rows->pluck('name')->implode(', '),
                 'competencies' => $rows->map(fn (object $row): array => [
                     'code' => $row->code,
                     'name' => $row->name,

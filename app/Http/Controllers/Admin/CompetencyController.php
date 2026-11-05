@@ -158,10 +158,12 @@ class CompetencyController extends Controller
 
     private function validatedData(Request $request, ?Competency $competency = null): array
     {
+        $isFaculty = ($request->input('assessment_method') ?? $competency?->assessment_method) === AssessmentMethodResolver::FACULTY;
         $data = $request->validate([
             'competency_type_id' => ['required', 'integer', Rule::exists('competency_types', 'id')],
             'code' => [
-                'required',
+                // Faculty-format competencies have no user-facing code; one is generated internally.
+                $isFaculty ? 'nullable' : 'required',
                 'string',
                 'max:50',
                 Rule::unique('competencies', 'code')->ignore($competency?->id),
@@ -184,9 +186,21 @@ class CompetencyController extends Controller
 
         if ($data['assessment_method'] === AssessmentMethodResolver::FACULTY) {
             $this->assertFacultyLevels($data['levels']);
+            $data['code'] = $competency?->code ?? $this->generatedFacultyCode((int) $data['competency_type_id']);
         }
 
         return $data;
+    }
+
+    private function generatedFacultyCode(int $typeId): string
+    {
+        $prefix = 'ENG-'.(CompetencyType::whereKey($typeId)->value('code') ?? 'C').'-';
+        $next = Competency::where('code', 'like', $prefix.'%')->count() + 1;
+        while (Competency::where('code', $prefix.str_pad((string) $next, 3, '0', STR_PAD_LEFT))->exists()) {
+            $next++;
+        }
+
+        return $prefix.str_pad((string) $next, 3, '0', STR_PAD_LEFT);
     }
 
     /**

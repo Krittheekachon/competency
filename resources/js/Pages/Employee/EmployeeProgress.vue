@@ -249,7 +249,7 @@ const formatDate = (value?: string) => {
         :title="group.name"
         @click="selectedGroupId = group.idpItemId"
       >
-        <span class="competency-tab-code">{{ group.code }}</span>
+        <span v-if="group.code" class="competency-tab-code">{{ group.code }}</span>
         <span class="competency-tab-copy">
           <strong>{{ group.name }}</strong>
           <small>{{ completionMeta(group.completion).label }} · อัปเดตแล้ว {{ updatedTopicTotal(group) }}/{{ topicTotal(group) }} หัวข้อ</small>
@@ -259,7 +259,7 @@ const formatDate = (value?: string) => {
 
     <section v-if="selectedGroup" :key="selectedGroup.idpItemId" class="competency-section">
       <header class="competency-head">
-        <div class="competency-copy"><span>{{ selectedGroup.code }}</span><div><small>สมรรถนะที่เลือก</small><h2>{{ selectedGroup.name }}</h2></div></div>
+        <div class="competency-copy"><span v-if="selectedGroup.code">{{ selectedGroup.code }}</span><div><small>สมรรถนะที่เลือก</small><h2>{{ selectedGroup.name }}</h2></div></div>
       </header>
 
       <section v-if="selectedGroup.completion?.review" class="review-feedback" :class="selectedGroup.completion.review.decision">
@@ -315,7 +315,7 @@ const formatDate = (value?: string) => {
 
       <footer class="completion-actions">
         <div class="completion-summary">
-          <strong>{{ selectedGroup.code }} · {{ completionMeta(selectedGroup.completion).label }}</strong>
+          <strong>{{ selectedGroup.code || selectedGroup.name }} · {{ completionMeta(selectedGroup.completion).label }}</strong>
           <span>อัปเดตแล้ว {{ updatedTopicTotal(selectedGroup) }}/{{ topicTotal(selectedGroup) }} หัวข้อ</span>
         </div>
         <span class="status-pill" :class="completionMeta(selectedGroup.completion).className">{{ completionMeta(selectedGroup.completion).label }}</span>
@@ -349,7 +349,7 @@ const formatDate = (value?: string) => {
         </header>
         <div class="confirm-body">
           <div class="completion-confirm-name">
-            <span>{{ completionConfirmGroup.code }}</span>
+            <span v-if="completionConfirmGroup.code">{{ completionConfirmGroup.code }}</span>
             <strong>{{ completionConfirmGroup.name }}</strong>
           </div>
           <p id="completion-confirm-warning" class="confirm-warning"><strong>หลังจากส่งแล้ว</strong> คุณจะเพิ่มหรือแก้ไขข้อมูลของสมรรถนะนี้ไม่ได้ จนกว่าหัวหน้าจะส่งกลับให้แก้ไข</p>
@@ -363,7 +363,7 @@ const formatDate = (value?: string) => {
 
     <div v-if="updateDialog" class="modal-backdrop" @click.self="closeUpdate">
       <article class="form-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title">
-        <header><div class="dialog-title"><small>{{ updateDialog.activity.competencyCode }} · หัวข้อ {{ updateDialog.topicIndex + 1 }}</small><h2 id="update-title">{{ topicTitle(updateDialog.activity, updateDialog.topicIndex) }}</h2><p>บันทึกผลงานในช่วงนี้ โดยสามารถกลับมาเพิ่มครั้งถัดไปได้</p></div><button type="button" aria-label="ปิด" @click="closeUpdate">×</button></header>
+        <header><div class="dialog-title"><small>{{ updateDialog.activity.competencyCode || updateDialog.activity.competencyName }} · หัวข้อ {{ updateDialog.topicIndex + 1 }}</small><h2 id="update-title">{{ topicTitle(updateDialog.activity, updateDialog.topicIndex) }}</h2><p>บันทึกผลงานในช่วงนี้ โดยสามารถกลับมาเพิ่มครั้งถัดไปได้</p></div><button type="button" aria-label="ปิด" @click="closeUpdate">×</button></header>
         <div class="dialog-body">
           <section class="update-details">
             <div class="date-grid">
