@@ -38,6 +38,7 @@ class ReviewerTemplateResolver
                 'description' => $template->description ?: '',
                 'chainType' => $template->chain_type ?? 'assessment',
                 'isDefault' => (bool) $template->is_default,
+                'structureDefault' => (bool) $template->is_default && ($template->chain_type ?? 'assessment') === 'assessment',
                 'steps' => ($steps->get($template->id) ?? collect())
                     ->map(fn (object $step): array => [
                         'step' => (int) $step->step_order,
@@ -226,10 +227,12 @@ class ReviewerTemplateResolver
     private function stepLabel(string $resolverType, string $roleKey): string
     {
         $roleLabel = match ($this->normalizeRoleKey($roleKey)) {
-            'supervisor' => 'หัวหน้าหน่วย',
-            'dept_head' => 'หัวหน้างาน',
+            'supervisor' => 'หัวหน้างาน',
+            'dept_head' => 'หัวหน้าหน่วย',
             'division_head' => 'หัวหน้าฝ่าย',
             'academic_department_head' => 'หัวหน้าภาควิชา',
+            'deputy_dean' => 'รองคณบดี',
+            'assistant_dean' => 'ผู้ช่วยคณบดี',
             'dean' => 'ผู้บริหารคณะ',
             'hr' => 'งานทรัพยากรบุคคล',
             'admin' => 'ผู้ดูแลระบบ',

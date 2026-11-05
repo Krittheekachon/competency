@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\OrganizationChartService;
+use App\Services\OrganizationReviewerDefaults;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerTemplateResolver;
 use Illuminate\Http\RedirectResponse;
@@ -163,8 +165,9 @@ class UserController extends Controller
             ],
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
-            'd' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:255'],
-            'p' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
+            'd' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $this->normalizeRoleKey((string) $request->input('r')) !== 'dean' && ! $this->isManagementExecutive($request->input('r'), $request->input('w'))), 'nullable', 'string', 'max:255'],
+            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
+            'p' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $this->normalizeRoleKey((string) $request->input('r')) !== 'dean' && ($this->isManagementExecutive($request->input('r'), $request->input('w')) || ! $this->allowsMissingPositionFields($request))), 'nullable', 'string', 'max:120'],
             'l' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
             'preserve_existing_structure' => ['sometimes', 'boolean'],
@@ -188,11 +191,25 @@ class UserController extends Controller
             $data['p'] = $user->position;
             $data['l'] = $user->level;
             $data['_position_id'] = $user->position_id;
+            $data['_position_title_id'] = $user->position_title_id;
             $data['_level_id'] = $this->canonicalLevelIdForUser($user) ?? $user->level_id;
         } else {
             $data = $this->validatedStructureData($data);
         }
         $data['reviewer_ids'] = $this->normalizeReviewerIds($data, $user, 'reviewer_ids', 'reviewer_template_id', 'assessment');
+        if ($data['reviewer_ids'] === [] && blank($data['reviewer_template_id'] ?? null)) {
+            $organizationUser = $user ?: new User([
+                'workline' => $data['w'] ?? '',
+                'department' => $data['d'] ?? '',
+                'position' => $data['p'] ?? '',
+                'position_id' => $data['_position_id'] ?? null,
+            ]);
+            $defaults = app(OrganizationReviewerDefaults::class)->forUser(
+                $organizationUser,
+                app(OrganizationChartService::class)->payload(),
+            );
+            $data['reviewer_ids'] = $defaults['reviewerIds'];
+        }
         $data['idp_reviewer_ids'] = $this->normalizeReviewerIds($data, $user, 'idp_reviewer_ids', 'idp_reviewer_template_id', 'idp');
         if ($data['idp_reviewer_ids'] === [] && blank($data['idp_reviewer_template_id'] ?? null)) {
             $data['idp_reviewer_ids'] = $data['reviewer_ids'];
@@ -201,12 +218,17 @@ class UserController extends Controller
         return $data;
     }
 
+    private function isManagementExecutive(?string $role, ?string $workline): bool
+    {
+        return in_array($this->normalizeRoleKey((string) $role), ['dean', 'deputy_dean', 'assistant_dean'], true)
+            && app(\App\Services\SsoWorklineNormalizer::class)->structureType($workline) === 'management';
+    }
+
     private function allowsMissingPositionFields(Request $request): bool
     {
         $roleKey = $this->normalizeRoleKey((string) $request->input('r', ''));
-        if ($roleKey === 'dean') {
-            return true;
-        }
+        if ($roleKey === 'dean') return true;
+        if ($this->isManagementExecutive($roleKey, $request->input('w'))) return true;
 
         if (! in_array($roleKey, ['division_head', 'dept_head'], true)) {
             return false;
@@ -280,9 +302,9 @@ class UserController extends Controller
             'position' => $data['p'] ?? null,
             'level' => $data['l'] ?? null,
             'position_id' => $data['_position_id'],
-            'position_title_id' => $data['_position_id']
+            'position_title_id' => $data['_position_title_id'] ?? ($data['_position_id']
                 ? $this->positionTitles->forPositionId((int) $data['_position_id'])
-                : null,
+                : null),
             'level_id' => $data['_level_id'],
             'role_id' => $role->id,
             'reviewer_template_id' => $data['reviewer_template_id'] ?? null,
@@ -304,18 +326,21 @@ class UserController extends Controller
     {
         $roleKey = $this->normalizeRoleKey($data['r']);
 
-        if ($roleKey === 'dean' && (
-            ! filled($data['w'] ?? null)
-            || ! filled($data['d'] ?? null)
-            || ! filled($data['l'] ?? null)
-        )) {
+        if (in_array($roleKey, ['deputy_dean', 'assistant_dean'], true)
+            && ! in_array(app(\App\Services\SsoWorklineNormalizer::class)->structureType($data['w'] ?? null), ['academic', 'management'], true)) {
+            throw ValidationException::withMessages([
+                'w' => 'รองคณบดีและผู้ช่วยคณบดีต้องอยู่ในสายวิชาการหรือสายบริหาร',
+            ]);
+        }
+
+        if ($roleKey === 'dean' && ! filled($data['w'] ?? null)) {
             $data['w'] = null;
             $data['d'] = null;
             $data['p'] = null;
             $data['l'] = null;
             $data['_position_id'] = null;
+            $data['_position_title_id'] = null;
             $data['_level_id'] = null;
-
             return $data;
         }
 
@@ -325,6 +350,40 @@ class UserController extends Controller
             throw ValidationException::withMessages([
                 'w' => 'กรุณาเลือกสายงานที่กำหนดไว้ในระบบ',
             ]);
+        }
+
+        if ($roleKey === 'dean' && (! $this->isManagementExecutive($roleKey, $data['w']) || blank($data['p'] ?? null))) {
+            if (filled($data['w'] ?? null) && ! DB::table('worklines')->where('name', $data['w'])->exists()) {
+                throw ValidationException::withMessages(['w' => 'กรุณาเลือกสายงานที่กำหนดไว้ในระบบ']);
+            }
+            $data['w'] = filled($data['w'] ?? null) ? $data['w'] : null;
+            $data['d'] = null;
+            $data['p'] = null;
+            $data['l'] = null;
+            $data['_position_id'] = null;
+            $data['_position_title_id'] = null;
+            $data['_level_id'] = null;
+            return $data;
+        }
+
+        if ($this->isManagementExecutive($roleKey, $data['w'])) {
+            $titleQuery = DB::table('position_titles')->where('workline_id', $worklineId);
+            if (filled($data['position_title_id'] ?? null)) {
+                $titleQuery->where('id', $data['position_title_id']);
+            } else {
+                $titleQuery->where('name', $data['p'] ?? '');
+            }
+            $titles = $titleQuery->get(['id', 'name']);
+            if ($titles->count() !== 1) {
+                throw ValidationException::withMessages(['p' => 'กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหารที่เลือก']);
+            }
+            $data['d'] = null;
+            $data['p'] = $titles->first()->name;
+            $data['_position_id'] = null;
+            $data['_position_title_id'] = $titles->first()->id;
+            $data['_level_id'] = filled($data['l'] ?? null) ? $this->levelIdForWorkline($worklineId, $data['l']) : null;
+            $data['l'] = $data['_level_id'] ? $data['l'] : null;
+            return $data;
         }
 
         $departmentPath = array_values(array_filter(array_map('trim', explode(' > ', $data['d']))));

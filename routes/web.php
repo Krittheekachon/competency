@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\StructureController as AdminStructureController;
 use App\Http\Controllers\Admin\SsoProfileReviewController as AdminSsoProfileReviewController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\AssessmentController;
+use App\Http\Controllers\AssessmentEvidenceController;
 use App\Http\Controllers\Auth\KkuSsoController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Employee\FcTopicSelectionController as EmployeeFcTopicSelectionController;
@@ -60,6 +61,7 @@ if (app()->environment('local') && config('app.mock_sso_enabled')) {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('role:admin')->group(function () {
+        Route::put('/admin/organization-chart/people', [\App\Http\Controllers\Admin\OrganizationChartController::class, 'update'])->name('admin.organization-chart.people.update');
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
         Route::patch('/admin/users/{user}/status', [AdminUserController::class, 'updateStatus'])->name('admin.users.status');
@@ -84,6 +86,11 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('/admin/structure/job-families', [AdminStructureController::class, 'destroyJobFamily'])->name('admin.structure.job-families.destroy');
         Route::post('/admin/structure/positions', [AdminStructureController::class, 'storePosition'])->name('admin.structure.positions.store');
         Route::post('/admin/structure/position-titles', [AdminStructureController::class, 'storePositionTitle'])->name('admin.structure.position-titles.store');
+        Route::put('/admin/structure/position-titles/workline', [AdminStructureController::class, 'assignPositionTitleWorkline'])->name('admin.structure.position-titles.workline');
+        Route::put('/admin/structure/position-titles', [AdminStructureController::class, 'updatePositionTitle'])->name('admin.structure.position-titles.update');
+        Route::delete('/admin/structure/position-titles', [AdminStructureController::class, 'destroyPositionTitle'])->name('admin.structure.position-titles.destroy');
+        Route::post('/admin/structure/workline-positions', [AdminStructureController::class, 'storeWorklinePosition'])->name('admin.structure.workline-positions.store');
+        Route::delete('/admin/structure/workline-positions', [AdminStructureController::class, 'destroyWorklinePosition'])->name('admin.structure.workline-positions.destroy');
         Route::put('/admin/structure/positions', [AdminStructureController::class, 'updatePosition'])->name('admin.structure.positions.update');
         Route::delete('/admin/structure/positions', [AdminStructureController::class, 'destroyPosition'])->name('admin.structure.positions.destroy');
         Route::post('/admin/structure/support-departments', [AdminStructureController::class, 'storeSupportDepartment'])->name('admin.structure.support-departments.store');
@@ -112,6 +119,14 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/assessments/draft', [AssessmentController::class, 'draft'])->name('assessments.draft');
     Route::post('/assessments/save', [AssessmentController::class, 'save'])->name('assessments.save');
     Route::get('/assessments/load', [AssessmentController::class, 'load'])->name('assessments.load');
+    Route::post('/assessments/evidence', [AssessmentEvidenceController::class, 'store'])->name('assessments.evidence.store');
+    Route::post('/assessments/evidence/submit', [AssessmentEvidenceController::class, 'submit'])->name('assessments.evidence.submit');
+    Route::get('/assessments/evidence/{evidence}', [AssessmentEvidenceController::class, 'show'])
+        ->whereUuid('evidence')
+        ->name('assessments.evidence.show');
+    Route::delete('/assessments/evidence/{evidence}', [AssessmentEvidenceController::class, 'destroy'])
+        ->whereUuid('evidence')
+        ->name('assessments.evidence.destroy');
     Route::post('/assessments/approve', [AssessmentController::class, 'approve'])->name('assessments.approve');
     Route::post('/assessments/reject', [AssessmentController::class, 'reject'])->name('assessments.reject');
     Route::post('/employee/fc-topic-selection/submit', [EmployeeFcTopicSelectionController::class, 'submit'])->name('employee.fc-topic-selection.submit');
@@ -140,6 +155,8 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('/hr/position-competencies', [HrPositionCompetencyController::class, 'destroy'])->name('hr.position-competencies.destroy');
         Route::post('/hr/position-competencies/copy-round', [HrPositionCompetencyController::class, 'copyFromRound'])->name('hr.position-competencies.copy-round');
         Route::put('/hr/position-fc-selection-rules', [HrPositionCompetencyController::class, 'updateFcSelectionRule'])->name('hr.position-fc-selection-rules.update');
+        Route::put('/hr/position-fc-unit-rules', [HrPositionCompetencyController::class, 'updateFcUnitRule'])->name('hr.position-fc-unit-rules.update');
+        Route::delete('/hr/position-fc-unit-rules', [HrPositionCompetencyController::class, 'destroyFcUnitRule'])->name('hr.position-fc-unit-rules.destroy');
         Route::post('/hr/assessment-rounds', [HrAssessmentRoundController::class, 'store'])->name('hr.assessment-rounds.store');
         Route::put('/hr/assessment-rounds/{round}', [HrAssessmentRoundController::class, 'update'])->name('hr.assessment-rounds.update');
         Route::patch('/hr/assessment-rounds/{round}/activate', [HrAssessmentRoundController::class, 'activate'])->name('hr.assessment-rounds.activate');

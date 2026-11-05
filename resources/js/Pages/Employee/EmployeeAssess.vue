@@ -14,6 +14,8 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
+const assessmentMethod = computed(() => String((page.props.activeAssessmentMethod as any)?.method || 'standard'));
+const usesFacultyMethod = computed(() => assessmentMethod.value === 'faculty');
 const assessmentWindow = computed(() => props.assessmentWindow || {});
 const isSelfAssessmentClosed = computed(() => assessmentWindow.value.status === 'closed');
 const assignedCompetencies = computed(() => props.competencies || []);
@@ -83,9 +85,17 @@ const competencyDraftSavedAt = ref<Record<string, string>>({});
 const competencyRejectComments = ref<Record<string, string>>({});
 const competencyRejectReviewerNames = ref<Record<string, string>>({});
 const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
+const draftError = ref('');
 const draftSavedAt = ref<string>('');
+const competencyEvidences = ref<Record<string, any[]>>({});
+const evidenceLinkUrl = ref('');
+const evidenceLinkDescription = ref('');
+const evidenceError = ref('');
+const isUploadingEvidence = ref(false);
+const evidenceFileInput = ref<HTMLInputElement | null>(null);
 const suppressAutoSave = ref(false);
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let draftSaveInFlight: Promise<boolean> | null = null;
 
 watch(fcTopicSelection, (next) => {
   selectedFcIds.value = [...(next?.selectedCompetencyIds || [])].map((id) => Number(id));
@@ -192,7 +202,7 @@ const submittedAssessmentCount = computed(() =>
   assignedCompetencies.value.reduce((total: number, item: any) => {
     const status = competencyStatus(item);
     if (status === 'revision_required') return total - 1;
-    if (status === 'self_submitted' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
+    if (status === 'self_submitted' || status === 'evidence_required' || isFinalApprovedStatus(status) || isReviewInProgressStatus(status)) return total + 1;
     return total;
   }, 0),
 );
@@ -201,6 +211,7 @@ const competencyStatusLabel = (item: any) => {
   if (isReviewInProgressStatus(status)) return reviewProgressLabel(status);
   if (isFinalApprovedStatus(status)) return 'อนุมัติครบทุกลำดับแล้ว';
   if (status === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
+  if (status === 'evidence_required') return 'ผู้ประเมินขอหลักฐานระดับ 5 · รอแนบหลักฐาน';
   return '';
 };
 
@@ -234,7 +245,7 @@ const formatDraftSavedAt = (value: string) => {
 const autoSaveText = computed(() => {
   if (isSelectedCompetencyLocked.value) return '';
   if (autoSaveState.value === 'saving') return 'กำลังบันทึกฉบับร่าง...';
-  if (autoSaveState.value === 'error') return 'บันทึกฉบับร่างไม่สำเร็จ';
+  if (autoSaveState.value === 'error') return draftError.value || 'บันทึกฉบับร่างไม่สำเร็จ';
   const time = formatDraftSavedAt(draftSavedAt.value);
   return time ? `บันทึกฉบับร่าง เมื่อ ${time}` : 'ยังไม่ได้บันทึกฉบับร่าง';
 });
@@ -265,26 +276,41 @@ const autosaveSignature = computed(() => {
 });
 
 const saveDraft = async () => {
-  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return;
+  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return false;
+  if (draftSaveInFlight) return draftSaveInFlight;
 
   autoSaveState.value = 'saving';
+  draftError.value = '';
 
-  try {
-    const { data } = await (window as any).axios.post(route('assessments.draft'), {
-      competency_id: selectedCompetency.value.id,
-      checked_indicators: checkedIndicators.value,
-      note: competencyNotes.value[noteKey.value] || '',
-      score: parseFloat(currentScore.value),
-    });
+  const competencyId = String(selectedCompetency.value.id);
+  const payload = {
+    competency_id: selectedCompetency.value.id,
+    checked_indicators: submittedCheckedIndicators(),
+    note: competencyNotes.value[noteKey.value] || '',
+    score: parseFloat(currentScore.value),
+  };
+  draftSaveInFlight = (async () => {
+    try {
+      const { data } = await (window as any).axios.post(route('assessments.draft'), payload);
+      draftSavedAt.value = data.lastDraftSavedAt || new Date().toISOString();
+      competencyDraftSavedAt.value[competencyId] = draftSavedAt.value;
+      if (selectedCompetency.value?.id === Number(competencyId)) {
+        selectedCompetency.value.lastDraftSavedAt = draftSavedAt.value;
+      }
+      competencyStatuses.value[competencyId] = data.status || 'draft';
+      autoSaveState.value = 'saved';
+      return true;
+    } catch (error: any) {
+      const errors = error?.response?.data?.errors || {};
+      draftError.value = String(Object.values(errors).flat()[0] || error?.response?.data?.message || 'บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่');
+      autoSaveState.value = 'error';
+      return false;
+    } finally {
+      draftSaveInFlight = null;
+    }
+  })();
 
-    draftSavedAt.value = data.lastDraftSavedAt || new Date().toISOString();
-    competencyDraftSavedAt.value[String(selectedCompetency.value.id)] = draftSavedAt.value;
-    selectedCompetency.value.lastDraftSavedAt = draftSavedAt.value;
-    competencyStatuses.value[String(selectedCompetency.value.id)] = data.status || 'draft';
-    autoSaveState.value = 'saved';
-  } catch {
-    autoSaveState.value = 'error';
-  }
+  return draftSaveInFlight;
 };
 
 const openCompetencyDetail = async (item: any) => {
@@ -310,6 +336,7 @@ const openCompetencyDetail = async (item: any) => {
       ...(data.checked || {}),
     };
     competencyNotes.value[String(item.id)] = data.note || '';
+    competencyEvidences.value[String(item.id)] = data.evidences || [];
     competencyStatuses.value[String(item.id)] = data.status || 'draft';
     lockedCompetencies.value[String(item.id)] = Boolean(data.locked);
     draftSavedAt.value = data.lastDraftSavedAt || '';
@@ -328,17 +355,52 @@ const openCompetencyDetail = async (item: any) => {
   }
 };
 
-const closeCompetencyDetail = () => {
+const closeCompetencyDetail = async () => {
+  const hasPendingDraft = Boolean(autoSaveTimer) || autoSaveState.value === 'saving';
   clearAutoSaveTimer();
+  if (hasPendingDraft && !isSelectedCompetencyLocked.value) {
+    const saved = await saveDraft();
+    if (!saved) return;
+  }
   showSubmitConfirm.value = false;
   selectedCompetency.value = null;
   autoSaveState.value = 'idle';
+  draftError.value = '';
   draftSavedAt.value = '';
+};
+
+const submitRequestedEvidence = () => {
+  if (!selectedCompetency.value || !isEvidenceRequested.value || isSaving.value) return;
+  if (!selectedEvidences.value.length) {
+    evidenceError.value = 'กรุณาแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง';
+    return;
+  }
+
+  const competencyId = String(selectedCompetency.value.id);
+  isSaving.value = true;
+  router.post(route('assessments.evidence.submit'), { competency_id: competencyId }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      delete competencyStatuses.value[competencyId];
+      lockedCompetencies.value[competencyId] = true;
+      closeCompetencyDetail();
+    },
+    onError: (errors: Record<string, string>) => {
+      evidenceError.value = errors.evidence || 'ไม่สามารถส่งหลักฐานได้ กรุณาลองใหม่';
+    },
+    onFinish: () => {
+      isSaving.value = false;
+    },
+  });
 };
 
 const openSubmitConfirm = () => {
   if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSaving.value || isAssessmentBlocked.value) return;
   if (isSelectedCompetencyLocked.value) return;
+  if (isMissingLevelEvidence.value) {
+    evidenceError.value = 'ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง';
+    return;
+  }
   showSubmitConfirm.value = true;
 };
 
@@ -354,7 +416,7 @@ const saveAndClose = async () => {
 
   router.post(route('assessments.save'), {
     competency_id: selectedCompetency.value.id,
-    checked_indicators: checkedIndicators.value,
+    checked_indicators: submittedCheckedIndicators(),
     note: competencyNotes.value[noteKey.value] || '',
     score: parseFloat(currentScore.value),
   }, {
@@ -364,7 +426,11 @@ const saveAndClose = async () => {
       lockedCompetencies.value[String(selectedCompetency.value?.id || '')] = true;
       closeCompetencyDetail();
     },
-    onError: () => {
+    onError: (errors: Record<string, string>) => {
+      if (errors.evidence) {
+        evidenceError.value = errors.evidence;
+        return;
+      }
       alert('ไม่สามารถบันทึกได้ กรุณาลองใหม่');
     },
     onFinish: () => {
@@ -374,11 +440,102 @@ const saveAndClose = async () => {
 };
 
 const indicatorKey = (level: any, index: number) => `${selectedCompetency.value?.id || 'item'}:${level.id || level.lvl}:${index}`;
+const FACULTY_SCORING_LEVELS = [1, 3, 5];
+const scoringLevels = computed(() => {
+  const levels = selectedCompetency.value?.levels || [];
+  return usesFacultyMethod.value
+    ? levels.filter((level: any) => FACULTY_SCORING_LEVELS.includes(Number(level.lvl)))
+    : levels;
+});
 const selectedCount = (level: any) => (level.indicators || []).filter((_: any, index: number) => checkedIndicators.value[indicatorKey(level, index)]).length;
-const totalIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
-const selectedIndicators = computed(() => (selectedCompetency.value?.levels || []).reduce((total: number, level: any) => total + selectedCount(level), 0));
-const currentScore = computed(() => (selectedIndicators.value * 0.25).toFixed(2));
+const totalIndicators = computed(() => scoringLevels.value.reduce((total: number, level: any) => total + (level.indicators?.length || 0), 0));
+const selectedIndicators = computed(() => scoringLevels.value.reduce((total: number, level: any) => total + selectedCount(level), 0));
+const facultyScore = computed(() => {
+  const level = (value: number) => (selectedCompetency.value?.levels || []).find((item: any) => Number(item.lvl) === value);
+  const levelOne = level(1);
+  const levelThree = level(3);
+  const levelFive = level(5);
+  const selectedOne = levelOne ? selectedCount(levelOne) : 0;
+  const selectedThree = levelThree ? selectedCount(levelThree) : 0;
+  const selectedFive = levelFive ? selectedCount(levelFive) : 0;
+
+  if (!selectedOne) return 0;
+  if (selectedOne < Number(levelOne?.indicators?.length || 0)) return 1;
+  if (!selectedThree) return 2;
+  if (selectedThree < Number(levelThree?.indicators?.length || 0)) return 3;
+  return selectedFive >= 2 ? 5 : 4;
+});
+const currentScore = computed(() => usesFacultyMethod.value
+  ? facultyScore.value.toFixed(2)
+  : (selectedIndicators.value * 0.25).toFixed(2));
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
+const selectedEvidences = computed(() => competencyEvidences.value[noteKey.value] || []);
+const requiresLevelEvidence = computed(() => usesFacultyMethod.value && facultyScore.value >= 5);
+const isMissingLevelEvidence = computed(() => requiresLevelEvidence.value && selectedEvidences.value.length === 0);
+const isEvidenceRequested = computed(() => selectedCompetencyStatus.value === 'evidence_required');
+const canEditEvidence = computed(() => !isSelectedCompetencyLocked.value || isEvidenceRequested.value);
+const showEvidenceSection = computed(() => usesFacultyMethod.value
+  && (requiresLevelEvidence.value || isEvidenceRequested.value || selectedEvidences.value.length > 0));
+const evidenceRequestError = (error: any, fallback: string) => {
+  const errors = error?.response?.data?.errors || {};
+  const first = Object.values(errors).flat()[0];
+  return String(first || error?.response?.data?.message || fallback);
+};
+const uploadEvidence = async () => {
+  if (!selectedCompetency.value || !canEditEvidence.value || isUploadingEvidence.value) return;
+  const files = Array.from(evidenceFileInput.value?.files || []);
+  const url = evidenceLinkUrl.value.trim();
+  if (!files.length && !url) {
+    evidenceError.value = 'กรุณาเลือกไฟล์หรือกรอกลิงก์หลักฐาน';
+    return;
+  }
+
+  evidenceError.value = '';
+  isUploadingEvidence.value = true;
+  const competencyId = String(selectedCompetency.value.id);
+  try {
+    if (!isEvidenceRequested.value && !competencyDraftSavedAt.value[competencyId] && !draftSavedAt.value) {
+      clearAutoSaveTimer();
+      const saved = await saveDraft();
+      if (!saved) {
+        evidenceError.value = draftError.value || 'บันทึกผลประเมินไม่สำเร็จ จึงยังแนบหลักฐานไม่ได้';
+        return;
+      }
+    }
+
+    const form = new FormData();
+    form.append('competency_id', competencyId);
+    files.forEach((file) => form.append('evidenceFiles[]', file));
+    if (url) {
+      form.append('evidenceLinks[0][url]', url);
+      form.append('evidenceLinks[0][description]', evidenceLinkDescription.value.trim());
+    }
+
+    const { data } = await (window as any).axios.post(route('assessments.evidence.store'), form);
+    competencyEvidences.value[competencyId] = data.evidences || [];
+    evidenceLinkUrl.value = '';
+    evidenceLinkDescription.value = '';
+    if (evidenceFileInput.value) evidenceFileInput.value.value = '';
+  } catch (error: any) {
+    evidenceError.value = evidenceRequestError(error, 'ไม่สามารถแนบหลักฐานได้ กรุณาลองใหม่');
+  } finally {
+    isUploadingEvidence.value = false;
+  }
+};
+const removeEvidence = async (evidence: any) => {
+  if (!selectedCompetency.value || !canEditEvidence.value || isUploadingEvidence.value) return;
+  const competencyId = String(selectedCompetency.value.id);
+  evidenceError.value = '';
+  isUploadingEvidence.value = true;
+  try {
+    const { data } = await (window as any).axios.delete(route('assessments.evidence.destroy', evidence.id));
+    competencyEvidences.value[competencyId] = data.evidences || [];
+  } catch (error: any) {
+    evidenceError.value = evidenceRequestError(error, 'ไม่สามารถลบหลักฐานได้ กรุณาลองใหม่');
+  } finally {
+    isUploadingEvidence.value = false;
+  }
+};
 const isSelectedCompetencyLocked = computed(() => Boolean(lockedCompetencies.value[noteKey.value]));
 const selectedCompetencyStatus = computed(() => competencyStatuses.value[noteKey.value] || selectedCompetency.value?.assessmentStatus || 'draft');
 const isSelectedCompetencyApproved = computed(() => isFinalApprovedStatus(selectedCompetencyStatus.value));
@@ -388,6 +545,7 @@ const selectedCompetencyStatusCopy = computed(() => {
     return 'อนุมัติครบทุกลำดับแล้ว';
   }
   if (selectedCompetencyStatus.value === 'revision_required') return 'ถูกส่งกลับ · รอแก้ไขและส่งประเมินใหม่';
+  if (isEvidenceRequested.value) return 'ผู้ประเมินขอหลักฐานระดับ 5 · รอแนบหลักฐาน';
   return '';
 });
 const selectedRejectComment = computed(() => competencyRejectComments.value[noteKey.value] || selectedCompetency.value?.rejectComment || '');
@@ -395,16 +553,23 @@ const selectedRejectReviewerName = computed(() => competencyRejectReviewerNames.
 
 const flattenedIndicators = computed(() => {
   const rows: any[] = [];
-  (selectedCompetency.value?.levels || []).forEach((level: any, levelIndex: number) => {
+  scoringLevels.value.forEach((level: any, levelIndex: number) => {
     (level.indicators || []).forEach((indicator: string, indicatorIndex: number) => {
       rows.push({ level, levelIndex, indicator, indicatorIndex, key: indicatorKey(level, indicatorIndex) });
     });
   });
   return rows;
 });
+const submittedCheckedIndicators = () => {
+  if (!usesFacultyMethod.value) return checkedIndicators.value;
+  return Object.fromEntries(flattenedIndicators.value
+    .filter((row) => checkedIndicators.value[row.key])
+    .map((row) => [row.key, true]));
+};
 
 const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
   if (isSelectedCompetencyLocked.value) return false;
+  if (usesFacultyMethod.value) return true;
   const key = indicatorKey(level, indicatorIndex);
   const position = flattenedIndicators.value.findIndex((row) => row.key === key);
   if (position <= 0) return true;
@@ -413,6 +578,7 @@ const isIndicatorUnlocked = (level: any, indicatorIndex: number) => {
 
 const handleIndicatorChange = (level: any, indicatorIndex: number) => {
   if (isSelectedCompetencyLocked.value) return;
+  if (usesFacultyMethod.value) return;
   const key = indicatorKey(level, indicatorIndex);
   const position = flattenedIndicators.value.findIndex((row) => row.key === key);
 
@@ -759,6 +925,7 @@ onBeforeUnmount(() => {
             <p>เลือกพฤติกรรมที่ทำได้จริงตามลำดับสะสม ระบบยังไม่แสดงคะแนน Gap ในขั้นนี้</p>
             <p v-if="isReviewInProgressStatus(selectedCompetencyStatus)" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
             <p v-else-if="isSelectedCompetencyApproved" class="approved-copy">{{ selectedCompetencyStatusCopy }}</p>
+            <p v-else-if="isEvidenceRequested" class="revision-copy">{{ selectedCompetencyStatusCopy }}</p>
             <p v-else-if="isSelectedCompetencyLocked" class="locked-copy">ผลการประเมินนี้ถูกส่งให้หัวหน้างานแล้ว จะแก้ไขได้เมื่อหัวหน้างานส่งกลับมาแก้ไข</p>
             <p v-else-if="selectedCompetencyStatus === 'revision_required'" class="revision-copy">{{ selectedCompetencyStatusCopy }}</p>
           </div>
@@ -781,12 +948,12 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <div v-if="!selectedCompetency.levels?.length" class="empty-card compact">
+          <div v-if="!scoringLevels.length" class="empty-card compact">
             <div class="empty-title">ยังไม่มีรายละเอียดระดับ</div>
             <div class="empty-copy">เมื่อ Admin เพิ่มระดับและพฤติกรรม รายละเอียดจะแสดงที่นี่</div>
           </div>
 
-          <section v-for="level in selectedCompetency.levels" v-else :key="level.id || level.lvl" class="emp-level-section">
+          <section v-for="level in scoringLevels" v-else :key="level.id || level.lvl" class="emp-level-section">
             <div class="emp-level-head">
               <div>
                 <h3>{{ level.label || `ระดับ ${level.lvl}` }}</h3>
@@ -823,7 +990,7 @@ onBeforeUnmount(() => {
                 </span>
 
                 <em
-                  v-if="isIndicatorUnlocked(level, index) && !checkedIndicators[indicatorKey(level, index)]"
+                  v-if="!usesFacultyMethod && isIndicatorUnlocked(level, index) && !checkedIndicators[indicatorKey(level, index)]"
                   class="next-pill"
                 >
                   ลำดับถัดไป
@@ -836,9 +1003,59 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-if="selectedCompetencyStatus === 'revision_required' && selectedRejectComment" class="reviewer-comment-section">
+          <section v-if="['revision_required', 'evidence_required'].includes(selectedCompetencyStatus) && selectedRejectComment" class="reviewer-comment-section">
             <div class="reviewer-comment-label">ความคิดเห็นจาก {{ selectedRejectReviewerName || 'ผู้ประเมิน' }}</div>
             <p>{{ selectedRejectComment }}</p>
+          </section>
+
+          <p v-if="usesFacultyMethod && !showEvidenceSection" class="emp-evidence-hint">
+            แนบหลักฐานได้เมื่อผลประเมินถึงระดับ 5 หรือเมื่อผู้ประเมินร้องขอหลักฐาน
+          </p>
+
+          <section v-if="showEvidenceSection" class="emp-evidence-section" :class="{ missing: isMissingLevelEvidence }">
+            <div class="emp-evidence-head">
+              <div>
+                <h3>หลักฐานประกอบระดับ 5</h3>
+                <p v-if="isEvidenceRequested">ผู้ประเมินปรับผลเป็นระดับ 5 กรุณาแนบหลักฐานแล้วกดส่งหลักฐาน ระหว่างนี้แก้ไขผลการติ๊กไม่ได้</p>
+                <p v-else>ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่งตรวจ</p>
+              </div>
+              <span class="emp-level-status" :class="{ idle: !selectedEvidences.length, done: selectedEvidences.length > 0 }">
+                {{ selectedEvidences.length ? `แนบแล้ว ${selectedEvidences.length} รายการ` : 'ยังไม่แนบ' }}
+              </span>
+            </div>
+
+            <ul v-if="selectedEvidences.length" class="emp-evidence-list">
+              <li v-for="evidence in selectedEvidences" :key="evidence.id">
+                <a :href="evidence.url" target="_blank" rel="noopener noreferrer">{{ evidence.name }}</a>
+                <small>{{ evidence.kind === 'link' ? 'ลิงก์' : 'ไฟล์' }}</small>
+                <button
+                  v-if="canEditEvidence"
+                  class="btn btn-s btn-sm"
+                  type="button"
+                  :disabled="isUploadingEvidence"
+                  @click="removeEvidence(evidence)"
+                >
+                  ลบ
+                </button>
+              </li>
+            </ul>
+
+            <div v-if="canEditEvidence" class="emp-evidence-form">
+              <input
+                ref="evidenceFileInput"
+                class="inp"
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+              />
+              <input v-model="evidenceLinkUrl" class="inp" type="url" placeholder="หรือวางลิงก์หลักฐาน https://..." />
+              <input v-model="evidenceLinkDescription" class="inp" type="text" maxlength="255" placeholder="คำอธิบายลิงก์ (ถ้ามี)" />
+              <button class="btn btn-p btn-sm" type="button" :disabled="isUploadingEvidence" @click="uploadEvidence">
+                {{ isUploadingEvidence ? 'กำลังแนบ...' : 'แนบหลักฐาน' }}
+              </button>
+              <small class="emp-evidence-hint">รองรับรูปภาพ PDF เอกสาร Office และไฟล์ข้อความ ขนาดไม่เกิน 10 MB ต่อไฟล์</small>
+            </div>
+            <p v-if="evidenceError" class="emp-evidence-error">{{ evidenceError }}</p>
           </section>
 
           <section v-if="selectedCompetency.levels?.length" class="emp-note-section">
@@ -863,7 +1080,16 @@ onBeforeUnmount(() => {
               {{ autoSaveText }}
             </small>
           </div>
-          <button class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked" @click="openSubmitConfirm">
+          <button
+            v-if="isEvidenceRequested"
+            class="btn btn-t"
+            type="button"
+            :disabled="isSaving || !selectedEvidences.length"
+            @click="submitRequestedEvidence"
+          >
+            {{ isSaving ? 'กำลังส่ง...' : 'ส่งหลักฐานให้ผู้ประเมิน' }}
+          </button>
+          <button v-else class="btn btn-t" type="button" :disabled="isSaving || isSelectedCompetencyLocked || isMissingLevelEvidence" @click="openSubmitConfirm">
             {{ selectedCompetencyStatusCopy || (isSelectedCompetencyLocked ? 'ส่งแล้ว' : (isSaving ? 'กำลังบันทึก...' : 'บันทึกและส่งตรวจ')) }}
             <small>{{ selectedIndicators }}/{{ totalIndicators }}</small>
           </button>
@@ -887,6 +1113,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .employee-page { display: grid; gap: 20px; }
+.emp-evidence-section { display: grid; gap: 12px; border: 1px solid #d9dee5; border-radius: 12px; background: #fbfcfd; padding: 16px; }
+.emp-evidence-section.missing { border-color: #fecaca; background: #fef2f2; }
+.emp-evidence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.emp-evidence-head h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 900; }
+.emp-evidence-head p { margin: 4px 0 0; color: var(--text3); font-size: 12px; }
+.emp-evidence-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.emp-evidence-list li { display: flex; align-items: center; gap: 10px; min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 8px 10px; }
+.emp-evidence-list a { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--blue); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.emp-evidence-list small { color: var(--text3); font-size: 11px; }
+.emp-evidence-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.emp-evidence-form .btn { justify-self: start; }
+.emp-evidence-hint { grid-column: 1 / -1; color: var(--text3); font-size: 11px; }
+.emp-evidence-error { margin: 0; color: #b42318; font-size: 12px; font-weight: 800; }
+@media (max-width: 900px) {
+  .emp-evidence-form { grid-template-columns: minmax(0, 1fr); }
+}
 .assessment-page-content { display: grid; gap: 20px; }
 .assessment-page-content.is-round-closed {
   filter: grayscale(.85);

@@ -114,7 +114,10 @@ class SsoProfileReviewController extends Controller
     {
         $normalizedName = $this->normalizeName($incomingName);
         $normalizedType = $this->normalizeName($user->sso_position_type_name);
+        $worklineId = DB::table('positions as p')->join('job_families as f', 'p.job_family_id', '=', 'f.id')
+            ->where('p.id', $user->position_id)->value('f.workline_id');
         $query = DB::table('position_titles')
+            ->where('workline_id', $worklineId)
             ->where('workline_type', $user->sso_workline_type)
             ->where('normalized_position_type_name', $normalizedType)
             ->where('normalized_name', $normalizedName);
@@ -124,6 +127,7 @@ class SsoProfileReviewController extends Controller
         }
 
         return (int) DB::table('position_titles')->insertGetId([
+            'workline_id' => $worklineId,
             'workline_type' => $user->sso_workline_type,
             'name' => $incomingName,
             'normalized_name' => $normalizedName,

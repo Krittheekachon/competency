@@ -11,6 +11,7 @@ class FacultyAnalyticsService
     public function __construct(
         private PositionTitleResolver $positionTitles,
         private UserOrganizationPresenter $organizationPresenter,
+        private FcSelectionRuleResolver $fcSelectionRules,
     ) {}
 
     private const APPROVED_STATUSES = ['approved', 'dean_approved'];
@@ -21,6 +22,8 @@ class FacultyAnalyticsService
         'dept_head',
         'division_head',
         'academic_department_head',
+        'deputy_dean',
+        'assistant_dean',
         'hr',
     ];
 
@@ -215,12 +218,7 @@ class FacultyAnalyticsService
                 ? (int) $employee->position_title_id
                 : ($employee->position_id ? $this->positionTitles->forPositionId((int) $employee->position_id) : null),
         ]);
-        $positionsUsingFcSelection = DB::table('position_fc_selection_rules')
-            ->where('assessment_round_id', $roundId)
-            ->where('required_fc_count', '>', 0)
-            ->pluck('position_title_id')
-            ->map(fn ($id): int => (int) $id)
-            ->flip();
+        $requiredFcCountByUser = $this->fcSelectionRules->requiredCountsForUsers($employees, $roundId);
         $selectedFcByUser = DB::table('fc_topic_selections')
             ->join('fc_topic_selection_items', 'fc_topic_selections.id', '=', 'fc_topic_selection_items.fc_topic_selection_id')
             ->where('fc_topic_selections.assessment_round_id', $roundId)
@@ -232,14 +230,14 @@ class FacultyAnalyticsService
                 ->map(fn ($id): int => (int) $id)
                 ->flip());
 
-        return $assessments->filter(function (object $assessment) use ($positionByUser, $positionsUsingFcSelection, $selectedFcByUser): bool {
+        return $assessments->filter(function (object $assessment) use ($positionByUser, $requiredFcCountByUser, $selectedFcByUser): bool {
             if (! str_starts_with(strtoupper((string) $assessment->competency_type), 'FC')) {
                 return true;
             }
 
             $userId = (int) $assessment->user_id;
             $positionTitleId = $positionByUser->get($userId);
-            if (! $positionTitleId || ! $positionsUsingFcSelection->has($positionTitleId)) {
+            if (! $positionTitleId || $requiredFcCountByUser->get($userId, 0) <= 0) {
                 return true;
             }
 
@@ -255,6 +253,7 @@ class FacultyAnalyticsService
         return collect([
             ['key' => 'academic', 'label' => 'สายวิชาการ'],
             ['key' => 'support', 'label' => 'สายสนับสนุน'],
+            ['key' => 'management', 'label' => 'สายงานบริหาร'],
         ])->map(function (array $scope) use ($employees, $assessed, $gapUserIds, $gaps): array {
             $users = $employees->filter(fn (object $user): bool => $this->scopeKey($user->workline) === $scope['key']);
             $ids = $users->pluck('id')->map(fn ($id): int => (int) $id);
@@ -296,7 +295,7 @@ class FacultyAnalyticsService
                 : collect([$organization['departmentName'] ?? null])->filter()->values();
 
             if ($parts->isEmpty()) {
-                $parts = collect([$scopeKey === 'support' ? 'ไม่ระบุฝ่าย' : 'ไม่ระบุภาควิชา']);
+                $parts = collect([$scopeKey === 'support' ? 'ไม่ระบุฝ่าย' : ($scopeKey === 'management' ? 'ระดับสายงาน' : 'ไม่ระบุภาควิชา')]);
             }
 
             $paths = $scopeKey === 'support'
@@ -324,12 +323,12 @@ class FacultyAnalyticsService
             $depth = count($group['parts']) - 1;
 
             return [
-                'key' => ($scopeKey === 'support' ? 'support:' : 'academic:').$path,
+                'key' => $scopeKey.':'.$path,
                 'label' => $group['parts'][$depth],
                 'path' => $path,
                 'depth' => $depth,
-                'level' => $scopeKey === 'academic' ? 'department' : ['division', 'work', 'unit'][$depth],
-                'levelLabel' => $scopeKey === 'academic' ? 'ภาควิชา' : ['ฝ่าย', 'งาน', 'หน่วย'][$depth],
+                'level' => $scopeKey !== 'support' ? 'department' : ['division', 'work', 'unit'][$depth],
+                'levelLabel' => $scopeKey !== 'support' ? 'ภาควิชา/หน่วยงาน' : ['ฝ่าย', 'งาน', 'หน่วย'][$depth],
                 'totalEmployees' => $ids->count(),
                 'assessedEmployees' => $assessedIds->count(),
                 'passedEmployees' => max($assessedIds->count() - $failedIds->count(), 0),
@@ -371,10 +370,17 @@ class FacultyAnalyticsService
             return collect();
         }
 
+        // Faculty plan items cover extra gaps through idp_item_competency_gaps.
+        $coveredItems = DB::table('idp_item_competency_gaps')
+            ->join('idp_items', 'idp_item_competency_gaps.idp_item_id', '=', 'idp_items.id')
+            ->whereIn('idp_item_competency_gaps.competency_gap_id', $gapIds)
+            ->get(['idp_items.id', 'idp_item_competency_gaps.competency_gap_id', 'idp_items.status']);
         $items = DB::table('idp_items')
             ->whereIn('competency_gap_id', $gapIds)
-            ->orderBy('id')
             ->get(['id', 'competency_gap_id', 'status'])
+            ->concat($coveredItems)
+            ->unique(fn (object $row): string => $row->id.':'.$row->competency_gap_id)
+            ->sortBy('id')
             ->groupBy('competency_gap_id')
             ->map(fn (Collection $rows): object => $rows->last());
         $itemIds = $items->pluck('id')->map(fn ($id): int => (int) $id)->all();
@@ -446,7 +452,7 @@ class FacultyAnalyticsService
     {
         return $gaps->groupBy('competency_id')->map(function (Collection $rows) use ($employeesById, $idpStateByGap): array {
             $first = $rows->first();
-            $cells = collect(['faculty', 'academic', 'support'])->mapWithKeys(function (string $scope) use ($rows, $employeesById, $idpStateByGap): array {
+            $cells = collect(['faculty', 'academic', 'support', 'management'])->mapWithKeys(function (string $scope) use ($rows, $employeesById, $idpStateByGap): array {
                 $scopeRows = $scope === 'faculty'
                     ? $rows
                     : $rows->filter(function (object $gap) use ($scope, $employeesById): bool {
@@ -566,14 +572,6 @@ class FacultyAnalyticsService
 
     private function scopeKey(?string $workline): string
     {
-        $value = trim((string) $workline);
-        if (str_contains($value, 'วิชาการ')) {
-            return 'academic';
-        }
-        if (str_contains($value, 'สนับสนุน')) {
-            return 'support';
-        }
-
-        return 'other';
+        return app(SsoWorklineNormalizer::class)->structureType($workline) ?? 'other';
     }
 }

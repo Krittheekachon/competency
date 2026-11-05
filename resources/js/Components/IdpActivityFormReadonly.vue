@@ -258,6 +258,16 @@ const formatCurrency = (value: unknown) => {
         </article>
       </div>
 
+      <div v-else-if="rows.length && isForm('form_10_training') && details._courseOnly" class="project-assignment-list">
+        <article v-for="(row, rowIndex) in rows" :key="rowIndex" class="project-assignment-item">
+          <div class="project-assignment-item-head"><strong>ข้อมูลหลักสูตรที่เลือก</strong><span class="catalog-snapshot-note">ดึงจาก Learning Catalog</span></div>
+          <section class="training-catalog-summary">
+            <div class="training-course-heading"><div><strong>{{ row.courseName || 'ยังไม่ได้เลือกหลักสูตร' }}</strong></div></div>
+            <p>{{ row.courseDescription || 'ไม่มีคำอธิบายหลักสูตร' }}</p>
+          </section>
+        </article>
+      </div>
+
       <div v-else-if="rows.length && isForm('form_10_training')" class="project-assignment-list">
         <article v-for="(row, rowIndex) in rows" :key="rowIndex" class="project-assignment-item">
           <div class="project-assignment-item-head"><strong>ข้อมูลหลักสูตรที่เลือก</strong><span class="catalog-snapshot-note">ดึงจาก Learning Catalog</span></div>

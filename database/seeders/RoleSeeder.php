@@ -18,6 +18,8 @@ class RoleSeeder extends Seeder
             ['key' => 'dept_head',  'name_th' => 'หัวหน้างาน',    'name_en' => 'Department Head'],
             ['key' => 'division_head', 'name_th' => 'หัวหน้าฝ่าย', 'name_en' => 'Division Head'],
             ['key' => 'academic_department_head', 'name_th' => 'หัวหน้าภาควิชา', 'name_en' => 'Academic Department Head'],
+            ['key' => 'deputy_dean', 'name_th' => 'รองคณบดี', 'name_en' => 'Deputy Dean'],
+            ['key' => 'assistant_dean', 'name_th' => 'ผู้ช่วยคณบดี', 'name_en' => 'Assistant Dean'],
             ['key' => 'employee',   'name_th' => 'บุคลากร',           'name_en' => 'Employee'],
             ['key' => 'hr',         'name_th' => 'งานทรัพยากรบุคคล', 'name_en' => 'HR'],
             ['key' => 'dean',       'name_th' => 'ผู้บริหารคณะ',      'name_en' => 'Dean'],

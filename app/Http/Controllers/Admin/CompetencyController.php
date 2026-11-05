@@ -30,8 +30,13 @@ class CompetencyController extends Controller
         $data = $this->validatedData($request, $competency);
 
         DB::transaction(function () use ($competency, $data): void {
+            $competency = Competency::whereKey($competency->id)->lockForUpdate()->firstOrFail();
+            $sameCriteria = $this->criteriaSignature($data['levels']) === $this->criteriaSignature($competency->levels()->with(['indicators' => fn ($q) => $q->orderBy('id')])->orderBy('level')->get()->toArray());
+            if ($this->criteriaInUse($competency) && (! $sameCriteria || (int) $data['competency_type_id'] !== (int) $competency->competency_type_id)) {
+                throw ValidationException::withMessages(['levels' => 'เกณฑ์นี้ถูกใช้ในรอบการประเมินแล้ว ไม่สามารถแก้ระดับ พฤติกรรม น้ำหนัก หรือประเภทสมรรถนะได้ กรุณาสร้างสมรรถนะใหม่สำหรับเกณฑ์ใหม่']);
+            }
             $competency->update($this->competencyData($data));
-            $this->replaceLevels($competency, $data['levels']);
+            if (! $sameCriteria) $this->replaceLevels($competency, $data['levels']);
         });
 
         return back()->with('success', 'อัปเดตสมรรถนะเรียบร้อยแล้ว');
@@ -41,6 +46,10 @@ class CompetencyController extends Controller
     {
         try {
             DB::transaction(function () use ($competency): void {
+                $competency = Competency::whereKey($competency->id)->lockForUpdate()->firstOrFail();
+                if ($this->criteriaInUse($competency)) {
+                    throw ValidationException::withMessages(['competency' => 'ไม่สามารถลบสมรรถนะที่ถูกใช้ในรอบการประเมินแล้ว ข้อมูลผลประเมินและเกณฑ์เดิมต้องถูกเก็บไว้']);
+                }
                 $scoreIds = DB::table('scores')
                     ->where('competency_id', $competency->id)
                     ->pluck('id');
@@ -71,6 +80,8 @@ class CompetencyController extends Controller
                 $competency->levels()->delete();
                 $competency->delete();
             });
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -191,6 +202,27 @@ class CompetencyController extends Controller
                 ]);
             }
         }
+    }
+
+    private function criteriaInUse(Competency $competency): bool
+    {
+        if (DB::table('assessments')->where('competency_id', $competency->id)->exists()) return true;
+        if (DB::table('fc_topic_selection_items as i')->join('fc_topic_selections as s', 's.id', '=', 'i.fc_topic_selection_id')
+            ->where('i.competency_id', $competency->id)->whereIn('s.status', ['submitted', 'approved', 'revision_required'])->exists()) return true;
+        return DB::table('position_competencies as pc')->join('assessment_rounds as r', 'r.id', '=', 'pc.assessment_round_id')
+            ->where('pc.competency_id', $competency->id)->where(function ($q) {
+                $q->where('r.is_active', true)->orWhereExists(fn ($a) => $a->selectRaw('1')->from('assessments')->whereColumn('assessments.assessment_round_id', 'r.id'));
+            })->exists();
+    }
+
+    private function criteriaSignature(array $levels): array
+    {
+        return collect($levels)->sortBy('level')->map(fn ($level) => [
+            'level' => (int) $level['level'], 'description' => $level['description'] ?? '',
+            'indicators' => collect($level['indicators'])->map(fn ($indicator) => [
+                'description' => $indicator['description'], 'weight' => isset($indicator['weight']) ? (float) $indicator['weight'] : null,
+            ])->values()->all(),
+        ])->values()->all();
     }
 
     private function csvRows(string $path): array

@@ -183,20 +183,24 @@ const idpLearningMethods = computed(() => page.props.idpLearningMethods || []);
 const idpDeliveryTypeSettings = computed(() => page.props.idpDeliveryTypeSettings || []);
 const roleLabelsByKey = {
     admin: 'ผู้ดูแลระบบ',
-    supervisor: 'หัวหน้าหน่วย',
-    dept_head: 'หัวหน้างาน',
+    supervisor: 'หัวหน้างาน',
+    dept_head: 'หัวหน้าหน่วย',
     division_head: 'หัวหน้าฝ่าย',
     academic_department_head: 'หัวหน้าภาควิชา',
+    deputy_dean: 'รองคณบดี',
+    assistant_dean: 'ผู้ช่วยคณบดี',
     employee: 'บุคลากร',
     hr: 'งานทรัพยากรบุคคล',
     dean: 'ผู้บริหารคณะ',
 };
 const roleOptions = computed(() => (page.props.roles || [
     { id: 0, key: 'admin', label: 'ผู้ดูแลระบบ' },
-    { id: 1, key: 'supervisor', label: 'หัวหน้าหน่วย' },
-    { id: 2, key: 'dept_head', label: 'หัวหน้างาน' },
+    { id: 1, key: 'supervisor', label: 'หัวหน้างาน' },
+    { id: 2, key: 'dept_head', label: 'หัวหน้าหน่วย' },
     { id: 6, key: 'division_head', label: 'หัวหน้าฝ่าย' },
     { id: 7, key: 'academic_department_head', label: 'หัวหน้าภาควิชา' },
+    { id: 8, key: 'deputy_dean', label: 'รองคณบดี' },
+    { id: 9, key: 'assistant_dean', label: 'ผู้ช่วยคณบดี' },
     { id: 3, key: 'employee', label: 'บุคลากร' },
     { id: 4, key: 'hr', label: 'งานทรัพยากรบุคคล' },
     { id: 5, key: 'dean', label: 'ผู้บริหารคณะ' },
@@ -229,6 +233,11 @@ const levelOptionsFromDatabase = computed(() => {
 const isAcademicWorkline = computed(() => selectedWorklineKind.value === 'วิชาการ');
 const isSupportWorkline = computed(() => selectedWorklineKind.value === 'สนับสนุน');
 const isAdminWorkline = computed(() => selectedWorklineKind.value === 'บริหาร');
+const isManagementExecutive = computed(() => isAdminWorkline.value && ['dean', 'deputy_dean', 'assistant_dean'].includes(userForm.value.r));
+const managementPositionTitles = computed(() => {
+    const workline = (page.props.organizationWorklines || []).find(item => item.name === userForm.value.w);
+    return positionTitles.value.filter(item => workline && Number(item.worklineId) === Number(workline.id));
+});
 const supportWorksForDepartment = (departmentName = '') => {
     const selectedDepartment = normalizeOptionName(departmentName);
     const matchedDepartment = Object.keys(supportOrg.value || {}).find((department) =>
@@ -281,7 +290,7 @@ const unitOptions = computed(() => {
 
     return [];
 });
-const canPickPosition = computed(() => Boolean(userForm.value.w && normalizeOptionName(userForm.value.job)));
+const canPickPosition = computed(() => isManagementExecutive.value || Boolean(userForm.value.w && normalizeOptionName(userForm.value.job)));
 const legacyUnitOption = computed(() => {
     const unit = userForm.value.unit;
 
@@ -289,6 +298,7 @@ const legacyUnitOption = computed(() => {
 });
 const positionOptions = computed(() => {
     if (!canPickPosition.value) return [];
+    if (isManagementExecutive.value) return Array.from(new Set(managementPositionTitles.value.map(item => item.name)));
 
     if (isSupportWorkline.value) {
         const globalPositions = Object.values(selectedWorklineGroups.value).flat().filter(Boolean);
@@ -309,6 +319,7 @@ const positionOptions = computed(() => {
     return matchedJob ? selectedWorklineGroups.value[matchedJob] || [] : [];
 });
 const positionEmptyLabel = computed(() => {
+    if (isManagementExecutive.value) return 'เลือกตำแหน่งระดับสายบริหาร';
     if (!userForm.value.w) return 'เลือกสายงานก่อนเพื่อดูตำแหน่ง';
     if (!userForm.value.job) return `เลือก${isSupportWorkline.value ? 'งาน' : 'ภาควิชา'}ก่อนเพื่อดูตำแหน่ง`;
 
@@ -395,6 +406,10 @@ watchEffect(() => {
 watchEffect(() => {
     if (Array.isArray(page.props.worklines)) {
         worklines.value = clone(page.props.worklines);
+    }
+
+    if (Array.isArray(page.props.positionTitles)) {
+        positionTitles.value = clone(page.props.positionTitles);
     }
 
     if (page.props.jobFamiliesByWorkline && typeof page.props.jobFamiliesByWorkline === 'object') {
@@ -612,7 +627,8 @@ const reviewerChainTypeLabel = (chainType = 'assessment') => ({
     idp: 'ลำดับการทำ IDP',
 }[chainType] || chainType);
 const reviewerTemplateDescription = computed(() => {
-    if (!selectedReviewerTemplate.value) return 'ยังไม่ได้เลือก template';
+    if (!selectedReviewerTemplate.value) return 'ใช้หัวหน้าตามผังโครงสร้างองค์กร หากผังไม่มีผู้ประเมินให้เลือกกำหนดเอง';
+    if (selectedReviewerTemplate.value.structureDefault) return 'ใช้หัวหน้าจากสังกัดจริง ไล่จากหน่วยงานใกล้ที่สุดขึ้นไป เป็นค่าตั้งต้นที่แก้ไขได้ก่อนบันทึก';
 
     const stepText = (selectedReviewerTemplate.value.steps || [])
         .map((step) => `${step.step}. ${templateStepLabel(step)}`)
@@ -964,6 +980,7 @@ const applyReviewerTemplate = () => {
     userForm.value.reviewer_ids = ids.length ? ids : [''];
     clearReviewerSearch();
 };
+const structureReviewerMessage = ref('');
 const applyIdpReviewerTemplate = () => {
     const template = selectedIdpReviewerTemplate.value;
 
@@ -981,7 +998,56 @@ const applyIdpReviewerTemplate = () => {
 
     userForm.value.idp_reviewer_ids = ids;
 };
-const selectReviewerTemplate = (templateId) => {
+const selectReviewerTemplate = (templateId, selectElement = null) => {
+    const previousTemplateId = userForm.value.reviewer_template_id;
+    const useOrganizationStructure = templateId === '__organization_structure__';
+    const template = assessmentReviewerTemplates.value.find(item => Number(item.id) === Number(templateId));
+    structureReviewerMessage.value = '';
+    if (templateId === '__manual__') {
+        userForm.value.reviewer_template_id = '';
+        return;
+    }
+    if (!templateId || useOrganizationStructure) {
+        const preview = page.props.organizationReviewerDefaults?.[userForm.value.db_id];
+        userForm.value.reviewer_template_id = '';
+        if (preview?.reviewerIds?.length) {
+            userForm.value.reviewer_ids = [...preview.reviewerIds];
+            structureReviewerMessage.value = [...(preview.warnings || []), `ใช้หัวหน้าตามผังองค์กร: ${(preview.path || []).join(' → ')}`].join('\n');
+        } else if (preview?.error) {
+            userForm.value.reviewer_ids = [''];
+            structureReviewerMessage.value = [preview.error, ...(preview.warnings || [])].join('\n');
+        } else {
+            userForm.value.reviewer_ids = [''];
+        }
+        clearReviewerSearch();
+        return;
+    }
+    if (template?.structureDefault) {
+        const preview = page.props.organizationReviewerDefaults?.[userForm.value.db_id];
+        if (!preview || organizationDirty.value) {
+            structureReviewerMessage.value = 'กรุณาบันทึกสังกัดของผู้ถูกประเมินก่อน แล้วเปิดฟอร์มอีกครั้ง เพื่อใช้สังกัดจริงที่บันทึกแล้ว';
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        const messages = [...(preview.warnings || [])];
+        if (preview.error) {
+            structureReviewerMessage.value = [preview.error, ...messages].join('\n');
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        if (preview.reviewerIds.length !== (template.steps || []).length) {
+            messages.push(`ได้ ${preview.reviewerIds.length} ขั้นจากโครงสร้าง เทียบกับ template ${template.steps.length} ขั้น — ใช้หัวหน้าที่พบครบทุกคน ไม่ตัดรายชื่อ และแก้ไขต่อได้`);
+        }
+        if (selectedReviewerIds.value.length && !window.confirm('แทนที่ลำดับผู้ประเมินที่กรอกไว้ด้วยหัวหน้าตามโครงสร้างหรือไม่? ยังไม่บันทึกจนกดบันทึกข้อมูล')) {
+            if (selectElement) selectElement.value = String(previousTemplateId || '');
+            return;
+        }
+        userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
+        userForm.value.reviewer_ids = [...preview.reviewerIds];
+        clearReviewerSearch();
+        structureReviewerMessage.value = [`เติมหัวหน้าจาก ${preview.path.join(' → ')} แล้ว กรุณาตรวจลำดับก่อนบันทึก`, ...messages].join('\n');
+        return;
+    }
     userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
 
     if (userForm.value.reviewer_template_id) {
@@ -1016,14 +1082,17 @@ const normalizeReviewerList = () => {
     activeReviewerDropdown.value = null;
 };
 const addReviewerStep = () => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = [...(userForm.value.reviewer_ids || []), ''];
 };
 const removeReviewerStep = (index) => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = (userForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
 };
 const updateReviewerStep = (index, value) => {
+    if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     const next = [...(userForm.value.reviewer_ids || [])];
     next[index] = selectedEvaluatorId(value);
     userForm.value.reviewer_ids = next;
@@ -1083,6 +1152,14 @@ const closeReviewerDropdown = () => {
     activeReviewerDropdown.value = null;
 };
 const openReviewerModal = () => {
+    const defaults = page.props.organizationReviewerDefaults?.[userForm.value.db_id];
+    const hasConfiguredReviewers = selectedReviewerIds.value.length > 0;
+    const hasPreset = Boolean(selectedEvaluatorId(userForm.value.reviewer_template_id));
+
+    if (!hasConfiguredReviewers && !hasPreset && defaults?.reviewerIds?.length) {
+        userForm.value.reviewer_ids = [...defaults.reviewerIds];
+        structureReviewerMessage.value = [...(defaults.warnings || []), `ใช้หัวหน้าตามผังองค์กร: ${(defaults.path || []).join(' → ')}`].join('\n');
+    }
     showReviewerModal.value = true;
     if (!selectedReviewerIds.value.length) {
         userForm.value.reviewer_ids = [''];
@@ -1168,7 +1245,7 @@ const canPickEvaluator1 = computed(() => !['admin', 'supervisor', 'dept_head', '
 const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'division_head', 'academic_department_head', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
-const requiresOrganizationStructure = computed(() => !isDeanRole.value);
+const requiresOrganizationStructure = computed(() => !isDeanRole.value && !isManagementExecutive.value);
 const isDeptHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dept_head');
 const isDivisionHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'division_head');
 const requiresSupportWork = computed(() => !(isSupportWorkline.value && isDivisionHeadRole.value));
@@ -1188,7 +1265,7 @@ const requiresPositionFields = computed(() =>
     requiresOrganizationStructure.value && Boolean(userForm.value.w) && !allowsMissingPositionFields.value,
 );
 const showsPositionSection = computed(() =>
-    requiresOrganizationStructure.value && Boolean(userForm.value.w),
+    (requiresOrganizationStructure.value || isManagementExecutive.value) && Boolean(userForm.value.w),
 );
 
 const requestPageChange = (page) => {
@@ -1279,19 +1356,20 @@ const handlePositionChange = () => {
     organizationDirty.value = true;
     userForm.value.l = '';
     const directLevels = levelsByWorkline.value[userForm.value.w] || [];
-    if (!directLevels.length && userForm.value.p) {
+    if (!isManagementExecutive.value && !directLevels.length && userForm.value.p) {
         userForm.value.l = userForm.value.p;
     }
 };
 
 const handleRoleChange = () => {
-    if (isDeanRole.value && userForm.value.job) {
-        organizationDirty.value = organizationDirty.value || userForm.value.p !== userForm.value.job;
-        userForm.value.p = userForm.value.job;
-    }
-
     if (isDeanRole.value) {
-        resetOrgSelection();
+        userForm.value.w = worklines.value.find(item => normalizeWorklineName(item) === 'เธเธฃเธดเธซเธฒเธฃ') || userForm.value.w;
+        userForm.value.d = '';
+        userForm.value.dept = '';
+        userForm.value.job = '';
+        userForm.value.unit = '';
+        userForm.value.l = '';
+        organizationDirty.value = true;
     }
 
     normalizeReviewerList();
@@ -1304,11 +1382,12 @@ const normalizeAcademicTitle = (title) => ({
 }[title] || title || '');
 
 const resetUserForm = (data = null) => {
+    structureReviewerMessage.value = '';
     const org = parseOrgPath(data?.d || '');
     const supportWorkline = normalizeWorklineName(data?.w || '') === 'สนับสนุน';
     const [firstName = '', ...lastNameParts] = (data?.n || '').split(' ');
     const initialRole = normalizeUserRoleKey(data?.r || 'employee');
-    const initialWorkline = data?.w || (initialRole === 'dean' ? '' : worklines.value[0] || '');
+    const initialWorkline = data?.w || (initialRole === 'dean' ? worklines.value.find(item => normalizeWorklineName(item) === 'บริหาร') || '' : worklines.value[0] || '');
     const initialIsSupportWorkline = normalizeWorklineName(initialWorkline) === 'สนับสนุน';
     const rawSupportDept = initialIsSupportWorkline ? org.dept : '';
     const initialSupportDeptIsValid = !rawSupportDept
@@ -1476,9 +1555,6 @@ const saveUser = () => {
     if (!preserveExistingStructure) {
         syncOrgPath();
     }
-    if (!preserveExistingStructure && isDeanRole.value && form.job) {
-        form.p = form.job;
-    }
     const thaiName = [form.fn.trim(), form.ln.trim()].filter(Boolean).join(' ');
 
     if (!form.sso.trim() || !thaiName) {
@@ -1530,7 +1606,11 @@ const saveUser = () => {
     );
     const selectedOptionalPosition = !requiresPositionFields.value && canPickPosition.value && Boolean(form.p);
     const missingPosition = requiresPositionFields.value && (!form.l || (canPickPosition.value && !form.p));
-    const incompleteOptionalPosition = selectedOptionalPosition && !form.l;
+    const incompleteOptionalPosition = !isManagementExecutive.value && selectedOptionalPosition && !form.l;
+    if (!preserveExistingStructure && isManagementExecutive.value && !optionIncludes(positionOptions.value, form.p)) {
+        alert('กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหาร');
+        return;
+    }
     if (!preserveExistingStructure && requiresOrganizationStructure.value && (missingOrganization || missingPosition)) {
         alert(isSupportWorkline.value
             ? 'กรุณาเลือกสายงาน ฝ่าย งาน หน่วย ตำแหน่ง และระดับตำแหน่งให้ครบถ้วน'
@@ -1578,12 +1658,13 @@ const saveUser = () => {
         ph: form.ph.trim(),
         t: form.t.trim(),
         w: form.w.trim(),
-        d: form.d.trim(),
+        ...(isManagementExecutive.value ? {position_title_id: managementPositionTitles.value.find(item => item.name === form.p)?.id || null} : {}),
+        d: (isDeanRole.value ? '' : form.d).trim(),
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
-        p: (isDeanRole.value || !canPickPosition.value || (!requiresPositionFields.value && !form.p) ? '' : form.p).trim(),
-        l: (requiresPositionFields.value || form.p || form.l ? form.l : '').trim(),
+        p: (!canPickPosition.value || (!requiresPositionFields.value && !form.p) ? '' : form.p).trim(),
+        l: (isDeanRole.value ? '' : (requiresPositionFields.value || form.p || form.l ? form.l : '')).trim(),
         reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
         idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
         reviewer_ids: selectedReviewerIds.value,
@@ -1656,6 +1737,7 @@ const logout = () => router.post(route('logout'));
 
     <div class="shell" :class="{ 'sidebar-hidden': !showSidebar }">
         <div v-if="showSidebar" class="sidebar">
+            <button class="admin-mobile-close btn btn-s" type="button" aria-label="ปิดเมนู" @click="showSidebar = false">×</button>
             <SidebarBrand />
 
             <button class="sb-user" type="button" @click="goProfile">
@@ -1693,6 +1775,8 @@ const logout = () => router.post(route('logout'));
                     class="btn btn-s btn-sm"
                     style="padding: 8px; min-width: 40px; justify-content: center; border: none; background: transparent"
                     type="button"
+                    :aria-label="showSidebar ? 'ซ่อนเมนู' : 'เปิดเมนู'"
+                    :aria-expanded="showSidebar"
                     @click="showSidebar = !showSidebar"
                 >
                     ☰
@@ -1780,6 +1864,8 @@ const logout = () => router.post(route('logout'));
 
                 <AdminOrgStructure
                     v-else-if="activePage === 'admin-org-structure'"
+                    :organization-chart="page.props.organizationChart"
+                    :organization-worklines="page.props.organizationWorklines"
                     :academic-depts="academicPositions"
                     :set-academic-depts="setRef(academicPositions)"
                     :support-depts="supportJobFamilies"
@@ -1986,14 +2072,14 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-if="requiresOrganizationStructure" class="modal-section-label">โครงสร้างสังกัด</div>
+                <div class="modal-section-label">โครงสร้างสังกัด</div>
                 <div v-if="requiresOrganizationStructure && incompleteLegacySupportPath" class="modal-help warning">
                     สังกัดเดิม: {{ incompleteLegacySupportPath }} (ข้อมูลเดิมไม่ครบลำดับฝ่าย งาน และหน่วย หากไม่แก้สังกัด ระบบจะคงค่าเดิมไว้)
                 </div>
-                <div v-if="requiresOrganizationStructure" class="modal-grid" :class="{ 'single-col': !userForm.w }">
+                <div class="modal-grid" :class="{ 'single-col': isDeanRole || !userForm.w }">
                     <div class="fg">
-                        <label class="lbl req">สายงาน</label>
-                        <select v-model="userForm.w" class="sel modal-input" @change="handleWorklineChange">
+                        <label class="lbl" :class="{ req: !isDeanRole }">สายงาน</label>
+                        <select v-model="userForm.w" class="sel modal-input" aria-label="สายงาน" @change="handleWorklineChange">
                             <option value="">— เลือกสายงาน —</option>
                             <option v-for="workline in worklines" :key="workline" :value="workline">
                                 {{ workline }}
@@ -2001,7 +2087,7 @@ const logout = () => router.post(route('logout'));
                         </select>
                     </div>
 
-                    <div v-if="isSupportWorkline" class="fg">
+                    <div v-if="requiresOrganizationStructure && isSupportWorkline" class="fg">
                         <label class="lbl req">ฝ่าย</label>
                         <select v-model="userForm.dept" class="sel modal-input" @change="handleDeptChange">
                             <option value="">— เลือกฝ่าย —</option>
@@ -2012,7 +2098,7 @@ const logout = () => router.post(route('logout'));
                         </select>
                     </div>
 
-                    <div v-if="userForm.w && (!isSupportWorkline || userForm.dept)" class="fg">
+                    <div v-if="requiresOrganizationStructure && userForm.w && (!isSupportWorkline || userForm.dept)" class="fg">
                         <label class="lbl" :class="{ req: !isSupportWorkline || requiresSupportWork }">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
                             <option value="">— เลือก{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }} —</option>
@@ -2028,7 +2114,7 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
 
-                    <div v-if="isSupportWorkline && userForm.job" class="fg">
+                    <div v-if="requiresOrganizationStructure && isSupportWorkline && userForm.job" class="fg">
                         <label class="lbl" :class="{ req: requiresSupportUnit }">หน่วย</label>
                         <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
                             <option value="">— เลือกหน่วย —</option>
@@ -2042,7 +2128,7 @@ const logout = () => router.post(route('logout'));
 
                 <div v-if="showsPositionSection" class="modal-section-label">ข้อมูลตำแหน่ง</div>
                 <div v-if="showsPositionSection" class="modal-grid">
-                    <div v-if="!isDeanRole" class="fg">
+                    <div v-if="!isDeanRole || isManagementExecutive" class="fg">
                         <label class="lbl" :class="{ req: requiresPositionFields && canPickPosition }">ตำแหน่ง</label>
                         <select
                             v-model="userForm.p"
@@ -2066,7 +2152,7 @@ const logout = () => router.post(route('logout'));
                             {{ positionEmptyHelp }}
                         </div>
                     </div>
-                    <div v-else class="fg">
+        <div v-else-if="isDeanRole && !isManagementExecutive" class="fg">
                         <label class="lbl">ตำแหน่ง</label>
                         <input :value="userForm.job" class="inp modal-input" disabled />
                         <div class="modal-help">
@@ -2117,9 +2203,10 @@ const logout = () => router.post(route('logout'));
                                 <select
                                     :value="userForm.reviewer_template_id"
                                     class="sel modal-input"
-                                    @change="selectReviewerTemplate($event.target.value)"
+                                    @change="selectReviewerTemplate($event.target.value, $event.target)"
                                 >
                                     <option value="">— ไม่ใช้ template —</option>
+                                    <option value="__organization_structure__">ใช้หัวหน้าตามผังโครงสร้างองค์กร</option>
                                     <option
                                         v-for="template in assessmentReviewerTemplates"
                                         :key="`reviewer-template-${template.id}`"
@@ -2132,6 +2219,7 @@ const logout = () => router.post(route('logout'));
                             <div class="modal-help workflow-template-help">
                                 {{ reviewerTemplateDescription }}
                             </div>
+                            <div v-if="structureReviewerMessage" class="modal-help warning" role="status" style="white-space: pre-line">{{ structureReviewerMessage }}</div>
                         </div>
                     </section>
 
@@ -2184,6 +2272,25 @@ const logout = () => router.post(route('logout'));
                         </div>
 
                         <div class="reviewer-step-list">
+                            <div class="fg reviewer-modal-preset">
+                                <label class="lbl">เลือกลำดับผู้ประเมิน</label>
+                                <select
+                                    :value="userForm.reviewer_template_id || '__organization_structure__'"
+                                    class="sel modal-input"
+                                    @change="selectReviewerTemplate($event.target.value, $event.target)"
+                                >
+                                    <option value="__organization_structure__">หัวหน้าตามผังโครงสร้างองค์กร</option>
+                                    <option value="__manual__">กำหนดผู้ประเมินเอง</option>
+                                    <option
+                                        v-for="template in assessmentReviewerTemplates.filter(item => !item.structureDefault)"
+                                        :key="`modal-reviewer-template-${template.id}`"
+                                        :value="template.id"
+                                    >
+                                        {{ template.name }}
+                                    </option>
+                                </select>
+                                <div v-if="structureReviewerMessage" class="modal-help warning" role="status" style="white-space: pre-line">{{ structureReviewerMessage }}</div>
+                            </div>
                             <div
                                 v-for="(reviewerId, index) in userForm.reviewer_ids"
                                 :key="`reviewer-step-${index}`"
@@ -2654,6 +2761,10 @@ const logout = () => router.post(route('logout'));
 </template>
 
 <style scoped>
+.admin-mobile-close { display: none; }
+@media (max-width: 900px) {
+    .admin-mobile-close { display: block; position: absolute; top: 10px; right: 10px; z-index: 2; width: 36px; height: 36px; padding: 0; font-size: 24px; }
+}
 .reviewer-template-form-error {
     margin: 14px 0 0;
     color: #b42318;

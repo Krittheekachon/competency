@@ -22,6 +22,10 @@ type Gap = {
   note?: string;
   status?: string;
   requiresIdp?: boolean;
+  assessmentMethod?: string;
+  achievementPercentage?: number | null;
+  developmentRecommendation?: string | null;
+  planGaps?: Gap[];
   missingIndicators?: Array<{
     level: number;
     label: string;
@@ -88,6 +92,7 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
+const facultyIdpReadiness = computed(() => page.props.facultyIdpReadiness as { ready: boolean; message: string } | null);
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
 const activeFormActivityKey = ref<string | null>(null);
@@ -104,9 +109,24 @@ const forceQueuedSave = ref(false);
 let activitySequence = 0;
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-const idpGaps = computed(() => (props.gaps || [])
-  .filter((gap) => gap.requiresIdp && Number(gap.gap) < 0 && ['approved', 'dean_approved'].includes(gap.status || ''))
+const failedGaps = computed(() => (props.gaps || [])
+  .filter((gap) => gap.requiresIdp && ['approved', 'dean_approved'].includes(gap.status || ''))
   .sort((a, b) => String(a.cd).localeCompare(String(b.cd))));
+// Faculty rounds use one plan per person: every failed competency is folded into a single plan
+// anchored on the gap the server already saved (or the first failed gap).
+const usesFacultyPlan = computed(() => failedGaps.value.some((gap) => gap.assessmentMethod === 'faculty'));
+const idpGaps = computed<Gap[]>(() => {
+  if (!usesFacultyPlan.value || !failedGaps.value.length) return failedGaps.value;
+  const savedGapIds = new Set((props.idp?.items || []).map((item) => item.competencyGapId));
+  const anchor = failedGaps.value.find((gap) => savedGapIds.has(gap.id)) || failedGaps.value[0];
+  return [{
+    ...anchor,
+    cd: 'IDP',
+    n: 'แผนพัฒนารายบุคคล',
+    planGaps: failedGaps.value,
+  }];
+});
+const coveredGaps = (gap: Gap | null) => (gap ? (gap.planGaps || [gap]) : []);
 const methods = computed(() => props.learningMethods || []);
 const activeTools = computed(() => (props.idpLearningMethods || []).filter((tool) => tool.isActive !== false));
 const activeCatalogs = computed(() => (props.learningCatalogs || []).filter((catalog) => catalog.isActive !== false));
@@ -281,19 +301,40 @@ const focusType = (methodKey: string) => {
   if (normalized.includes('formal')) return 'formal';
   return normalized;
 };
-const catalogsFor = (gap: Gap) => activeCatalogs.value.filter((catalog) =>
-  (catalog.competencyIds || []).includes(gap.competencyId));
+const catalogsFor = (gap: Gap) => {
+  const competencyIds = coveredGaps(gap).map((item) => item.competencyId);
+  return activeCatalogs.value.filter((catalog) =>
+    (catalog.competencyIds || []).some((id) => competencyIds.includes(id)));
+};
 const catalogMatchesExpectedLevel = (catalog: Catalog, gap: Gap | null) => {
   const levels = catalog.expectedLevels || [];
-  return !levels.length || !gap?.expected || levels.includes(Number(gap.expected));
+  const expectedLevels = coveredGaps(gap).map((item) => Number(item.expected)).filter(Boolean);
+  return !levels.length || !expectedLevels.length || expectedLevels.some((level) => levels.includes(level));
 };
 const methodLabel = (key: string) => methods.value.find((method) => method.key === key)?.label || key;
 const toolFor = (activity: Activity) => activeTools.value.find((item) => item.id === Number(activity.developmentToolId));
 const catalogFor = (activity: Activity) => activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
+// A faculty plan keeps only the course name and description for Formal Learning.
+const isFacultyFormal = (activity: Activity) => usesFacultyPlan.value && focusType(activity.methodKey) === 'formal';
+const facultyFormalDetails = (catalog: Catalog | undefined): FormDetails => ({
+  ...defaultFormDetails('form_10_training'),
+  planRows: [{ courseName: catalog?.name || '', courseDescription: catalog?.description || '' }],
+  _saved: true,
+  _courseOnly: true,
+});
 const syncCatalogSnapshot = (activity: Activity): Activity => {
   if (!activity.learningCatalogId) return activity;
   const catalog = activeCatalogs.value.find((item) => item.id === Number(activity.learningCatalogId));
   if (!catalog) return activity;
+  if (isFacultyFormal(activity)) {
+    return {
+      ...activity,
+      activityName: catalog.name,
+      activityDescription: catalog.description || '',
+      formCode: 'form_10_training',
+      formDetails: facultyFormalDetails(catalog),
+    };
+  }
   const details = normalizeFormDetails(activity.formCode || catalog.formCode || 'form_10_training', activity.formDetails);
   const currentRow = details.planRows?.[0] || {};
   return {
@@ -359,7 +400,7 @@ const isTrainingForm = (activity: Activity | null) =>
   Boolean(activity && effectiveFormCode(activity) === 'form_10_training');
 const isReworkedActivityForm = (activity: Activity | null) =>
   isProjectAssignmentForm(activity) || isOjtForm(activity) || isCoachingForm(activity) || isMentoringForm(activity) || isGroupActivityForm(activity) || isFeedbackForm(activity) || isFieldTripForm(activity) || isTrainingForm(activity);
-const hasActivityForm = (activity: Activity) => Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
+const hasActivityForm = (activity: Activity) => !isFacultyFormal(activity) && Boolean(effectiveFormCode(activity) && formDefinitionFor(activity));
 const isFormSaved = (activity: Activity) => Boolean(activity.formDetails?._saved);
 const shouldShowDetailField = (field: { showWhen?: { key: string; value: string } }, detail: Record<string, any>) =>
   !field.showWhen || detail[field.showWhen.key] === field.showWhen.value;
@@ -453,6 +494,11 @@ const chooseCatalog = (activity: Activity) => {
   activity.activityName = catalog?.name || '';
   activity.activityDescription = catalog?.description || '';
   activity.formCode = formCodeForActivity(activity);
+  if (isFacultyFormal(activity)) {
+    activity.formCode = 'form_10_training';
+    activity.formDetails = facultyFormalDetails(catalog);
+    return;
+  }
   activity.formDetails = {
     ...defaultFormDetails(activity.formCode),
     planRows: defaultPlanRows(activity.formCode).map((row, index) => index === 0 ? {
@@ -709,8 +755,7 @@ const scheduleAutoSave = (delay = 1000, force = false) => {
 };
 
 const performAutoSave = async (force = false): Promise<boolean> => {
-  if (!force && (activeFormActivityKey.value !== null
-    || (selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value)))) {
+  if (!force && activeFormActivityKey.value !== null) {
     queuedSave.value = false;
     return false;
   }
@@ -756,10 +801,8 @@ const performAutoSave = async (force = false): Promise<boolean> => {
     saveState.value = 'error';
   } finally {
     const retryWithForce = forceQueuedSave.value;
-    const shouldRetry = retryWithForce || (
-      !(selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value))
-      && (queuedSave.value || signature() !== lastSavedSignature.value)
-    );
+    const shouldRetry = retryWithForce || queuedSave.value
+      || (saved && signature() !== lastSavedSignature.value);
     queuedSave.value = false;
     forceQueuedSave.value = false;
     if (shouldRetry) {
@@ -773,7 +816,6 @@ const performAutoSave = async (force = false): Promise<boolean> => {
 watch(plans, () => {
   if (activeFormActivityKey.value !== null
     || plans.value.every((plan) => isPlanLocked(plan))
-    || (selectedPlan.value && !selectedPlanLocked.value && !planIssue(selectedPlan.value))
     || signature() === lastSavedSignature.value) return;
   saveState.value = 'idle';
   scheduleAutoSave();
@@ -907,7 +949,7 @@ const planIssue = (plan: Plan): string => {
         return 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
       }
     }
-    if (isTrainingForm(activity)) {
+    if (isTrainingForm(activity) && !isFacultyFormal(activity)) {
       const rows = activity.formDetails?.planRows || [];
       if (!rows.length) {
         return `กิจกรรมที่ ${activityIndex + 1} · ${activity.activityName || 'Formal Learning'} ยังไม่มีรายละเอียดหลักสูตร`;
@@ -950,11 +992,12 @@ const planNavDetail = (plan: Plan) => {
   return planIssue(plan) || 'ข้อมูลครบแล้ว พร้อมส่งอนุมัติ';
 };
 const selectedPlanIssue = computed(() => selectedPlan.value && !selectedPlanLocked.value
-  ? planIssue(selectedPlan.value)
+  ? (facultyIdpReadiness.value && !facultyIdpReadiness.value.ready ? facultyIdpReadiness.value.message : planIssue(selectedPlan.value))
   : '');
 const submitSelectedPlan = async () => {
   if (!selectedPlan.value || selectedPlanLocked.value) return;
-  const issue = planIssue(selectedPlan.value);
+  const issue = facultyIdpReadiness.value && !facultyIdpReadiness.value.ready
+    ? facultyIdpReadiness.value.message : planIssue(selectedPlan.value);
   if (issue) {
     window.alert(issue);
     return;
@@ -990,10 +1033,13 @@ const submitSelectedPlan = async () => {
 
 <template>
   <section class="idp-page">
+    <div v-if="facultyIdpReadiness && !facultyIdpReadiness.ready" class="revision-alert" role="alert" data-testid="faculty-idp-readiness">
+      {{ facultyIdpReadiness.message }}
+    </div>
     <header class="page-header">
       <div>
         <h1>แผนพัฒนา IDP</h1>
-        <p class="subtitle">หนึ่งสมรรถนะต่อหนึ่งแผน และเพิ่มกิจกรรมพัฒนาได้หลายรายการ</p>
+        <p class="subtitle">{{ usesFacultyPlan ? 'หนึ่งคนหนึ่งแผน รวมทุกสมรรถนะที่ต้องพัฒนา และเพิ่มกิจกรรมพัฒนาได้หลายรายการ' : 'หนึ่งสมรรถนะต่อหนึ่งแผน และเพิ่มกิจกรรมพัฒนาได้หลายรายการ' }}</p>
       </div>
     </header>
 
@@ -1034,8 +1080,8 @@ const submitSelectedPlan = async () => {
             <small>{{ props.user?.p || props.user?.displayOrganization || props.user?.organization?.display || '-' }}</small>
           </div>
           <div class="nav-heading">
-            <strong>สมรรถนะที่ต้องพัฒนา</strong>
-            <span>{{ idpGaps.length }}</span>
+            <strong>{{ usesFacultyPlan ? 'แผนพัฒนารายบุคคล' : 'สมรรถนะที่ต้องพัฒนา' }}</strong>
+            <span>{{ failedGaps.length }}</span>
           </div>
         </div>
         <div class="plan-nav-scroll">
@@ -1071,8 +1117,18 @@ const submitSelectedPlan = async () => {
             <div>
               <span class="type-tag">{{ selectedGap.cd }}</span>
               <h2>{{ selectedGap.n }}</h2>
+              <p v-if="usesFacultyPlan" class="faculty-plan-copy">
+                รวมทุกสมรรถนะที่ต่ำกว่า 80% ไว้ในแผนเดียว กรอกกิจกรรมและส่งอนุมัติทั้งแผนครั้งเดียว
+              </p>
             </div>
-            <div class="score-row">
+            <ul v-if="usesFacultyPlan" class="faculty-plan-competencies">
+              <li v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
+                <span class="competency-code">{{ gap.cd }}</span>
+                <strong>{{ gap.n }}</strong>
+                <small>Actual {{ formatNumber(gap.actual) }} / Expected {{ formatNumber(gap.expected) }}<template v-if="gap.achievementPercentage !== null && gap.achievementPercentage !== undefined"> · {{ formatNumber(gap.achievementPercentage) }}%</template></small>
+              </li>
+            </ul>
+            <div v-else class="score-row">
               <div><span>Expected</span><strong>{{ formatNumber(selectedGap.expected) }}</strong></div>
               <div><span>Actual</span><strong>{{ formatNumber(selectedGap.actual) }}</strong></div>
               <div class="negative"><span>Gap</span><strong>{{ formatNumber(selectedGap.gap) }}</strong></div>
@@ -1081,7 +1137,7 @@ const submitSelectedPlan = async () => {
 
           <section class="plan-review-route" aria-label="ลำดับอนุมัติ IDP">
             <header>
-              <div><h3>ลำดับอนุมัติ IDP</h3><p>สถานะของ {{ selectedGap.cd }} · แต่ละสมรรถนะส่งอนุมัติแยกกัน</p></div>
+              <div><h3>ลำดับอนุมัติ IDP</h3><p>{{ usesFacultyPlan ? 'ส่งอนุมัติทั้งแผนครั้งเดียวตามลำดับนี้' : `สถานะของ ${selectedGap.cd} · แต่ละสมรรถนะส่งอนุมัติแยกกัน` }}</p></div>
             </header>
             <ol>
               <li v-for="step in idpApprovalSteps" :key="`${step.step}-${step.id}`"
@@ -1108,17 +1164,23 @@ const submitSelectedPlan = async () => {
                 <span class="section-number">01</span>
                 <div><h3>พฤติกรรมที่ต้องพัฒนา</h3><p>ข้อมูลจากผลประเมิน แก้ไขไม่ได้</p></div>
               </div>
-              <b class="section-badge">ต้องพัฒนา · {{ missingIndicators(selectedGap).length }} ข้อ</b>
+              <b class="section-badge">ต้องพัฒนา · {{ coveredGaps(selectedGap).reduce((total, gap) => total + missingIndicators(gap).length, 0) }} ข้อ</b>
             </header>
             <div class="section-body indicator-list">
-              <div v-for="indicator in missingIndicators(selectedGap)" :key="`${indicator.level}-${indicator.code}`" class="indicator-row">
-                <span>ระดับ {{ indicator.level }} · ข้อ {{ indicator.code }}</span>
-                <p>{{ indicator.description }}</p>
-              </div>
-              <div v-if="missingIndicators(selectedGap).length === 0" class="indicator-row">
-                <span>Competency Gap</span>
-                <p>พัฒนา {{ selectedGap.n }} ให้ถึงระดับที่คาดหวัง</p>
-              </div>
+              <template v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
+                <div v-if="usesFacultyPlan" class="indicator-group-title">
+                  <strong>{{ gap.cd }} · {{ gap.n }}</strong>
+                  <small v-if="gap.developmentRecommendation">{{ gap.developmentRecommendation }}</small>
+                </div>
+                <div v-for="indicator in missingIndicators(gap)" :key="`${gap.id}-${indicator.level}-${indicator.code}`" class="indicator-row">
+                  <span>ระดับ {{ indicator.level }} · ข้อ {{ indicator.code }}</span>
+                  <p>{{ indicator.description }}</p>
+                </div>
+                <div v-if="missingIndicators(gap).length === 0" class="indicator-row">
+                  <span>Competency Gap</span>
+                  <p>พัฒนา {{ gap.n }} ให้ถึงระดับที่คาดหวัง</p>
+                </div>
+              </template>
             </div>
           </section>
 
@@ -1126,7 +1188,7 @@ const submitSelectedPlan = async () => {
             <header class="section-title">
               <div>
                 <span class="section-number">02</span>
-                <div><h3>เป้าหมายของแผน</h3><p>ใช้ร่วมกันทุกกิจกรรมในสมรรถนะนี้</p></div>
+                <div><h3>เป้าหมายของแผน</h3><p>{{ usesFacultyPlan ? 'ใช้ร่วมกันทุกกิจกรรมในแผนนี้' : 'ใช้ร่วมกันทุกกิจกรรมในสมรรถนะนี้' }}</p></div>
               </div>
               <b class="section-badge">ข้อมูลแผน</b>
             </header>
@@ -1187,6 +1249,12 @@ const submitSelectedPlan = async () => {
                     @input="updateActivityWeight(activity, $event)"
                   />
                 </label>
+                <div v-if="isFacultyFormal(activity)" class="activity-readonly-meta wide faculty-formal-course">
+                  <span>หลักสูตร</span>
+                  <strong>{{ activity.activityName || 'ยังไม่เลือกหลักสูตร' }}</strong>
+                  <small>{{ activity.activityDescription || 'ไม่มีคำอธิบายหลักสูตร' }}</small>
+                </div>
+                <template v-else>
                 <div class="activity-readonly-meta">
                   <strong>{{ isFormSaved(activity) ? 'บันทึกรายละเอียดกิจกรรมแล้ว' : 'กรุณากรอกรายละเอียดกิจกรรม' }}</strong>
                   <small>{{ isFormSaved(activity) ? 'ตรวจสอบรายละเอียดในแบบฟอร์มด้านล่าง' : 'กดปุ่มด้านล่างเพื่อกรอกแบบฟอร์มกิจกรรมให้ครบถ้วน' }}</small>
@@ -1206,6 +1274,7 @@ const submitSelectedPlan = async () => {
                     {{ selectedPlanLocked ? 'ดูรายละเอียดฟอร์ม' : 'กรอกรายละเอียดฟอร์ม' }}
                   </button>
                 </div>
+                </template>
                 </div>
               </article>
 
@@ -1266,17 +1335,18 @@ const submitSelectedPlan = async () => {
                     type="button"
                     @click="addCatalogActivity(selectedPlan, catalog)"
                   >
-                    <span class="activity-choice-code formal">{{ catalog.code || 'COURSE' }}</span>
+                    <span class="activity-choice-code formal">{{ usesFacultyPlan ? 'COURSE' : (catalog.code || 'COURSE') }}</span>
                     <span class="activity-choice-copy">
                       <strong>{{ catalog.name }}</strong>
-                      <small v-if="catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
+                      <small v-if="usesFacultyPlan && catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.description || 'ไม่มีคำอธิบายหลักสูตร' }}</small>
+                      <small v-else-if="catalogMatchesExpectedLevel(catalog, selectedGap)">{{ catalog.deliveryType === 'in_class' ? 'In-class Training' : 'e-Learning' }}<template v-if="catalog.hours"> · {{ catalog.hours }} ชั่วโมง</template></small>
                       <small v-else>ใช้ไม่ได้ · รองรับระดับความคาดหวัง {{ catalog.expectedLevels?.join(', ') || '-' }}</small>
                     </span>
                     <span class="activity-choice-add">เลือก</span>
                   </button>
                   <div v-if="builderCatalogs.length === 0" class="activity-builder-empty formal-empty">
                     <strong>ยังไม่มีหลักสูตรสำหรับสมรรถนะนี้</strong>
-                    <span>ระบบแสดงเฉพาะหลักสูตรที่ผู้ดูแลระบบผูกกับ {{ selectedGap?.cd }}</span>
+                    <span>{{ usesFacultyPlan ? 'ระบบแสดงเฉพาะหลักสูตรที่ผู้ดูแลระบบผูกกับสมรรถนะที่ต้องพัฒนาในแผนนี้' : `ระบบแสดงเฉพาะหลักสูตรที่ผู้ดูแลระบบผูกกับ ${selectedGap?.cd}` }}</span>
                   </div>
                 </div>
               </div>
@@ -1882,11 +1952,11 @@ const submitSelectedPlan = async () => {
         <span v-else-if="selectedPlan && !selectedPlanLocked" class="submit-ready" role="status">ข้อมูลครบแล้ว พร้อมส่งอนุมัติ</span>
         <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
         <span v-else-if="selectedPlanLocked">สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้</span>
-        <span v-else-if="selectedPlanIssue">ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก</span>
-        <span v-else>บันทึกฟอร์มล่าสุดแล้ว และหยุดบันทึกอัตโนมัติ</span>
+        <span v-else-if="saveState === 'saved'">บันทึกร่างล่าสุดแล้ว</span>
+        <span v-else>ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก</span>
       </div>
       <button type="button" :aria-describedby="submitError || selectedPlanIssue || saveState === 'saving' ? 'idp-submit-reason' : undefined" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!selectedPlanIssue" @click="submitSelectedPlan">
-        {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : 'ส่งสมรรถนะนี้ให้หัวหน้า' }}
+        {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : (usesFacultyPlan ? 'ส่งแผนให้ผู้อนุมัติ' : 'ส่งสมรรถนะนี้ให้หัวหน้า') }}
       </button>
     </footer>
   </section>
@@ -1963,6 +2033,13 @@ const submitSelectedPlan = async () => {
 .select-prompt strong, .empty-state strong, .activities-empty strong { color: #344054; }
 .competency-header { display: flex; justify-content: space-between; gap: 18px; padding: 16px; border: 1px solid #cfd8e2; border-radius: 7px; background: #fff; box-shadow: 0 3px 12px rgba(26, 45, 59, .04); }
 .competency-header h2 { margin: 8px 0 0; font-size: 20px; }
+.faculty-plan-competencies { display: grid; gap: 6px; min-width: min(360px, 100%); margin: 0; padding: 0; list-style: none; }
+.faculty-plan-competencies li { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 7px 10px; border: 1px solid #ead6c7; border-radius: 5px; background: #fffcf9; }
+.faculty-plan-competencies strong { min-width: 0; font-size: 13px; }
+.faculty-plan-competencies small { grid-column: 2; color: #69778a; font-size: 11px; }
+.indicator-group-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; margin-top: 6px; }
+.indicator-group-title strong { font-size: 13px; }
+.indicator-group-title small { color: #b42318; font-size: 12px; font-weight: 800; }
 .competency-header p { max-width: 660px; margin: 7px 0 0; color: #69778a; font-size: 12px; line-height: 1.6; }
 .type-tag { display: inline-flex; padding: 4px 7px; border-radius: 4px; background: #e3eeeb; color: #246b5a; font-size: 11px; font-weight: 900; }
 .score-row { display: grid; grid-template-columns: repeat(3, 72px); gap: 7px; flex: 0 0 auto; }
@@ -2041,6 +2118,7 @@ select:disabled { cursor: not-allowed; }
 .activity-readonly-meta span { color: #59677a; font-size: 11px; font-weight: 800; }
 .activity-readonly-meta strong { color: #273142; font-size: 12px; }
 .activity-readonly-meta small { color: #8793a3; font-size: 9px; font-weight: 700; }
+.faculty-formal-course small { color: #59677a; font-size: 11px; font-weight: 600; line-height: 1.5; white-space: pre-line; }
 .activity-detail-action { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #d7e4ee; border-radius: 7px; background: #fbfdff; padding: 12px; }
 .activity-detail-action strong, .activity-detail-action span { display: block; }
 .activity-detail-action strong { color: #172033; font-size: 12px; }

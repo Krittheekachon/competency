@@ -6,7 +6,7 @@ const props = defineProps<{
     division: any;
     works: Array<{ work: any; units: any[] }>;
   };
-  scope?: 'academic' | 'support';
+  scope?: 'academic' | 'support' | 'management';
 }>();
 
 const emit = defineEmits<{
@@ -15,7 +15,7 @@ const emit = defineEmits<{
 
 const dialog = ref<HTMLElement | null>(null);
 const division = computed(() => props.group.division);
-const isAcademic = computed(() => props.scope === 'academic');
+const isAcademic = computed(() => props.scope !== 'support');
 const formatNumber = (value: any) => Number(value || 0).toLocaleString('th-TH');
 const outcomeChartStyle = computed(() => {
   const total = Math.max(Number(division.value.totalEmployees || 0), 1);
@@ -42,18 +42,18 @@ onMounted(async () => {
     <section ref="dialog" class="division-dialog" role="dialog" aria-modal="true" aria-labelledby="division-dialog-title" tabindex="-1">
       <header class="dialog-header">
         <div>
-          <span>{{ isAcademic ? 'รายละเอียดภาควิชา' : 'รายละเอียดฝ่าย' }}</span>
+          <span>{{ isAcademic ? 'รายละเอียดภาควิชา/หน่วยงาน' : 'รายละเอียดฝ่าย' }}</span>
           <h3 id="division-dialog-title">{{ division.label }}</h3>
-          <small>{{ isAcademic ? 'ภาพรวมผลการประเมินรายภาควิชา' : `${formatNumber(group.works.length)} งานภายในฝ่าย` }}</small>
+          <small>{{ isAcademic ? 'ภาพรวมผลการประเมินรายภาควิชา/หน่วยงาน' : `${formatNumber(group.works.length)} งานภายในฝ่าย` }}</small>
         </div>
-        <button type="button" :aria-label="`ปิดหน้าต่างรายละเอียด${isAcademic ? 'ภาควิชา' : 'ฝ่าย'}`" @click="emit('close')">×</button>
+        <button type="button" :aria-label="`ปิดหน้าต่างรายละเอียด${isAcademic ? 'ภาควิชา/หน่วยงาน' : 'ฝ่าย'}`" @click="emit('close')">×</button>
       </header>
 
-      <section class="division-dashboard" :aria-label="`ภาพรวมผลการประเมินของ${isAcademic ? 'ภาควิชา' : 'ฝ่าย'}`">
+      <section class="division-dashboard" :aria-label="`ภาพรวมผลการประเมินของ${isAcademic ? 'ภาควิชา/หน่วยงาน' : 'ฝ่าย'}`">
         <header class="dashboard-heading">
           <div>
             <span>ภาพรวม</span>
-            <strong>ผลการประเมิน{{ isAcademic ? 'ภาควิชา' : 'ฝ่าย' }}</strong>
+            <strong>ผลการประเมิน{{ isAcademic ? 'ภาควิชา/หน่วยงาน' : 'ฝ่าย' }}</strong>
           </div>
           <small>นับเฉพาะบุคลากรที่ต้องประเมินตนเอง</small>
         </header>
@@ -109,7 +109,7 @@ onMounted(async () => {
               <strong>{{ formatNumber(competency.peopleCount) }} คน</strong>
             </li>
           </ol>
-          <div v-else class="ranking-empty">ไม่มีผู้พบ Competency Gap ใน{{ isAcademic ? 'ภาควิชานี้' : 'ฝ่ายนี้' }}</div>
+          <div v-else class="ranking-empty">ไม่มีผู้พบ Competency Gap ใน{{ isAcademic ? 'ภาควิชา/หน่วยงานนี้' : 'ฝ่ายนี้' }}</div>
         </div>
       </section>
 

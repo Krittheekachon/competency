@@ -59,7 +59,7 @@ class IdpCompletionReviewController extends Controller
             ]);
 
             if ($data['achievementStatus'] === 'not_met') {
-                DB::table('idp_items')->insert([
+                $retryItemId = DB::table('idp_items')->insertGetId([
                     'idp_id' => $completion->idp_id,
                     'competency_gap_id' => $completion->competency_gap_id,
                     'behavior_key' => $completion->behavior_key,
@@ -70,6 +70,16 @@ class IdpCompletionReviewController extends Controller
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
+                // A retried faculty plan keeps covering the same competencies.
+                DB::table('idp_item_competency_gaps')
+                    ->where('idp_item_id', $completion->idp_item_id)
+                    ->pluck('competency_gap_id')
+                    ->each(fn ($gapId) => DB::table('idp_item_competency_gaps')->insert([
+                        'idp_item_id' => $retryItemId,
+                        'competency_gap_id' => $gapId,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]));
                 $this->reviewWorkflow->syncParentStatus((int) $completion->idp_id);
             }
 

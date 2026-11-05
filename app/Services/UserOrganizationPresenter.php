@@ -21,6 +21,11 @@ class UserOrganizationPresenter
     {
         $structure = $user->position_id ? $this->forPosition((int) $user->position_id) : null;
 
+        if (! $structure && app(SsoWorklineNormalizer::class)->structureType($user->workline) === 'management'
+            && trim((string) $user->department) === '') {
+            return ['type' => 'management', 'departmentName' => null, 'workName' => null, 'unitName' => null, 'display' => $user->workline];
+        }
+
         if (($structure['workName'] ?? null) || ($structure['unitName'] ?? null)) {
             $workDisplay = $this->withPrefix($structure['workName'], 'งาน');
             $unitDisplay = $this->withPrefix($structure['unitName'], 'หน่วย');
@@ -37,12 +42,13 @@ class UserOrganizationPresenter
         }
 
         if ($structure['academicDepartmentName'] ?? null) {
+            $type = app(SsoWorklineNormalizer::class)->structureType($structure['worklineName']) ?? 'other';
             return [
-                'type' => 'academic',
+                'type' => $type,
                 'departmentName' => $structure['academicDepartmentName'],
                 'workName' => null,
                 'unitName' => null,
-                'display' => $this->withPrefix($structure['academicDepartmentName'], 'ภาควิชา'),
+                'display' => $this->withPrefix($structure['academicDepartmentName'], $type === 'academic' ? 'ภาควิชา' : 'หน่วยงาน'),
             ];
         }
 
@@ -56,14 +62,15 @@ class UserOrganizationPresenter
             return $organization;
         }
 
-        $isSupport = in_array((string) $user->workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
+        $type = app(SsoWorklineNormalizer::class)->structureType($user->workline) ?? 'other';
+        $isSupport = $type === 'support';
 
         return [
-            'type' => $isSupport ? 'support' : 'academic',
+            'type' => $type,
             'departmentName' => null,
             'workName' => null,
             'unitName' => null,
-            'display' => $isSupport ? 'ยังไม่ระบุงาน/หน่วย' : 'ยังไม่ระบุภาควิชา',
+            'display' => $isSupport ? 'ยังไม่ระบุงาน/หน่วย' : 'ยังไม่ระบุภาควิชา/หน่วยงาน',
         ];
     }
 
@@ -79,12 +86,14 @@ class UserOrganizationPresenter
             ->leftJoin('support_works', 'support_units.support_work_id', '=', 'support_works.id')
             ->leftJoin('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
             ->leftJoin('job_families', 'positions.job_family_id', '=', 'job_families.id')
+            ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
             ->where('positions.id', $positionId)
             ->select([
                 'support_departments.name as department_name',
                 'support_works.name as work_name',
                 'support_units.name as unit_name',
                 'job_families.name as academic_department_name',
+                'worklines.name as workline_name',
             ])
             ->first();
 
@@ -93,6 +102,7 @@ class UserOrganizationPresenter
             'workName' => $row->work_name,
             'unitName' => $row->unit_name,
             'academicDepartmentName' => $row->academic_department_name,
+            'worklineName' => $row->workline_name,
         ] : null;
     }
 
@@ -103,7 +113,8 @@ class UserOrganizationPresenter
             ->map(fn (string $part): string => trim($part))
             ->filter()
             ->values();
-        $isSupport = in_array($workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true);
+        $type = app(SsoWorklineNormalizer::class)->structureType($workline) ?? 'other';
+        $isSupport = $type === 'support';
 
         if ($isSupport) {
             if ($parts->count() < 2) {
@@ -134,11 +145,11 @@ class UserOrganizationPresenter
         $departmentName = $parts->first() ?: null;
 
         return [
-            'type' => 'academic',
+            'type' => $type,
             'departmentName' => $departmentName,
             'workName' => null,
             'unitName' => null,
-            'display' => $this->withPrefix($departmentName, 'ภาควิชา') ?: '',
+            'display' => $this->withPrefix($departmentName, $type === 'academic' ? 'ภาควิชา' : 'หน่วยงาน') ?: '',
         ];
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Employee;
 
 use App\Http\Controllers\Controller;
 use App\Services\AssessmentRoundWindow;
+use App\Services\FacultyIdpPlanService;
 use App\Services\IdpItemReviewWorkflow;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,7 @@ class IdpController extends Controller
         private readonly IdpItemReviewWorkflow $reviewWorkflow,
         private readonly AssessmentRoundWindow $assessmentRoundWindow,
         private readonly NotificationService $notifications,
+        private readonly FacultyIdpPlanService $facultyPlans,
     ) {
     }
 
@@ -106,6 +108,24 @@ class IdpController extends Controller
         }
         $roundId = (int) ($roundIds->first() ?: $this->assessmentRoundWindow->activeRound()->id);
 
+        // Faculty rounds keep one plan per person covering every failed competency; the server picks
+        // the anchor gap and the covered gaps, never the client.
+        $planGaps = null;
+        if ($this->facultyPlans->isFacultyRound($roundId)) {
+            if ($items->count() > 1) {
+                throw ValidationException::withMessages([
+                    'items' => 'วิธีประเมินของคณะจัดทำ IDP เป็นแผนเดียวต่อคน',
+                ]);
+            }
+
+            $planGaps = $this->facultyPlans->failedGaps((int) auth()->id(), $roundId);
+            if ($items->isNotEmpty()) {
+                $anchorGapId = $this->facultyPlanAnchorGapId($roundId, $planGaps, (int) $items->first()['competencyGapId']);
+                $items = $items->map(fn (array $item): array => [...$item, 'competencyGapId' => $anchorGapId]);
+                $validGaps = $planGaps;
+            }
+        }
+
         if ($status === 'submitted' && $items->isEmpty()) {
             throw ValidationException::withMessages([
                 'items' => 'ไม่มีรายการ Gap ที่ต้องจัดทำ IDP',
@@ -151,7 +171,7 @@ class IdpController extends Controller
             ->get(['id', 'code', 'name', 'delivery_type', 'cost', 'hours', 'expected_levels', 'description'])
             ->keyBy('id');
 
-        $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById);
+        $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById, $planGaps !== null);
 
         $this->validateActivities(
             $items,
@@ -161,6 +181,7 @@ class IdpController extends Controller
             $toolsById,
             $catalogCompetencies,
             $catalogsById,
+            $planGaps,
         );
         $owner = DB::table('users')
             ->where('id', auth()->id())
@@ -168,7 +189,28 @@ class IdpController extends Controller
         $owner->assessment_round_id = $roundId;
 
         $submittedItemIds = [];
-        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId, &$submittedItemIds): void {
+        DB::transaction(function () use ($items, $status, $methodIdsByKey, $toolsById, $catalogsById, $owner, $roundId, $planGaps, &$submittedItemIds): void {
+            // Serialize both first creation and subsequent edits for this owner, including legacy plans.
+            DB::table('users')->where('id', $owner->id)->lockForUpdate()->first();
+            if ($planGaps !== null) {
+                DB::table('assessments')->where('user_id', $owner->id)->where('assessment_round_id', $roundId)->orderBy('id')->lockForUpdate()->get(['id']);
+                $state = $this->facultyPlans->readiness((int) $owner->id, $roundId);
+                if ($state['missingGaps'] !== [] || $status === 'submitted') {
+                    $this->facultyPlans->assertReadyToSubmit((int) $owner->id, $roundId);
+                }
+                $planGaps = $this->facultyPlans->failedGaps((int) $owner->id, $roundId);
+                if ($items->isNotEmpty() && $planGaps->isEmpty()) {
+                    throw ValidationException::withMessages(['items' => 'ไม่พบ Gap ที่อนุมัติแล้วและต้องจัดทำ IDP ในรอบนี้']);
+                }
+                if ($items->isNotEmpty()) {
+                    $anchor = $this->facultyPlanAnchorGapId($roundId, $planGaps, (int) $items->first()['competencyGapId']);
+                    $items = $items->map(fn ($item) => [...$item, 'competencyGapId' => $anchor]);
+                }
+                $freshCatalogCompetencies = DB::table('learning_catalog_competency')
+                    ->whereIn('learning_catalog_id', $catalogsById->keys())->get()->groupBy('learning_catalog_id')
+                    ->map(fn ($rows) => $rows->pluck('competency_id')->map(fn ($id) => (int) $id));
+                $this->validateActivities($items, $status, $planGaps, $methodIdsByKey, $toolsById, $freshCatalogCompetencies, $catalogsById, $planGaps);
+            }
             $idpId = $this->currentUserIdpId($roundId);
             foreach ($items as $item) {
                 $gapId = (int) $item['competencyGapId'];
@@ -176,6 +218,7 @@ class IdpController extends Controller
                     ->where('idp_id', $idpId)
                     ->where('competency_gap_id', $gapId)
                     ->orderByDesc('id')
+                    ->lockForUpdate()
                     ->first();
 
                 if ($existing && ($existing->status === 'approved'
@@ -193,7 +236,9 @@ class IdpController extends Controller
                         ? 'revision_required'
                         : 'draft');
                 $values = [
-                    'behavior_key' => 'competency-gap:'.$item['competencyGapId'],
+                    'behavior_key' => $planGaps !== null
+                        ? FacultyIdpPlanService::BEHAVIOR_KEY
+                        : 'competency-gap:'.$item['competencyGapId'],
                     'behavior_description' => null,
                     'goal' => $item['goal'] ?? null,
                     'success_criteria' => $item['successCriteria'] ?? null,
@@ -230,6 +275,10 @@ class IdpController extends Controller
                         ...$values,
                         'created_at' => now(),
                     ]);
+                }
+
+                if ($planGaps !== null) {
+                    $this->facultyPlans->syncCompetencyGaps($itemId, $planGaps->keys());
                 }
 
                 if ($isSubmission) {
@@ -292,16 +341,35 @@ class IdpController extends Controller
         }
     }
 
-    private function withAuthoritativeActivityData(Collection $items, Collection $toolsById, Collection $catalogsById): Collection
+    private function withAuthoritativeActivityData(Collection $items, Collection $toolsById, Collection $catalogsById, bool $facultyPlan = false): Collection
     {
-        return $items->map(function (array $item) use ($toolsById, $catalogsById): array {
-            $item['activities'] = collect($item['activities'] ?? [])->map(function (array $activity) use ($toolsById, $catalogsById): array {
+        return $items->map(function (array $item) use ($toolsById, $catalogsById, $facultyPlan): array {
+            $item['activities'] = collect($item['activities'] ?? [])->map(function (array $activity) use ($toolsById, $catalogsById, $facultyPlan): array {
                 $tool = ! empty($activity['developmentToolId'])
                     ? $toolsById->get($activity['developmentToolId'])
                     : null;
                 $catalog = ! empty($activity['learningCatalogId'])
                     ? $catalogsById->get($activity['learningCatalogId'])
                     : null;
+
+                // A faculty plan keeps only the course name and description; the single row stays trackable.
+                if ($catalog && $facultyPlan) {
+                    return [
+                        ...$activity,
+                        'activityName' => $catalog->name ?? '',
+                        'activityDescription' => $catalog->description ?? '',
+                        'formCode' => 'form_10_training',
+                        'formDetails' => [
+                            '_formCode' => 'form_10_training',
+                            '_saved' => true,
+                            '_courseOnly' => true,
+                            'planRows' => [[
+                                'courseName' => $catalog->name ?? '',
+                                'courseDescription' => $catalog->description ?? '',
+                            ]],
+                        ],
+                    ];
+                }
 
                 if ($catalog) {
                     $details = is_array($activity['formDetails'] ?? null) ? $activity['formDetails'] : [];
@@ -368,6 +436,7 @@ class IdpController extends Controller
         Collection $toolsById,
         Collection $catalogCompetencies,
         Collection $catalogsById,
+        ?Collection $planGaps = null,
     ): void {
         foreach ($items as $itemIndex => $item) {
             $activities = collect($item['activities'] ?? [])->values();
@@ -380,13 +449,16 @@ class IdpController extends Controller
 
             if ($status === 'submitted' && round((float) $activities->sum('weightPercent'), 2) !== 100.0) {
                 throw ValidationException::withMessages([
-                    "items.$itemIndex.activities" => 'น้ำหนักกิจกรรมของแต่ละสมรรถนะต้องรวม 100%',
+                    "items.$itemIndex.activities" => $planGaps !== null
+                        ? 'น้ำหนักกิจกรรมในแผนต้องรวม 100%'
+                        : 'น้ำหนักกิจกรรมของแต่ละสมรรถนะต้องรวม 100%',
                 ]);
             }
 
-            $gap = $validGaps[$item['competencyGapId']] ?? null;
-            $competencyId = (int) ($gap->competency_id ?? 0);
-            $expectedLevel = (int) ($gap->expected_level ?? 0);
+            // A faculty plan accepts Formal courses linked to any competency it covers.
+            $coveredGaps = $planGaps ?? collect([$validGaps[$item['competencyGapId']] ?? null])->filter();
+            $competencyIds = $coveredGaps->pluck('competency_id')->map(fn ($id): int => (int) $id)->values();
+            $expectedLevels = $coveredGaps->pluck('expected_level')->map(fn ($level): int => (int) $level)->values();
 
             foreach ($activities as $activityIndex => $activity) {
                 $prefix = "items.$itemIndex.activities.$activityIndex";
@@ -433,13 +505,13 @@ class IdpController extends Controller
                             "$prefix.learningCatalogId" => 'กรุณาเลือกหลักสูตรจาก Learning Catalog',
                         ]);
                     }
-                    if ($catalogId && (! $catalog || ! ($catalogCompetencies[$catalogId] ?? collect())->contains($competencyId))) {
+                    if ($catalogId && (! $catalog || ($catalogCompetencies[$catalogId] ?? collect())->intersect($competencyIds)->isEmpty())) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่ได้ผูกกับสมรรถนะที่ต้องพัฒนา',
                         ]);
                     }
                     $catalogExpectedLevels = $this->decodeExpectedLevels($catalog?->expected_levels ?? null);
-                    if ($catalogId && $catalogExpectedLevels && ! in_array($expectedLevel, $catalogExpectedLevels, true)) {
+                    if ($catalogId && $catalogExpectedLevels && $expectedLevels->intersect($catalogExpectedLevels)->isEmpty()) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'หลักสูตรนี้ไม่รองรับระดับความคาดหวังของผู้ใช้',
                         ]);
@@ -791,7 +863,7 @@ class IdpController extends Controller
                     }
                 }
 
-                if ($status === 'submitted' && ($activity['formCode'] ?? null) === 'form_10_training') {
+                if ($status === 'submitted' && $planGaps === null && ($activity['formCode'] ?? null) === 'form_10_training') {
                     $rows = collect($activity['formDetails']['planRows'] ?? [])->values();
                     if ($rows->isEmpty()) {
                         throw ValidationException::withMessages([
@@ -833,6 +905,23 @@ class IdpController extends Controller
         };
     }
 
+    private function facultyPlanAnchorGapId(int $roundId, Collection $planGaps, int $requestedGapId): int
+    {
+        $existingAnchor = (int) DB::table('idp_items')
+            ->join('idps', 'idp_items.idp_id', '=', 'idps.id')
+            ->where('idps.user_id', auth()->id())
+            ->where('idps.assessment_round_id', $roundId)
+            ->where('idp_items.behavior_key', FacultyIdpPlanService::BEHAVIOR_KEY)
+            ->orderByDesc('idp_items.id')
+            ->value('idp_items.competency_gap_id');
+
+        if ($existingAnchor) {
+            return $existingAnchor;
+        }
+
+        return $planGaps->has($requestedGapId) ? $requestedGapId : (int) $planGaps->keys()->first();
+    }
+
     private function validGapsForCurrentUser(Collection $gapIds): Collection
     {
         if ($gapIds->isEmpty()) {
@@ -846,6 +935,7 @@ class IdpController extends Controller
             ->where('competency_gaps.requires_idp', true)
             ->where('competency_gaps.gap', '<', 0)
             ->whereIn('competency_gaps.status', ['approved', 'dean_approved'])
+            ->whereIn('assessments.status', ['approved', 'dean_approved'])
             ->get([
                 'competency_gaps.id',
                 'competency_gaps.competency_id',
@@ -880,7 +970,8 @@ class IdpController extends Controller
             return (int) $existing;
         }
 
-        return (int) DB::table('idps')->insertGetId([
+        // ON CONFLICT DO NOTHING avoids aborting PostgreSQL's transaction on a unique collision.
+        DB::table('idps')->insertOrIgnore([
             'user_id' => auth()->id(),
             'assessment_round_id' => $roundId,
             'year' => $year,
@@ -889,6 +980,7 @@ class IdpController extends Controller
             'updated_at' => now(),
             'created_at' => now(),
         ]);
+        return (int) DB::table('idps')->where('user_id', auth()->id())->where('assessment_round_id', $roundId)->value('id');
     }
 
 }

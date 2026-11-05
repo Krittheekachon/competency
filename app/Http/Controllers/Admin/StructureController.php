@@ -16,15 +16,25 @@ class StructureController extends Controller
     public function storePositionTitle(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'workline_type' => ['required', Rule::in(['academic', 'support'])],
+            'workline_id' => ['required_without:workline_type', 'nullable', 'integer', 'exists:worklines,id'],
+            'workline_type' => ['nullable', Rule::in(['academic', 'support', 'management'])],
             'name' => ['required', 'string', 'max:255'],
             'position_type_name' => ['nullable', 'string', 'max:255'],
+            'placement_scope' => ['nullable', Rule::in(['workline'])],
         ]);
         $normalizedName = $this->normalizeCatalogName($data['name']);
         $normalizedType = $this->normalizeCatalogName($data['position_type_name'] ?? null);
+        $worklineId = $data['workline_id'] ?? null;
+        $worklineType = $worklineId
+            ? app(\App\Services\SsoWorklineNormalizer::class)->structureType(DB::table('worklines')->where('id', $worklineId)->value('name'))
+            : ($data['workline_type'] ?? null);
+        if (($data['placement_scope'] ?? null) === 'workline' && (! $worklineId || $worklineType !== 'management')) {
+            throw ValidationException::withMessages(['workline_id' => 'เพิ่มตำแหน่งระดับสายงานได้เฉพาะสายบริหารเท่านั้น']);
+        }
 
         $exists = DB::table('position_titles')
-            ->where('workline_type', $data['workline_type'])
+            ->where('workline_id', $worklineId)
+            ->when(! $worklineId, fn ($q) => $q->where('workline_type', $worklineType))
             ->where('normalized_name', $normalizedName)
             ->where('normalized_position_type_name', $normalizedType)
             ->exists();
@@ -35,12 +45,14 @@ class StructureController extends Controller
         }
 
         DB::table('position_titles')->insert([
-            'workline_type' => $data['workline_type'],
+            'workline_id' => $worklineId,
+            'workline_type' => $worklineType,
             'name' => trim($data['name']),
             'normalized_name' => $normalizedName,
             'position_type_name' => filled($data['position_type_name'] ?? null) ? trim($data['position_type_name']) : null,
             'normalized_position_type_name' => $normalizedType,
             'source' => 'manual',
+            'is_workline_position' => ($data['placement_scope'] ?? null) === 'workline',
             'first_seen_at' => now(),
             'last_seen_at' => now(),
             'created_at' => now(),
@@ -48,6 +60,109 @@ class StructureController extends Controller
         ]);
 
         return back()->with('success', 'เพิ่มตำแหน่งในรายการตำแหน่งทั้งหมดแล้ว');
+    }
+
+    public function storeWorklinePosition(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'workline_id' => ['required', 'integer', 'exists:worklines,id'],
+            'position_title_id' => ['required', 'integer', 'exists:position_titles,id'],
+        ]);
+        DB::transaction(function () use ($data): void {
+            $title = DB::table('position_titles')->where('id', $data['position_title_id'])->lockForUpdate()->first();
+            abort_unless($title, 404);
+            $type = app(\App\Services\SsoWorklineNormalizer::class)->structureType(DB::table('worklines')->where('id', $data['workline_id'])->value('name'));
+            if ($type !== 'management' || (int) $title->workline_id !== (int) $data['workline_id']) {
+                throw ValidationException::withMessages(['position_title_id' => 'กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหารนี้']);
+            }
+            if ($title->is_workline_position) {
+                throw ValidationException::withMessages(['position_title_id' => 'เพิ่มตำแหน่งนี้ในระดับสายงานแล้ว']);
+            }
+            DB::table('position_titles')->where('id', $title->id)->update(['is_workline_position' => true, 'updated_at' => now()]);
+        });
+        return back()->with('success', 'เพิ่มตำแหน่งจากทะเบียนในระดับสายงานแล้ว');
+    }
+
+    public function destroyWorklinePosition(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['position_title_id' => ['required', 'integer', 'exists:position_titles,id']]);
+        DB::transaction(function () use ($data): void {
+            $title = DB::table('position_titles')->where('id', $data['position_title_id'])->lockForUpdate()->first();
+            abort_unless($title && $title->is_workline_position, 404);
+            if (DB::table('users')->where('position_title_id', $title->id)->whereNull('position_id')->exists()) {
+                throw ValidationException::withMessages(['position_title_id' => 'ยังมีบุคลากรใช้ตำแหน่งระดับสายงานนี้ กรุณาจัดสังกัดก่อนนำออก']);
+            }
+            DB::table('position_titles')->where('id', $title->id)->update(['is_workline_position' => false, 'updated_at' => now()]);
+        });
+        return back()->with('success', 'นำตำแหน่งออกจากระดับสายงานแล้ว โดยยังอยู่ในตำแหน่งทั้งหมด');
+    }
+
+    public function updatePositionTitle(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'position_title_id' => ['required', 'integer', 'exists:position_titles,id'],
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+        $name = trim($data['name']);
+        $normalized = $this->normalizeCatalogName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages(['name' => 'กรุณาระบุชื่อตำแหน่ง']);
+        }
+        try {
+            DB::transaction(function () use ($data, $name, $normalized): void {
+                $title = DB::table('position_titles')->where('id', $data['position_title_id'])->lockForUpdate()->first();
+                abort_unless($title, 404);
+                if (DB::table('position_titles')->where('id', '!=', $title->id)
+                    ->where('workline_id', $title->workline_id)
+                    ->when(! $title->workline_id, fn ($q) => $q->where('workline_type', $title->workline_type))
+                    ->where('normalized_name', $normalized)
+                    ->where('normalized_position_type_name', $title->normalized_position_type_name)->exists()) {
+                    throw ValidationException::withMessages(['name' => 'มีตำแหน่งชื่อนี้ในสายงานเดียวกันแล้ว']);
+                }
+                $placements = DB::table('positions')->where('position_title_id', $title->id)->lockForUpdate()->get();
+                foreach ($placements as $placement) {
+                    if (DB::table('positions')->where('id', '!=', $placement->id)
+                        ->where('job_family_id', $placement->job_family_id)
+                        ->where('support_unit_id', $placement->support_unit_id)->where('name', $name)->exists()) {
+                        throw ValidationException::withMessages(['name' => 'มีตำแหน่งชื่อนี้ในหน่วยงานที่ใช้งานอยู่แล้ว']);
+                    }
+                }
+                DB::table('position_titles')->where('id', $title->id)->update([
+                    'name' => $name, 'normalized_name' => $normalized, 'updated_at' => now(),
+                ]);
+                DB::table('positions')->where('position_title_id', $title->id)->update(['name' => $name, 'updated_at' => now()]);
+                DB::table('users')->where(function ($q) use ($title, $placements): void {
+                    $q->where('position_title_id', $title->id)
+                        ->orWhere(fn ($legacy) => $legacy->whereNull('position_title_id')->whereIn('position_id', $placements->pluck('id')));
+                })->update(['position' => $name, 'updated_at' => now()]);
+                // Captured round profiles and SSO incoming profiles retain their original values.
+            });
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            throw ValidationException::withMessages(['name' => 'มีตำแหน่งชื่อนี้อยู่แล้ว กรุณาตรวจสอบรายการอีกครั้ง']);
+        }
+        return back()->with('success', 'แก้ไขชื่อตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    public function destroyPositionTitle(Request $request): RedirectResponse
+    {
+        $data = $request->validate(['position_title_id' => ['required', 'integer', 'exists:position_titles,id']]);
+        DB::transaction(function () use ($data): void {
+            $title = DB::table('position_titles')->where('id', $data['position_title_id'])->lockForUpdate()->first();
+            abort_unless($title, 404);
+            foreach ([
+                'positions' => 'สังกัดหน่วยงาน', 'users' => 'บัญชีบุคลากร',
+                'user_round_profiles' => 'ข้อมูลประจำรอบ', 'position_competencies' => 'การมอบสมรรถนะ',
+                'position_fc_selection_rules' => 'จำนวน FC', 'position_fc_unit_rules' => 'เกณฑ์ FC ของหน่วย',
+                'fc_topic_selections' => 'รายการเลือก FC',
+            ] as $table => $label) {
+                if (DB::table($table)->where('position_title_id', $title->id)->exists()) {
+                    throw ValidationException::withMessages(['position_title_id' => "ไม่สามารถลบตำแหน่งได้ เนื่องจากยังมี{$label}อ้างอิงอยู่"]);
+                }
+            }
+            DB::table('position_title_aliases')->where('position_title_id', $title->id)->delete();
+            DB::table('position_titles')->where('id', $title->id)->delete();
+        });
+        return back()->with('success', 'ลบตำแหน่งจากรายการตำแหน่งทั้งหมดแล้ว');
     }
 
     public function storeWorkline(Request $request): RedirectResponse
@@ -63,6 +178,29 @@ class StructureController extends Controller
         ]);
 
         return back()->with('success', 'บันทึกสายงานเรียบร้อยแล้ว');
+    }
+
+    public function assignPositionTitleWorkline(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'position_title_id' => ['required', 'integer', 'exists:position_titles,id'],
+            'workline_id' => ['required', 'integer', 'exists:worklines,id'],
+        ]);
+        DB::transaction(function () use ($data): void {
+            $title = DB::table('position_titles')->where('id', $data['position_title_id'])->lockForUpdate()->first();
+            $placements = DB::table('positions as p')->join('job_families as f', 'p.job_family_id', '=', 'f.id')
+                ->where('p.position_title_id', $title->id)->pluck('f.workline_id');
+            if ($placements->contains(fn ($id) => (int) $id !== (int) $data['workline_id'])) {
+                throw ValidationException::withMessages(['workline_id' => 'ตำแหน่งนี้ถูกใช้ในสายงานอื่นอยู่ กรุณาตรวจสังกัดก่อนเปลี่ยนสายงาน']);
+            }
+            if (DB::table('position_titles')->where('id', '!=', $title->id)->where('workline_id', $data['workline_id'])
+                ->where('normalized_name', $title->normalized_name)->where('normalized_position_type_name', $title->normalized_position_type_name)->exists()) {
+                throw ValidationException::withMessages(['workline_id' => 'มีตำแหน่งนี้ในสายงานที่เลือกแล้ว']);
+            }
+            $type = app(\App\Services\SsoWorklineNormalizer::class)->structureType(DB::table('worklines')->where('id', $data['workline_id'])->value('name'));
+            DB::table('position_titles')->where('id', $title->id)->update(['workline_id' => $data['workline_id'], 'workline_type' => $type, 'updated_at' => now()]);
+        });
+        return back()->with('success', 'กำหนดสายงานของตำแหน่งแล้ว');
     }
 
     public function updateWorkline(Request $request): RedirectResponse
@@ -87,7 +225,16 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'exists:worklines,name'],
         ]);
 
-        DB::table('worklines')->where('name', $data['name'])->delete();
+        DB::transaction(function () use ($data): void {
+            $nodeId = DB::table('worklines')->where('name', $data['name'])->lockForUpdate()->value('id');
+            if (DB::table('position_titles')->where('workline_id', $nodeId)->exists()) {
+                throw ValidationException::withMessages(['name' => 'สายงานนี้ยังมีตำแหน่งในทะเบียนอ้างอิงอยู่ กรุณาจัดการตำแหน่งก่อนลบ']);
+            }
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('workline:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'workline:'.$nodeId)->delete();
+
+            DB::table('worklines')->where('name', $data['name'])->delete();
+        });
 
         return back()->with('success', 'ลบสายงานเรียบร้อยแล้ว');
     }
@@ -165,16 +312,25 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('job_families')
-            ->where('workline_id', $worklineId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $worklineId): void {
+            $nodeId = DB::table('job_families')->where('workline_id', $worklineId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('family:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'family:'.$nodeId)->delete();
+
+            DB::table('job_families')
+                ->where('workline_id', $worklineId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบกลุ่มงานเรียบร้อยแล้ว');
     }
 
     public function storePosition(Request $request): RedirectResponse
     {
+        if ($request->filled('position_title_id')) {
+            $request->merge(['name' => DB::table('position_titles')->where('id', $request->input('position_title_id'))->value('name')]);
+        }
         if ($request->filled('unit_name')) {
             return $this->storeSupportPosition($request);
         }
@@ -183,6 +339,10 @@ class StructureController extends Controller
             $request->string('job_family_name')->toString(),
             $request->string('workline_name')->toString() ?: null
         );
+
+        $worklineName = DB::table('job_families')->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
+            ->where('job_families.id', $jobFamilyId)->value('worklines.name');
+        $worklineType = app(\App\Services\SsoWorklineNormalizer::class)->structureType($worklineName);
 
         $data = $request->validate([
             'workline_name' => ['nullable', 'string', 'exists:worklines,name'],
@@ -203,7 +363,9 @@ class StructureController extends Controller
                     ->where('job_family_id', $jobFamilyId)
                     ->whereNull('support_unit_id')),
             ],
-            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
+            'position_title_id' => ['nullable', 'integer', Rule::exists('position_titles', 'id')->where(fn ($q) => $q
+                ->where('workline_id', DB::table('job_families')->where('id', $jobFamilyId)->value('workline_id'))
+                ->orWhere(fn ($legacy) => $legacy->whereNull('workline_id')->where('workline_type', $worklineType)))],
         ]);
 
         DB::table('positions')->insert([
@@ -284,10 +446,8 @@ class StructureController extends Controller
             'name' => ['required', 'string'],
         ]);
 
-        DB::table('positions')
-            ->where('job_family_id', $jobFamilyId)
-            ->where('name', $data['name'])
-            ->delete();
+        $this->deleteUnusedPositions(DB::table('positions')
+            ->where('job_family_id', $jobFamilyId)->whereNull('support_unit_id')->where('name', $data['name']));
 
         return back()->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
     }
@@ -314,9 +474,13 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'max:255', Rule::unique('support_departments', 'name')->ignore($request->old_name, 'name')],
         ]);
 
-        DB::table('support_departments')
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data): void {
+            DB::table('support_departments')
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['old_name'], $data['name']);
+        });
 
         return back()->with('success', 'อัปเดตฝ่ายเรียบร้อยแล้ว');
     }
@@ -327,7 +491,13 @@ class StructureController extends Controller
             'name' => ['required', 'string', 'exists:support_departments,name'],
         ]);
 
-        DB::table('support_departments')->where('name', $data['name'])->delete();
+        DB::transaction(function () use ($data): void {
+            $nodeId = DB::table('support_departments')->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('department:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'department:'.$nodeId)->delete();
+
+            DB::table('support_departments')->where('name', $data['name'])->delete();
+        });
 
         return back()->with('success', 'ลบฝ่ายเรียบร้อยแล้ว');
     }
@@ -382,10 +552,14 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_works')
-            ->where('support_department_id', $supportDepartmentId)
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data, $supportDepartmentId): void {
+            DB::table('support_works')
+                ->where('support_department_id', $supportDepartmentId)
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['division_name'].' > '.$data['old_name'], $data['division_name'].' > '.$data['name']);
+        });
 
         return back()->with('success', 'อัปเดตงานเรียบร้อยแล้ว');
     }
@@ -403,10 +577,16 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_works')
-            ->where('support_department_id', $supportDepartmentId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $supportDepartmentId): void {
+            $nodeId = DB::table('support_works')->where('support_department_id', $supportDepartmentId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('work:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'work:'.$nodeId)->delete();
+
+            DB::table('support_works')
+                ->where('support_department_id', $supportDepartmentId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบงานเรียบร้อยแล้ว');
     }
@@ -471,10 +651,14 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_units')
-            ->where('support_work_id', $supportWorkId)
-            ->where('name', $data['old_name'])
-            ->update(['name' => $data['name'], 'updated_at' => now()]);
+        DB::transaction(function () use ($data, $supportWorkId): void {
+            DB::table('support_units')
+                ->where('support_work_id', $supportWorkId)
+                ->where('name', $data['old_name'])
+                ->update(['name' => $data['name'], 'updated_at' => now()]);
+
+            $this->syncUserDepartmentPrefix(null, $data['division_name'].' > '.$data['work_name'].' > '.$data['old_name'], $data['division_name'].' > '.$data['work_name'].' > '.$data['name']);
+        });
 
         return back()->with('success', 'อัปเดตหน่วยงานเรียบร้อยแล้ว');
     }
@@ -497,10 +681,16 @@ class StructureController extends Controller
             ],
         ]);
 
-        DB::table('support_units')
-            ->where('support_work_id', $supportWorkId)
-            ->where('name', $data['name'])
-            ->delete();
+        DB::transaction(function () use ($data, $supportWorkId): void {
+            $nodeId = DB::table('support_units')->where('support_work_id', $supportWorkId)->where('name', $data['name'])->lockForUpdate()->value('id');
+            app(\App\Services\OrganizationChartService::class)->assertDeletable('unit:'.$nodeId);
+            DB::table('organization_chart_assignments')->where('node_key', 'unit:'.$nodeId)->delete();
+
+            DB::table('support_units')
+                ->where('support_work_id', $supportWorkId)
+                ->where('name', $data['name'])
+                ->delete();
+        });
 
         return back()->with('success', 'ลบหน่วยงานเรียบร้อยแล้ว');
     }
@@ -759,7 +949,9 @@ class StructureController extends Controller
             'work_name' => ['required', 'string'],
             'unit_name' => ['required', 'string'],
             'name' => ['required', 'string', 'max:255', Rule::unique('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
-            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
+            'position_title_id' => ['nullable', 'integer', Rule::exists('position_titles', 'id')->where(fn ($q) => $q
+                ->where('workline_id', $this->worklineId('สายสนับสนุน'))
+                ->orWhere(fn ($legacy) => $legacy->whereNull('workline_id')->where('workline_type', 'support')))],
         ]);
 
         $supportWorklineId = $this->worklineId('สายสนับสนุน');
@@ -835,9 +1027,23 @@ class StructureController extends Controller
             'unit_name' => ['required', 'string'],
             'name' => ['required', 'string', Rule::exists('positions', 'name')->where(fn ($query) => $query->where('support_unit_id', $unitId))],
         ]);
-        DB::table('positions')->where('support_unit_id', $unitId)->where('name', $data['name'])->delete();
+        $this->deleteUnusedPositions(DB::table('positions')->where('support_unit_id', $unitId)->where('name', $data['name']));
 
         return back()->with('success', 'ลบตำแหน่งเรียบร้อยแล้ว');
+    }
+
+    private function deleteUnusedPositions(\Illuminate\Database\Query\Builder $query): void
+    {
+        DB::transaction(function () use ($query): void {
+            foreach ($query->lockForUpdate()->get() as $position) {
+                foreach (['users', 'user_round_profiles', 'position_competencies', 'position_fc_selection_rules', 'fc_topic_selections'] as $table) {
+                    if (DB::table($table)->where('position_id', $position->id)->exists()) {
+                        throw ValidationException::withMessages(['name' => 'ยังมีบุคลากรหรือข้อมูลประเมินอ้างอิงตำแหน่งนี้ กรุณาจัดการข้อมูลอ้างอิงก่อนนำออก']);
+                    }
+                }
+                DB::table('positions')->where('id', $position->id)->delete();
+            }
+        });
     }
 
     private function supportUnitId(Request $request): int

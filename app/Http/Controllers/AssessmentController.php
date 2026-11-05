@@ -6,7 +6,13 @@ use App\Models\Assessment;
 use App\Models\User;
 use App\Services\AssessmentRoundWindow;
 use App\Services\AssessmentRoundSnapshotService;
+use App\Services\AssessmentLevelEvidenceService;
+use App\Services\AssessmentMethodResolver;
+use App\Services\CompetencyGapCalculator;
 use App\Services\ExpectedLevelResolver;
+use App\Services\FacultyAssessmentScorer;
+use App\Services\FacultyAssessmentPermissionResolver;
+use App\Services\FcSelectionRuleResolver;
 use App\Services\NotificationService;
 use App\Services\PositionTitleResolver;
 use App\Services\ReviewerChainResolver;
@@ -26,6 +32,12 @@ class AssessmentController extends Controller
         private AssessmentRoundSnapshotService $roundSnapshot,
         private \App\Services\AssessmentReadinessService $readiness,
         private PositionTitleResolver $positionTitles,
+        private AssessmentMethodResolver $assessmentMethods,
+        private FacultyAssessmentScorer $facultyScorer,
+        private FacultyAssessmentPermissionResolver $facultyPermissions,
+        private CompetencyGapCalculator $gapCalculator,
+        private AssessmentLevelEvidenceService $levelEvidences,
+        private FcSelectionRuleResolver $fcSelectionRules,
     )
     {
     }
@@ -98,6 +110,7 @@ class AssessmentController extends Controller
 
         if (! $assessment) {
             return response()->json([
+                'evidences' => [],
                 'checked' => [],
                 'note' => '',
                 'score' => 0,
@@ -128,6 +141,7 @@ class AssessmentController extends Controller
             : null;
 
         return response()->json([
+            'evidences' => $this->levelEvidences->payloadsFor((int) $assessment->id, (int) $assessment->competency_id),
             'checked' => $indicators,
             'note' => $assessment->note ?? '',
             'score' => $assessment->score ?? 0,
@@ -148,16 +162,30 @@ class AssessmentController extends Controller
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
             'comment' => ['nullable', 'string'],
+            'checked' => ['nullable', 'array'],
+            'checked.*' => ['string'],
         ]);
         $this->assessmentRoundWindow->assertSupervisorAssessmentOpen();
         $comment = trim((string) ($data['comment'] ?? ''));
 
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
-        $employee = User::findOrFail((int) $data['user_id']);
+        $employee = $this->roundSnapshot->userForRound(User::findOrFail((int) $data['user_id']), $this->activeAssessmentRoundId());
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
         $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
+        $competencyType = $this->competencyTypeCode((int) $data['competency_id']);
+        $reviewerCanScore = $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())
+            && $this->facultyPermissions->canScore($request->user(), $employee, $competencyType);
+        $evidenceRequested = false;
 
-        DB::transaction(function () use ($data, $decision, $request, $comment, $employee): void {
+        if ($reviewerCanScore && ! array_key_exists('checked', $data)) {
+            throw ValidationException::withMessages([
+                'checked' => 'กรุณาตรวจสอบพฤติกรรมบ่งชี้ก่อนอนุมัติคะแนน',
+            ]);
+        }
+
+        DB::transaction(function () use ($data, $decision, $request, $comment, $employee, $reviewerCanScore, &$evidenceRequested): void {
+            User::whereKey($employee->id)->lockForUpdate()->firstOrFail();
+            DB::table('competencies')->where('id', $data['competency_id'])->lockForUpdate()->first();
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -169,14 +197,53 @@ class AssessmentController extends Controller
                     'assessment' => 'ผลการประเมินยังไม่อยู่ในขั้นตอนที่คุณสามารถอนุมัติได้',
                 ]);
             }
+
+            $reviewerScore = null;
+            if ($reviewerCanScore) {
+                $checked = array_values(array_unique($data['checked'] ?? []));
+                $reviewerScore = $this->facultyScorer->scoreForCompetency(
+                    (int) $data['competency_id'],
+                    $checked,
+                );
+
+                foreach ($assessmentIds as $assessmentId) {
+                    $this->replaceReviewerIndicatorResults(
+                        (int) $assessmentId,
+                        (int) $data['competency_id'],
+                        (int) $request->user()->id,
+                        (int) $decision['review_step'],
+                        $checked,
+                    );
+                }
+
+                $evidenceRequested = $reviewerScore >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
+                    && $assessmentIds->contains(fn ($assessmentId): bool => ! $this->levelEvidences->existsFor(
+                        (int) $assessmentId,
+                        (int) $data['competency_id'],
+                    ));
+            }
+
+            if ($evidenceRequested) {
+                $this->requestLevelEvidence($assessmentIds, $data, $decision, $request->user()->id, $comment, $reviewerScore);
+
+                return;
+            }
+
             $reviewerScoreId = $this->upsertReviewerScore(
                 $assessmentIds,
                 (int) $data['competency_id'],
                 (int) $request->user()->id,
                 $decision['review_step'],
                 $comment,
-                'approved'
+                'approved',
+                $reviewerScore,
             );
+
+            if ($decision['approved_status'] === 'approved' && $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+                foreach ($assessmentIds as $assessmentId) {
+                    $this->assertFacultyScoresComplete($employee, (int) $assessmentId, (int) $data['competency_id']);
+                }
+            }
 
             $this->ensureCompetencyGapsForAssessments(
                 $assessmentIds,
@@ -207,6 +274,12 @@ class AssessmentController extends Controller
                     'updated_at' => now(),
                 ]);
         });
+
+        if ($evidenceRequested) {
+            $this->notifications->notifyEmployeeStatusUpdate($employee, 'evidence_required', $comment);
+
+            return back();
+        }
 
         $this->notifications->notifyEmployeeStatusUpdate($employee, $decision['approved_status']);
 
@@ -239,8 +312,9 @@ class AssessmentController extends Controller
         $decision = $this->decisionContextForUser($request->user(), (int) $data['user_id']);
         $employee = User::findOrFail((int) $data['user_id']);
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
+        $returnStatus = $this->returnStatusForRejection($employee, (int) $data['competency_id'], (int) $decision['review_step']);
 
-        DB::transaction(function () use ($data, $decision, $request, $comment): void {
+        DB::transaction(function () use ($data, $decision, $request, $comment, $returnStatus): void {
             $assessmentIds = Assessment::where('user_id', $data['user_id'])
                 ->where('competency_id', $data['competency_id'])
                 ->where('assessment_round_id', $this->activeAssessmentRoundId())
@@ -266,7 +340,7 @@ class AssessmentController extends Controller
                 ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
-                    'status' => 'revision_required',
+                    'status' => $returnStatus,
                     'updated_at' => now(),
                 ]);
 
@@ -275,7 +349,7 @@ class AssessmentController extends Controller
                 ->where('competency_id', $data['competency_id'])
                 ->where('status', $decision['expected_status'])
                 ->update([
-                    'status' => 'revision_required',
+                    'status' => $returnStatus,
                     'supervisor_2_score_id' => $reviewerScoreId,
                     'rejected_by' => $request->user()->id,
                     'reject_comment' => $comment,
@@ -284,9 +358,74 @@ class AssessmentController extends Controller
                 ]);
         });
 
+        if ($returnStatus !== 'revision_required') {
+            $this->notifications->notifyNextReviewerForAssessment(
+                $employee,
+                $this->competencyName((int) $data['competency_id']),
+                $returnStatus,
+            );
+
+            return back();
+        }
+
         $this->notifications->notifyEmployeeStatusUpdate($employee, 'revision_required', $comment);
 
         return back();
+    }
+
+    /**
+     * Faculty rounds return a rejected result to the latest scorer before the rejecting step;
+     * without one, the employee revises it as in the standard method.
+     */
+    private function returnStatusForRejection(User $employee, int $competencyId, int $reviewStep): string
+    {
+        if (! $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+            return 'revision_required';
+        }
+
+        $scorerStep = $this->facultyPermissions->latestScorerStepBefore(
+            $employee,
+            $this->competencyTypeCode($competencyId),
+            $this->reviewerChainResolver->stepsForUser($employee),
+            $reviewStep,
+        );
+
+        return $scorerStep !== null
+            ? $this->reviewerChainResolver->pendingStatusForStep($scorerStep)
+            : 'revision_required';
+    }
+
+    private function requestLevelEvidence($assessmentIds, array $data, array $decision, int $reviewerId, string $comment, int $reviewerScore): void
+    {
+        $now = now();
+        $competencyId = (int) $data['competency_id'];
+        $scoreId = $this->upsertReviewerScore(
+            $assessmentIds,
+            $competencyId,
+            $reviewerId,
+            $decision['review_step'],
+            $comment,
+            'evidence_requested',
+            $reviewerScore,
+        );
+
+        Assessment::whereIn('id', $assessmentIds)
+            ->where('competency_id', $competencyId)
+            ->where('status', $decision['expected_status'])
+            ->update(['status' => 'evidence_required', 'updated_at' => $now]);
+
+        DB::table('competency_gaps')
+            ->whereIn('assessment_id', $assessmentIds)
+            ->where('competency_id', $competencyId)
+            ->where('status', $decision['expected_status'])
+            ->update([
+                'status' => 'evidence_required',
+                'supervisor_2_score_id' => $scoreId,
+                'rejected_by' => $reviewerId,
+                'reject_comment' => $comment === '' ? null : $comment,
+                'decided_at' => $now,
+                'updated_at' => $now,
+            ]);
     }
 
     private function assertCanSelfAssess($user): void
@@ -300,10 +439,21 @@ class AssessmentController extends Controller
         $ssoPending = Schema::hasTable('sso_profile_changes') && DB::table('sso_profile_changes')
             ->where('user_id', $user->id)->whereIn('status', ['pending', 'restructure'])->exists();
         $roundId = $this->activeAssessmentRoundId();
-        $positionId = (int) ($user->position_id ?? 0);
-        $competencyIds = $roundId && $positionId
-            ? DB::table('position_competencies')->where('assessment_round_id', $roundId)
-                ->where('position_id', $positionId)->pluck('competency_id')->map(fn ($id): int => (int) $id)->all()
+        $positionTitleId = $this->positionTitles->forUser($user);
+        $positionIds = $positionTitleId
+            ? $this->positionTitles->positionIds($positionTitleId)
+            : array_values(array_filter([(int) ($user->position_id ?? 0)]));
+        $competencyIds = $roundId && $positionIds !== []
+            ? DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
+                ->where(function ($query) use ($positionTitleId, $positionIds): void {
+                    if ($positionTitleId) {
+                        $query->where('position_title_id', $positionTitleId);
+                    } else {
+                        $query->whereIn('position_id', $positionIds);
+                    }
+                })
+                ->pluck('competency_id')->map(fn ($id): int => (int) $id)->all()
             : [];
         $expectedLevels = $competencyIds === [] ? [] : $this->expectedLevelResolver->forUserCompetencies($user, $competencyIds);
         $competencies = collect($competencyIds)->map(fn (int $id): array => ['expectedLevel' => $expectedLevels[$id] ?? null])->all();
@@ -314,7 +464,30 @@ class AssessmentController extends Controller
         $hasRoundProfile = Schema::hasTable('user_round_profiles') && DB::table('user_round_profiles')
             ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists();
         $hasExistingRoundWork = (Schema::hasTable('assessments') && DB::table('assessments')
-            ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists())
+            ->where('assessment_round_id', $roundId)
+            ->where('user_id', $user->id)
+            ->where(function ($query): void {
+                // Round activation pre-creates empty draft rows for each mapped
+                // competency. Those rows are not user work and can safely receive
+                // the profile/reviewer snapshot on the user's first save.
+                $query->where('status', '!=', 'draft')
+                    ->orWhereNotNull('last_draft_saved_at')
+                    ->orWhereNotNull('self_submitted_at')
+                    ->orWhere(function ($draft): void {
+                        $draft->whereNotNull('score')->where('score', '!=', 0);
+                    })
+                    ->orWhere(function ($draft): void {
+                        $draft->whereNotNull('note')->where('note', '!=', '');
+                    });
+                if (Schema::hasTable('assessment_indicator_results')) {
+                    $query->orWhereExists(function ($indicators): void {
+                        $indicators->selectRaw('1')
+                            ->from('assessment_indicator_results')
+                            ->whereColumn('assessment_indicator_results.assessment_id', 'assessments.id');
+                    });
+                }
+            })
+            ->exists())
             || (Schema::hasTable('idps') && DB::table('idps')
                 ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists());
 
@@ -359,10 +532,11 @@ class AssessmentController extends Controller
             return;
         }
 
-        $requiredCount = (int) DB::table('position_fc_selection_rules')
-            ->where('position_title_id', $positionTitleId)
-            ->where('assessment_round_id', $roundId)
-            ->value('required_fc_count');
+        $requiredCount = $this->fcSelectionRules->requiredCount(
+            (int) $positionTitleId,
+            $user->position_id ? (int) $user->position_id : null,
+            $roundId,
+        );
 
         if ($requiredCount <= 0) {
             return;
@@ -418,6 +592,8 @@ class AssessmentController extends Controller
     {
         $userId = auth()->id();
         $competencyId = (int) $data['competency_id'];
+        User::whereKey($userId)->lockForUpdate()->firstOrFail();
+        DB::table('competencies')->where('id', $competencyId)->lockForUpdate()->first();
         $roundId = $this->activeAssessmentRoundId();
         $checkedIndicators = collect($data['checked_indicators'])
             ->filter()
@@ -445,13 +621,25 @@ class AssessmentController extends Controller
         $submittedStatus = $submit
             ? $this->initialSubmittedStatusForUser($request->user())
             : ($existingStatus === 'revision_required' ? 'revision_required' : 'draft');
+        $actualLevel = $this->assessmentMethods->isFaculty($roundId)
+            ? $this->facultyScorer->scoreForCompetency($competencyId, array_keys($checkedIndicators))
+            : round((float) $data['score'], 2);
+
+        if ($submit
+            && $this->assessmentMethods->isFaculty($roundId)
+            && $actualLevel >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
+            && ! ($existingAssessment && $this->levelEvidences->existsFor((int) $existingAssessment->id, $competencyId))) {
+            throw ValidationException::withMessages([
+                'evidence' => 'ผลประเมินระดับ 5 ต้องแนบหลักฐานอย่างน้อย 1 รายการก่อนส่ง',
+            ]);
+        }
         $assessmentAttributes = [
             'user_id' => $userId,
             'competency_id' => $competencyId,
             'assessment_round_id' => $roundId,
         ];
         $assessmentValues = [
-            'score' => $data['score'],
+            'score' => $actualLevel,
             'note' => $data['note'] ?? '',
             'status' => $submittedStatus,
             'last_draft_saved_at' => $savedAt,
@@ -482,8 +670,11 @@ class AssessmentController extends Controller
             $request->user(),
             $competencyId
         );
-        $actualLevel = round((float) $data['score'], 2);
-        $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+        $gapResult = $this->gapCalculator->calculate(
+            $this->assessmentMethods->forRoundId($roundId)['method'],
+            $actualLevel,
+            $expectedLevel,
+        );
 
         DB::table('competency_gaps')->updateOrInsert(
             [
@@ -492,9 +683,9 @@ class AssessmentController extends Controller
             ],
             [
                 'expected_level' => $expectedLevel,
-                'actual_level' => $actualLevel,
-                'gap' => $gap,
-                'requires_idp' => $gap !== null && $gap < 0,
+                'actual_level' => $gapResult['actualLevel'],
+                'gap' => $gapResult['gap'],
+                'requires_idp' => $gapResult['requiresIdp'],
                 'status' => $submittedStatus,
                 'updated_at' => $savedAt,
             ]
@@ -507,24 +698,30 @@ class AssessmentController extends Controller
     {
         $now = now();
         $expectedLevel = $this->expectedLevelResolver->forUserCompetency($employee, $competencyId);
+        $roundId = $this->activeAssessmentRoundId();
+        $assessmentMethod = $this->assessmentMethods->forRoundId($roundId)['method'];
 
         Assessment::query()
             ->whereIn('id', $assessmentIds)
             ->where('competency_id', $competencyId)
             ->where('status', $status)
             ->get(['id', 'score'])
-            ->each(function (Assessment $assessment) use ($competencyId, $expectedLevel, $status, $now): void {
-                $actualLevel = round((float) ($assessment->score ?? 0), 2);
-                $gap = $expectedLevel === null ? null : round($actualLevel - $expectedLevel, 2);
+            ->each(function (Assessment $assessment) use ($employee, $competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
+                // Keep the self score when the faculty chain has no eligible scorer.
+                $reviewerScore = $assessmentMethod === AssessmentMethodResolver::FACULTY
+                    ? $this->latestFacultyReviewerScore($employee, (int) $assessment->id, $competencyId)
+                    : null;
+                $actualLevel = round((float) ($reviewerScore ?? $assessment->score ?? 0), 2);
+                $gapResult = $this->gapCalculator->calculate($assessmentMethod, $actualLevel, $expectedLevel);
                 $attributes = [
                     'assessment_id' => $assessment->id,
                     'competency_id' => $competencyId,
                 ];
                 $values = [
                     'expected_level' => $expectedLevel,
-                    'actual_level' => $actualLevel,
-                    'gap' => $gap,
-                    'requires_idp' => $gap !== null && $gap < 0,
+                    'actual_level' => $gapResult['actualLevel'],
+                    'gap' => $gapResult['gap'],
+                    'requires_idp' => $gapResult['requiresIdp'],
                     'status' => $status,
                     'updated_at' => $now,
                 ];
@@ -594,26 +791,31 @@ class AssessmentController extends Controller
         ];
     }
 
-    private function upsertReviewerScore($assessmentIds, int $competencyId, int $reviewerId, int $reviewStep, string $comment, string $status): ?int
+    private function upsertReviewerScore($assessmentIds, int $competencyId, int $reviewerId, int $reviewStep, string $comment, string $status, ?int $score = null): ?int
     {
         $scoreId = null;
         $now = now();
 
         foreach ($assessmentIds as $assessmentId) {
+            $values = [
+                'assessor_role' => 'supervisor_'.$reviewStep,
+                'comment' => $comment === '' ? null : $comment,
+                'status' => $status,
+                'submitted_at' => $now,
+                'updated_at' => $now,
+                'created_at' => $now,
+            ];
+            if ($score !== null) {
+                $values['score'] = $score;
+            }
+
             DB::table('scores')->updateOrInsert(
                 [
                     'assessment_id' => $assessmentId,
                     'competency_id' => $competencyId,
                     'assessor_id' => $reviewerId,
                 ],
-                [
-                    'assessor_role' => 'supervisor_'.$reviewStep,
-                    'comment' => $comment === '' ? null : $comment,
-                    'status' => $status,
-                    'submitted_at' => $now,
-                    'updated_at' => $now,
-                    'created_at' => $now,
-                ]
+                $values
             );
 
             $scoreId ??= (int) DB::table('scores')
@@ -624,6 +826,94 @@ class AssessmentController extends Controller
         }
 
         return $scoreId;
+    }
+
+    private function replaceReviewerIndicatorResults(
+        int $assessmentId,
+        int $competencyId,
+        int $reviewerId,
+        int $reviewStep,
+        array $checked,
+    ): void {
+        DB::table('assessment_reviewer_indicator_results')
+            ->where('assessment_id', $assessmentId)
+            ->where('competency_id', $competencyId)
+            ->where('reviewer_id', $reviewerId)
+            ->delete();
+
+        if ($checked === []) {
+            return;
+        }
+
+        $now = now();
+        DB::table('assessment_reviewer_indicator_results')->insert(array_map(
+            fn (string $indicatorKey): array => [
+                'assessment_id' => $assessmentId,
+                'competency_id' => $competencyId,
+                'reviewer_id' => $reviewerId,
+                'review_step' => $reviewStep,
+                'indicator_key' => $indicatorKey,
+                'is_checked' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            $checked,
+        ));
+    }
+
+    private function facultyScorerSteps(User $employee, int $competencyId): array
+    {
+        $type = $this->competencyTypeCode($competencyId);
+        $steps = $this->reviewerChainResolver->stepsForUser($employee);
+        $reviewers = User::with('role')->whereIn('id', array_column($steps, 'reviewer_id'))->get()->keyBy('id');
+
+        return array_values(array_filter($steps, function (array $step) use ($reviewers, $employee, $type): bool {
+            $reviewer = $reviewers->get((int) $step['reviewer_id']);
+            return $reviewer && $reviewer->is_active && $this->facultyPermissions->canScore($reviewer, $employee, $type);
+        }));
+    }
+
+    private function assertFacultyScoresComplete(User $employee, int $assessmentId, int $competencyId): void
+    {
+        $steps = $this->facultyScorerSteps($employee, $competencyId);
+        // An approval-only chain retains the original self-score result. If scorers
+        // are configured, every eligible scorer must finish before final approval.
+        foreach ($steps as $step) {
+            if (! DB::table('scores')->where('assessment_id', $assessmentId)->where('competency_id', $competencyId)
+                ->where('assessor_id', $step['reviewer_id'])->where('assessor_role', 'supervisor_'.$step['step'])
+                ->where('status', 'approved')->whereNotNull('score')->exists()) {
+                throw ValidationException::withMessages(['assessment' => 'ยังอนุมัติสุดท้ายไม่ได้: ผู้ให้คะแนนลำดับที่ '.$step['step'].' ยังให้คะแนนสมรรถนะนี้ไม่ครบ']);
+            }
+        }
+    }
+
+    private function latestFacultyReviewerScore(User $employee, int $assessmentId, int $competencyId): ?float
+    {
+        $steps = $this->facultyScorerSteps($employee, $competencyId);
+        if ($steps === []) return null;
+        $score = DB::table('scores')
+            ->where('assessment_id', $assessmentId)
+            ->where('competency_id', $competencyId)
+            ->where('status', 'approved')
+            ->whereNotNull('score')
+            ->where(function ($query) use ($steps): void {
+                foreach ($steps as $step) {
+                    $query->orWhere(fn ($q) => $q->where('assessor_id', $step['reviewer_id'])->where('assessor_role', 'supervisor_'.$step['step']));
+                }
+            })
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id')
+            ->value('score');
+
+        return $score === null ? null : (float) $score;
+    }
+
+    private function competencyTypeCode(int $competencyId): string
+    {
+        return (string) DB::table('competencies')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('competencies.id', $competencyId)
+            ->value('competency_types.code');
     }
 
     private function initialSubmittedStatusForUser($user): string

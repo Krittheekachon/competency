@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import CompetencySpiderChart from '@/Components/CompetencySpiderChart.vue';
 
 const props = defineProps<{
   setPage: (p: string) => void;
@@ -40,8 +41,15 @@ const isApproved = (row: any) => approvedStatuses.includes(row?.status || '');
 const hasFinalResult = (row: any) => isApproved(row) && row.gap !== null && row.gap !== undefined;
 const completedRows = computed(() => rows.value.filter((row) => hasFinalResult(row)));
 const pendingRows = computed(() => rows.value.filter((row) => !hasFinalResult(row)));
-const passedRows = computed(() => completedRows.value.filter((row) => Number(row.gap) >= 0));
-const failedRows = computed(() => completedRows.value.filter((row) => Number(row.gap) < 0));
+const passedRows = computed(() => completedRows.value.filter((row) => !row.requiresIdp));
+const failedRows = computed(() => completedRows.value.filter((row) => row.requiresIdp));
+const spiderItems = computed(() => completedRows.value.map((row) => ({
+  code: row.cd,
+  name: row.n,
+  type: row.t,
+  actual: row.actual,
+  expected: row.expected,
+})));
 const selectedRow = ref<any | null>(null);
 const rowKey = (row: any) => String(row.id ?? row.competencyId ?? row.cd);
 const openDetails = (row: any) => { selectedRow.value = row; };
@@ -84,9 +92,10 @@ const formatCommentDate = (value: unknown) => {
 const developmentStatusLabel = (row: any) => {
   const status = row?.status || 'draft';
 
-  if (hasFinalResult(row)) return Number(row.gap) >= 0 ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์';
+  if (hasFinalResult(row)) return row.requiresIdp ? 'ต้องพัฒนา' : 'ผ่านเกณฑ์';
   if (isApproved(row)) return 'อนุมัติแล้ว';
   if (status === 'revision_required') return 'ถูกส่งกลับให้แก้ไข';
+  if (status === 'evidence_required') return 'รอแนบหลักฐานระดับ 5';
   if (status === 'self_submitted') return 'รอผู้ประเมินลำดับที่ 1';
   if (status === 'unit_evaluated') return 'รอผู้ประเมินลำดับที่ 2';
   if (status === 'dept_evaluated') return 'รอผู้ประเมินลำดับที่ 3';
@@ -99,9 +108,9 @@ const developmentStatusLabel = (row: any) => {
 };
 
 const statusTone = (row: any) => {
-  if (hasFinalResult(row)) return Number(row.gap) >= 0 ? 'passed' : 'failed';
+  if (hasFinalResult(row)) return row.requiresIdp ? 'failed' : 'passed';
   if (isApproved(row)) return 'pending';
-  if (row?.status === 'revision_required') return 'revision';
+  if (['revision_required', 'evidence_required'].includes(row?.status)) return 'revision';
   if (row?.status === 'draft' && !row?.lastDraftSavedAt) return 'not-started';
   if (row?.status === 'draft') return 'draft';
   return 'pending';
@@ -130,7 +139,7 @@ const formatGap = (value: unknown) => {
     <div class="page-head">
       <div>
         <h1>ผลการประเมิน</h1>
-        <p>คำนวณจากคะแนนการประเมินตนเองลบด้วยค่าความคาดหวัง</p>
+        <p>แสดงผลตามเกณฑ์ของวิธีประเมินที่กำหนดในรอบ</p>
       </div>
       <button class="btn btn-s btn-sm" type="button" @click="setPage('emp-assess')">กลับไปประเมิน</button>
     </div>
@@ -149,14 +158,16 @@ const formatGap = (value: unknown) => {
       <div class="summary-card success">
         <div class="summary-label">ผ่านเกณฑ์</div>
         <div class="summary-value">{{ passedRows.length }}</div>
-        <div class="summary-copy">Gap ≥ 0</div>
+        <div class="summary-copy">ไม่เข้าเกณฑ์จัดทำ IDP</div>
       </div>
       <div class="summary-card danger">
         <div class="summary-label">ไม่ผ่านเกณฑ์</div>
         <div class="summary-value">{{ failedRows.length }}</div>
-        <div class="summary-copy">Gap ติดลบ</div>
+        <div class="summary-copy">ต้องจัดทำแผน IDP</div>
       </div>
     </div>
+
+    <CompetencySpiderChart v-if="completedRows.length" :items="spiderItems" />
 
     <section v-if="rows.length" class="table-section">
       <div class="section-head compact">
@@ -200,7 +211,7 @@ const formatGap = (value: unknown) => {
               <td>{{ formatLevel(row.expected) }}</td>
               <td>{{ hasFinalResult(row) ? formatLevel(row.actual) : '—' }}</td>
               <td>
-                <span v-if="hasFinalResult(row)" class="gap-pill" :class="{ negative: Number(row.gap) < 0, positive: Number(row.gap) >= 0 }">
+                <span v-if="hasFinalResult(row)" class="gap-pill" :class="{ negative: row.requiresIdp, positive: !row.requiresIdp }">
                   {{ formatGap(row.gap) }}
                 </span>
                 <span v-else class="empty-value">—</span>
@@ -236,6 +247,19 @@ const formatGap = (value: unknown) => {
             <section class="modal-section competency-description">
               <h3>คำอธิบายสมรรถนะ</h3>
               <p>{{ selectedRow.det || 'ไม่มีคำอธิบายเพิ่มเติม' }}</p>
+            </section>
+
+            <section class="modal-section competency-description">
+              <h3>สรุปผลตามเกณฑ์</h3>
+              <p>
+                Actual {{ formatLevel(selectedRow.actual) }} / Expected {{ formatLevel(selectedRow.expected) }}
+                <template v-if="selectedRow.achievementPercentage !== null && selectedRow.achievementPercentage !== undefined">
+                  · {{ formatLevel(selectedRow.achievementPercentage) }}%
+                </template>
+              </p>
+              <p v-if="selectedRow.developmentRecommendation" class="development-recommendation">
+                {{ selectedRow.developmentRecommendation }}
+              </p>
             </section>
 
             <section v-if="reviewerComments(selectedRow).length" class="modal-section reviewer-comment-section">
@@ -324,6 +348,7 @@ const formatGap = (value: unknown) => {
 .summary-label { color: var(--text3); font-size: 12px; font-weight: 800; }
 .summary-value { margin-top: 8px; color: var(--text); font-size: 28px; font-weight: 900; line-height: 1.1; }
 .summary-copy { margin-top: 6px; color: var(--text3); font-size: 12px; }
+.development-recommendation { margin-top: 8px !important; color: #b42318 !important; font-weight: 800; }
 .result-section.passed { border-color: #86efac; background: #f0fdf4; }
 .result-section.failed { border-color: #fecaca; background: #fef2f2; }
 .section-head {

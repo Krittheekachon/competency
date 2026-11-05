@@ -22,6 +22,10 @@ class SsoWorklineNormalizer
             return 'support';
         }
 
+        if (in_array($value, ['บริหาร', 'สายบริหาร', 'สายงานบริหาร'], true)) {
+            return 'management';
+        }
+
         return null;
     }
 
@@ -30,6 +34,7 @@ class SsoWorklineNormalizer
         return match ($this->structureType($workline)) {
             'academic' => 'สายวิชาการ',
             'support' => 'สายสนับสนุน',
+            'management' => 'สายงานบริหาร',
             default => null,
         };
     }

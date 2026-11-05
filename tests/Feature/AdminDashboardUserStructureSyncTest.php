@@ -12,6 +12,31 @@ class AdminDashboardUserStructureSyncTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_chart_workline_changes_are_reflected_in_the_organization_catalog(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $name = 'สายงานบริหารทดสอบ';
+        $this->actingAs($admin)->post(route('admin.structure.worklines.store'), ['name' => $name])
+            ->assertSessionHasNoErrors();
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+            ->where('worklines', DB::table('worklines')->orderBy('name')->pluck('name')->all())
+            ->where('organizationChart.nodes', fn ($nodes) => collect($nodes)->contains('name', $name))
+        );
+
+        $renamed = 'สายงานบริหารเปลี่ยนชื่อ';
+        $this->put(route('admin.structure.worklines.update'), ['old_name' => $name, 'name' => $renamed])
+            ->assertSessionHasNoErrors();
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+            ->where('worklines', fn ($names) => collect($names)->contains($renamed) && ! collect($names)->contains($name))
+            ->where('organizationChart.nodes', fn ($nodes) => collect($nodes)->contains('name', $renamed) && ! collect($nodes)->contains('name', $name))
+        );
+        $this->delete(route('admin.structure.worklines.destroy'), ['name' => $renamed])->assertSessionHasNoErrors();
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+            ->where('worklines', fn ($names) => ! collect($names)->contains($renamed))
+            ->where('organizationChart.nodes', fn ($nodes) => ! collect($nodes)->contains('name', $renamed))
+        );
+    }
+
     public function test_dashboard_users_show_current_job_family_name_for_existing_assignments(): void
     {
         $admin = User::factory()->create([

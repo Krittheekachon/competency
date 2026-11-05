@@ -17,6 +17,37 @@ Implications:
 
 Historical context not available in the repository.
 
+## Faculty Approval-Only Compatibility (2026-11-05)
+
+Decision: Following the project owner's instruction to prioritize the existing workflow described in the pre-merge review, faculty chains with no eligible scorer may finish approval using the employee's self-assessment score. This supersedes the earlier guard that rejected every such chain.
+
+- Approval still requires the configured reviewer and the correct pending step. Approval-only reviewers do not gain scoring rights; their supplied indicator payload cannot replace the self score.
+- If eligible scorers are present in the chain, their scores must be complete before final approval. MC scoring permissions are unchanged: a dean is not automatically allowed to score MC for every role.
+- Preserve recognized legacy `users.workline` values as the primary classification, including the frozen round profile. Canonical title classification is a fallback for other display names; missing/unclassified titles must not disable legacy worklines. Unrecognized values alone grant no scoring authority.
+- IDP draft autosave remains enabled after the form becomes complete, but only when the payload changes; it remains debounced and stops for locked plans.
+- Admin workline catalogs continue reading persisted worklines. IDP uniqueness preflight continues rejecting duplicate data without deleting or merging it.
+- IDP readiness batches coverage and failed-gap lookups. Submission always rechecks readiness in its transaction; no persistent readiness cache substitutes for that check.
+
+## Management Workline Coverage (2026-11-05)
+
+Decision: Support the existing management organization workline consistently through the canonical position catalog, organization placement, user affiliation, SSO normalization, HR competency mapping and analytics.
+
+- Canonical type is `management`; recognized names are `บริหาร`, `สายบริหาร` and `สายงานบริหาร`. The display label is `สายงานบริหาร`. Existing workline rows and IDs are not renamed or merged.
+- Management titles are selected separately from academic/support titles. Placement APIs reject a catalog title from another classified workline. Unknown types are not silently labeled support.
+- A management workline is an affiliation/category, not a role or a permission grant. Existing scorer rules and the academic affiliation requirement for deputy/assistant deans remain unchanged. Approval-only compatibility still applies.
+- The organization hierarchy continues using existing workline/job-family/position records and their IDs. No migration or automatic reclassification of existing users/positions is needed or performed.
+- Existing SSO review decisions remain in place. This structural coverage does not resolve the separately observed pre-review change of `users.position_title_id`; that behavior requires its own review.
+
+## Organization Chart Owns Catalog Workline Choices (2026-11-05)
+
+Decision: The owner clarified that choices and labels must come from the actual chart records, not a fixed academic/support/management list. This supersedes the previous fixed catalog selector/display labels.
+
+- `position_titles.workline_id` references the existing `worklines.id`. Catalog add/filter/placement uses these IDs and exact current names. Any workline added in the chart is immediately available; renaming preserves identity.
+- `workline_type` remains compatibility/scoring metadata and is not the source of organization choices. Arbitrary new names do not gain scoring rights.
+- The forward migration backfills from a unique placement, then an exact previous canonical label, then a unique known alias. Ambiguous/unmatched titles remain unbound; Admin can explicitly choose an actual chart workline. Used titles cannot move across their existing placements.
+- Unscoped SSO identities are not guessed into one of several same-name workline-specific titles. Deleting a workline referenced by catalog titles is rejected.
+- Existing users, reviewer chains, approved results, snapshots and IDP plans are not remapped by this change. Only the new nullable workline link and its indexes are added.
+
 ## Use Canonical Position Titles For Assessment Configuration
 
 Decision: Competencies, FC selection rules, and expected levels are owned by the canonical position in `position_titles`, not by an organization-specific `positions` row.

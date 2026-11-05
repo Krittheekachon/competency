@@ -83,13 +83,7 @@ class PositionCompetencyController extends Controller
         ]);
 
         $positionTitleId = $this->positionTitleId((int) $data['position_id']);
-        $availableFcCount = DB::table('position_competencies')
-            ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
-            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
-            ->where('position_competencies.position_title_id', $positionTitleId)
-            ->where('position_competencies.assessment_round_id', $data['assessment_round_id'])
-            ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
-            ->count();
+        $availableFcCount = $this->availableFcCount($positionTitleId, (int) $data['assessment_round_id']);
 
         if ((int) $data['required_fc_count'] > $availableFcCount) {
             return back()->withErrors([
@@ -113,6 +107,46 @@ class PositionCompetencyController extends Controller
         return back()->with('success', 'บันทึกจำนวน FC ที่ต้องเลือกเรียบร้อยแล้ว');
     }
 
+    public function updateFcUnitRule(Request $request): RedirectResponse
+    {
+        $data = $this->validatedFcUnitRule($request, true);
+        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
+
+        if ((int) $data['required_fc_count'] > $this->availableFcCount($positionTitleId, (int) $data['assessment_round_id'])) {
+            return back()->withErrors([
+                'unit_required_fc_count' => 'จำนวน FC ที่ต้องเลือกมากกว่าจำนวน FC ที่ผูกกับตำแหน่งนี้',
+            ]);
+        }
+
+        DB::table('position_fc_unit_rules')->updateOrInsert(
+            [
+                'assessment_round_id' => $data['assessment_round_id'],
+                'position_title_id' => $positionTitleId,
+                'support_unit_id' => $data['support_unit_id'],
+            ],
+            [
+                'required_fc_count' => (int) $data['required_fc_count'],
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
+
+        return back()->with('success', 'บันทึกจำนวน FC เฉพาะหน่วยเรียบร้อยแล้ว');
+    }
+
+    public function destroyFcUnitRule(Request $request): RedirectResponse
+    {
+        $data = $this->validatedFcUnitRule($request, false);
+
+        DB::table('position_fc_unit_rules')
+            ->where('assessment_round_id', $data['assessment_round_id'])
+            ->where('position_title_id', $this->positionTitleId((int) $data['position_id']))
+            ->where('support_unit_id', $data['support_unit_id'])
+            ->delete();
+
+        return back()->with('success', 'หน่วยนี้กลับไปใช้จำนวน FC ตามตำแหน่งแล้ว');
+    }
+
     public function copyFromRound(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -127,13 +161,30 @@ class PositionCompetencyController extends Controller
         $sourceRules = DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $data['source_round_id'])
             ->get(['position_id', 'position_title_id', 'required_fc_count']);
-        DB::transaction(function () use ($data, $sourceRows, $sourceRules, $now): void {
+        $sourceUnitRules = DB::table('position_fc_unit_rules')
+            ->where('assessment_round_id', $data['source_round_id'])
+            ->get(['position_title_id', 'support_unit_id', 'required_fc_count']);
+        DB::transaction(function () use ($data, $sourceRows, $sourceRules, $sourceUnitRules, $now): void {
             DB::table('position_competencies')
                 ->where('assessment_round_id', $data['target_round_id'])
                 ->delete();
             DB::table('position_fc_selection_rules')
                 ->where('assessment_round_id', $data['target_round_id'])
                 ->delete();
+            DB::table('position_fc_unit_rules')
+                ->where('assessment_round_id', $data['target_round_id'])
+                ->delete();
+
+            if ($sourceUnitRules->isNotEmpty()) {
+                DB::table('position_fc_unit_rules')->insert($sourceUnitRules->map(fn (object $rule): array => [
+                    'assessment_round_id' => $data['target_round_id'],
+                    'position_title_id' => $rule->position_title_id,
+                    'support_unit_id' => $rule->support_unit_id,
+                    'required_fc_count' => $rule->required_fc_count,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])->all());
+            }
 
             if ($sourceRows->isNotEmpty()) {
                 DB::table('position_competencies')->insert($sourceRows->map(fn (object $row): array => [
@@ -163,6 +214,29 @@ class PositionCompetencyController extends Controller
         }
 
         return back()->with('success', "นำเข้าสมรรถนะประจำตำแหน่ง {$sourceRows->count()} รายการเรียบร้อยแล้ว");
+    }
+
+    private function validatedFcUnitRule(Request $request, bool $withCount): array
+    {
+        return $request->validate([
+            'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
+            'support_unit_id' => ['required', 'integer', 'exists:support_units,id'],
+            ...($withCount ? ['required_fc_count' => ['required', 'integer', 'min:0']] : []),
+        ], [
+            'required_fc_count.min' => 'จำนวน FC ต้องไม่น้อยกว่า 0',
+        ]);
+    }
+
+    private function availableFcCount(?int $positionTitleId, int $roundId): int
+    {
+        return DB::table('position_competencies')
+            ->join('competencies', 'position_competencies.competency_id', '=', 'competencies.id')
+            ->join('competency_types', 'competencies.competency_type_id', '=', 'competency_types.id')
+            ->where('position_competencies.position_title_id', $positionTitleId)
+            ->where('position_competencies.assessment_round_id', $roundId)
+            ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
+            ->count();
     }
 
     private function syncUsersForPositionIfActive(int $positionId, int $roundId): void

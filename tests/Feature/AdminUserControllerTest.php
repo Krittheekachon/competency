@@ -462,10 +462,36 @@ class AdminUserControllerTest extends TestCase
 
         $this->assertDatabaseHas('users', [
             'sso' => 'dean-no-position',
-            'position' => 'คณบดี',
+            'workline' => 'สายงานบริหาร',
+            'department' => null,
+            'position' => null,
+            'level' => null,
             'position_id' => null,
             'role_key' => 'dean',
         ]);
+    }
+
+    public function test_dean_can_select_only_an_existing_workline_and_change_it_without_lower_structure(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        foreach (['สายผู้บริหารทดสอบ', 'สายอื่นจากผัง'] as $name) {
+            DB::table('worklines')->insert(['name' => $name]);
+        }
+        $payload = [
+            'sso' => 'qa-dean-workline', 'fn' => 'Dean', 'ln' => 'Workline',
+            'em' => 'dean-workline@example.test', 'username' => 'dean.workline',
+            'password' => 'test-password', 'password_confirmation' => 'test-password',
+            'r' => 'dean', 'w' => 'สายผู้บริหารทดสอบ',
+        ];
+        $this->actingAs($admin)->post(route('admin.users.store'), $payload)->assertSessionHasNoErrors();
+        $user = User::where('username', 'dean.workline')->firstOrFail();
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'workline' => $payload['w'], 'department' => null, 'position_id' => null, 'level_id' => null]);
+        $this->put(route('admin.users.update', $user), [...$payload, 'w' => 'สายอื่นจากผัง', 'preserve_existing_structure' => false])
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'workline' => 'สายอื่นจากผัง', 'department' => null, 'position' => null, 'level' => null]);
+        $this->putJson(route('admin.users.update', $user), [...$payload, 'w' => 'ไม่มีในผัง', 'preserve_existing_structure' => false])
+            ->assertUnprocessable()->assertJsonValidationErrors('w');
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'workline' => 'สายอื่นจากผัง']);
     }
 
     public function test_admin_can_create_dean_without_organization_structure(): void
@@ -485,7 +511,7 @@ class AdminUserControllerTest extends TestCase
                 'password' => 'secure-password',
                 'password_confirmation' => 'secure-password',
                 'ph' => null,
-                'w' => 'faculty-executive',
+                'w' => null,
                 'd' => null,
                 'p' => '',
                 'l' => null,

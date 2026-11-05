@@ -91,7 +91,7 @@ class NotificationService
                 'idp_items.id',
                 'idp_items.current_review_step',
                 'idp_items.status',
-                'competencies.name as competency_name',
+                DB::raw("CASE WHEN idp_items.behavior_key = '".FacultyIdpPlanService::BEHAVIOR_KEY."' THEN 'แผนพัฒนารายบุคคล' ELSE competencies.name END as competency_name"),
             )
             ->first();
     }
@@ -187,7 +187,7 @@ class NotificationService
 
     public function remindPendingEmployees(): void
     {
-        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head'])
+        $employees = $this->usersWithAnyRole(['employee', 'hr', 'supervisor', 'dept_head', 'division_head', 'academic_department_head', 'deputy_dean', 'assistant_dean'])
             ->whereNotExists(function ($query): void {
                 $query->selectRaw('1')
                     ->from('assessments')
@@ -265,7 +265,7 @@ class NotificationService
             ->leftJoin('competencies', 'competency_gaps.competency_id', '=', 'competencies.id')
             ->where('idp_items.id', $idpItemId)
             ->select(
-                'competencies.name as competency_name',
+                DB::raw("CASE WHEN idp_items.behavior_key = '".FacultyIdpPlanService::BEHAVIOR_KEY."' THEN 'แผนพัฒนารายบุคคล' ELSE competencies.name END as competency_name"),
             )
             ->first();
 
