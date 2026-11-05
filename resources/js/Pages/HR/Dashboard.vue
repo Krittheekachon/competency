@@ -307,7 +307,7 @@ const configuredPositionCount = computed(() => Object.entries(positionCompetenci
     .length);
 const unconfiguredPositionCount = computed(() => Math.max(allPositionCount.value - configuredPositionCount.value, 0));
 const positionLabel = computed(() => selectedPosition.value || 'ยังไม่มีข้อมูลตำแหน่ง/ระดับตำแหน่ง');
-const organizationScopeLabel = computed(() => selectedScope.value?.label || (isSupportWorkline.value ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา'));
+const organizationScopeLabel = computed(() => selectedScope.value?.label || (isSupportWorkline.value ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา/หน่วยงาน'));
 const currentPosition = computed(() => {
     const candidates = (props.positionLookup || []).filter((position) => (
         position.worklineName === selectedWorkline.value && position.name === selectedPosition.value
@@ -848,9 +848,9 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-picker">
                             <div class="fg mb0">
-                                <label class="lbl">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</label>
+                                <label class="lbl">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</label>
                                 <select v-model="selectedOrgScope" class="sel">
-                                    <option value="">{{ isSupportWorkline ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา' }}</option>
+                                    <option value="">{{ isSupportWorkline ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา/หน่วยงาน' }}</option>
                                     <option v-for="scope in organizationScopes" :key="scope.key" :value="scope.key">
                                         {{ scope.label }}
                                     </option>
@@ -859,7 +859,7 @@ const formatWeight = (weight) => {
                             <div class="fg mb0">
                                 <label class="lbl">ตำแหน่ง</label>
                                 <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
-                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา' }}</option>
+                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
                                         {{ position }}
                                     </option>
@@ -902,44 +902,59 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title warn">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
+                            <div class="position-card-title" :class="assignedCoreCompetencyCount < coreCompetencyCount ? 'warn' : 'complete'">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
                             <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
                         </div>
                         <div class="position-card fc-rule-card">
-                            <div class="position-card-label">จำนวน FC ที่บุคลากรต้องเลือก</div>
-                            <div class="fc-rule-control">
-                                <input
-                                    v-model.number="requiredFcCount"
-                                    class="inp fc-rule-input"
-                                    type="number"
-                                    min="0"
-                                    :max="assignedFcCompetencyCount"
-                                    :disabled="!selectedConfigRoundId || !currentPositionId || assignedFcCompetencyCount === 0"
-                                />
-                                <button
-                                    class="btn btn-p btn-sm"
-                                    type="button"
-                                    :disabled="fcSelectionRuleDisabled"
-                                    @click="saveFcSelectionRule"
-                                >
-                                    บันทึก
-                                </button>
-                            </div>
-                            <div
-                                v-if="fcSelectionRuleError"
-                                class="position-card-sub fc-rule-message is-warning"
-                            >
-                                {{ fcSelectionRuleError }}
-                            </div>
-                            <div v-else class="position-card-sub fc-rule-message">
-                                บุคลากรเลือก {{ normalizedRequiredFcCount }} ข้อจาก FC {{ assignedFcCompetencyCount }} ข้อ
-                                แล้วส่งให้ผู้ประเมินลำดับแรกอนุมัติ · กำหนด 0 เพื่อไม่ใช้ขั้นตอนนี้
-                            </div>
+                            <div class="position-card-label">กำหนดจำนวน FC ที่ต้องเลือก</div>
+                            <p class="fc-rule-intro">เลือกได้จาก FC {{ assignedFcCompetencyCount }} ข้อที่ผูกกับตำแหน่งนี้</p>
 
-                            <div v-if="selectedUnitId && currentPositionId" class="fc-unit-rule">
-                                <div class="position-card-label">เฉพาะ{{ String(selectedScope?.label || '').startsWith('หน่วย') ? selectedScope?.label : `หน่วย${selectedScope?.label || ''}` }}</div>
+                            <div class="fc-rule-sections">
+                            <section class="fc-rule-section">
+                                <div class="fc-rule-section-head">
+                                    <strong>ค่าเริ่มต้นของตำแหน่ง</strong>
+                                    <span class="fc-rule-badge default">ใช้เป็นค่าพื้นฐาน</span>
+                                </div>
+                                <p>ใช้กับทุกหน่วยที่ยังไม่ได้ตั้งค่าเฉพาะหน่วย</p>
+                                <label class="fc-rule-field-label" for="position-fc-count">จำนวนข้อที่ต้องเลือก</label>
+                                <div class="fc-rule-control">
+                                    <input
+                                        id="position-fc-count"
+                                        v-model.number="requiredFcCount"
+                                        class="inp fc-rule-input"
+                                        type="number"
+                                        min="0"
+                                        :max="assignedFcCompetencyCount"
+                                        :disabled="!selectedConfigRoundId || !currentPositionId || assignedFcCompetencyCount === 0"
+                                    />
+                                    <button class="btn btn-p btn-sm" type="button" :disabled="fcSelectionRuleDisabled" @click="saveFcSelectionRule">
+                                        บันทึกค่าเริ่มต้น
+                                    </button>
+                                </div>
+                                <div v-if="fcSelectionRuleError" class="position-card-sub fc-rule-message is-warning">
+                                    {{ fcSelectionRuleError }}
+                                </div>
+                                <p v-else class="fc-rule-help">
+                                    บุคลากรเลือก {{ savedRequiredFcCount }} จาก {{ assignedFcCompetencyCount }} ข้อ · ตั้งเป็น 0 หากไม่ต้องเลือก FC ก่อนประเมิน
+                                </p>
+                            </section>
+
+                            <section v-if="selectedUnitId && currentPositionId" class="fc-rule-section unit">
+                                <div class="fc-rule-section-head">
+                                    <strong>ข้อกำหนดเฉพาะหน่วย</strong>
+                                    <span class="fc-rule-badge" :class="hasUnitFcRule ? 'override' : 'inherited'">
+                                        {{ hasUnitFcRule ? 'ใช้ค่าเฉพาะหน่วย' : 'ใช้ค่าเริ่มต้น' }}
+                                    </span>
+                                </div>
+                                <p>
+                                    {{ hasUnitFcRule
+                                        ? `ตั้งแยกสำหรับ${selectedScope?.label || 'หน่วยนี้'} หน่วยอื่นยังใช้ค่าเริ่มต้น ${savedRequiredFcCount} ข้อ`
+                                        : `ยังไม่ได้ตั้งแยก หน่วยนี้จึงใช้ค่าเริ่มต้น ${savedRequiredFcCount} ข้อ` }}
+                                </p>
+                                <label class="fc-rule-field-label" for="unit-fc-count">จำนวนข้อที่ต้องเลือกในหน่วยนี้</label>
                                 <div class="fc-rule-control fc-unit-rule-control">
                                     <input
+                                        id="unit-fc-count"
                                         v-model.number="unitRequiredFcCount"
                                         class="inp fc-rule-input"
                                         type="number"
@@ -948,20 +963,21 @@ const formatWeight = (weight) => {
                                         :disabled="!selectedConfigRoundId || assignedFcCompetencyCount === 0"
                                     />
                                     <button class="btn btn-p btn-sm" type="button" :disabled="unitFcRuleDisabled" @click="saveUnitFcRule">
-                                        บันทึก
-                                    </button>
-                                    <button v-if="hasUnitFcRule" class="btn btn-s btn-sm" type="button" @click="resetUnitFcRule">
-                                        ใช้ค่าตามตำแหน่ง
+                                        บันทึกค่าเฉพาะหน่วย
                                     </button>
                                 </div>
+                                <button v-if="hasUnitFcRule" class="btn btn-s btn-sm unit-fc-reset-btn" type="button" @click="resetUnitFcRule">
+                                    ลบค่าทับและใช้ค่าเริ่มต้น
+                                </button>
                                 <div v-if="unitFcRuleError" class="position-card-sub fc-rule-message is-warning">
                                     {{ unitFcRuleError }}
                                 </div>
-                                <div v-else class="position-card-sub fc-rule-message">
+                                <p v-else class="fc-rule-help">
                                     {{ hasUnitFcRule
-                                        ? `หน่วยนี้ใช้ ${savedUnitRequiredFcCount} ข้อ แทนค่าตามตำแหน่ง (${savedRequiredFcCount} ข้อ)`
-                                        : `ยังไม่ได้กำหนด หน่วยนี้ใช้ค่าตามตำแหน่ง ${savedRequiredFcCount} ข้อ` }}
-                                </div>
+                                        ? `หน่วยนี้ต้องเลือก ${savedUnitRequiredFcCount} จาก ${assignedFcCompetencyCount} ข้อ`
+                                        : `ปัจจุบันหน่วยนี้ต้องเลือก ${savedRequiredFcCount} จาก ${assignedFcCompetencyCount} ข้อ` }}
+                                </p>
+                            </section>
                             </div>
                         </div>
                     </div>
@@ -1914,11 +1930,13 @@ const formatWeight = (weight) => {
 
 .position-board {
     display: grid;
-    grid-template-columns: 1.25fr repeat(4, minmax(160px, 0.65fr));
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr) minmax(0, 1fr) minmax(0, .8fr);
     gap: 14px;
+    align-items: start;
 }
 
 .position-card {
+    min-width: 0;
     min-height: 104px;
     padding: 16px;
     border: 1px solid var(--border);
@@ -1928,9 +1946,15 @@ const formatWeight = (weight) => {
 }
 
 .position-card.selected {
-    border-color: var(--border);
+    border-left: 4px solid var(--primary, #c44129);
     background: #fff;
 }
+
+.position-card.selected .position-card-title { font-size: 21px; line-height: 1.45; }
+.position-card-title.complete { color: #18794e; }
+.fc-rule-card { grid-column: 1 / -1; }
+.fc-rule-card > .position-card-label { color: var(--text); font-size: 15px; margin-bottom: 6px; }
+.fc-rule-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 
 .position-card-label {
     color: var(--text3);
@@ -1988,16 +2012,28 @@ const formatWeight = (weight) => {
 
 .fc-rule-control {
     display: grid;
-    grid-template-columns: minmax(80px, 1fr) auto;
-    gap: 8px;
-    align-items: center;
+    grid-template-columns: minmax(80px, 110px) minmax(0, 1fr);
+    gap: 7px;
+    align-items: stretch;
 }
 
+.fc-rule-intro { margin: -3px 0 10px; color: var(--text3); font-size: 11px; line-height: 1.45; }
+.fc-rule-section { display: grid; gap: 10px; min-width: 0; padding: 16px; border: 1px solid #e3e8ee; border-radius: 10px; background: #f8fafc; }
+.fc-rule-section.unit { border-color: #d8e4f0; background: #f5f9fd; }
+.fc-rule-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.fc-rule-section-head strong { color: var(--text); font-size: 14px; font-weight: 800; }
+.fc-rule-section > p { margin: 0; color: var(--text2); font-size: 12px; line-height: 1.65; }
+.fc-rule-field-label { margin-top: 2px; color: var(--text2); font-size: 11px; font-weight: 700; }
+.fc-rule-badge { flex: 0 0 auto; border-radius: 999px; padding: 3px 7px; font-size: 10px; font-weight: 800; }
+.fc-rule-badge.default, .fc-rule-badge.inherited { background: #e9eef5; color: #526171; }
+.fc-rule-badge.override { background: #e7f5ec; color: #18794e; }
+.fc-rule-help { margin: 0 !important; color: #536273 !important; }
 .fc-rule-input {
     min-height: 38px;
     font-size: 18px;
     font-weight: 800;
 }
+.fc-rule-card .fc-rule-control .btn { width: auto; justify-self: start; align-self: center; min-height: 36px; white-space: normal; line-height: 1.25; }
 
 .fc-unit-rule {
     margin-top: 12px;
@@ -2006,7 +2042,17 @@ const formatWeight = (weight) => {
 }
 
 .fc-unit-rule-control {
-    grid-template-columns: minmax(80px, 1fr) auto auto;
+    grid-template-columns: minmax(80px, 110px) minmax(0, 1fr);
+}
+
+.fc-unit-rule-control .fc-rule-input {
+    min-width: 0;
+}
+
+.fc-rule-section .unit-fc-reset-btn {
+    justify-self: start;
+    max-width: 100%;
+    white-space: normal;
 }
 
 .fc-rule-message {
@@ -2937,7 +2983,6 @@ const formatWeight = (weight) => {
 @media (max-width: 1100px) {
     .position-layout,
     .position-scope,
-    .position-board,
     .position-hero,
     .round-config-bar {
         grid-template-columns: 1fr;
@@ -2966,6 +3011,18 @@ const formatWeight = (weight) => {
     .catalog-level-options {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+}
+
+@media (max-width: 900px) {
+    .position-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fc-rule-sections { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 540px) {
+    .position-board { grid-template-columns: 1fr; gap: 10px; }
+    .position-card { padding: 14px; min-height: 0; }
+    .fc-rule-section { padding: 12px; }
+    .fc-rule-control, .fc-unit-rule-control { grid-template-columns: 80px minmax(0, 1fr); }
 }
 
 @media (max-width: 768px) {

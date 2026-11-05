@@ -227,10 +227,11 @@ class FacultyAssessmentSubmissionTest extends TestCase
                 "{$competencyId}:{$levelIds[3]}:1",
                 "{$competencyId}:{$levelIds[3]}:2",
             ],
-        ])->assertUnprocessable()->assertJsonValidationErrors('assessment');
+        ])->assertRedirect();
 
-        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'self_submitted']);
-        $this->assertDatabaseMissing('scores', ['assessment_id' => $assessmentId, 'assessor_id' => $reviewer->id]);
+        $this->assertDatabaseHas('assessments', ['id' => $assessmentId, 'score' => 2, 'status' => 'approved']);
+        $this->assertDatabaseHas('scores', ['assessment_id' => $assessmentId, 'assessor_id' => $reviewer->id, 'score' => null]);
+        $this->assertDatabaseHas('competency_gaps', ['assessment_id' => $assessmentId, 'status' => 'approved', 'actual_level' => 2]);
         $this->assertDatabaseMissing('assessment_reviewer_indicator_results', [
             'assessment_id' => $assessmentId,
             'reviewer_id' => $reviewer->id,

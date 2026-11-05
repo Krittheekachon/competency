@@ -86,6 +86,11 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::delete('/admin/structure/job-families', [AdminStructureController::class, 'destroyJobFamily'])->name('admin.structure.job-families.destroy');
         Route::post('/admin/structure/positions', [AdminStructureController::class, 'storePosition'])->name('admin.structure.positions.store');
         Route::post('/admin/structure/position-titles', [AdminStructureController::class, 'storePositionTitle'])->name('admin.structure.position-titles.store');
+        Route::put('/admin/structure/position-titles/workline', [AdminStructureController::class, 'assignPositionTitleWorkline'])->name('admin.structure.position-titles.workline');
+        Route::put('/admin/structure/position-titles', [AdminStructureController::class, 'updatePositionTitle'])->name('admin.structure.position-titles.update');
+        Route::delete('/admin/structure/position-titles', [AdminStructureController::class, 'destroyPositionTitle'])->name('admin.structure.position-titles.destroy');
+        Route::post('/admin/structure/workline-positions', [AdminStructureController::class, 'storeWorklinePosition'])->name('admin.structure.workline-positions.store');
+        Route::delete('/admin/structure/workline-positions', [AdminStructureController::class, 'destroyWorklinePosition'])->name('admin.structure.workline-positions.destroy');
         Route::put('/admin/structure/positions', [AdminStructureController::class, 'updatePosition'])->name('admin.structure.positions.update');
         Route::delete('/admin/structure/positions', [AdminStructureController::class, 'destroyPosition'])->name('admin.structure.positions.destroy');
         Route::post('/admin/structure/support-departments', [AdminStructureController::class, 'storeSupportDepartment'])->name('admin.structure.support-departments.store');

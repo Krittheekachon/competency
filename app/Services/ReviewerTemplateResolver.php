@@ -227,8 +227,8 @@ class ReviewerTemplateResolver
     private function stepLabel(string $resolverType, string $roleKey): string
     {
         $roleLabel = match ($this->normalizeRoleKey($roleKey)) {
-            'supervisor' => 'หัวหน้าหน่วย',
-            'dept_head' => 'หัวหน้างาน',
+            'supervisor' => 'หัวหน้างาน',
+            'dept_head' => 'หัวหน้าหน่วย',
             'division_head' => 'หัวหน้าฝ่าย',
             'academic_department_head' => 'หัวหน้าภาควิชา',
             'deputy_dean' => 'รองคณบดี',

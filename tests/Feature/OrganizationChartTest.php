@@ -36,6 +36,30 @@ class OrganizationChartTest extends TestCase
         $this->assertSame([$person->id], array_column($nodes['unit:'.$unit]['members'], 'id'));
     }
 
+    public function test_branch_member_counts_include_all_descendant_units_without_double_counting(): void
+    {
+        [$department, $work, $unit] = $this->hierarchy();
+        $otherUnit = DB::table('support_units')->insertGetId([
+            'name' => 'หน่วยทดสอบ 2',
+            'support_work_id' => $work,
+        ]);
+        $path = 'ฝ่ายทดสอบ > งานทดสอบ';
+        User::factory()->count(3)->create([
+            'workline' => 'สายสนับสนุน',
+            'department' => $path.' > หน่วยทดสอบ',
+        ]);
+        User::factory()->count(4)->create([
+            'workline' => 'สายสนับสนุน',
+            'department' => $path.' > หน่วยทดสอบ 2',
+        ]);
+
+        $nodes = collect(app(OrganizationChartService::class)->payload()['nodes'])->keyBy('key');
+        $this->assertSame(3, $nodes['unit:'.$unit]['memberCount']);
+        $this->assertSame(4, $nodes['unit:'.$otherUnit]['memberCount']);
+        $this->assertSame(7, $nodes['work:'.$work]['memberCount']);
+        $this->assertSame(7, $nodes['department:'.$department]['memberCount']);
+    }
+
     public function test_empty_chart_and_short_branches_do_not_create_placeholder_units(): void
     {
         $this->assertSame([], app(OrganizationChartService::class)->payload()['nodes']);
@@ -76,6 +100,50 @@ class OrganizationChartTest extends TestCase
             'use_profile_members' => true, 'member_ids' => [],
         ])->assertSessionHasNoErrors();
         $this->assertSame('profile', app(OrganizationChartService::class)->node('unit:'.$unit)['membershipSource']);
+    }
+
+    public function test_changing_a_chart_head_updates_assessment_reviewers_for_descendant_members(): void
+    {
+        [$department, $work, $unit] = $this->hierarchy();
+        $user = User::factory()->create([
+            'workline' => 'สายสนับสนุน',
+            'department' => 'ฝ่ายทดสอบ > งานทดสอบ > หน่วยทดสอบ',
+        ]);
+        $unitHead = User::factory()->create();
+        $oldWorkHead = User::factory()->create();
+        $newWorkHead = User::factory()->create();
+        $departmentHead = User::factory()->create();
+        foreach ([
+            ['unit:'.$unit, $unitHead],
+            ['work:'.$work, $oldWorkHead],
+            ['department:'.$department, $departmentHead],
+        ] as [$key, $head]) {
+            DB::table('organization_chart_assignments')->insert([
+                'node_key' => $key,
+                'head_user_id' => $head->id,
+                'members_overridden' => false,
+            ]);
+        }
+        foreach ([$unitHead, $oldWorkHead, $departmentHead] as $index => $reviewer) {
+            DB::table('user_reviewer_steps')->insert([
+                'user_id' => $user->id,
+                'step_order' => $index + 1,
+                'reviewer_id' => $reviewer->id,
+                'chain_type' => 'assessment',
+            ]);
+        }
+
+        $this->actingAs($this->admin())->put(route('admin.organization-chart.people.update'), [
+            'node_key' => 'work:'.$work,
+            'head_user_id' => $newWorkHead->id,
+            'use_profile_members' => true,
+            'member_ids' => [],
+        ])->assertSessionHasNoErrors()->assertSessionHas('success', fn ($message) => str_contains($message, 'อัปเดตสายการประเมิน'));
+
+        $this->assertSame(
+            [$unitHead->id, $newWorkHead->id, $departmentHead->id],
+            DB::table('user_reviewer_steps')->where('user_id', $user->id)->where('chain_type', 'assessment')->orderBy('step_order')->pluck('reviewer_id')->all(),
+        );
     }
 
     public function test_non_admin_cannot_write_chart_and_invalid_people_are_rejected(): void

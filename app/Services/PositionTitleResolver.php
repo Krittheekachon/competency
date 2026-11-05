@@ -29,7 +29,7 @@ class PositionTitleResolver
             ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
             ->leftJoin('worklines', 'job_families.workline_id', '=', 'worklines.id')
             ->where('positions.id', $positionId)
-            ->first(['positions.id', 'positions.position_title_id', 'positions.name', 'worklines.name as workline_name']);
+            ->first(['positions.id', 'positions.position_title_id', 'positions.name', 'worklines.id as workline_id', 'worklines.name as workline_name']);
 
         if (! $position) {
             return null;
@@ -42,6 +42,7 @@ class PositionTitleResolver
         $normalized = $this->normalize($position->name);
         $worklineType = $this->worklineType($position->workline_name);
         DB::table('position_titles')->insertOrIgnore([
+            'workline_id' => $position->workline_id,
             'workline_type' => $worklineType,
             'name' => $position->name,
             'normalized_name' => $normalized,
@@ -55,7 +56,7 @@ class PositionTitleResolver
         ]);
 
         $id = DB::table('position_titles')
-            ->where('workline_type', $worklineType)
+            ->where('workline_id', $position->workline_id)
             ->where('normalized_position_type_name', '')
             ->where('normalized_name', $normalized)
             ->value('id');
@@ -106,12 +107,6 @@ class PositionTitleResolver
 
     private function worklineType(?string $workline): ?string
     {
-        $value = preg_replace('/\s+/u', '', trim((string) $workline));
-
-        return match ($value) {
-            'วิชาการ', 'สายวิชาการ', 'สายงานวิชาการ' => 'academic',
-            'สนับสนุน', 'สายสนับสนุน', 'สายงานสนับสนุน' => 'support',
-            default => null,
-        };
+        return app(SsoWorklineNormalizer::class)->structureType($workline);
     }
 }

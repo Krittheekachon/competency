@@ -185,7 +185,8 @@ class DashboardController extends Controller
             'currentUserFcTopicSelection' => $this->fcTopicSelectionPayloadForUser($currentUser),
             'currentUserCompetencyGaps' => $this->competencyGapsForUser($currentUser),
             'currentUserIdp' => $this->currentUserIdpPayload($currentUser),
-            'facultyIdpReadiness' => $activeRound && $this->facultyIdpPlans->isFacultyRound((int) $activeRound->id)
+            'facultyIdpReadiness' => in_array($role, self::SELF_ASSESSMENT_ROLE_KEYS, true)
+                && $activeRound && $this->facultyIdpPlans->isFacultyRound((int) $activeRound->id)
                 ? $this->facultyIdpPlans->readiness((int) $currentUser->id, (int) $activeRound->id) : null,
             'learningMethods' => $learningMethods,
             'hrCatalogItems' => $this->learningCatalogItems(),
@@ -874,6 +875,17 @@ class DashboardController extends Controller
             return $issues;
         }
 
+        if (in_array($roleKey, ['deputy_dean', 'assistant_dean'], true)
+            && app(\App\Services\SsoWorklineNormalizer::class)->structureType($user->workline) === 'management') {
+            if (! DB::table('position_titles')->where('id', $user->position_title_id)->where('workline_id', $worklineId)->exists()) {
+                $issues[] = 'กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหาร';
+            }
+            if (! $user->level || ! DB::table('levels')->where('workline_id', $worklineId)->where('name', $user->level)->exists()) {
+                $issues[] = 'ยังไม่ได้กำหนดระดับตำแหน่งในสายบริหาร';
+            }
+            return $issues;
+        }
+
         if ($this->usesSupportUnitStructure($user) || $this->isSupportDepartmentPath($user, $department) || $this->hasStoredSupportHierarchy($user)) {
             return $this->supportStructureIssuesForUser($user, (int) $worklineId, $department);
         }
@@ -1164,6 +1176,7 @@ class DashboardController extends Controller
 
         return [
             'worklines' => DB::table('worklines')->orderBy('name')->pluck('name'),
+            'organizationWorklines' => DB::table('worklines')->orderBy('name')->get(['id', 'name']),
             'jobFamiliesByWorkline' => $jobFamiliesWithPositions
                 ->groupBy('worklineName')
                 ->map(fn ($families) => $families->mapWithKeys(fn (array $family) => [
@@ -1179,7 +1192,7 @@ class DashboardController extends Controller
                 ->pluck('name')
                 ->values(),
             'adminJobFamilies' => $jobFamiliesWithPositions
-                ->where('worklineName', 'สายงานบริหาร')
+                ->whereIn('worklineName', ['บริหาร', 'สายบริหาร', 'สายงานบริหาร'])
                 ->pluck('name')
                 ->values(),
             'supportPositionGroups' => $jobFamiliesWithPositions
@@ -1204,23 +1217,30 @@ class DashboardController extends Controller
                 ->values(),
             'positionTitles' => Schema::hasTable('position_titles')
                 ? DB::table('position_titles')
+                    ->leftJoin('worklines as catalog_worklines', 'position_titles.workline_id', '=', 'catalog_worklines.id')
                     ->leftJoin('positions', 'position_titles.id', '=', 'positions.position_title_id')
                     ->select([
                         'position_titles.id',
                         'position_titles.workline_type',
+                        'position_titles.workline_id',
+                        'catalog_worklines.name as catalog_workline_name',
                         'position_titles.name',
                         'position_titles.position_type_name',
                         'position_titles.source',
                         'position_titles.last_seen_at',
+                        'position_titles.is_workline_position',
                         DB::raw('COUNT(positions.id) as placement_count'),
                     ])
                     ->groupBy([
                         'position_titles.id',
                         'position_titles.workline_type',
+                        'position_titles.workline_id',
+                        'catalog_worklines.name',
                         'position_titles.name',
                         'position_titles.position_type_name',
                         'position_titles.source',
                         'position_titles.last_seen_at',
+                        'position_titles.is_workline_position',
                     ])
                     ->orderBy('position_titles.workline_type')
                     ->orderBy('position_titles.name')
@@ -1228,12 +1248,14 @@ class DashboardController extends Controller
                     ->map(fn (object $title): array => [
                         'id' => (int) $title->id,
                         'worklineType' => $title->workline_type,
-                        'worklineName' => $title->workline_type === 'academic' ? 'สายวิชาการ' : 'สายสนับสนุน',
+                        'worklineId' => $title->workline_id ? (int) $title->workline_id : null,
+                        'worklineName' => $title->catalog_workline_name ?: 'ยังไม่ผูกสายงาน',
                         'name' => $title->name,
                         'positionTypeName' => $title->position_type_name,
                         'source' => $title->source,
                         'placementCount' => (int) $title->placement_count,
-                        'isUnassigned' => (int) $title->placement_count === 0,
+                        'isWorklinePosition' => (bool) $title->is_workline_position,
+                        'isUnassigned' => (int) $title->placement_count === 0 && ! $title->is_workline_position,
                         'lastSeenAt' => $title->last_seen_at,
                     ])
                     ->values()

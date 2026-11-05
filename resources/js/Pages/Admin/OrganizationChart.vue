@@ -36,7 +36,7 @@ const edit = useForm({name: ''});
 const add = useForm({name: ''});
 const showAdd = ref(false);
 const deleteConfirm = ref(false);
-const labels: Record<string, string> = {workline: 'สายงาน', family: 'ภาควิชา / กลุ่มงาน', department: 'ฝ่าย', work: 'งาน', unit: 'หน่วย'};
+const labels: Record<string, string> = {workline: 'สายงาน', family: 'ภาควิชา/หน่วยงาน', department: 'ฝ่าย', work: 'งาน', unit: 'หน่วย'};
 const resources: Record<string, string> = {workline: 'worklines', family: 'job-families', department: 'support-departments', work: 'support-works', unit: 'support-units'};
 const childType = computed(() => !selected.value ? 'workline' : selected.value.type === 'workline' ? (['สายสนับสนุน', 'สายงานสนับสนุน'].includes(selected.value.name) ? 'department' : 'family') : ({department: 'work', work: 'unit'}[selected.value.type] || ''));
 

@@ -253,6 +253,7 @@ class FacultyAnalyticsService
         return collect([
             ['key' => 'academic', 'label' => 'สายวิชาการ'],
             ['key' => 'support', 'label' => 'สายสนับสนุน'],
+            ['key' => 'management', 'label' => 'สายงานบริหาร'],
         ])->map(function (array $scope) use ($employees, $assessed, $gapUserIds, $gaps): array {
             $users = $employees->filter(fn (object $user): bool => $this->scopeKey($user->workline) === $scope['key']);
             $ids = $users->pluck('id')->map(fn ($id): int => (int) $id);
@@ -294,7 +295,7 @@ class FacultyAnalyticsService
                 : collect([$organization['departmentName'] ?? null])->filter()->values();
 
             if ($parts->isEmpty()) {
-                $parts = collect([$scopeKey === 'support' ? 'ไม่ระบุฝ่าย' : 'ไม่ระบุภาควิชา']);
+                $parts = collect([$scopeKey === 'support' ? 'ไม่ระบุฝ่าย' : ($scopeKey === 'management' ? 'ระดับสายงาน' : 'ไม่ระบุภาควิชา')]);
             }
 
             $paths = $scopeKey === 'support'
@@ -322,12 +323,12 @@ class FacultyAnalyticsService
             $depth = count($group['parts']) - 1;
 
             return [
-                'key' => ($scopeKey === 'support' ? 'support:' : 'academic:').$path,
+                'key' => $scopeKey.':'.$path,
                 'label' => $group['parts'][$depth],
                 'path' => $path,
                 'depth' => $depth,
-                'level' => $scopeKey === 'academic' ? 'department' : ['division', 'work', 'unit'][$depth],
-                'levelLabel' => $scopeKey === 'academic' ? 'ภาควิชา' : ['ฝ่าย', 'งาน', 'หน่วย'][$depth],
+                'level' => $scopeKey !== 'support' ? 'department' : ['division', 'work', 'unit'][$depth],
+                'levelLabel' => $scopeKey !== 'support' ? 'ภาควิชา/หน่วยงาน' : ['ฝ่าย', 'งาน', 'หน่วย'][$depth],
                 'totalEmployees' => $ids->count(),
                 'assessedEmployees' => $assessedIds->count(),
                 'passedEmployees' => max($assessedIds->count() - $failedIds->count(), 0),
@@ -451,7 +452,7 @@ class FacultyAnalyticsService
     {
         return $gaps->groupBy('competency_id')->map(function (Collection $rows) use ($employeesById, $idpStateByGap): array {
             $first = $rows->first();
-            $cells = collect(['faculty', 'academic', 'support'])->mapWithKeys(function (string $scope) use ($rows, $employeesById, $idpStateByGap): array {
+            $cells = collect(['faculty', 'academic', 'support', 'management'])->mapWithKeys(function (string $scope) use ($rows, $employeesById, $idpStateByGap): array {
                 $scopeRows = $scope === 'faculty'
                     ? $rows
                     : $rows->filter(function (object $gap) use ($scope, $employeesById): bool {
@@ -571,14 +572,6 @@ class FacultyAnalyticsService
 
     private function scopeKey(?string $workline): string
     {
-        $value = trim((string) $workline);
-        if (str_contains($value, 'วิชาการ')) {
-            return 'academic';
-        }
-        if (str_contains($value, 'สนับสนุน')) {
-            return 'support';
-        }
-
-        return 'other';
+        return app(SsoWorklineNormalizer::class)->structureType($workline) ?? 'other';
     }
 }

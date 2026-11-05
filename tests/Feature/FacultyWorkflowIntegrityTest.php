@@ -9,25 +9,46 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Tests\Feature\Concerns\BuildsFacultyAssessment;
 use Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Regression coverage for faculty workflow integrity. */
 class FacultyWorkflowIntegrityTest extends TestCase
 {
     use RefreshDatabase, BuildsFacultyAssessment;
 
-    public function test_final_approval_without_scorer_is_rejected_atomically(): void
+    #[DataProvider('approvalOnlyCases')]
+    public function test_final_approval_without_scorer_keeps_self_score(string $workline, string $role, string $type): void
     {
         Mail::fake();
         $reviewer=User::factory()->create(['role_id'=>$this->roleId('assistant_dean')]);
-        $employee=User::factory()->create();
+        $employee=User::factory()->create(['role_id'=>$this->roleId($role)]);
         $round=$this->activeFacultyRound();
-        [$cid]=$this->makeAssessable($employee,$round,'สายสนับสนุน');
+        [$cid]=$this->makeAssessable($employee,$round,$workline);
+        if ($type === 'MC') {
+            DB::table('competency_types')->where('id',DB::table('competencies')->where('id',$cid)->value('competency_type_id'))->update(['code'=>'MC']);
+        }
         $this->assignReviewer($employee,$reviewer);
         $aid=$this->submittedAssessment($employee,$round,$cid,3);
-        $this->actingAs($reviewer)->postJson(route('assessments.approve'),['user_id'=>$employee->id,'competency_id'=>$cid])->assertUnprocessable()->assertJsonValidationErrors('assessment');
-        $this->assertDatabaseHas('assessments',['id'=>$aid,'status'=>'self_submitted']);
-        $this->assertDatabaseHas('competency_gaps',['assessment_id'=>$aid,'status'=>'self_submitted','actual_level'=>3]);
-        $this->assertSame(0,DB::table('scores')->where('assessment_id',$aid)->count());
+        // A dean in the chain must not gain MC scoring rights for these targets.
+        if ($type === 'MC') {
+            $reviewer->forceFill(['role_id'=>$this->roleId('dean')])->save();
+        }
+        $this->actingAs($reviewer)->post(route('assessments.approve'),['user_id'=>$employee->id,'competency_id'=>$cid])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('assessments',['id'=>$aid,'status'=>'approved','score'=>3]);
+        $this->assertDatabaseHas('competency_gaps',['assessment_id'=>$aid,'status'=>'approved','actual_level'=>3]);
+        $this->assertSame(0,DB::table('scores')->where('assessment_id',$aid)->whereNotNull('score')->count());
+        $this->actingAs($reviewer)->postJson(route('assessments.approve'),['user_id'=>$employee->id,'competency_id'=>$cid])->assertUnprocessable();
+    }
+
+    public static function approvalOnlyCases(): array
+    {
+        return [
+            'support CC without deputy' => ['สายสนับสนุน','employee','CC'],
+            'academic head MC with dean' => ['สายวิชาการ','academic_department_head','MC'],
+            'support employee MC with dean' => ['สายสนับสนุน','employee','MC'],
+            'support head MC with dean' => ['สายสนับสนุน','supervisor','MC'],
+            'management MC approval only' => ['สายงานบริหาร','employee','MC'],
+        ];
     }
 
     public function test_standard_method_keeps_approval_only_chain_behavior(): void
@@ -40,6 +61,26 @@ class FacultyWorkflowIntegrityTest extends TestCase
         $aid=$this->submittedAssessment($employee,$round,$cid,3);
         $this->actingAs($reviewer)->post(route('assessments.approve'),['user_id'=>$employee->id,'competency_id'=>$cid])->assertSessionHasNoErrors();
         $this->assertDatabaseHas('assessments',['id'=>$aid,'status'=>'approved']);
+    }
+
+    public function test_legacy_support_user_with_unclassified_title_can_receive_deputy_score(): void
+    {
+        Mail::fake();
+        $round = $this->activeFacultyRound();
+        $employee = User::factory()->create();
+        [$cid, $levels] = $this->makeAssessable($employee, $round, 'สายสนับสนุน');
+        DB::table('position_titles')->where('id', $employee->position_title_id)->update(['workline_type' => null]);
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('deputy_dean')]);
+        $this->assignReviewer($employee, $reviewer);
+        $aid = $this->submittedAssessment($employee, $round, $cid, 3);
+        $this->actingAs($reviewer)->post(route('assessments.approve'), [
+            'user_id' => $employee->id,
+            'competency_id' => $cid,
+            'checked' => ["{$cid}:{$levels[1]}:0", "{$cid}:{$levels[1]}:1", "{$cid}:{$levels[1]}:2"],
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('assessments', ['id' => $aid, 'status' => 'approved', 'score' => 3]);
+        $this->assertDatabaseHas('scores', ['assessment_id' => $aid, 'assessor_id' => $reviewer->id, 'score' => 2]);
+        $this->assertDatabaseHas('competency_gaps', ['assessment_id' => $aid, 'status' => 'approved', 'actual_level' => 2]);
     }
 
     public function test_final_approver_requires_each_configured_scorer_score(): void
@@ -226,7 +267,7 @@ class FacultyWorkflowIntegrityTest extends TestCase
         $this->assertEqualsCanonicalizing([$cid,$fc[1]],$state['requiredCompetencyIds']);
     }
 
-    public function test_scoring_uses_persisted_code_independent_of_display_names_and_denies_unknown(): void
+    public function test_scoring_supports_legacy_workline_and_canonical_fallback_without_unknown_role_grants(): void
     {
         $reviewer=User::factory()->create(['role_id'=>$this->roleId('deputy_dean')]);
         $employee=User::factory()->create(['workline'=>'สายสนับสนุน']);
@@ -239,6 +280,6 @@ class FacultyWorkflowIntegrityTest extends TestCase
         DB::table('position_titles')->where('id',$title)->update(['workline_type'=>'unknown']);
         $this->assertFalse($resolver->canScore($reviewer,$employee,'CC'));
         $employee->forceFill(['position_title_id'=>null,'position_id'=>null,'workline'=>'สายสนับสนุน']);
-        $this->assertFalse($resolver->canScore($reviewer,$employee,'CC'));
+        $this->assertTrue($resolver->canScore($reviewer,$employee,'CC'));
     }
 }

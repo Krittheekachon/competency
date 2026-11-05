@@ -439,10 +439,21 @@ class AssessmentController extends Controller
         $ssoPending = Schema::hasTable('sso_profile_changes') && DB::table('sso_profile_changes')
             ->where('user_id', $user->id)->whereIn('status', ['pending', 'restructure'])->exists();
         $roundId = $this->activeAssessmentRoundId();
-        $positionId = (int) ($user->position_id ?? 0);
-        $competencyIds = $roundId && $positionId
-            ? DB::table('position_competencies')->where('assessment_round_id', $roundId)
-                ->where('position_id', $positionId)->pluck('competency_id')->map(fn ($id): int => (int) $id)->all()
+        $positionTitleId = $this->positionTitles->forUser($user);
+        $positionIds = $positionTitleId
+            ? $this->positionTitles->positionIds($positionTitleId)
+            : array_values(array_filter([(int) ($user->position_id ?? 0)]));
+        $competencyIds = $roundId && $positionIds !== []
+            ? DB::table('position_competencies')
+                ->where('assessment_round_id', $roundId)
+                ->where(function ($query) use ($positionTitleId, $positionIds): void {
+                    if ($positionTitleId) {
+                        $query->where('position_title_id', $positionTitleId);
+                    } else {
+                        $query->whereIn('position_id', $positionIds);
+                    }
+                })
+                ->pluck('competency_id')->map(fn ($id): int => (int) $id)->all()
             : [];
         $expectedLevels = $competencyIds === [] ? [] : $this->expectedLevelResolver->forUserCompetencies($user, $competencyIds);
         $competencies = collect($competencyIds)->map(fn (int $id): array => ['expectedLevel' => $expectedLevels[$id] ?? null])->all();
@@ -453,7 +464,30 @@ class AssessmentController extends Controller
         $hasRoundProfile = Schema::hasTable('user_round_profiles') && DB::table('user_round_profiles')
             ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists();
         $hasExistingRoundWork = (Schema::hasTable('assessments') && DB::table('assessments')
-            ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists())
+            ->where('assessment_round_id', $roundId)
+            ->where('user_id', $user->id)
+            ->where(function ($query): void {
+                // Round activation pre-creates empty draft rows for each mapped
+                // competency. Those rows are not user work and can safely receive
+                // the profile/reviewer snapshot on the user's first save.
+                $query->where('status', '!=', 'draft')
+                    ->orWhereNotNull('last_draft_saved_at')
+                    ->orWhereNotNull('self_submitted_at')
+                    ->orWhere(function ($draft): void {
+                        $draft->whereNotNull('score')->where('score', '!=', 0);
+                    })
+                    ->orWhere(function ($draft): void {
+                        $draft->whereNotNull('note')->where('note', '!=', '');
+                    });
+                if (Schema::hasTable('assessment_indicator_results')) {
+                    $query->orWhereExists(function ($indicators): void {
+                        $indicators->selectRaw('1')
+                            ->from('assessment_indicator_results')
+                            ->whereColumn('assessment_indicator_results.assessment_id', 'assessments.id');
+                    });
+                }
+            })
+            ->exists())
             || (Schema::hasTable('idps') && DB::table('idps')
                 ->where('assessment_round_id', $roundId)->where('user_id', $user->id)->exists());
 
@@ -673,7 +707,7 @@ class AssessmentController extends Controller
             ->where('status', $status)
             ->get(['id', 'score'])
             ->each(function (Assessment $assessment) use ($employee, $competencyId, $expectedLevel, $status, $now, $assessmentMethod): void {
-                // assessments.score keeps the self score; faculty rounds use the latest authorized reviewer score.
+                // Keep the self score when the faculty chain has no eligible scorer.
                 $reviewerScore = $assessmentMethod === AssessmentMethodResolver::FACULTY
                     ? $this->latestFacultyReviewerScore($employee, (int) $assessment->id, $competencyId)
                     : null;
@@ -842,9 +876,8 @@ class AssessmentController extends Controller
     private function assertFacultyScoresComplete(User $employee, int $assessmentId, int $competencyId): void
     {
         $steps = $this->facultyScorerSteps($employee, $competencyId);
-        if ($steps === []) {
-            throw ValidationException::withMessages(['assessment' => 'ยังอนุมัติสุดท้ายไม่ได้: ไม่พบผู้มีสิทธิ์ให้คะแนนสมรรถนะนี้ในสายผู้ประเมิน กรุณาตรวจตำแหน่งและสายผู้ประเมิน']);
-        }
+        // An approval-only chain retains the original self-score result. If scorers
+        // are configured, every eligible scorer must finish before final approval.
         foreach ($steps as $step) {
             if (! DB::table('scores')->where('assessment_id', $assessmentId)->where('competency_id', $competencyId)
                 ->where('assessor_id', $step['reviewer_id'])->where('assessor_role', 'supervisor_'.$step['step'])

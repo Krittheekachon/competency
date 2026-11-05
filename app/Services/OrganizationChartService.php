@@ -53,7 +53,10 @@ class OrganizationChartService
                 if ($node['type'] === 'department') {
                     return !$org['unitName'] && !$org['workName'] && $org['type'] === 'support' && $org['departmentName'] === $node['name'];
                 }
-                return $node['type'] === 'family' && $org['type'] === 'academic' && $org['departmentName'] === $node['name'] && $user->workline === ($path['workline'] ?? null);
+                if ($node['type'] === 'workline') {
+                    return ! $org['departmentName'] && ! $org['workName'] && ! $org['unitName'] && $user->workline === $node['name'];
+                }
+                return $node['type'] === 'family' && $org['type'] !== 'support' && $org['departmentName'] === $node['name'] && $user->workline === ($path['workline'] ?? null);
             });
             // Ambiguous legacy names must not silently assign a person to the wrong unit.
             if ($candidates->count() === 1) {
@@ -73,6 +76,23 @@ class OrganizationChartService
                 $node['members'] = ($assignedMembers[$assignment->node_key] ?? collect())->map(fn ($member) => $peopleById->get($member->user_id))->filter()->map($personPayload)->values()->all();
             }
             unset($node);
+        }
+        // Branch counts are cumulative: include each descendant's members once,
+        // while keeping `members` scoped to the node for the editor form.
+        $childrenByParent = collect($nodes)->groupBy('parentKey');
+        $countBranchMembers = function (string $key, array $visited = []) use (&$countBranchMembers, $childrenByParent, &$nodes): array {
+            if (isset($visited[$key])) {
+                return [];
+            }
+            $visited[$key] = true;
+            $memberIds = collect($nodes[$key]['members'] ?? [])->pluck('id')->map(fn ($id) => (int) $id);
+            foreach ($childrenByParent->get($key, collect()) as $child) {
+                $memberIds = $memberIds->merge($countBranchMembers($child['key'], $visited));
+            }
+            return $memberIds->unique()->values()->all();
+        };
+        foreach (array_keys($nodes) as $key) {
+            $nodes[$key]['memberCount'] = count($countBranchMembers($key));
         }
         return ['nodes' => array_values($nodes), 'people' => $people->map($personPayload)->all()];
     }

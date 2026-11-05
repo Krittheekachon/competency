@@ -5,7 +5,7 @@ import AssessmentSummaryBand from '../../Components/AssessmentSummaryBand.vue';
 import IdpActivityProgressReview from '../Head/IdpActivityProgressReview.vue';
 import SupportDivisionDialog from './SupportDivisionDialog.vue';
 
-type AttentionWorklineKey = 'all' | 'academic' | 'support' | 'other';
+type AttentionWorklineKey = 'all' | 'academic' | 'support' | 'management' | 'other';
 
 const props = defineProps<{
   analytics?: any;
@@ -76,7 +76,7 @@ const supportOrganizationGroups = computed(() => selectedWorklineOrganizations.v
 const academicOrganizationGroups = computed(() => selectedWorklineOrganizations.value
   .filter((organization: any) => organization.depth === 0)
   .map((department: any) => ({ division: department, works: [] })));
-const organizationGroups = computed(() => selectedWorkline.value?.key === 'academic'
+const organizationGroups = computed(() => selectedWorkline.value?.key !== 'support'
   ? academicOrganizationGroups.value
   : supportOrganizationGroups.value);
 const selectedOrganizationGroup = computed(() => organizationGroups.value
@@ -142,10 +142,11 @@ const idpPeople = computed(() => {
   }).sort((left: any, right: any) => (attentionRank[left.status] ?? 99) - (attentionRank[right.status] ?? 99)
     || String(left.name).localeCompare(String(right.name), 'th'));
 });
-const idpPersonWorklineKey = (person: any): 'academic' | 'support' | 'other' => {
+const idpPersonWorklineKey = (person: any): 'academic' | 'support' | 'management' | 'other' => {
   const value = String(person.workline || '');
   if (value.includes('วิชาการ')) return 'academic';
   if (value.includes('สนับสนุน')) return 'support';
+  if (['บริหาร', 'สายบริหาร', 'สายงานบริหาร'].includes(value.trim())) return 'management';
   return 'other';
 };
 const idpAttentionWorklineFilters = computed<Array<{ key: AttentionWorklineKey; label: string; count: number }>>(() => {
@@ -153,6 +154,7 @@ const idpAttentionWorklineFilters = computed<Array<{ key: AttentionWorklineKey; 
     { key: 'all', label: 'ทั้งหมด', count: idpPeople.value.length },
     { key: 'academic', label: 'สายวิชาการ', count: idpPeople.value.filter((person: any) => idpPersonWorklineKey(person) === 'academic').length },
     { key: 'support', label: 'สายสนับสนุน', count: idpPeople.value.filter((person: any) => idpPersonWorklineKey(person) === 'support').length },
+    { key: 'management', label: 'สายงานบริหาร', count: idpPeople.value.filter((person: any) => idpPersonWorklineKey(person) === 'management').length },
   ];
   const otherCount = idpPeople.value.filter((person: any) => idpPersonWorklineKey(person) === 'other').length;
   if (otherCount) filters.push({ key: 'other', label: 'ไม่ระบุสายงาน', count: otherCount });
@@ -295,6 +297,7 @@ const scopes = [
   { key: 'faculty', label: 'ทั้งคณะ' },
   { key: 'academic', label: 'สายวิชาการ' },
   { key: 'support', label: 'สายสนับสนุน' },
+  { key: 'management', label: 'สายงานบริหาร' },
 ];
 const stateMeta: Record<string, { label: string; tone: string }> = {
   not_started: { label: 'ยังไม่เริ่ม', tone: 'muted' },
@@ -669,8 +672,8 @@ onBeforeUnmount(() => {
 
                 <section class="workline-organizations-frame">
                   <div class="organization-summary-head">
-                    <span>{{ selectedWorkline.key === 'academic' ? 'ภาควิชาในสายวิชาการ' : 'ฝ่ายในสายสนับสนุน' }}</span>
-                    <small>{{ selectedWorkline.key === 'academic' ? 'เลือกภาควิชาเพื่อเปิด dashboard ผลการประเมิน' : 'เลือกฝ่ายเพื่อเปิด dashboard และดูงานกับหน่วยภายใน' }}</small>
+                    <span>{{ selectedWorkline.key !== 'support' ? 'ภาควิชา/หน่วยงานในสายงาน' : 'ฝ่ายในสายสนับสนุน' }}</span>
+                    <small>{{ selectedWorkline.key !== 'support' ? 'เลือกภาควิชา/หน่วยงานเพื่อเปิด dashboard ผลการประเมิน' : 'เลือกฝ่ายเพื่อเปิด dashboard และดูงานกับหน่วยภายใน' }}</small>
                   </div>
                   <div v-if="organizationGroups.length" class="division-list">
                     <button
@@ -682,9 +685,9 @@ onBeforeUnmount(() => {
                       @click="openOrganization(group.division.key)"
                     >
                       <div class="division-name">
-                        <small>{{ selectedWorkline.key === 'academic' ? 'ภาควิชา' : 'ฝ่าย' }}</small>
+                        <small>{{ selectedWorkline.key !== 'support' ? 'ภาควิชา/หน่วยงาน' : 'ฝ่าย' }}</small>
                         <strong>{{ group.division.label }}</strong>
-                        <span>{{ selectedWorkline.key === 'academic' ? 'ผลการประเมินรายภาควิชา' : `${formatNumber(group.works.length)} งานภายในฝ่าย` }}</span>
+                        <span>{{ selectedWorkline.key !== 'support' ? 'ผลการประเมินรายภาควิชา/หน่วยงาน' : `${formatNumber(group.works.length)} งานภายในฝ่าย` }}</span>
                       </div>
                       <div class="division-counts">
                         <span class="passed"><b>{{ formatNumber(group.division.passedEmployees) }}</b> ผ่าน</span>
@@ -708,7 +711,7 @@ onBeforeUnmount(() => {
             <SupportDivisionDialog
               v-if="selectedOrganizationGroup"
               :group="selectedOrganizationGroup"
-              :scope="selectedWorkline.key === 'academic' ? 'academic' : 'support'"
+              :scope="selectedWorkline.key"
               @close="closeOrganization"
             />
           </div>

@@ -270,7 +270,7 @@ type User = {
   position_id?: number | null;
   displayOrganization?: string;
   organization?: {
-    type?: 'support' | 'academic';
+    type?: 'support' | 'academic' | 'management' | 'other';
     departmentName?: string | null;
     workName?: string | null;
     unitName?: string | null;
@@ -349,7 +349,7 @@ const roleOptions = [
 ];
 
 const getDisplayLevel = (user: User) => (user.w === 'สายงานบริหาร' ? user.p : user.l);
-const organizationLabel = (value: string | null | undefined, prefix: 'หน่วย' | 'ภาควิชา') => {
+const organizationLabel = (value: string | null | undefined, prefix: 'หน่วย' | 'ภาควิชา' | 'หน่วยงาน') => {
   const normalized = value?.trim();
   if (!normalized) return '';
 
@@ -372,6 +372,10 @@ const organizationUnit = (user: User) => {
 
   if (user.organization?.type === 'academic') {
     return organizationLabel(user.organization.departmentName, 'ภาควิชา') || 'ยังไม่ระบุภาควิชา';
+  }
+
+  if (user.organization?.type === 'management') {
+    return organizationLabel(user.organization.departmentName, 'หน่วยงาน') || user.w || 'ยังไม่ระบุสายงาน';
   }
 
   const parts = (user.d || '').split(' > ').map((part) => part.trim()).filter(Boolean);
@@ -424,6 +428,7 @@ const pendingSsoUsers = computed(() => props.users.filter((user) => Boolean(user
 const ssoWorklineLabel = (user: User) => {
   if (user.ssoProfile?.worklineType === 'academic') return 'สายวิชาการ';
   if (user.ssoProfile?.worklineType === 'support') return 'สายสนับสนุน';
+  if (user.ssoProfile?.worklineType === 'management') return 'สายงานบริหาร';
   return user.ssoProfile?.workline || 'สายงานไม่รู้จัก';
 };
 
@@ -570,13 +575,13 @@ const roleBadge = (role?: string): RoleBadge => {
       };
     case 'supervisor':
       return {
-        label: 'หัวหน้าหน่วย',
+        label: 'หัวหน้างาน',
         className: 'bg',
         style: { background: '#fff7ed', color: '#c2410c' },
       };
     case 'dept_head':
     case 'manager_dept':
-      return { label: 'หัวหน้างาน', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
+      return { label: 'หัวหน้าหน่วย', className: 'bg', style: { background: '#f0f9ff', color: '#0284c7' } };
     case 'division_head':
       return { label: 'หัวหน้าฝ่าย', className: 'bg', style: { background: '#fef3c7', color: '#b45309' } };
     case 'academic_department_head':

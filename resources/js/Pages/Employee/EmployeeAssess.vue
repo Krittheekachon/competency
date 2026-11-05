@@ -85,6 +85,7 @@ const competencyDraftSavedAt = ref<Record<string, string>>({});
 const competencyRejectComments = ref<Record<string, string>>({});
 const competencyRejectReviewerNames = ref<Record<string, string>>({});
 const autoSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
+const draftError = ref('');
 const draftSavedAt = ref<string>('');
 const competencyEvidences = ref<Record<string, any[]>>({});
 const evidenceLinkUrl = ref('');
@@ -94,6 +95,7 @@ const isUploadingEvidence = ref(false);
 const evidenceFileInput = ref<HTMLInputElement | null>(null);
 const suppressAutoSave = ref(false);
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let draftSaveInFlight: Promise<boolean> | null = null;
 
 watch(fcTopicSelection, (next) => {
   selectedFcIds.value = [...(next?.selectedCompetencyIds || [])].map((id) => Number(id));
@@ -243,7 +245,7 @@ const formatDraftSavedAt = (value: string) => {
 const autoSaveText = computed(() => {
   if (isSelectedCompetencyLocked.value) return '';
   if (autoSaveState.value === 'saving') return 'กำลังบันทึกฉบับร่าง...';
-  if (autoSaveState.value === 'error') return 'บันทึกฉบับร่างไม่สำเร็จ';
+  if (autoSaveState.value === 'error') return draftError.value || 'บันทึกฉบับร่างไม่สำเร็จ';
   const time = formatDraftSavedAt(draftSavedAt.value);
   return time ? `บันทึกฉบับร่าง เมื่อ ${time}` : 'ยังไม่ได้บันทึกฉบับร่าง';
 });
@@ -274,26 +276,41 @@ const autosaveSignature = computed(() => {
 });
 
 const saveDraft = async () => {
-  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return;
+  if (isSelfAssessmentClosed.value || !selectedCompetency.value || isSelectedCompetencyLocked.value || isAssessmentBlocked.value) return false;
+  if (draftSaveInFlight) return draftSaveInFlight;
 
   autoSaveState.value = 'saving';
+  draftError.value = '';
 
-  try {
-    const { data } = await (window as any).axios.post(route('assessments.draft'), {
-      competency_id: selectedCompetency.value.id,
-      checked_indicators: submittedCheckedIndicators(),
-      note: competencyNotes.value[noteKey.value] || '',
-      score: parseFloat(currentScore.value),
-    });
+  const competencyId = String(selectedCompetency.value.id);
+  const payload = {
+    competency_id: selectedCompetency.value.id,
+    checked_indicators: submittedCheckedIndicators(),
+    note: competencyNotes.value[noteKey.value] || '',
+    score: parseFloat(currentScore.value),
+  };
+  draftSaveInFlight = (async () => {
+    try {
+      const { data } = await (window as any).axios.post(route('assessments.draft'), payload);
+      draftSavedAt.value = data.lastDraftSavedAt || new Date().toISOString();
+      competencyDraftSavedAt.value[competencyId] = draftSavedAt.value;
+      if (selectedCompetency.value?.id === Number(competencyId)) {
+        selectedCompetency.value.lastDraftSavedAt = draftSavedAt.value;
+      }
+      competencyStatuses.value[competencyId] = data.status || 'draft';
+      autoSaveState.value = 'saved';
+      return true;
+    } catch (error: any) {
+      const errors = error?.response?.data?.errors || {};
+      draftError.value = String(Object.values(errors).flat()[0] || error?.response?.data?.message || 'บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่');
+      autoSaveState.value = 'error';
+      return false;
+    } finally {
+      draftSaveInFlight = null;
+    }
+  })();
 
-    draftSavedAt.value = data.lastDraftSavedAt || new Date().toISOString();
-    competencyDraftSavedAt.value[String(selectedCompetency.value.id)] = draftSavedAt.value;
-    selectedCompetency.value.lastDraftSavedAt = draftSavedAt.value;
-    competencyStatuses.value[String(selectedCompetency.value.id)] = data.status || 'draft';
-    autoSaveState.value = 'saved';
-  } catch {
-    autoSaveState.value = 'error';
-  }
+  return draftSaveInFlight;
 };
 
 const openCompetencyDetail = async (item: any) => {
@@ -338,11 +355,17 @@ const openCompetencyDetail = async (item: any) => {
   }
 };
 
-const closeCompetencyDetail = () => {
+const closeCompetencyDetail = async () => {
+  const hasPendingDraft = Boolean(autoSaveTimer) || autoSaveState.value === 'saving';
   clearAutoSaveTimer();
+  if (hasPendingDraft && !isSelectedCompetencyLocked.value) {
+    const saved = await saveDraft();
+    if (!saved) return;
+  }
   showSubmitConfirm.value = false;
   selectedCompetency.value = null;
   autoSaveState.value = 'idle';
+  draftError.value = '';
   draftSavedAt.value = '';
 };
 
@@ -473,8 +496,11 @@ const uploadEvidence = async () => {
   try {
     if (!isEvidenceRequested.value && !competencyDraftSavedAt.value[competencyId] && !draftSavedAt.value) {
       clearAutoSaveTimer();
-      await saveDraft();
-      if (autoSaveState.value === 'error') throw new Error('draft');
+      const saved = await saveDraft();
+      if (!saved) {
+        evidenceError.value = draftError.value || 'บันทึกผลประเมินไม่สำเร็จ จึงยังแนบหลักฐานไม่ได้';
+        return;
+      }
     }
 
     const form = new FormData();
@@ -981,6 +1007,10 @@ onBeforeUnmount(() => {
             <div class="reviewer-comment-label">ความคิดเห็นจาก {{ selectedRejectReviewerName || 'ผู้ประเมิน' }}</div>
             <p>{{ selectedRejectComment }}</p>
           </section>
+
+          <p v-if="usesFacultyMethod && !showEvidenceSection" class="emp-evidence-hint">
+            แนบหลักฐานได้เมื่อผลประเมินถึงระดับ 5 หรือเมื่อผู้ประเมินร้องขอหลักฐาน
+          </p>
 
           <section v-if="showEvidenceSection" class="emp-evidence-section" :class="{ missing: isMissingLevelEvidence }">
             <div class="emp-evidence-head">

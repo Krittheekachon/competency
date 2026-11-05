@@ -448,8 +448,8 @@ const supervisorApprovalRows = computed(() => assessmentReviewRoster(assessmentA
     };
 }));
 const approvalRoleLabel = computed(() => ({
-    supervisor: 'หัวหน้าหน่วย',
-    dept_head: 'หัวหน้างาน',
+    supervisor: 'หัวหน้างาน',
+    dept_head: 'หัวหน้าหน่วย',
     division_head: 'หัวหน้าฝ่าย',
     academic_department_head: 'หัวหน้าภาควิชา',
     deputy_dean: 'รองคณบดี',
@@ -1076,6 +1076,22 @@ const toggleReviewerIndicator = (row, level, index) => {
 };
 const totalIndicatorCount = (row) => scoringLevelsForRow(row)
     .reduce((total, level) => total + (level.indicators?.length || 0), 0);
+const reviewerScoreForRow = (row) => {
+    const countAt = (number) => {
+        const level = scoringLevelsForRow(row).find((item) => Number(item.lvl ?? item.level) === number);
+        return level ? checkedIndicatorsForLevel(row, level).length : 0;
+    };
+    const totalAt = (number) => {
+        const level = scoringLevelsForRow(row).find((item) => Number(item.lvl ?? item.level) === number);
+        return level?.indicators?.length || 0;
+    };
+
+    if (countAt(1) === 0) return 0;
+    if (countAt(1) < totalAt(1)) return 1;
+    if (countAt(3) === 0) return 2;
+    if (countAt(3) < totalAt(3)) return 3;
+    return countAt(5) >= 2 ? 5 : 4;
+};
 const checkedIndicatorsForLevel = (row, level) => (level.indicators || [])
     .map((indicator, index) => ({ indicator, index }))
     .filter(({ index }) => isIndicatorChecked(row, level, index));
@@ -1117,6 +1133,7 @@ const submitAssessmentToManager = () => {
 };
 const requestApprovalDecision = (decision, row) => {
     if (!selectedSupervisorApproval.value || !canDecideSupervisorCompetency(row)) return;
+    if (decision === 'reject' && row.canEditScore) return;
     approvalDecisionCompetency.value = row;
     approvalDecision.value = decision;
     approvalComment.value = reviewerComments.value[approvalCommentKey(row)] ?? '';
@@ -1132,6 +1149,7 @@ const submitApprovalDecision = () => {
     if (!selectedSupervisorApproval.value || !approvalDecision.value || !competency) return;
 
     const decision = approvalDecision.value;
+    if (decision === 'reject' && competency.canEditScore) return;
     const comment = (reviewerComments.value[approvalCommentKey(competency)] || approvalComment.value || '').trim();
     if (decision === 'reject' && !comment) {
         return;
@@ -1972,23 +1990,29 @@ const logout = () => router.post(route('logout'));
                                             </b>
                                         </header>
                                         <div class="detail-indicator-list">
-                                            <div
+                                            <label
                                                 v-for="indicator in level.rows"
                                                 :key="indicator.index"
-                                                :class="{ selected: indicator.checked, editable: selectedSupervisorCompetency.canEditScore && canDecideSupervisorCompetency(selectedSupervisorCompetency) }"
-                                                @click="toggleReviewerIndicator(selectedSupervisorCompetency, level, indicator.index)"
+                                                class="reviewer-indicator-row"
+                                                :class="{
+                                                    selected: indicator.checked,
+                                                    editable: selectedSupervisorCompetency.canEditScore && canDecideSupervisorCompetency(selectedSupervisorCompetency),
+                                                    disabled: !canDecideSupervisorCompetency(selectedSupervisorCompetency)
+                                                }"
                                             >
                                                 <input
                                                     v-if="selectedSupervisorCompetency.canEditScore"
                                                     :checked="indicator.checked"
                                                     :disabled="!canDecideSupervisorCompetency(selectedSupervisorCompetency)"
                                                     type="checkbox"
-                                                    @click.stop
                                                     @change="toggleReviewerIndicator(selectedSupervisorCompetency, level, indicator.index)"
                                                 />
                                                 <span v-else>{{ indicator.checked ? '✓' : '' }}</span>
-                                                <p><strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>{{ indicator.text }}</p>
-                                            </div>
+                                                <span class="reviewer-indicator-copy">
+                                                    <strong>ข้อ {{ level.number }}.{{ indicator.index + 1 }}</strong>
+                                                    <small>{{ indicator.text }}</small>
+                                                </span>
+                                            </label>
                                             <p v-if="level.rows.length === 0" class="muted">ยังไม่มีพฤติกรรมบ่งชี้ในระดับนี้</p>
                                         </div>
                                     </article>
@@ -2013,13 +2037,15 @@ const logout = () => router.post(route('logout'));
                                     <span>
                                         {{ canDecideSupervisorCompetency(selectedSupervisorCompetency)
                                             ? (selectedSupervisorCompetency.canEditScore
-                                                ? 'คุณมีสิทธิ์แก้ผลติ๊ก คะแนนสุดท้ายจะคำนวณจากรายการนี้'
+                                                ? `คะแนนปัจจุบัน ${reviewerScoreForRow(selectedSupervisorCompetency)}/5.00 จาก ${scoringIndicatorKeysForRow(selectedSupervisorCompetency).length}/${totalIndicatorCount(selectedSupervisorCompetency)} พฤติกรรม`
                                                 : 'ตรวจสอบพฤติกรรมบ่งชี้ก่อนดำเนินการ')
                                             : `ดูได้อย่างเดียว · ${competencyApprovalStatus(selectedSupervisorCompetency).label}` }}
                                     </span>
                                     <div v-if="canDecideSupervisorCompetency(selectedSupervisorCompetency)" class="flex g8">
-                                        <button class="btn btn-r" type="button" @click="requestApprovalDecision('reject', selectedSupervisorCompetency)">ส่งกลับแก้ไข</button>
-                                        <button class="btn btn-t" type="button" @click="requestApprovalDecision('approve', selectedSupervisorCompetency)">ผ่านและส่งต่อ</button>
+                                        <button v-if="!selectedSupervisorCompetency.canEditScore" class="btn btn-r" type="button" @click="requestApprovalDecision('reject', selectedSupervisorCompetency)">ส่งกลับแก้ไข</button>
+                                        <button class="btn btn-t" type="button" @click="requestApprovalDecision('approve', selectedSupervisorCompetency)">
+                                            {{ selectedSupervisorCompetency.canEditScore ? 'ยืนยันผลการประเมิน' : 'ผ่านและส่งต่อ' }}
+                                        </button>
                                     </div>
                                 </footer>
                             </section>
@@ -3468,16 +3494,19 @@ const logout = () => router.post(route('logout'));
 
 .detail-level-card > header b.complete { border-color: #bbf7d0; background: #ecfdf5; color: #047857; }
 .detail-level-card > header b.partial { border-color: #fed7aa; background: #fff7ed; color: #b45309; }
-.detail-indicator-list { display: grid; padding: 10px 12px; }
-.detail-indicator-list > div { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; border: 1px solid #edf0f2; border-radius: 8px; background: #fff; padding: 10px 12px; color: #8c949d; }
-.detail-indicator-list > div + div { margin-top: 7px; }
-.detail-indicator-list > div.selected { border-color: #f2b7a9; background: #fff8f5; color: #302b28; }
-.detail-indicator-list > div > span { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #d6dbe0; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 900; }
-.detail-indicator-list > div.selected > span { border-color: var(--color-primary); background: var(--color-primary); }
-.detail-indicator-list p { margin: 0; font-size: 12px; line-height: 1.6; }
-.detail-indicator-list > div.editable { cursor: pointer; }
-.detail-indicator-list > div > input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--color-primary); }
-.detail-indicator-list p strong { display: inline-block; margin-right: 8px; color: inherit; }
+.detail-indicator-list { display: block; width: 100%; background: #fff; padding: 0 12px 12px; }
+.reviewer-indicator-row { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 12px; border-bottom: 1px solid #edf0f2; background: #fff; padding: 12px 8px; color: var(--text); }
+.reviewer-indicator-row.selected { background: #fff8f5; }
+.reviewer-indicator-row.editable { cursor: pointer; }
+.reviewer-indicator-row.disabled { cursor: default; }
+.reviewer-indicator-row input,
+.reviewer-indicator-row > span:first-child { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--color-primary); }
+.reviewer-indicator-row > span:first-child { display: grid; place-items: center; border: 1px solid #d6dbe0; border-radius: 5px; color: #fff; font-size: 11px; font-weight: 900; }
+.reviewer-indicator-row.selected > span:first-child { border-color: var(--color-primary); background: var(--color-primary); }
+.reviewer-indicator-copy { display: grid; gap: 4px; min-width: 0; }
+.reviewer-indicator-copy strong { color: var(--text); font-size: 12px; font-weight: 900; }
+.reviewer-indicator-copy small { color: var(--text2); font-size: 13px; line-height: 1.6; }
+.reviewer-indicator-row.disabled .reviewer-indicator-copy small { color: var(--color-disabled-text); }
 
 .competency-detail-actions {
     display: flex;

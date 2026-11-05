@@ -295,11 +295,13 @@ class SsoProfileSyncService
 
         $normalizedName = $this->normalizeName($profile['positionName']);
         $normalizedType = $this->normalizeName($profile['positionTypeName']);
-        $existing = DB::table('position_titles')
+        $matches = DB::table('position_titles')
             ->where('workline_type', $profile['worklineType'])
             ->where('normalized_position_type_name', $normalizedType)
             ->where('normalized_name', $normalizedName)
-            ->first();
+            ->get();
+        $existing = $matches->firstWhere('workline_id', null)
+            ?? ($matches->count() === 1 ? $matches->first() : null);
 
         if ($existing) {
             DB::table('position_titles')->where('id', $existing->id)->update([
