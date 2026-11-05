@@ -23,7 +23,27 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     const [searchTerm, setSearchTerm] = useState("");
     const [levelFilter, setLevelFilter] = useState("ทั้งหมด");
     const [completionFilter, setCompletionFilter] = useState("ทั้งหมด");
-    const totalCompetencies = computed(() => competencyList.value.length);
+    // The dictionary keeps two formats: university (levels 1-5) and faculty (behaviour groups at levels 1/3/5).
+    const FORMATS = [
+      { key: "standard", label: "รูปแบบมหาวิทยาลัย", hint: "พฤติกรรมบ่งชี้ระดับ 1–5 ใช้กับรอบที่เลือกวิธีประเมินเดิม" },
+      { key: "faculty", label: "รูปแบบคณะวิศวกรรมศาสตร์", hint: "พฤติกรรมระดับ 1, 3 และ 5 ระดับละ 3 ข้อ ใช้กับรอบที่เลือกวิธีคณะวิศวกรรมศาสตร์" },
+    ];
+    const FACULTY_LEVELS = [1, 3, 5];
+    const FACULTY_BEHAVIOURS_PER_LEVEL = 3;
+    const FACULTY_RULES: Record<number, string> = {
+      1: "มีพฤติกรรมอย่างน้อยข้อใดข้อหนึ่ง ดังต่อไปนี้",
+      2: "มีพฤติกรรมในระดับ 1 ครบทุกข้อ",
+      3: "ผ่านเกณฑ์ระดับ 2 และมีพฤติกรรมอย่างน้อยข้อใดข้อหนึ่ง ดังต่อไปนี้",
+      4: "มีพฤติกรรมในระดับ 1 และระดับ 3 ครบทุกข้อ",
+      5: "ผ่านเกณฑ์ระดับ 4 และมีพฤติกรรมอย่างน้อย 2 ข้อ ดังต่อไปนี้",
+    };
+    const [format, setFormat] = useState("standard");
+    const isFaculty = computed(() => format.value === "faculty");
+    const formatInfo = computed(() => FORMATS.find((item) => item.key === format.value) || FORMATS[0]);
+    const methodOf = (c: any) => c.method || "standard";
+    const formatCount = (key: string) => competencyList.value.filter((c) => methodOf(c) === key).length;
+    const formatList = computed(() => competencyList.value.filter((c) => methodOf(c) === format.value));
+    const totalCompetencies = computed(() => formatList.value.length);
 
     useEffect(() => {
       onDirtyChange?.(isDirty.value);
@@ -107,7 +127,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     };
 
     const competencyTypeSummary = computed(() => {
-      const counts = competencyList.value.reduce((summary: Record<string, number>, competency: any) => {
+      const counts = formatList.value.reduce((summary: Record<string, number>, competency: any) => {
         const type = getCompType(competency) || "ไม่ระบุ";
         summary[type] = (summary[type] || 0) + 1;
         return summary;
@@ -131,8 +151,13 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     });
 
     const levelNumbersFor = (c: any) => (c.levels || []).map((level: any) => Number(level.lvl)).filter(Boolean);
+    const levelNumbersForFormat = computed(() => isFaculty.value ? FACULTY_LEVELS : [1, 2, 3, 4, 5]);
     const hasCompleteLevels = (c: any) => {
       const levelsByNumber = new Map((c.levels || []).map((level: any) => [Number(level.lvl), level]));
+      if (methodOf(c) === "faculty") {
+        return levelsByNumber.size === FACULTY_LEVELS.length && FACULTY_LEVELS.every((levelNumber) =>
+          ((levelsByNumber.get(levelNumber) as any)?.indicators || []).length === FACULTY_BEHAVIOURS_PER_LEVEL);
+      }
       return [1, 2, 3, 4, 5].every((levelNumber) => {
         const level = levelsByNumber.get(levelNumber) as any;
         return (level?.indicators || []).length > 0;
@@ -153,13 +178,13 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       setSortBy("newest");
     };
 
-    const sorted = computed(() => competencyList.value.filter((c) => {
+    const sorted = computed(() => formatList.value.filter((c) => {
       const type = getCompType(c);
       const matchesType = typeFilter.value === "ทั้งหมด" || type === typeFilter.value;
       const matchesLevel = levelFilter.value === "ทั้งหมด" || levelNumbersFor(c).includes(Number(levelFilter.value));
       const matchesCompletion =
         completionFilter.value === "ทั้งหมด" ||
-        (completionFilter.value === "ครบ 1-5" && hasCompleteLevels(c)) ||
+        (completionFilter.value === "ครบ" && hasCompleteLevels(c)) ||
         (completionFilter.value === "ยังไม่ครบ" && hasMissingLevels(c)) ||
         (completionFilter.value === "ไม่มีระดับ" && !(c.levels || []).length);
 
@@ -184,11 +209,15 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     const [desc, setDesc] = useState("");
 
     const generateLevel = (l: string) => ({ lvl: l, description: "", items: ["", "", "", ""], weights: ["0.25", "0.25", "0.25", "0.25"] });
-    const [levels, setLevels] = useState([generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")]);
+    const generateFacultyLevel = (l: number) => ({ lvl: String(l), description: "", items: Array(FACULTY_BEHAVIOURS_PER_LEVEL).fill(""), weights: Array(FACULTY_BEHAVIOURS_PER_LEVEL).fill("") });
+    const blankLevels = () => isFaculty.value
+      ? FACULTY_LEVELS.map(generateFacultyLevel)
+      : [generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")];
+    const [levels, setLevels] = useState(blankLevels());
 
     const clearForm = () => {
       setType("CC");setCodeTail("");setName("");setDesc("");setEditId(null);
-      setLevels([generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")]);
+      setLevels(blankLevels());
       setIsDirty(false);
     };
 
@@ -200,12 +229,21 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
 
     const editComp = (c: any) => {
       const parts = c.cd.split("-");
+      setFormat(methodOf(c));
       setEditId(c.cd);
       setType(c.t || parts[0]);
       setCodeTail(parts.slice(1).join("-"));
       setName(c.n);
       setDesc(c.det);
-      if (c.levels) {
+      if (methodOf(c) === "faculty") {
+        // Always show the fixed 1/3/5 slots so missing behaviours are visible.
+        setLevels(FACULTY_LEVELS.map((levelNumber) => {
+          const level = (c.levels || []).find((l: any) => Number(l.lvl) === levelNumber);
+          const items = [...(level?.indicators || [])];
+          while (items.length < FACULTY_BEHAVIOURS_PER_LEVEL) items.push("");
+          return { lvl: String(levelNumber), description: level?.description || "", items, weights: items.map(() => "") };
+        }));
+      } else if (c.levels) {
         setLevels(c.levels.map((l: any) => ({
           lvl: String(l.lvl),
           description: l.description || "",
@@ -213,7 +251,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
           weights: Array.from({ length: Math.max(1, l.indicators.length) }, (_, index) => l.weights?.[index] == null ? "" : String(l.weights[index]))
         })));
       } else {
-        setLevels([generateLevel("1"), generateLevel("2"), generateLevel("3"), generateLevel("4"), generateLevel("5")]);
+        setLevels(blankLevels());
       }
       setIsDirty(false);
       setView("edit");
@@ -248,12 +286,13 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
         code,
         name: name.value.trim(),
         detail: desc.value.trim(),
+        assessment_method: format.value,
         levels: levels.value.map((l) => ({
           level: parseInt(l.lvl),
           description: l.description,
           indicators: l.items.map((indicator, index) => ({
             description: indicator.trim(),
-            weight: l.weights[index] === "" || l.weights[index] == null ? null : parseFloat(l.weights[index])
+            weight: isFaculty.value || l.weights[index] === "" || l.weights[index] == null ? null : parseFloat(l.weights[index])
           })).filter((indicator) => indicator.description)
         }))
       };
@@ -314,14 +353,24 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
       setIsDirty(true);
     };
 
-    const LEVEL_LABELS = ["ระดับที่ 1 (Basic Level)", "ระดับที่ 2 (Doing Level)", "ระดับที่ 3 (Developing Level)", "ระดับที่ 4 (Advanced Level)", "ระดับที่ 5 (Expert Level)"];return () =>
+    const LEVEL_LABELS = ["ระดับที่ 1 (Basic Level)", "ระดับที่ 2 (Doing Level)", "ระดับที่ 3 (Developing Level)", "ระดับที่ 4 (Advanced Level)", "ระดับที่ 5 (Expert Level)"];
+    const levelLabel = (levelNumber: number) => isFaculty.value
+      ? `ระดับที่ ${levelNumber} · ${FACULTY_RULES[levelNumber]}`
+      : LEVEL_LABELS[levelNumber - 1];
+    const switchFormat = (key: string) => {
+      if (key === format.value) return;
+      setFormat(key);
+      resetFilters();
+      setExpandedCode(null);
+      setExpandedLevel(null);
+    };return () =>
 
 
     <>
       <div class="flex ic jb mb20">
         <div>
           <div class="sec-t">{view.value === 'list' ? 'พจนานุกรมสมรรถนะ ' : view.value === 'add' ? 'เพิ่มสมรรถนะการประเมิน ' : 'แก้ไขสมรรถนะการประเมิน '}</div>
-          <div class="sec-s">{view.value === 'list' ? 'กำหนดสมรรถนะรายข้อ ' : 'กรอกข้อมูลสมรรถนะและรายละเอียดระดับพฤติกรรม'}</div>
+          <div class="sec-s">{view.value === 'list' ? 'กำหนดสมรรถนะรายข้อ แยกตามรูปแบบการประเมิน' : <>กรอกข้อมูลสมรรถนะและรายละเอียดระดับพฤติกรรม · <b>{formatInfo.value.label}</b></>}</div>
         </div>
         <div class="flex" style={{ gap: "8px" }}>
           {view.value === 'list' ?
@@ -373,12 +422,21 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
             <div class="ch flex ic jb">
               <div class="ct">รายละเอียดพฤติกรรมบ่งชี้</div>
             </div>
+            {isFaculty.value &&
+            <div class="faculty-rule-box">
+                <strong>เกณฑ์รูปแบบคณะวิศวกรรมศาสตร์</strong>
+                <ol>
+                  {[1, 2, 3, 4, 5].map((levelNumber) => <li key={levelNumber}><b>ระดับที่ {levelNumber}</b> {FACULTY_RULES[levelNumber]}{FACULTY_LEVELS.includes(levelNumber) ? ` (${FACULTY_BEHAVIOURS_PER_LEVEL} ข้อ)` : ""}</li>)}
+                </ol>
+                <span>กรอกพฤติกรรมเฉพาะระดับ 1, 3 และ 5 ระดับละ {FACULTY_BEHAVIOURS_PER_LEVEL} ข้อ ระดับ 2 และ 4 ระบบคำนวณจากการติ๊กครบ</span>
+              </div>
+            }
             <div class="cb p0">
               <table class="tbl tbl-clean tbl-add-dict">
                 <thead>
                   <tr>
                     <th style={{ width: '80px', textAlign: 'center' }}>ระดับ</th>
-                    <th style={{ width: '100px', textAlign: 'center' }}>น้ำหนัก</th>
+                    {!isFaculty.value && <th style={{ width: '100px', textAlign: 'center' }}>น้ำหนัก</th>}
                     <th>รายละเอียดพฤติกรรม</th>
                     <th style={{ width: '60px' }}></th>
                   </tr>
@@ -387,20 +445,27 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                   {levels.value.map((lv, lvIdx) =>
                 <Fragment key={lvIdx}>
                       {lv.items.map((item, itemIdx) =>
-                  <tr key={`${lvIdx}-${itemIdx}`} style={{ borderBottom: itemIdx === 3 ? '2.5px solid #e2e8f0' : '1px solid #f1f5f9' }}>
+                  <tr key={`${lvIdx}-${itemIdx}`} style={{ borderBottom: itemIdx === lv.items.length - 1 ? '2.5px solid #e2e8f0' : '1px solid #f1f5f9' }}>
                           {itemIdx === 0 &&
-                    <td rowSpan={4} style={{ verticalAlign: 'top', background: '#fcfdfe', borderRight: '1px solid #e2e8f0' }}>
+                    <td rowSpan={lv.items.length} style={{ verticalAlign: 'top', background: '#fcfdfe', borderRight: '1px solid #e2e8f0' }}>
                               <div class="flex col ic g8" style={{ marginTop: '4px' }}>
                                 <div class="muted fs10 fw7">LEVEL</div>
-                                <input class="inp ac" style={{ width: '50px' }} value={lv.lvl} onChange={(e) => updateLvlNum(lvIdx, e.target.value)} />
-                                <button class="btn-icon-r" title="ลบระดับนี้" onClick={() => removeLevelRow(lvIdx)}></button>
+                                {isFaculty.value ?
+                                <div class="faculty-level-num">{lv.lvl}</div> :
+                                <>
+                                    <input class="inp ac" style={{ width: '50px' }} value={lv.lvl} onChange={(e) => updateLvlNum(lvIdx, e.target.value)} />
+                                    <button class="btn-icon-r" title="ลบระดับนี้" onClick={() => removeLevelRow(lvIdx)}></button>
+                                  </>
+                                }
                               </div>
                             </td>
                     }
+                          {!isFaculty.value &&
                           <td style={{ verticalAlign: 'middle', textAlign: 'center' }}>
                             <div class="fw5 fs11 muted mb4">น้ำหนัก</div>
                             <input class="inp ac" style={{ width: '80px', color: 'var(--blue)', fontWeight: 800 }} type="text" value={lv.weights ? lv.weights[itemIdx] : 0.25} onChange={(e) => updateWeight(lvIdx, itemIdx, e.target.value)} />
                           </td>
+                          }
                           <td>
                             <input class="inp" placeholder={`พฤติกรรมบ่งชี้ข้อที่ ${itemIdx + 1}...`} value={item} onChange={(e) => updateIndicator(lvIdx, itemIdx, e.target.value)} />
                           </td>
@@ -420,11 +485,27 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
         </div> :
 
       <>
+          <div class="dict-format-tabs" role="tablist" aria-label="รูปแบบสมรรถนะ">
+            {FORMATS.map((item) =>
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={format.value === item.key}
+                class={`dict-format-tab ${format.value === item.key ? 'active' : ''}`}
+                onClick={() => switchFormat(item.key)}>
+                <span class="dict-format-name">{item.label}</span>
+                <span class="dict-format-count">{formatCount(item.key)}</span>
+              </button>
+            )}
+          </div>
+          <div class="dict-format-hint">{formatInfo.value.hint}</div>
+
           <div class="dict-summary-grid">
             <div class="dict-summary-card">
               <div class="dict-summary-label">สมรรถนะทั้งหมด</div>
               <div class="dict-summary-value">{totalCompetencies.value}</div>
-              <div class="dict-summary-sub">รายการในพจนานุกรมสมรรถนะ</div>
+              <div class="dict-summary-sub">{formatInfo.value.label}</div>
             </div>
             {competencyTypeSummary.value.map((type) =>
               <div class={`dict-summary-card ${type.count === 0 ? 'is-empty' : ''}`} key={type.code}>
@@ -456,7 +537,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
               <label class="dict-filter-label">มี Level</label>
               <select class="sel" value={levelFilter.value} onChange={(e) => setLevelFilter(e.target.value)}>
                 <option value="ทั้งหมด">ทุกระดับ</option>
-                {[1, 2, 3, 4, 5].map((levelNumber) =>
+                {levelNumbersForFormat.value.map((levelNumber) =>
                   <option key={levelNumber} value={String(levelNumber)}>Level {levelNumber}</option>
                 )}
               </select>
@@ -465,7 +546,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
               <label class="dict-filter-label">สถานะระดับ</label>
               <select class="sel" value={completionFilter.value} onChange={(e) => setCompletionFilter(e.target.value)}>
                 <option value="ทั้งหมด">ทั้งหมด</option>
-                <option value="ครบ 1-5">ครบ Level 1-5</option>
+                <option value="ครบ">{isFaculty.value ? `ครบ Level 1/3/5 (ระดับละ ${FACULTY_BEHAVIOURS_PER_LEVEL} ข้อ)` : 'ครบ Level 1-5'}</option>
                 <option value="ยังไม่ครบ">ยังไม่ครบ</option>
                 <option value="ไม่มีระดับ">ไม่มีข้อมูลระดับ</option>
               </select>
@@ -515,6 +596,12 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                       <div class="dict-desc">{c.det}</div>
                       <div class="dict-levels-list">
                         {[1, 2, 3, 4, 5].map((lvNum) => {
+                      if (isFaculty.value && !FACULTY_LEVELS.includes(lvNum)) {
+                        return (
+                          <div key={lvNum} class="dict-level-box">
+                            <div class="dict-row-lvl dict-row-rule"><span class="dict-lvl-label">{levelLabel(lvNum)}</span></div>
+                          </div>);
+                      }
                       const isLevelExpanded = expandedLevel.value === lvNum;
                       const lvData = c.levels?.find((l: any) => l.lvl === lvNum);
                       const indicators = lvData?.indicators || [];
@@ -526,7 +613,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                             class={`dict-row-lvl ${isLevelExpanded ? 'active' : ''}`}
                             onClick={() => setExpandedLevel(isLevelExpanded ? null : lvNum)}>
                             
-                                <span class="dict-lvl-label">{LEVEL_LABELS[lvNum - 1]}</span>
+                                <span class="dict-lvl-label">{levelLabel(lvNum)}</span>
                                 <div class="dict-dots"></div>
                                 <div class="dict-arrow" style={{ transform: isLevelExpanded ? 'rotate(90deg)' : 'none' }}>›</div>
                               </div>
@@ -534,10 +621,12 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
                           <div class="dict-indicators anim-fade-in">
                                   {indicators.map((ind: string, idx: number) =>
                             <div key={idx} class="dict-ind-row">
+                                      {!isFaculty.value &&
                                       <div class="dict-weight">
                                         <div class="fs10 muted fw4">น้ำหนัก</div>
                                         {lvData?.weights?.[idx] ?? 0.25}
                                       </div>
+                                      }
                                       <div class="dict-ind-text">
                                         {ind.startsWith("▪") ? ind : `▪ ${ind}`}
                                       </div>
@@ -556,11 +645,24 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
 
           })}
           </div>
-          {sorted.value.length === 0 && <div class="dict-empty">ยังไม่มีข้อมูลสมรรถนะในพจนานุกรม</div>}
+          {sorted.value.length === 0 && <div class="dict-empty">ยังไม่มีสมรรถนะ{formatInfo.value.label}</div>}
         </>
       }
 
       <style>{`
+        .dict-format-tabs { display: flex; gap: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .dict-format-tab { display: inline-flex; align-items: center; gap: 8px; margin-bottom: -1px; padding: 10px 16px; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; background: none; color: var(--text3); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+        .dict-format-tab:hover { color: var(--navy); background: #f8fafc; }
+        .dict-format-tab.active { border-color: var(--border); background: #fff; color: var(--navy); }
+        .dict-format-count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #eef2f7; color: var(--text3); font-size: 11px; text-align: center; }
+        .dict-format-tab.active .dict-format-count { background: var(--blue-lt); color: var(--blue); }
+        .dict-format-hint { margin-bottom: 14px; color: var(--text3); font-size: 12px; font-weight: 700; }
+        .faculty-rule-box { margin: 0 20px 16px; padding: 12px 14px; border: 1px solid #dbe5f0; border-radius: 8px; background: #f8fbff; color: var(--text2); font-size: 12px; }
+        .faculty-rule-box ol { margin: 6px 0; padding-left: 18px; line-height: 1.7; }
+        .faculty-rule-box span { color: var(--text3); font-weight: 700; }
+        .faculty-level-num { display: grid; place-items: center; width: 40px; height: 36px; border-radius: 8px; background: var(--blue-lt); color: var(--blue); font-size: 16px; font-weight: 900; }
+        .dict-row-rule { cursor: default; color: var(--text3); }
+        .dict-row-rule:hover { background: none; }
         .dict-summary-grid { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 36px) / 4); gap: 12px; margin-bottom: 16px; padding-bottom: 8px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline mandatory; scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
         .dict-summary-grid::-webkit-scrollbar { height: 6px; }
         .dict-summary-grid::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 999px; }
@@ -642,6 +744,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
           .dict-code-box { max-width: 260px; }
         }
         @media (max-width: 640px) {
+          .dict-format-tab { flex: 1; justify-content: center; padding: 10px 8px; font-size: 12px; }
           .dict-filter-panel { grid-template-columns: 1fr; }
           .dict-filter-summary { align-items: stretch; flex-direction: column; }
         }

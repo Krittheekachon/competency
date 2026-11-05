@@ -1370,6 +1370,7 @@ class DashboardController extends Controller
                 'competencies.code',
                 'competencies.name',
                 'competencies.detail',
+                'competencies.assessment_method',
                 'competency_types.code as type_code',
                 'competency_types.full_name as type_full_name'
             )
@@ -1387,6 +1388,7 @@ class DashboardController extends Controller
                     'typeName' => $competency->type_full_name,
                     'tg' => 'tag-'.strtolower((string) $competency->type_code),
                     'det' => $competency->detail ?? '',
+                    'method' => $competency->assessment_method ?? AssessmentMethodResolver::STANDARD,
                     'lv' => count($levels),
                     'grp' => '',
                     'levels' => $levels,

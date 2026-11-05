@@ -36,7 +36,7 @@ class AssessmentRoundController extends Controller
             ]);
 
             if (! empty($data['copy_from_round_id'])) {
-                $this->copyConfiguration((int) $data['copy_from_round_id'], (int) $roundId);
+                $this->copyConfiguration((int) $data['copy_from_round_id'], (int) $roundId, $method);
             }
 
             if ($data['is_active']) {
@@ -199,6 +199,18 @@ class AssessmentRoundController extends Controller
             ]);
         }
 
+        // Position competencies belong to one dictionary format; switching would mix the two.
+        $boundOtherFormat = DB::table('position_competencies')
+            ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
+            ->where('position_competencies.assessment_round_id', $round)
+            ->where('competencies.assessment_method', '!=', $method)
+            ->exists();
+        if ($boundOtherFormat) {
+            throw ValidationException::withMessages([
+                'assessment_method' => 'รอบนี้ผูกสมรรถนะ'.AssessmentMethodResolver::formatLabel((string) $current).'ไว้กับตำแหน่งแล้ว กรุณาลบสมรรถนะประจำตำแหน่งของรอบนี้ก่อนเปลี่ยนวิธีประเมิน',
+            ]);
+        }
+
         return [
             'assessment_method' => $method,
             'assessment_method_version' => AssessmentMethodResolver::CURRENT_VERSIONS[$method],
@@ -217,12 +229,15 @@ class AssessmentRoundController extends Controller
         ];
     }
 
-    private function copyConfiguration(int $sourceRoundId, int $targetRoundId): void
+    private function copyConfiguration(int $sourceRoundId, int $targetRoundId, string $method): void
     {
         $now = now();
+        // Only competencies of the new round's format can be carried across.
         $competencies = DB::table('position_competencies')
-            ->where('assessment_round_id', $sourceRoundId)
-            ->get(['position_id', 'position_title_id', 'competency_id'])
+            ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
+            ->where('position_competencies.assessment_round_id', $sourceRoundId)
+            ->where('competencies.assessment_method', $method)
+            ->get(['position_competencies.position_id', 'position_competencies.position_title_id', 'position_competencies.competency_id'])
             ->map(fn (object $row): array => [
                 'assessment_round_id' => $targetRoundId,
                 'position_id' => $row->position_id,

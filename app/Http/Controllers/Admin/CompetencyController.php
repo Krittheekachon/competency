@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Competency;
 use App\Models\CompetencyType;
+use App\Services\AssessmentMethodResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,10 @@ use Illuminate\Validation\Rule;
 
 class CompetencyController extends Controller
 {
+    private const FACULTY_LEVELS = [1, 3, 5];
+
+    private const FACULTY_BEHAVIOURS_PER_LEVEL = 3;
+
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validatedData($request);
@@ -32,8 +37,9 @@ class CompetencyController extends Controller
         DB::transaction(function () use ($competency, $data): void {
             $competency = Competency::whereKey($competency->id)->lockForUpdate()->firstOrFail();
             $sameCriteria = $this->criteriaSignature($data['levels']) === $this->criteriaSignature($competency->levels()->with(['indicators' => fn ($q) => $q->orderBy('id')])->orderBy('level')->get()->toArray());
-            if ($this->criteriaInUse($competency) && (! $sameCriteria || (int) $data['competency_type_id'] !== (int) $competency->competency_type_id)) {
-                throw ValidationException::withMessages(['levels' => 'เกณฑ์นี้ถูกใช้ในรอบการประเมินแล้ว ไม่สามารถแก้ระดับ พฤติกรรม น้ำหนัก หรือประเภทสมรรถนะได้ กรุณาสร้างสมรรถนะใหม่สำหรับเกณฑ์ใหม่']);
+            $methodChanged = $data['assessment_method'] !== $competency->assessment_method;
+            if ($this->criteriaInUse($competency) && (! $sameCriteria || $methodChanged || (int) $data['competency_type_id'] !== (int) $competency->competency_type_id)) {
+                throw ValidationException::withMessages(['levels' => 'เกณฑ์นี้ถูกใช้ในรอบการประเมินแล้ว ไม่สามารถแก้ระดับ พฤติกรรม น้ำหนัก ประเภท หรือรูปแบบสมรรถนะได้ กรุณาสร้างสมรรถนะใหม่สำหรับเกณฑ์ใหม่']);
             }
             $competency->update($this->competencyData($data));
             if (! $sameCriteria) $this->replaceLevels($competency, $data['levels']);
@@ -152,7 +158,7 @@ class CompetencyController extends Controller
 
     private function validatedData(Request $request, ?Competency $competency = null): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'competency_type_id' => ['required', 'integer', Rule::exists('competency_types', 'id')],
             'code' => [
                 'required',
@@ -172,7 +178,38 @@ class CompetencyController extends Controller
             'levels.*.indicators' => ['required', 'array', 'min:1'],
             'levels.*.indicators.*.description' => ['required', 'string'],
             'levels.*.indicators.*.weight' => ['nullable', 'numeric', 'min:0', 'max:999.99'],
+            'assessment_method' => ['nullable', 'string', Rule::in(AssessmentMethodResolver::allowed())],
         ]);
+        $data['assessment_method'] ??= $competency?->assessment_method ?? AssessmentMethodResolver::STANDARD;
+
+        if ($data['assessment_method'] === AssessmentMethodResolver::FACULTY) {
+            $this->assertFacultyLevels($data['levels']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * The faculty format has behaviour groups only at levels 1, 3 and 5, three behaviours each.
+     * Levels 2 and 4 are reached by completing the earlier groups, so they carry no behaviours.
+     */
+    private function assertFacultyLevels(array $levels): void
+    {
+        $counts = collect($levels)->mapWithKeys(fn (array $level): array => [
+            (int) $level['level'] => collect($level['indicators'] ?? [])->filter(fn ($indicator) => filled($indicator['description'] ?? null))->count(),
+        ]);
+
+        if ($counts->keys()->sort()->values()->all() !== self::FACULTY_LEVELS) {
+            throw ValidationException::withMessages(['levels' => 'รูปแบบคณะวิศวกรรมศาสตร์ต้องมีพฤติกรรมเฉพาะระดับ 1, 3 และ 5']);
+        }
+
+        foreach (self::FACULTY_LEVELS as $level) {
+            if ($counts[$level] !== self::FACULTY_BEHAVIOURS_PER_LEVEL) {
+                throw ValidationException::withMessages([
+                    'levels' => 'รูปแบบคณะวิศวกรรมศาสตร์ต้องมีพฤติกรรมระดับละ '.self::FACULTY_BEHAVIOURS_PER_LEVEL." ข้อ (ระดับ {$level} มี {$counts[$level]} ข้อ)",
+                ]);
+            }
+        }
     }
 
     private function competencyData(array $data): array
@@ -182,6 +219,7 @@ class CompetencyController extends Controller
             'code' => $data['code'],
             'name' => $data['name'],
             'detail' => $data['detail'] ?? null,
+            'assessment_method' => $data['assessment_method'],
         ];
     }
 

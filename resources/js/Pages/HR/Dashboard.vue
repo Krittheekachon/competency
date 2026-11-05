@@ -329,14 +329,20 @@ const currentPosition = computed(() => {
 const currentPositionId = computed(() => currentPosition.value?.id || null);
 
 const competencyItems = computed(() => props.competencies || []);
+// A round only accepts competencies of its own dictionary format (university or faculty).
+const selectedRoundMethod = computed(() => selectedConfigRound.value?.assessmentMethod || 'standard');
+const selectedRoundFormatLabel = computed(() => (selectedRoundMethod.value === 'faculty' ? 'รูปแบบคณะวิศวกรรมศาสตร์' : 'รูปแบบมหาวิทยาลัย'));
+const roundCompetencyItems = computed(() => competencyItems.value.filter((item) => (item.method || 'standard') === selectedRoundMethod.value));
 const competencyTypes = computed(() => {
-    return [...new Set(competencyItems.value.map((item) => item.t).filter(Boolean))];
+    return [...new Set(roundCompetencyItems.value.map((item) => item.t).filter(Boolean))];
 });
-const coreCompetencyCount = computed(() => competencyItems.value.filter((item) => item.t === 'CC').length);
+const coreCompetencyCount = computed(() => roundCompetencyItems.value.filter((item) => item.t === 'CC').length);
 const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRound.value?.[currentPositionId.value] || []));
 const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
+const mismatchedAssignedCompetencies = computed(() => assignedCompetencies.value
+    .filter((item) => (item.method || 'standard') !== selectedRoundMethod.value));
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
 const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => String(item.t || '').startsWith('FC')).length);
 const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
@@ -382,14 +388,14 @@ const fcSelectionRuleDisabled = computed(() => (
 const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
-    return competencyItems.value.filter((item) => {
+    return roundCompetencyItems.value.filter((item) => {
         const matchesType = dictionaryType.value === 'all' || item.t === dictionaryType.value;
         const haystack = `${item.cd || ''} ${item.n || ''} ${item.det || ''}`.toLowerCase();
         return matchesType && (!keyword || haystack.includes(keyword));
     });
 });
 const availableCoreCompetencies = computed(() => {
-    return competencyItems.value.filter((item) => item.t === 'CC' && !assignedCompetencyIds.value.has(item.id));
+    return roundCompetencyItems.value.filter((item) => item.t === 'CC' && !assignedCompetencyIds.value.has(item.id));
 });
 
 const catalogItems = computed(() => props.hrCatalogItems || []);
@@ -998,6 +1004,10 @@ const formatWeight = (weight) => {
                                     เพิ่ม CC ทั้งหมด
                                 </button>
                             </div>
+                            <div v-if="mismatchedAssignedCompetencies.length" class="format-mismatch-note" role="alert">
+                                รอบนี้ใช้สมรรถนะ{{ selectedRoundFormatLabel }} กรุณาลบรายการที่เป็นรูปแบบอื่นก่อนเปิดใช้รอบ:
+                                {{ mismatchedAssignedCompetencies.map((item) => item.cd).join(', ') }}
+                            </div>
                             <div class="assigned-list">
                                 <div v-if="!assignedCompetencies.length" class="assigned-empty">
                                     <div class="empty-symbol">ไม่มีข้อมูล</div>
@@ -1023,7 +1033,7 @@ const formatWeight = (weight) => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">พจนานุกรมสมรรถนะ</div>
-                                    <div class="cs">เลือกจากรายการที่ Admin กำหนดไว้</div>
+                                    <div class="cs">แสดงเฉพาะ{{ selectedRoundFormatLabel }} ตามวิธีประเมินของรอบนี้</div>
                                 </div>
                             </div>
                             <div class="dictionary-tools">
@@ -1036,8 +1046,8 @@ const formatWeight = (weight) => {
                             <div class="dictionary-list">
                                 <div v-if="!filteredCompetencies.length" class="assigned-empty dictionary-empty">
                                     <div class="empty-symbol">ไม่มีข้อมูล</div>
-                                    <div class="fw8">ยังไม่มีข้อมูลสมรรถนะ</div>
-                                    <div class="muted fs12">เมื่อ Admin เพิ่มพจนานุกรมแล้ว รายการจะแสดงที่นี่</div>
+                                    <div class="fw8">ยังไม่มีสมรรถนะ{{ selectedRoundFormatLabel }}</div>
+                                    <div class="muted fs12">เมื่อ Admin เพิ่มในพจนานุกรมหัวข้อ{{ selectedRoundFormatLabel }}แล้ว รายการจะแสดงที่นี่</div>
                                 </div>
                                 <div v-for="item in filteredCompetencies" v-else :key="item.id" class="dictionary-row">
                                     <div class="dictionary-main">
@@ -2084,6 +2094,17 @@ const formatWeight = (weight) => {
     background: #fff;
     box-shadow: var(--sh);
     overflow: hidden;
+}
+
+.format-mismatch-note {
+    margin: 0 16px 10px;
+    padding: 10px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .position-panel-head {

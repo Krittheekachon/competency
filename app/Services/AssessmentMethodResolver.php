@@ -28,6 +28,15 @@ class AssessmentMethodResolver
         };
     }
 
+    /** Name of the competency dictionary format that belongs to a method. */
+    public static function formatLabel(string $method): string
+    {
+        return match ($method) {
+            self::FACULTY => 'รูปแบบคณะวิศวกรรมศาสตร์',
+            default => 'รูปแบบมหาวิทยาลัย',
+        };
+    }
+
     public function forRoundId(int $roundId): array
     {
         $round = DB::table('assessment_rounds')
@@ -60,6 +69,22 @@ class AssessmentMethodResolver
                 'version' => self::CURRENT_VERSIONS[self::STANDARD],
                 'label' => self::label(self::STANDARD),
             ];
+    }
+
+    /**
+     * Codes of the given competencies whose dictionary format differs from the round's method.
+     *
+     * @param  iterable<int>  $competencyIds
+     * @return list<string>
+     */
+    public function mismatchedCompetencyCodes(int $roundId, iterable $competencyIds): array
+    {
+        return DB::table('competencies')
+            ->whereIn('id', collect($competencyIds)->map(fn ($id): int => (int) $id)->all())
+            ->where('assessment_method', '!=', $this->forRoundId($roundId)['method'])
+            ->orderBy('code')
+            ->pluck('code')
+            ->all();
     }
 
     public function isFaculty(?int $roundId): bool

@@ -13,6 +13,7 @@ class Competency extends Model
         'code',
         'name',
         'detail',
+        'assessment_method',
     ];
 
     public function type(): BelongsTo

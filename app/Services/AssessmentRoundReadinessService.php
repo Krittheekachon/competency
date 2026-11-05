@@ -8,6 +8,8 @@ use Illuminate\Validation\ValidationException;
 
 class AssessmentRoundReadinessService
 {
+    public function __construct(private AssessmentMethodResolver $assessmentMethods) {}
+
     public function check(int $roundId): array
     {
         $round = DB::table('assessment_rounds')->where('id', $roundId)->first([
@@ -50,6 +52,19 @@ class AssessmentRoundReadinessService
                     'message' => 'วันเริ่มประเมิน วันสิ้นสุดการประเมิน และวันสิ้นสุดการตรวจของหัวหน้าต้องเรียงตามลำดับ',
                 ]);
             }
+        }
+
+        $mismatched = $this->assessmentMethods->mismatchedCompetencyCodes(
+            $roundId,
+            DB::table('position_competencies')->where('assessment_round_id', $roundId)->distinct()->pluck('competency_id'),
+        );
+        if ($mismatched !== []) {
+            $format = AssessmentMethodResolver::formatLabel($this->assessmentMethods->forRoundId($roundId)['method']);
+            $issues->push([
+                'key' => 'competency_format',
+                'count' => count($mismatched),
+                'message' => "รอบนี้ใช้สมรรถนะ{$format} แต่ยังผูกสมรรถนะรูปแบบอื่นไว้กับตำแหน่ง: ".implode(', ', $mismatched),
+            ]);
         }
 
         return [

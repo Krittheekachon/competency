@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AssessmentMethodResolver;
 use App\Services\CompetencyAssessmentSyncService;
 use App\Services\PositionTitleResolver;
 use Illuminate\Http\RedirectResponse;
@@ -15,6 +16,7 @@ class PositionCompetencyController extends Controller
     public function __construct(
         private CompetencyAssessmentSyncService $competencyAssessmentSync,
         private PositionTitleResolver $positionTitles,
+        private AssessmentMethodResolver $assessmentMethods,
     ) {}
 
     public function store(Request $request): RedirectResponse
@@ -35,6 +37,16 @@ class PositionCompetencyController extends Controller
 
         if ($competencyIds->isEmpty()) {
             return back()->withErrors(['competency_id' => 'กรุณาเลือกสมรรถนะอย่างน้อย 1 รายการ']);
+        }
+
+        $roundId = (int) $data['assessment_round_id'];
+        $mismatched = $this->assessmentMethods->mismatchedCompetencyCodes($roundId, $competencyIds);
+        if ($mismatched !== []) {
+            $format = AssessmentMethodResolver::formatLabel($this->assessmentMethods->forRoundId($roundId)['method']);
+
+            return back()->withErrors([
+                'competency_id' => "รอบนี้ใช้สมรรถนะ{$format}เท่านั้น ผูกไม่ได้: ".implode(', ', $mismatched),
+            ]);
         }
 
         $now = now();
@@ -155,9 +167,13 @@ class PositionCompetencyController extends Controller
         ]);
 
         $now = now();
+        // Only competencies of the target round's format can be carried across.
+        $targetMethod = $this->assessmentMethods->forRoundId((int) $data['target_round_id'])['method'];
         $sourceRows = DB::table('position_competencies')
-            ->where('assessment_round_id', $data['source_round_id'])
-            ->get(['position_id', 'position_title_id', 'competency_id']);
+            ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
+            ->where('position_competencies.assessment_round_id', $data['source_round_id'])
+            ->where('competencies.assessment_method', $targetMethod)
+            ->get(['position_competencies.position_id', 'position_competencies.position_title_id', 'position_competencies.competency_id']);
         $sourceRules = DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $data['source_round_id'])
             ->get(['position_id', 'position_title_id', 'required_fc_count']);
