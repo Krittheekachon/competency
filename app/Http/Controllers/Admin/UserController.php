@@ -165,9 +165,9 @@ class UserController extends Controller
             ],
             'ph' => ['nullable', 'regex:/^0\d{2}-\d{3}-\d{4}$/'],
             'w' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $request->input('r') !== 'dean'), 'nullable', 'string', 'max:120'],
-            'd' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->isManagementExecutive($request->input('r'), $request->input('w'))), 'nullable', 'string', 'max:255'],
+            'd' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $this->normalizeRoleKey((string) $request->input('r')) !== 'dean' && ! $this->isManagementExecutive($request->input('r'), $request->input('w'))), 'nullable', 'string', 'max:255'],
             'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id'],
-            'p' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $this->isManagementExecutive($request->input('r'), $request->input('w')) || ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
+            'p' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => $this->normalizeRoleKey((string) $request->input('r')) !== 'dean' && ($this->isManagementExecutive($request->input('r'), $request->input('w')) || ! $this->allowsMissingPositionFields($request))), 'nullable', 'string', 'max:120'],
             'l' => [Rule::excludeIf($preserveExistingStructure), Rule::requiredIf(fn () => ! $this->allowsMissingPositionFields($request)), 'nullable', 'string', 'max:120'],
             'r' => ['required', Rule::in($roleKeys)],
             'preserve_existing_structure' => ['sometimes', 'boolean'],
@@ -227,6 +227,7 @@ class UserController extends Controller
     private function allowsMissingPositionFields(Request $request): bool
     {
         $roleKey = $this->normalizeRoleKey((string) $request->input('r', ''));
+        if ($roleKey === 'dean') return true;
         if ($this->isManagementExecutive($roleKey, $request->input('w'))) return true;
 
         if (! in_array($roleKey, ['division_head', 'dept_head'], true)) {
@@ -332,6 +333,17 @@ class UserController extends Controller
             ]);
         }
 
+        if ($roleKey === 'dean' && ! filled($data['w'] ?? null)) {
+            $data['w'] = null;
+            $data['d'] = null;
+            $data['p'] = null;
+            $data['l'] = null;
+            $data['_position_id'] = null;
+            $data['_position_title_id'] = null;
+            $data['_level_id'] = null;
+            return $data;
+        }
+
         $worklineId = DB::table('worklines')->where('name', $data['w'])->value('id');
 
         if (! $worklineId) {
@@ -340,23 +352,14 @@ class UserController extends Controller
             ]);
         }
 
-        if ($roleKey === 'dean' && ! filled($data['w'] ?? null)) {
-            $data['w'] = null;
-            $data['d'] = null;
-            $data['p'] = null;
-            $data['_position_id'] = null;
-            $data['_position_title_id'] = null;
-            $data['_level_id'] = null;
-            return $data;
-        }
-
-        if ($roleKey === 'dean' && ! $this->isManagementExecutive($roleKey, $data['w'])) {
+        if ($roleKey === 'dean' && (! $this->isManagementExecutive($roleKey, $data['w']) || blank($data['p'] ?? null))) {
             if (filled($data['w'] ?? null) && ! DB::table('worklines')->where('name', $data['w'])->exists()) {
                 throw ValidationException::withMessages(['w' => 'กรุณาเลือกสายงานที่กำหนดไว้ในระบบ']);
             }
             $data['w'] = filled($data['w'] ?? null) ? $data['w'] : null;
             $data['d'] = null;
             $data['p'] = null;
+            $data['l'] = null;
             $data['_position_id'] = null;
             $data['_position_title_id'] = null;
             $data['_level_id'] = null;
