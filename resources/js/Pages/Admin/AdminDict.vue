@@ -25,8 +25,8 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
     const [completionFilter, setCompletionFilter] = useState("ทั้งหมด");
     // The dictionary keeps two formats: university (levels 1-5) and faculty (behaviour groups at levels 1/3/5).
     const FORMATS = [
-      { key: "standard", label: "รูปแบบมหาวิทยาลัย", hint: "พฤติกรรมบ่งชี้ระดับ 1–5 ใช้กับรอบที่เลือกวิธีประเมินเดิม" },
-      { key: "faculty", label: "รูปแบบคณะวิศวกรรมศาสตร์", hint: "พฤติกรรมระดับ 1, 3 และ 5 ระดับละ 3 ข้อ ใช้กับรอบที่เลือกวิธีคณะวิศวกรรมศาสตร์" },
+      { key: "standard", label: "รูปแบบตามกำหนดมหาวิทยาลัย", hint: "พฤติกรรมบ่งชี้ระดับ 1–5 ใช้กับรอบที่เลือกรูปแบบตามกำหนดมหาวิทยาลัย" },
+      { key: "faculty", label: "รูปแบบตามกำหนดคณะ", hint: "พฤติกรรมระดับ 1, 3 และ 5 ระดับละ 3 ข้อ ใช้กับรอบที่เลือกรูปแบบตามกำหนดคณะ" },
     ];
     const FACULTY_LEVELS = [1, 3, 5];
     const FACULTY_BEHAVIOURS_PER_LEVEL = 3;
@@ -431,7 +431,7 @@ interface AdminDictProps {competencies: any[];setCompetencies: any;competencyTyp
             </div>
             {isFaculty.value &&
             <div class="faculty-rule-box">
-                <strong>เกณฑ์รูปแบบคณะวิศวกรรมศาสตร์</strong>
+                <strong>เกณฑ์รูปแบบตามกำหนดคณะ</strong>
                 <ol>
                   {[1, 2, 3, 4, 5].map((levelNumber) => <li key={levelNumber}><b>ระดับที่ {levelNumber}</b> {FACULTY_RULES[levelNumber]}{FACULTY_LEVELS.includes(levelNumber) ? ` (${FACULTY_BEHAVIOURS_PER_LEVEL} ข้อ)` : ""}</li>)}
                 </ol>

@@ -123,7 +123,7 @@ class OrganizationWorklineCatalogTest extends TestCase
         $management = DB::table('worklines')->insertGetId(['name' => 'สายบริหาร']);
         $support = DB::table('worklines')->insertGetId(['name' => 'สายสนับสนุน']);
         $academic = DB::table('worklines')->insertGetId(['name' => 'สายวิชาการ']);
-        $data = ['name' => 'คณะกรรมการทดสอบ', 'workline_id' => $management, 'placement_scope' => 'workline'];
+        $data = ['name' => 'คณบดี', 'workline_id' => $management, 'placement_scope' => 'workline'];
         $this->post(route('admin.structure.position-titles.store'), $data)->assertSessionHasNoErrors();
         $this->assertDatabaseHas('position_titles', ['name' => $data['name'], 'workline_id' => $management]);
         $this->assertDatabaseCount('job_families', 0);
@@ -146,7 +146,7 @@ class OrganizationWorklineCatalogTest extends TestCase
         $this->actingAs($this->admin());
         $wid = DB::table('worklines')->insertGetId(['name' => 'สายบริหาร']);
         $support = DB::table('worklines')->insertGetId(['name' => 'สายสนับสนุน']);
-        $this->post(route('admin.structure.position-titles.store'), ['workline_id' => $wid, 'name' => 'กรรมการเดิม']);
+        $this->post(route('admin.structure.position-titles.store'), ['workline_id' => $wid, 'name' => 'คณบดี']);
         $id = DB::table('position_titles')->value('id');
         $data = ['position_title_id' => $id, 'workline_id' => $wid, 'name' => 'ห้ามเปลี่ยนชื่อ'];
         $this->postJson(route('admin.structure.workline-positions.store'), ['workline_id' => $wid, 'name' => 'สร้างเองไม่ได้'])
@@ -155,10 +155,10 @@ class OrganizationWorklineCatalogTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('position_title_id');
         $this->post(route('admin.structure.workline-positions.store'), $data)->assertSessionHasNoErrors();
         $this->assertDatabaseCount('position_titles', 1);
-        $this->assertDatabaseHas('position_titles', ['id' => $id, 'name' => 'กรรมการเดิม', 'is_workline_position' => true]);
+        $this->assertDatabaseHas('position_titles', ['id' => $id, 'name' => 'คณบดี', 'is_workline_position' => true]);
         $this->postJson(route('admin.structure.workline-positions.store'), $data)->assertUnprocessable();
         $this->delete(route('admin.structure.workline-positions.destroy'), $data)->assertSessionHasNoErrors();
-        $this->assertDatabaseHas('position_titles', ['id' => $id, 'name' => 'กรรมการเดิม', 'is_workline_position' => false]);
+        $this->assertDatabaseHas('position_titles', ['id' => $id, 'name' => 'คณบดี', 'is_workline_position' => false]);
         $this->post(route('admin.structure.workline-positions.store'), $data)->assertSessionHasNoErrors();
         User::factory()->create(['position_title_id' => $id, 'position_id' => null]);
         $this->deleteJson(route('admin.structure.workline-positions.destroy'), $data)->assertUnprocessable();
@@ -166,6 +166,31 @@ class OrganizationWorklineCatalogTest extends TestCase
         $this->actingAs(User::factory()->create());
         $this->postJson(route('admin.structure.workline-positions.store'), $data)->assertForbidden();
         $this->deleteJson(route('admin.structure.workline-positions.destroy'), $data)->assertForbidden();
+    }
+
+    public function test_workline_positions_reject_other_titles_and_directors_with_department_placements(): void
+    {
+        $this->actingAs($this->admin());
+        $wid = DB::table('worklines')->insertGetId(['name' => 'สายบริหาร']);
+        foreach (['คณะกรรมการ', 'รองคณบดี', 'หัวหน้างาน'] as $name) {
+            $this->postJson(route('admin.structure.position-titles.store'), [
+                'workline_id' => $wid, 'name' => $name, 'placement_scope' => 'workline',
+            ])->assertUnprocessable()->assertJsonValidationErrors('name');
+            $this->post(route('admin.structure.position-titles.store'), ['workline_id' => $wid, 'name' => $name])->assertSessionHasNoErrors();
+            $id = DB::table('position_titles')->where('name', $name)->value('id');
+            $this->postJson(route('admin.structure.workline-positions.store'), [
+                'workline_id' => $wid, 'position_title_id' => $id,
+            ])->assertUnprocessable()->assertJsonValidationErrors('position_title_id');
+            $this->assertDatabaseHas('position_titles', ['id' => $id, 'is_workline_position' => false]);
+        }
+        $this->post(route('admin.structure.position-titles.store'), ['workline_id' => $wid, 'name' => 'ผู้อำนวยการ'])->assertSessionHasNoErrors();
+        $id = DB::table('position_titles')->where('name', 'ผู้อำนวยการ')->value('id');
+        $family = DB::table('job_families')->insertGetId(['workline_id' => $wid, 'name' => 'หน่วยงาน']);
+        DB::table('positions')->insert(['job_family_id' => $family, 'position_title_id' => $id, 'name' => 'ผู้อำนวยการ']);
+        $this->postJson(route('admin.structure.workline-positions.store'), [
+            'workline_id' => $wid, 'position_title_id' => $id,
+        ])->assertUnprocessable()->assertJsonValidationErrors('position_title_id');
+        $this->assertDatabaseHas('position_titles', ['id' => $id, 'is_workline_position' => false]);
     }
 
     public function test_department_selection_uses_canonical_name_and_removing_unused_placement_keeps_title(): void

@@ -229,7 +229,7 @@ const formatDate = (value?: string) => {
 <template>
   <section class="employee-page">
     <header class="page-head">
-      <div><h1>อัปเดตความก้าวหน้า</h1><p>บันทึกสิ่งที่ทำในแต่ละหัวข้อ แล้วส่งเมื่อเสร็จครบทั้งสมรรถนะ</p></div>
+      <div><h1>รายงานความก้าวหน้า</h1><p>บันทึกสิ่งที่ทำในแต่ละหัวข้อ แล้วส่งเมื่อเสร็จครบทั้งสมรรถนะ</p></div>
     </header>
 
     <div v-if="firstError" class="page-error">{{ firstError }}</div>

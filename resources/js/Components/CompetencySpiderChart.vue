@@ -16,10 +16,10 @@ const props = withDefaults(defineProps<{
   maxLevel: 5,
 });
 
-const size = 520;
+const size = 640;
 const center = size / 2;
-const radius = 154;
-const labelRadius = 190;
+const radius = 175;
+const labelRadius = 215;
 const chartItems = computed(() => props.items.map((item, index) => {
   const angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / props.items.length);
   return { ...item, angle };
@@ -40,6 +40,15 @@ const labelPosition = (angle: number) => ({
   y: center + Math.sin(angle) * labelRadius,
   anchor: Math.cos(angle) > 0.25 ? 'start' : (Math.cos(angle) < -0.25 ? 'end' : 'middle'),
 });
+const nameLines = (item: SpiderItem) => {
+  const name = item.name || item.code || '-';
+  const segments = [...new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(name)].map((part) => part.segment);
+  const lines: string[] = [];
+  for (let index = 0; index < segments.length; index += 14) {
+    lines.push(segments.slice(index, index + 14).join(''));
+  }
+  return lines;
+};
 </script>
 
 <template>
@@ -49,12 +58,13 @@ const labelPosition = (angle: number) => ({
         <h2 id="competency-spider-title">ภาพรวมสมรรถนะ</h2>
         <p>แสดงผลที่อนุมัติครบทุกประเภท CC, MC และ FC</p>
       </div>
-      <div class="legend" aria-label="คำอธิบายกราฟ">
+      <div class="legend" aria-label="คำอธิบายสีกราฟ">
         <span><i class="actual"></i>คะแนนจริง</span>
         <span><i class="expected"></i>ระดับคาดหวัง</span>
       </div>
     </header>
 
+    <div class="spider-content">
     <div v-if="chartItems.length >= 3" class="chart-wrap">
       <svg :viewBox="`0 0 ${size} ${size}`" role="img" aria-label="กราฟใยแมงมุมเปรียบเทียบคะแนนจริงและระดับคาดหวัง">
         <g class="grid">
@@ -87,15 +97,17 @@ const labelPosition = (angle: number) => ({
             :y="labelPosition(item.angle).y"
             :text-anchor="labelPosition(item.angle).anchor"
           >
-            <tspan class="code">{{ item.code || '-' }}</tspan>
-            <tspan :x="labelPosition(item.angle).x" dy="15" :text-anchor="labelPosition(item.angle).anchor">
-              {{ item.type || '-' }} · {{ Number(item.actual || 0).toFixed(0) }}/{{ Number(item.expected || 0).toFixed(0) }}
+            <title>{{ item.name || item.code || '-' }}</title>
+            <tspan v-if="item.code" class="code">{{ item.code }}</tspan>
+            <tspan v-for="(line, lineIndex) in nameLines(item)" :key="lineIndex" class="axis-name" :x="labelPosition(item.angle).x" :dy="lineIndex === 0 && !item.code ? 0 : 16" :text-anchor="labelPosition(item.angle).anchor">
+              {{ line }}
             </tspan>
           </text>
         </g>
       </svg>
     </div>
     <div v-else class="chart-empty">กราฟจะแสดงเมื่อมีผลอนุมัติอย่างน้อย 3 สมรรถนะ</div>
+    </div>
   </section>
 </template>
 
@@ -104,23 +116,24 @@ const labelPosition = (angle: number) => ({
 .spider-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 16px 18px; }
 h2 { margin: 0; color: var(--text); font-size: 16px; font-weight: 900; }
 p { margin: 4px 0 0; color: var(--text3); font-size: 12px; }
-.legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--text3); font-size: 11px; font-weight: 800; }
+.spider-content { min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--color-text-secondary, #555d66); font-size: 13px; font-weight: 600; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 20px; height: 3px; border-radius: 999px; }
 .legend .actual { background: #0f766e; }
 .legend .expected { border-top: 2px dashed #d97706; }
-.chart-wrap { width: min(100%, 680px); margin: 0 auto; padding: 14px 18px 18px; }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-wrap { min-width: 0; width: 100%; box-sizing: border-box; margin: 0; padding: 14px 8px 18px; overflow-x: auto; }
+svg { display: block; width: 100%; min-width: 560px; height: auto; overflow: visible; }
 .grid polygon, .grid line { fill: none; stroke: #d9e2e8; stroke-width: 1; }
 .expected-shape { fill: rgba(217, 119, 6, .08); stroke: #d97706; stroke-dasharray: 6 5; stroke-width: 2; }
 .actual-shape { fill: rgba(15, 118, 110, .18); stroke: #0f766e; stroke-width: 3; }
 .actual-points circle { fill: #fff; stroke: #0f766e; stroke-width: 3; }
 .labels text { fill: var(--text3); font-size: 10px; font-weight: 700; }
 .labels .code { fill: var(--text); font-size: 11px; font-weight: 900; }
+.labels .axis-name { fill: var(--text); font-size: 13px; font-weight: 600; }
 .chart-empty { padding: 34px 18px; color: var(--text3); font-size: 12px; font-weight: 700; text-align: center; }
 @media (max-width: 900px) {
   .spider-card > header { display: grid; }
   .chart-wrap { overflow-x: auto; padding-inline: 8px; }
-  svg { min-width: 520px; }
 }
 </style>

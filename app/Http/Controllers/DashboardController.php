@@ -179,6 +179,7 @@ class DashboardController extends Controller
             ? $this->dashboardUsersForReviewer($currentUser, ['assessment'])
             : null;
         $selfServicePayload = [
+            'idpFillMode' => app(\App\Services\IdpFillMode::class)->current(),
             'activeCycleName' => $activeCycleName,
             'selfAssessmentWindow' => $selfAssessmentWindow,
             'currentUser' => $this->currentUserPayload($currentUser),
@@ -337,6 +338,7 @@ class DashboardController extends Controller
                 'currentUserApprovedIdpActivities' => $approvedIdpActivities,
             ]),
             'dean' => Inertia::render('Executive/Dashboard', [
+                'idpFillMode' => app(\App\Services\IdpFillMode::class)->current(),
                 'facultyAnalytics' => $facultyAnalytics,
                 'currentUser' => $this->currentUserPayload($currentUser),
                 'fcTopicApprovalModule' => $fcTopicApprovalModule,
@@ -434,6 +436,10 @@ class DashboardController extends Controller
                 'assessment_rounds.self_assess_start',
                 'assessment_rounds.self_assess_end',
                 'assessment_rounds.supervisor_assess_end',
+                'assessment_rounds.approval_start',
+                'assessment_rounds.approval_end',
+                'assessment_rounds.progress_report_start',
+                'assessment_rounds.progress_report_end',
                 'assessment_rounds.is_active',
                 DB::raw('COALESCE(submitted_users.submitted_user_count, 0) as submitted_user_count'),
             ])
@@ -451,6 +457,10 @@ class DashboardController extends Controller
                 'selfAssessStart' => $round->self_assess_start,
                 'selfAssessEnd' => $round->self_assess_end,
                 'supervisorAssessEnd' => $round->supervisor_assess_end,
+                'approvalStart' => $round->approval_start,
+                'approvalEnd' => $round->approval_end,
+                'progressReportStart' => $round->progress_report_start,
+                'progressReportEnd' => $round->progress_report_end,
                 'isActive' => (bool) $round->is_active,
                 'submittedUserCount' => (int) $round->submitted_user_count,
                 'assessmentMethodLocked' => (int) $round->submitted_user_count > 0,
@@ -2537,6 +2547,8 @@ class DashboardController extends Controller
         return $this->currentUserIdpCache[$cacheKey] = [
             'id' => (int) $idp->id,
             'assessmentRoundId' => $idp->assessment_round_id ? (int) $idp->assessment_round_id : null,
+            'fillMode' => app(\App\Services\IdpFillMode::class)->fromActivities(collect($payloadItems)->flatMap(fn (array $item) => $item['activities'] ?? []))
+                ?? app(\App\Services\IdpFillMode::class)->current(),
             'year' => (int) $idp->year,
             'status' => $idp->status,
             'submittedAt' => $idp->submitted_at,

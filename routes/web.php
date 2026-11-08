@@ -61,6 +61,10 @@ if (app()->environment('local') && config('app.mock_sso_enabled')) {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/idp-chains', fn () => \Inertia\Inertia::render('Admin/Dashboard', [
+            'prototypePage' => 'admin-idp-chains',
+            'pageTitle' => 'ลำดับการประเมิน & IDP',
+        ]))->name('admin.idp-chains');
         Route::put('/admin/organization-chart/people', [\App\Http\Controllers\Admin\OrganizationChartController::class, 'update'])->name('admin.organization-chart.people.update');
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
@@ -108,6 +112,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('/admin/structure/learning-methods', [AdminStructureController::class, 'storeLearningMethod'])->name('admin.structure.learning-methods.store');
         Route::put('/admin/structure/learning-methods', [AdminStructureController::class, 'updateLearningMethod'])->name('admin.structure.learning-methods.update');
         Route::delete('/admin/structure/learning-methods', [AdminStructureController::class, 'destroyLearningMethod'])->name('admin.structure.learning-methods.destroy');
+        Route::put('/admin/idp-fill-mode', [\App\Http\Controllers\Admin\IdpFillModeController::class, 'update'])->name('admin.idp-fill-mode.update');
         Route::post('/admin/idp-learning-methods', [AdminIdpLearningMethodController::class, 'store'])->name('admin.idp-learning-methods.store');
         Route::put('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'update'])->name('admin.idp-learning-methods.update');
         Route::delete('/admin/idp-learning-methods/{method}', [AdminIdpLearningMethodController::class, 'destroy'])->name('admin.idp-learning-methods.destroy');

@@ -1,4 +1,4 @@
-﻿<script lang="tsx">
+<script lang="tsx">
 import { defineComponent, ref, watch, watchEffect, type PropType } from "vue";
 import OrganizationChart from "./OrganizationChart.vue";
 import { router } from "@inertiajs/vue3";
@@ -345,7 +345,8 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
     const catalogWorklines = () => (__props as any).organizationWorklines || [];
     const worklinePositions = (name: string) => {
       const workline = catalogWorklines().find((item: any) => item.name === name);
-      return positionTitles.value.filter((item: any) => workline && Number(item.worklineId) === Number(workline.id) && item.isWorklinePosition);
+      return positionTitles.value.filter((item: any) => workline && Number(item.worklineId) === Number(workline.id) && item.isWorklinePosition
+        && Number(item.placementCount) === 0);
     };
     const catalogOptionsForAdd = () => {
       const name = addItemData.value.category === "support-unit-position" ? supportWorklineName() : addItemData.value.worklineName;
@@ -691,8 +692,12 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
       setEditingId(null);
     };
 
-    const deleteItem = () => {
+    const deleteItem = (confirmed = false) => {
       const { type, oldName, parent, workName, worklineName, unitName } = editingItem.value;
+      if (!confirmed && activeTab.value === "workline") {
+        const count = type === "custom-dept" ? (groupMapForWorkline(parent)[oldName] || []).length : null;
+        if (!window.confirm(`ยืนยันลบ “${oldName}”?${count !== null ? `\nมีตำแหน่งภายใต้รายการนี้ ${count} ตำแหน่ง` : ""}\nระบบจะตรวจสอบข้อมูลอ้างอิงก่อนลบ และไม่สามารถย้อนกลับได้`)) return;
+      }
 
       switch (type) {
         case "academic-dept":
@@ -1110,7 +1115,40 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
         }
         clearAddNameAndFocus();
       }
-    };return () =>
+    };
+    const editIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg>;
+    const collapsedOrgCards = ref<Record<string, boolean>>({});
+    const orgCardKey = (workline: string, name: string) => JSON.stringify([workline, name]);
+    const collapseArrow = (workline: string, name: string) => <button class="org-collapse-toggle" type="button" aria-label={`${collapsedOrgCards.value[orgCardKey(workline, name)] ? 'ขยาย' : 'พับ'} ${name}`} aria-expanded={!collapsedOrgCards.value[orgCardKey(workline, name)]} onClick={() => {
+      const key = orgCardKey(workline, name);
+      collapsedOrgCards.value = { ...collapsedOrgCards.value, [key]: !collapsedOrgCards.value[key] };
+    }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 10 5 5 5-5" /></svg></button>;
+    const openDepartmentAdd = (workline: string) => {
+      setAddItemData({ category: "dept", type: "", name: "", worklineName: workline, parent: "", grandparent: "" });
+      setShowAddModal(true);
+    };
+    const openPositionAdd = (workline: string, department: string, positions: string[]) => {
+      setAddItemData({ category: "pos", type: "", name: "", worklineName: workline, parent: department, grandparent: "", existingPositions: [...positions], positionTitleId: "" });
+      setShowAddModal(true);
+    };
+    const deleteMenu = (name: string, count: number, type: string, extras?: any) => <details class="org-action-menu" onKeydown={(event: KeyboardEvent) => {
+      if (event.key === "Escape") { const menu = event.currentTarget as HTMLDetailsElement; menu.open = false; menu.querySelector("summary")?.focus(); }
+    }}>
+      <summary aria-label={`เมนูเพิ่มเติม ${name}`} title="เมนูเพิ่มเติม">⋯</summary>
+      <div class="org-action-popover"><button class="org-menu-edit" type="button" onClick={(event: MouseEvent) => {
+        const menu = (event.currentTarget as HTMLElement).closest('details');
+        if (menu) menu.open = false;
+        startEdit(type, name, extras);
+      }}>{editIcon()} แก้ไข</button><button type="button" onClick={(event: MouseEvent) => {
+        const menu = (event.currentTarget as HTMLElement).closest("details");
+        if (menu) menu.open = false;
+        if (!window.confirm(`ยืนยันลบ “${name}”?\nมีตำแหน่งภายใต้รายการนี้ ${count} ตำแหน่ง\nระบบเดิมจะไม่อนุญาตให้ลบหากยังมีตำแหน่งหรือข้อมูลอ้างอิง กรุณานำข้อมูลเหล่านั้นออกก่อน\nเมื่อลบสำเร็จจะไม่สามารถย้อนกลับได้`)) return;
+        startEdit(type, name, extras);
+        deleteItem(true);
+        setEditingId(null);
+      }}>{trashIcon()} ลบ</button></div>
+    </details>;
+    return () =>
 
 
     <>
@@ -1143,11 +1181,18 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 	                const groupMap = groupMapForWorkline(wl);
 	                const groupNames = Object.keys(groupMap);
                   const isSupport = normalizeWorklineName(wl) === "สนับสนุน";
+                  const foldNames = isSupport ? Object.keys(supportOrg) : groupNames;
+                  const allCollapsed = foldNames.length > 0 && foldNames.every(name => collapsedOrgCards.value[orgCardKey(wl, name)]);
 	                return (
                   <section key={wl} class="structure-section workline-section">
                       <div class="structure-section-head">
                         <div class="structure-section-title"><span class={`workline-mark ${isSupport ? "support" : "academic"}`}></span><div><strong>{wl}</strong><small>{isSupport ? `${Object.keys(supportOrg).length} ฝ่าย` : `${groupNames.length} ภาควิชา/หน่วยงาน`}</small></div></div>
                         <div class="flex g8">
+                          <button class="btn btn-s btn-sm" type="button" disabled={!foldNames.length} onClick={() => {
+                            const next = { ...collapsedOrgCards.value };
+                            foldNames.forEach(name => { next[orgCardKey(wl, name)] = !allCollapsed; });
+                            collapsedOrgCards.value = next;
+                          }}>{allCollapsed ? 'ขยายทั้งหมด' : 'พับทั้งหมด'}</button>
 	                          {!isSupport && <button
                           class="btn btn-s btn-sm"
                           onClick={() => {
@@ -1170,59 +1215,62 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
 
                       {normalizeWorklineName(wl) === "บริหาร" && <section class="management-workline-positions">
                         <div class="flex justify-between items-center g8">
-                          <div><strong>ตำแหน่งระดับสายงาน</strong><p class="muted fs12">ไม่ผูกกับภาควิชา/หน่วยงาน เช่น คณบดี หรือคณะกรรมการ</p></div>
-                          <button class="btn btn-s btn-sm" type="button" onClick={() => {
+                          <div><strong>ตำแหน่งระดับสายงาน</strong><p class="muted fs12">ตำแหน่งที่ไม่สังกัดภาควิชา/หน่วยงาน สามารถแก้ไขชื่อให้เหมาะกับองค์กรได้</p></div>
+                          <button class="compact-add" type="button" onClick={() => {
                             const workline = catalogWorklines().find((item: any) => item.name === wl);
-                            setAddItemData({category: "workline-position", name: "", worklineName: wl, worklineId: String(workline?.id || ""), positionTypeName: ""});
+                            setAddItemData({ category: "workline-position", name: "", worklineName: wl, worklineId: String(workline?.id || ""), positionTypeName: "" });
                             setShowAddModal(true);
                           }}>+ เพิ่มตำแหน่งระดับสายงาน</button>
                         </div>
-                        <div class="flex g8 flex-wrap">{worklinePositions(wl).map((item: any) => <span key={item.id} class="support-position-chip organization-position"><span>{item.name}</span><button class="position-trash" type="button" onClick={() => removeWorklinePosition(item)} aria-label={`นำตำแหน่ง ${item.name} ออก`} title="นำตำแหน่งออกจากสายงาน">{trashIcon()}</button></span>)}</div>
+                        <div class="flex g8 flex-wrap">{worklinePositions(wl).map((item: any) => <span key={item.id} class="support-position-chip organization-position pos-chip" tabIndex={0}><span>{item.name}</span><span class="chip-actions"><button type="button" onClick={() => editCatalogPosition(item)} aria-label={`แก้ไขตำแหน่ง ${item.name}`} title="แก้ไขตำแหน่ง">{editIcon()}</button><button type="button" onClick={() => removeWorklinePosition(item)} aria-label={`นำตำแหน่ง ${item.name} ออก`} title="นำตำแหน่งออกจากระดับสายงาน">{trashIcon()}</button></span></span>)}</div>
                         {!worklinePositions(wl).length && <p class="muted fs12">ยังไม่มีตำแหน่งระดับสายงาน</p>}
                       </section>}
 	                      {isSupport ? <>
                         <div class="support-columns">
 	                          {Object.entries(supportOrg).map(([division, works]: any) => <div key={division} class="support-column">
-	                            <div class="support-column-head"><div class="structure-name"><span class="structure-type-tag">ฝ่าย</span><div class="structure-label"><strong>{division}</strong><small>{(works || []).length} งาน</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`work:${division}`)}>+ เพิ่มงาน</button><button class="btn-link" onClick={() => startEdit("support-dept", division)} title="แก้ไขฝ่าย" aria-label={`แก้ไขฝ่าย ${division}`}>✎</button></div></div>
-	                            {activeInlineAdd.value === `work:${division}` && <div class="inline-add-composer"><input class="inp" value={newSupportWorkNames.value[division] || ""} onInput={(event: any) => setNewSupportWorkNames((current) => ({ ...current, [division]: event.target.value }))} placeholder="ชื่องาน" autofocus/><button class="btn btn-p btn-sm" onClick={() => addSupportWork(division)}>เพิ่ม</button><button class="btn btn-s btn-sm" onClick={() => setActiveInlineAdd("")}>ยกเลิก</button></div>}
+	                            <div class="support-column-head">{collapseArrow(wl, division)}<div class="structure-name"><span class="structure-type-tag">ฝ่าย</span><div class="structure-label"><strong>{division}</strong><small>{(works || []).length} งาน</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`work:${division}`)}>+ เพิ่มงาน</button>{deleteMenu(division, (works || []).reduce((sum: number, work: any) => sum + (work.units || []).reduce((n: number, unit: any) => n + (unit.positions || []).length, 0), 0), "support-dept")}</div></div>
+	                            <div class={`org-collapse ${collapsedOrgCards.value[orgCardKey(wl, division)] ? "is-closed" : ""}`} inert={collapsedOrgCards.value[orgCardKey(wl, division)] || undefined}><div class="org-collapse-inner">{activeInlineAdd.value === `work:${division}` && <div class="inline-add-composer"><input class="inp" value={newSupportWorkNames.value[division] || ""} onInput={(event: any) => setNewSupportWorkNames((current) => ({ ...current, [division]: event.target.value }))} placeholder="ชื่องาน" autofocus/><button class="btn btn-p btn-sm" onClick={() => addSupportWork(division)}>เพิ่ม</button><button class="btn btn-s btn-sm" onClick={() => setActiveInlineAdd("")}>ยกเลิก</button></div>}
 	                            {(works || []).map((work: any) => <div key={work.work} class="support-work-card">
-	                              <div class="support-work-head"><div class="structure-name"><span class="structure-type-tag muted">งาน</span><div class="structure-label"><strong>{work.work}</strong><small>{(work.units || []).length} หน่วย</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`unit:${division}:${work.work}`)}>+ เพิ่มหน่วย</button><button class="btn-link" onClick={() => startEdit("support-work", work.work, { parent: division })} title="แก้ไขงาน" aria-label={`แก้ไขงาน ${work.work}`}>✎</button></div></div>
+	                              <div class="support-work-head"><div class="structure-name"><span class="structure-type-tag muted">งาน</span><div class="structure-label"><strong>{work.work}</strong><small>{(work.units || []).length} หน่วย</small></div></div><div class="structure-row-actions"><button class="compact-add" onClick={() => setActiveInlineAdd(`unit:${division}:${work.work}`)}>+ เพิ่มหน่วย</button>{deleteMenu(work.work, (work.units || []).reduce((sum: number, unit: any) => sum + (unit.positions || []).length, 0), "support-work", { parent: division })}</div></div>
 	                              <div class="support-unit-list">
                                 {(work.units || []).map((rawUnit: any) => {
                                   const unit = typeof rawUnit === "string" ? { name: rawUnit, positions: [] } : rawUnit;
                                   return <div key={unit.name} class="support-unit-block">
-	                                    <div class="support-unit-row"><div class="structure-name"><span class="structure-type-tag quiet">หน่วย</span><div class="structure-label"><strong>{unit.name}</strong><small>{(unit.positions || []).length} ตำแหน่ง</small></div></div><div class="structure-row-actions"><button class="compact-add subtle" onClick={() => {setAddItemData({ category: "support-unit-position", type: "2", name: "", worklineName: wl, parent: "", grandparent: division, workName: work.work, unitName: unit.name, existingPositions: [...(unit.positions || [])], positionTitleId: "" });setShowAddModal(true);}}>+ เพิ่มตำแหน่ง</button><button class="btn-link" onClick={() => startEdit("support-unit", unit.name, { parent: division, workName: work.work })} title="แก้ไขหน่วย" aria-label={`แก้ไขหน่วย ${unit.name}`}>✎</button></div></div>
-	                                    {(unit.positions || []).length > 0 && <div class="support-position-inline">{(unit.positions || []).map((position: string) => <span key={position} class="support-position-chip organization-position"><span>{position}</span><button class="position-trash" type="button" onClick={() => deleteSupportUnitPosition(division, work.work, unit.name, position)} title="นำตำแหน่งออกจากหน่วย" aria-label={`นำตำแหน่ง ${position} ออก`}>{trashIcon()}</button></span>)}</div>}
+	                                    <div class="support-unit-row"><div class="structure-name"><span class="structure-type-tag quiet">หน่วย</span><div class="structure-label"><strong>{unit.name}</strong><small>{(unit.positions || []).length} ตำแหน่ง</small></div></div><div class="structure-row-actions"><button class="compact-add subtle" onClick={() => {setAddItemData({ category: "support-unit-position", type: "2", name: "", worklineName: wl, parent: "", grandparent: division, workName: work.work, unitName: unit.name, existingPositions: [...(unit.positions || [])], positionTitleId: "" });setShowAddModal(true);}}>+ เพิ่มตำแหน่ง</button>{deleteMenu(unit.name, (unit.positions || []).length, "support-unit", { parent: division, workName: work.work })}</div></div>
+	                                    {(unit.positions || []).length > 0 && <div class="support-position-inline" role="list">{(unit.positions || []).map((position: string) => <span key={position} class="support-position-chip organization-position pos-chip" tabIndex={0}><span>{position}</span><span class="chip-actions"><button type="button" onClick={() => startEdit("support-unit-position", position, { parent: division, workName: work.work, unitName: unit.name })} aria-label={`แก้ไขตำแหน่ง ${position}`} title="แก้ไขตำแหน่ง">{editIcon()}</button><button type="button" onClick={() => deleteSupportUnitPosition(division, work.work, unit.name, position)} title="นำตำแหน่งออกจากหน่วย" aria-label={`นำตำแหน่ง ${position} ออก`}>{trashIcon()}</button></span></span>)}</div>}
 	                                  </div>;
                                 })}
 	                              </div>
 	                              {activeInlineAdd.value === `unit:${division}:${work.work}` && <div class="inline-add-composer"><input class="inp" value={newSupportUnitNames.value[[division, work.work].join(" > ")] || ""} onInput={(event: any) => setNewSupportUnitNames((current) => ({ ...current, [[division, work.work].join(" > ")]: event.target.value }))} placeholder="ชื่อหน่วย" autofocus/><button class="btn btn-p btn-sm" onClick={() => addSupportUnit(division, work.work)}>เพิ่ม</button><button class="btn btn-s btn-sm" onClick={() => setActiveInlineAdd("")}>ยกเลิก</button></div>}
 	                            </div>)}
-	                          </div>)}
+	                          </div></div></div>)}
                           {!Object.keys(supportOrg).length && <div class="structure-empty">ยังไม่มีฝ่ายในสายสนับสนุน</div>}
                         </div></> : <div class="academic-department-list">
                         {groupNames.map((department) => {
                           const positions = groupMap[department] || [];
                           return <div key={department} class="academic-department-card">
                             <div class="academic-department-row">
-                              <div class="structure-name"><span class="structure-type-tag academic">ภาควิชา/หน่วยงาน</span><div class="structure-label"><strong>{department}</strong><small>{positions.length} ตำแหน่ง</small></div></div>
+                              {collapseArrow(wl, department)}
+                              <div class="structure-name"><div class="structure-label"><strong>{department}</strong><small>{positions.length} ตำแหน่ง</small></div></div>
                               <div class="structure-row-actions">
-                                <button class="compact-add" onClick={() => {setAddItemData({ category: "pos", type: "", name: "", worklineName: wl, parent: department, grandparent: "", existingPositions: [...positions], positionTitleId: "" });setShowAddModal(true);}}>+ ตำแหน่ง</button>
-                                <button class="btn-link" onClick={() => startEdit("custom-dept", department, { parent: wl })} title="แก้ไขภาควิชา/หน่วยงาน">✎</button>
+                                <button class="compact-add" onClick={() => openPositionAdd(wl, department, positions)}>+ ตำแหน่ง</button>
+                                {deleteMenu(department, positions.length, "custom-dept", { parent: wl })}
                               </div>
                             </div>
-                            <div class="academic-position-list">
+                            <div class={`org-collapse ${collapsedOrgCards.value[orgCardKey(wl, department)] ? 'is-closed' : ''}`} inert={collapsedOrgCards.value[orgCardKey(wl, department)] || undefined}>
+                            <div class="org-collapse-inner"><div class="academic-position-list" role="list">
                               {positions.map((position) =>
-                                <div key={position} class="academic-position-row organization-position">
+                                <div key={position} class="academic-position-row organization-position pos-chip" role="listitem" tabIndex={0}>
                                   <span>{position}</span>
-                                  <button class="position-trash" type="button" onClick={() => removeFamilyPosition(wl, department, position)} aria-label={`นำตำแหน่ง ${position} ออก`} title="นำตำแหน่งออกจากภาควิชา/หน่วยงาน">{trashIcon()}</button>
+                                  <span class="chip-actions"><button type="button" onClick={() => startEdit("custom-group-pos", position, { parent: department, workName: wl })} aria-label={`แก้ไขตำแหน่ง ${position}`} title="แก้ไขตำแหน่ง">{editIcon()}</button><button type="button" onClick={() => removeFamilyPosition(wl, department, position)} aria-label={`นำตำแหน่ง ${position} ออก`} title="นำตำแหน่งออกจากภาควิชา/หน่วยงาน">{trashIcon()}</button></span>
                                 </div>
                               )}
-                              {positions.length === 0 && <div class="academic-position-empty">ยังไม่มีตำแหน่งในภาควิชา/หน่วยงานนี้</div>}
-                            </div>
+                              {positions.length === 0 && <div class="academic-position-empty"><span>ยังไม่มีตำแหน่ง</span><button class="compact-add" onClick={() => openPositionAdd(wl, department, positions)}>+ เพิ่มตำแหน่ง</button></div>}
+                            </div></div></div>
                           </div>;
                         })}
                         {groupNames.length === 0 && <div class="structure-empty">ยังไม่มีภาควิชา/หน่วยงานในสายงานนี้</div>}
+                        <button class="btn-add-dept" type="button" onClick={() => openDepartmentAdd(wl)}>+ เพิ่มภาควิชา/หน่วยงาน</button>
                       </div>}
                     </section>);
 
@@ -1648,7 +1696,7 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
               </div>
             }
               <div style={{ display: "flex", gap: "8px", marginTop: "24px", justifyContent: "space-between" }}>
-                <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={deleteItem}> ลบรายการนี้</button>
+                <button class="btn btn-r" style={{ background: '#fee2e2', color: '#ef4444', border: '1px solid #fecaca' }} onClick={() => deleteItem()}> ลบรายการนี้</button>
                 <div class="flex g8">
                   <button class="btn btn-s" onClick={() => setEditingId(null)}>ยกเลิก</button>
                   <button class="btn btn-p" onClick={saveEdit}> บันทึก</button>
@@ -1931,6 +1979,109 @@ const AdminOrgStructure = defineComponent({ name: "AdminOrgStructure", props: ["
           .scoped-mini-row { grid-template-columns: 1fr; justify-items: start; }
           .scoped-level-head { align-items: flex-start; flex-direction: column; }
         }
+        /* Organization list only: leave the app shell and other tabs unchanged. */
+        .workline-shell { --org-line: var(--color-border); --org-muted: var(--color-text-secondary); }
+        .workline-shell .structure-section-head { background: #f3f5f8; padding: 16px 20px; }
+        .workline-shell .structure-section-title strong { font-size: 18px; font-weight: 600; }
+        .workline-shell .structure-section-title small,
+        .workline-shell .structure-label small,
+        .workline-shell .management-workline-positions p { font-size: 13px; color: var(--org-muted); }
+        .workline-shell .academic-department-list { margin: 16px 16px 16px 20px; padding: 0 0 0 16px; border-left: 2px solid var(--org-line); gap: 12px; }
+        .workline-shell .academic-department-card { overflow: visible; background: #fff; border: 1px solid var(--org-line); border-radius: 10px; transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
+        .workline-shell .academic-department-card:hover { border-color: var(--color-primary-border); box-shadow: 0 4px 14px rgba(0,0,0,.06); transform: translateY(-1px); }
+        .workline-shell .academic-department-row { gap: 12px; padding: 14px 16px; }
+        .workline-shell .structure-label strong { white-space: normal; overflow-wrap: anywhere; font-size: 15px; }
+        .workline-shell .structure-row-actions { flex-wrap: wrap; flex-shrink: 0; }
+        .workline-shell .btn-sm, .workline-shell .compact-add { font-size: 14px; padding: 7px 14px; border: 1px solid var(--org-line); border-radius: 8px; background: #fff; color: var(--color-text-secondary); cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+        .workline-shell .btn-sm:hover, .workline-shell .compact-add:hover { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-primary); }
+        .workline-shell button:focus-visible, .workline-shell summary:focus-visible, .workline-shell [tabindex]:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+        .workline-shell .org-edit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+        .workline-shell .academic-position-list { padding: 12px 16px 16px; border-top: 1px solid var(--org-line); border-radius: 0 0 10px 10px; background: #fff; }
+        .workline-shell .pos-chip { display: inline-flex; align-items: center; justify-content: flex-start; max-width: 100%; gap: 0; min-height: 38px; position: relative; font-size: 14px; font-weight: 500; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--org-line); background: #fff; color: var(--color-text); transition: border-color .15s ease, background .15s ease; }
+        .workline-shell .pos-chip > span:first-child { overflow-wrap: anywhere; min-width: 0; }
+        .workline-shell .pos-chip:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
+        .workline-shell .chip-actions { display: inline-flex; width: 0; overflow: hidden; visibility: hidden; gap: 4px; flex-shrink: 0; }
+        .workline-shell .pos-chip:hover .chip-actions, .workline-shell .pos-chip:focus-within .chip-actions { width: auto; margin-left: 8px; overflow: visible; visibility: visible; }
+        .workline-shell .chip-actions button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+        .workline-shell .chip-actions button:hover { color: var(--color-primary); background: var(--color-primary-soft); }
+        .workline-shell .chip-actions button:last-child:hover { color: var(--color-error); background: var(--color-error-bg); }
+        .workline-shell .pos-chip.is-locked, .workline-shell .pos-chip.is-locked:hover { border-color: var(--org-line); background: #f3f4f6; color: var(--org-muted); cursor: default; }
+        .workline-shell .badge-system { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--org-muted); background: #f3f4f6; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+        .workline-shell .academic-position-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 4px 0; color: var(--org-muted); font-size: 13px; }
+        .workline-shell .btn-add-dept { width: 100%; padding: 12px; border: 1.5px dashed var(--org-line); border-radius: 10px; background: transparent; color: var(--org-muted); font-size: 14px; cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+        .workline-shell .btn-add-dept:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+        .workline-shell .org-action-menu { position: relative; }
+        .workline-shell .org-action-menu summary { display: grid; place-items: center; min-width: 36px; min-height: 36px; border: 1px solid var(--org-line); border-radius: 8px; background: #fff; cursor: pointer; list-style: none; font-size: 20px; line-height: 1; }
+        .workline-shell .org-action-menu summary::-webkit-details-marker { display: none; }
+        .workline-shell .org-action-menu[open] summary { color: var(--color-primary); border-color: var(--color-primary); }
+        .workline-shell .org-action-popover { position: absolute; z-index: 5; top: calc(100% + 4px); right: 0; min-width: 120px; padding: 4px; background: #fff; border: 1px solid var(--org-line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.1); }
+        .workline-shell .org-action-popover button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 0; border-radius: 5px; background: #fff; color: var(--color-error); cursor: pointer; font-size: 14px; }
+        .workline-shell .org-action-popover button:hover { background: var(--color-error-bg); }
+        @media (hover: none) { .workline-shell .pos-chip .chip-actions { width: auto; margin-left: 8px; overflow: visible; visibility: visible; } }
+        @media (max-width: 900px) {
+          .workline-shell .academic-department-row { align-items: flex-start; flex-direction: column; }
+          .workline-shell .structure-row-actions { justify-content: flex-start; }
+          .workline-shell .structure-section-head { flex-wrap: wrap; gap: 12px; }
+        }
+        @media (max-width: 768px) {
+          .workline-shell .academic-department-list { margin-left: 8px; padding-left: 10px; }
+          .workline-shell .management-workline-positions > .flex { align-items: flex-start; }
+          .workline-shell .structure-section-head { padding: 14px; }
+          .workline-shell .pos-chip { flex-wrap: wrap; }
+        }
+        @media (prefers-reduced-motion: reduce) { .workline-shell *, .workline-shell *::before, .workline-shell *::after { transition: none !important; animation: none !important; } }
+        /* Organization list hierarchy; the surrounding dashboard shell is unchanged. */
+        .workline-shell { --org-muted: #5f6673; font-size: 16px; }
+        .workline-shell .workline-section { overflow: visible; }
+        .workline-shell .structure-section-head { position: sticky; top: 0; z-index: 5; display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-left: 5px solid var(--color-primary); border-bottom: 1px solid var(--org-line); border-radius: 10px 10px 0 0; background: #faf7f5; }
+        .workline-shell .structure-section-title strong { font-size: 20px; font-weight: 700; }
+        .workline-shell .workline-mark { display: none; }
+        .workline-shell .structure-section-title > div { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .workline-shell .structure-section-title small, .workline-shell .structure-label small { display: inline-flex; align-self: flex-start; padding: 2px 12px; border: 1px solid var(--org-line); border-radius: 999px; background: #fff; color: #5f6673; font-size: 14px; font-weight: 400; }
+        .workline-shell .structure-section-head > .flex { margin-left: auto; flex-wrap: wrap; }
+        .workline-shell .academic-department-list { margin: 0 16px 16px 24px; padding: 14px 0 0 16px; border-left: 2px solid #d9d2c9; gap: 14px; }
+        .workline-shell .academic-department-card { border-radius: 12px; transition: box-shadow .2s ease, border-color .2s ease; }
+        .workline-shell .academic-department-card:hover { transform: none; border-color: var(--color-primary-border); box-shadow: 0 3px 12px rgb(0 0 0 / .06); }
+        .workline-shell .academic-department-row { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 18px; }
+        .workline-shell .academic-department-row .structure-name, .workline-shell .support-column-head .structure-name { flex: 1; }
+        .workline-shell .structure-label strong { font-size: 17px; font-weight: 600; }
+        .workline-shell .structure-label { gap: 6px; }
+        .workline-shell .academic-department-row .structure-row-actions { margin-left: auto; }
+        .workline-shell .compact-add { color: var(--color-primary); border-color: var(--color-primary-border); font-size: 14px; }
+        .workline-shell .management-workline-positions { margin: 14px 16px; padding: 12px 16px; border: 0; border-radius: 10px; background: #f7f3ee; }
+        .workline-shell .management-workline-positions p, .workline-shell .muted, .workline-shell .structure-empty { font-size: 14px; color: #5f6673; }
+        .workline-shell .academic-position-list, .workline-shell .support-position-inline, .workline-shell .management-workline-positions > .flex:last-of-type { display: grid; gap: 0; padding: 0; border-top: 1px solid var(--org-line); background: #fff; border-radius: 0 0 10px 10px; }
+        .workline-shell .pos-chip { display: flex; justify-content: flex-start; flex-wrap: nowrap; gap: 12px; width: 100%; max-width: 100%; box-sizing: border-box; min-height: 48px; padding: 8px 18px; border: 0; border-top: 1px solid #f0ece7; border-radius: 0; font-size: 16px; font-weight: 400; background: transparent; }
+        .workline-shell .pos-chip:first-child { border-top: 0; }
+        .workline-shell .pos-chip::before { content: ''; flex: 0 0 6px; height: 6px; border-radius: 50%; background: var(--color-primary); }
+        .workline-shell .pos-chip:hover { background: #faf7f5; }
+        .workline-shell .pos-chip > span:first-child { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+        .workline-shell .pos-chip .chip-actions { display: inline-flex; flex: 0 0 auto; width: auto; visibility: visible; overflow: visible; margin: 0 0 0 auto; gap: 4px; }
+        .workline-shell .pos-chip:hover .chip-actions, .workline-shell .pos-chip:focus-within .chip-actions { margin-left: auto; }
+        .workline-shell .chip-actions button { flex: 0 0 36px; width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: #7a7168; }
+        .workline-shell .chip-actions button:hover { color: var(--color-primary); background: var(--color-primary-soft); }
+        .workline-shell .chip-actions button:last-child:hover { color: #b42318; background: #fdecea; }
+        .workline-shell .org-action-popover { z-index: 8; min-width: 150px; }
+        .workline-shell .org-action-popover button { font-size: 14px; min-height: 40px; }
+        .workline-shell .org-action-popover .org-menu-edit { color: #45413d; }
+        .workline-shell .org-action-popover .org-menu-edit:hover { color: var(--color-primary); background: var(--color-primary-soft); }
+        .workline-shell .support-work-head .org-action-popover, .workline-shell .support-unit-row .org-action-popover { top: auto; bottom: calc(100% + 4px); }
+        .workline-shell .academic-position-empty { display: flex; align-items: center; gap: 12px; padding: 14px 18px; font-size: 14px; }
+        .workline-shell .academic-position-empty .compact-add { border: 0; padding: 4px; background: transparent; text-decoration: underline; }
+        .workline-shell .btn-add-dept { padding: 12px; border: 1.5px dashed #d9d2c9; border-radius: 12px; font-size: 14px; }
+        .workline-shell .org-collapse-toggle { display: inline-grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #7a7168; cursor: pointer; }
+        .workline-shell .org-collapse-toggle svg { width: 14px; height: 14px; flex: none; }
+        .workline-shell .org-collapse-toggle:hover { background: var(--color-primary-soft); color: var(--color-primary); }
+        .workline-shell .org-collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+        .workline-shell .org-collapse { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .25s cubic-bezier(.4,0,.2,1); }
+        .workline-shell .org-collapse.is-closed { grid-template-rows: 0fr; }
+        .workline-shell .org-collapse-inner { min-height: 0; overflow: hidden; }
+        .workline-shell .support-columns { margin-left: 24px; padding-left: 16px; border-left: 2px solid #d9d2c9; }
+        .workline-shell .support-column-head { flex-wrap: wrap; }
+        .workline-shell .support-work-head, .workline-shell .support-unit-row { flex-wrap: wrap; }
+        .workline-shell .structure-type-tag { font-size: 14px; }
+        @media (max-width: 768px) { .workline-shell .academic-department-list, .workline-shell .support-columns { margin-left: 8px; padding-left: 10px; }.workline-shell .structure-section-head { padding: 12px 14px; }.workline-shell .structure-section-head > .flex { margin-left: 0; }.workline-shell .academic-department-row { padding: 12px; }.workline-shell .pos-chip { gap: 8px; padding: 8px 12px; } }
+        @media (prefers-reduced-motion: reduce) { .workline-shell .org-collapse { transition: none !important; } }
       `}</style>
     </>;} });
 

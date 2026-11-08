@@ -1,6 +1,6 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
 import MobileSidebarClose from '../../Components/MobileSidebarClose.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
@@ -112,9 +112,46 @@ const selectedPosition = ref('');
 const selectedConfigRoundId = ref(null);
 const dictionarySearch = ref('');
 const dictionaryType = ref('all');
+const dictionaryInput = ref(null);
+const assignedRowElements = new Map();
+const newCompetencyIds = ref([]);
+const competencyFeedback = ref('');
+const isUpdatingCompetencies = ref(false);
+let feedbackTimer;
+let highlightTimer;
+const clearCompetencyFeedback = () => {
+    clearTimeout(feedbackTimer);
+    clearTimeout(highlightTimer);
+    competencyFeedback.value = '';
+    newCompetencyIds.value = [];
+};
+onBeforeUnmount(clearCompetencyFeedback);
+const competencyCategory = (type) => String(type || '').startsWith('FC') ? 'FC' : String(type || '');
+const showCompetencyFeedback = async (message, ids = []) => {
+    clearCompetencyFeedback();
+    competencyFeedback.value = message;
+    newCompetencyIds.value = ids;
+    await nextTick();
+    assignedRowElements.get(ids[0])?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    feedbackTimer = setTimeout(() => { competencyFeedback.value = ''; }, 4000);
+    highlightTimer = setTimeout(() => { newCompetencyIds.value = []; }, 1800);
+};
 const selectedDetailCompetency = ref(null);
 const expandedDetailLevels = ref({});
 const isImportingRound = ref(false);
+const importSourceId = ref('');
+const filterResetHint = ref(false);
+const isSavingFcRule = ref(false);
+const changeWorkline = (workline) => {
+    filterResetHint.value = true;
+    selectedWorkline.value = workline;
+    selectedOrgScope.value = '';
+    selectedPosition.value = '';
+};
+const changeOrganizationScope = () => {
+    filterResetHint.value = true;
+    selectedPosition.value = '';
+};
 const catalogCompetencySearch = ref('');
 const catalogSearch = ref('');
 const catalogMethodFilter = ref('all');
@@ -155,8 +192,8 @@ const baseSections = [
             { id: 'emp-assess', label: 'ประเมินตนเอง' },
             { id: 'emp-gap', label: 'ผล Competency Gap' },
             { id: 'emp-idp', label: 'IDP ของฉัน' },
-            { id: 'emp-progress', label: 'อัปเดตความก้าวหน้า' },
-            { id: 'emp-idp-detail', label: 'รายละเอียด IDP' },
+            { id: 'emp-progress', label: 'รายงานความก้าวหน้า' },
+            { id: 'emp-idp-detail', label: 'ประวัติ IDP' },
         ],
     },
     {
@@ -193,8 +230,8 @@ const pageTitles = {
     'emp-assess': 'ประเมินตนเอง',
     'emp-gap': 'สรุปผลสมรรถนะ',
     'emp-idp': 'แผนพัฒนารายบุคคล',
-    'emp-progress': 'อัปเดตความก้าวหน้า',
-    'emp-idp-detail': 'รายละเอียด IDP',
+    'emp-progress': 'รายงานความก้าวหน้า',
+    'emp-idp-detail': 'ประวัติ IDP',
     'hr-position-competencies': 'กำหนดสมรรถนะ',
     'hr-cycle': 'รอบการประเมิน',
     'faculty-assessment-overview': 'ภาพรวมการประเมิน',
@@ -236,6 +273,7 @@ const updateUsers = () => {};
 const worklineOptions = computed(() => props.worklines || []);
 
 const isSupportWorkline = computed(() => selectedWorkline.value === 'สายสนับสนุน');
+const isManagementWorkline = computed(() => ['บริหาร', 'สายบริหาร', 'สายงานบริหาร'].includes(String(selectedWorkline.value || '').replace(/\s+/g, '')));
 const uniqueSortedPositions = (positions) => Array.from(new Set((positions || []).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right, 'th'));
 const supportGlobalPositions = computed(() => uniqueSortedPositions(
@@ -327,19 +365,28 @@ const currentPosition = computed(() => {
         : (unitPosition || globalPosition || null);
 });
 const currentPositionId = computed(() => currentPosition.value?.id || null);
+watch([currentPositionId, selectedConfigRoundId, activePage], clearCompetencyFeedback);
 
 const competencyItems = computed(() => props.competencies || []);
 // A round only accepts competencies of its own dictionary format (university or faculty).
 const selectedRoundMethod = computed(() => selectedConfigRound.value?.assessmentMethod || 'standard');
-const selectedRoundFormatLabel = computed(() => (selectedRoundMethod.value === 'faculty' ? 'รูปแบบคณะวิศวกรรมศาสตร์' : 'รูปแบบมหาวิทยาลัย'));
+const selectedRoundFormatLabel = computed(() => (selectedRoundMethod.value === 'faculty' ? 'รูปแบบตามกำหนดคณะ' : 'รูปแบบตามกำหนดมหาวิทยาลัย'));
 const roundCompetencyItems = computed(() => competencyItems.value.filter((item) => (item.method || 'standard') === selectedRoundMethod.value));
 const competencyTypes = computed(() => {
-    return [...new Set(roundCompetencyItems.value.map((item) => item.t).filter(Boolean))];
+    return [...new Set(['CC', 'MC', 'FC', ...roundCompetencyItems.value.map((item) => competencyCategory(item.t)).filter(Boolean)])];
 });
 const coreCompetencyCount = computed(() => roundCompetencyItems.value.filter((item) => item.t === 'CC').length);
 const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRound.value?.[currentPositionId.value] || []));
 const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
+});
+const assignedCompetencyGroups = computed(() => {
+    const categoryOf = (item) => String(item.t || '').startsWith('FC') ? 'FC' : String(item.t || '');
+    const types = ['CC', 'MC', 'FC', ...new Set(assignedCompetencies.value.map(categoryOf).filter((type) => !['CC', 'MC', 'FC'].includes(type)))];
+    return types.filter((type) => type !== 'MC' || isManagementWorkline.value).map((type) => ({
+        type,
+        items: assignedCompetencies.value.filter((item) => categoryOf(item) === type),
+    }));
 });
 // Faculty-format competencies have no user-facing code.
 const codeOf = (item) => ((item?.method || 'standard') === 'faculty' ? '' : (item?.cd || ''));
@@ -367,6 +414,14 @@ const savedUnitRequiredFcCount = computed(() => {
     return value === undefined || value === null ? null : Number(value);
 });
 const hasUnitFcRule = computed(() => savedUnitRequiredFcCount.value !== null);
+const showDefaultFc = ref(false);
+const effectiveFcCount = computed(() => savedUnitRequiredFcCount.value ?? savedRequiredFcCount.value);
+const defaultFcDirty = computed(() => Number(requiredFcCount.value) !== savedRequiredFcCount.value);
+const unitFcDirty = computed(() => Number(unitRequiredFcCount.value) !== (savedUnitRequiredFcCount.value ?? savedRequiredFcCount.value));
+const defaultFcAffectedUnitCount = computed(() => isSupportWorkline.value ? supportUnitScopes.value.filter((scope) =>
+    scope.positions.includes(selectedPosition.value)
+    && props.positionFcUnitRules?.[selectedConfigRoundId.value]?.[currentPositionId.value]?.[scope.unitId] == null,
+).length : null);
 const unitRequiredFcCount = ref(0);
 const unitFcRuleError = computed(() => {
     const value = Number(unitRequiredFcCount.value || 0);
@@ -375,14 +430,14 @@ const unitFcRuleError = computed(() => {
     return page.props.errors?.unit_required_fc_count || '';
 });
 const unitFcRuleDisabled = computed(() => (
-    !selectedConfigRoundId.value
+    isSavingFcRule.value || (hasUnitFcRule.value && !unitFcDirty.value) || !selectedConfigRoundId.value
     || !currentPositionId.value
     || !selectedUnitId.value
     || assignedFcCompetencyCount.value === 0
     || Boolean(unitFcRuleError.value)
 ));
 const fcSelectionRuleDisabled = computed(() => (
-    !selectedConfigRoundId.value
+    isSavingFcRule.value || !defaultFcDirty.value || !selectedConfigRoundId.value
     || !currentPositionId.value
     || assignedFcCompetencyCount.value === 0
     || Boolean(fcSelectionRuleError.value)
@@ -391,7 +446,7 @@ const filteredCompetencies = computed(() => {
     const keyword = dictionarySearch.value.trim().toLowerCase();
 
     return roundCompetencyItems.value.filter((item) => {
-        const matchesType = dictionaryType.value === 'all' || item.t === dictionaryType.value;
+        const matchesType = dictionaryType.value === 'all' || competencyCategory(item.t) === dictionaryType.value;
         const haystack = `${item.cd || ''} ${item.n || ''} ${item.det || ''}`.toLowerCase();
         return matchesType && (!keyword || haystack.includes(keyword));
     });
@@ -451,21 +506,23 @@ watch(() => props.assessmentRounds, (rounds) => {
 }, { immediate: true });
 
 watch(organizationScopes, (next) => {
-    if (!next.some((scope) => scope.key === selectedOrgScope.value)) selectedOrgScope.value = next[0]?.key || '';
+    if (!next.some((scope) => scope.key === selectedOrgScope.value)) selectedOrgScope.value = filterResetHint.value ? '' : next[0]?.key || '';
 }, { immediate: true });
 
 watch(positionOptions, (next) => {
-    if (!next.includes(selectedPosition.value)) selectedPosition.value = next[0] || '';
+    if (!next.includes(selectedPosition.value)) selectedPosition.value = filterResetHint.value ? '' : next[0] || '';
 }, { immediate: true });
 
 watch([currentPositionId, savedRequiredFcCount], () => {
     requiredFcCount.value = savedRequiredFcCount.value;
 }, { immediate: true });
-watch([currentPositionId, selectedUnitId, savedUnitRequiredFcCount], () => {
+watch([currentPositionId, selectedUnitId, savedUnitRequiredFcCount, savedRequiredFcCount], () => {
     unitRequiredFcCount.value = savedUnitRequiredFcCount.value ?? savedRequiredFcCount.value;
 }, { immediate: true });
+watch([currentPositionId, selectedUnitId, selectedConfigRoundId], () => { showDefaultFc.value = false; });
 
 const openModal = (modal) => {
+    if (modal === 'round-import') importSourceId.value = '';
     activeModal.value = modal;
 };
 
@@ -570,7 +627,10 @@ const deleteCatalog = (item) => {
 };
 
 const addCompetency = (item) => {
-    if (!selectedConfigRoundId.value || !currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
+    if (competencyCategory(item.t) === 'MC' && !isManagementWorkline.value) return;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
+    const context = `${currentPositionId.value}:${selectedConfigRoundId.value}`;
+    isUpdatingCompetencies.value = true;
 
     router.post(route('hr.position-competencies.store'), {
         position_id: currentPositionId.value,
@@ -578,23 +638,42 @@ const addCompetency = (item) => {
         competency_id: item.id,
     }, {
         preserveScroll: true,
+        onSuccess: () => {
+            if (context === `${currentPositionId.value}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
+                showCompetencyFeedback(`เพิ่มในชุด ${competencyCategory(item.t)} แล้ว`, [item.id]);
+            }
+        },
+        onFinish: () => { isUpdatingCompetencies.value = false; },
     });
 };
 
 const addAllCoreCompetencies = () => {
-    if (!selectedConfigRoundId.value || !currentPositionId.value || !availableCoreCompetencies.value.length) return;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value || !availableCoreCompetencies.value.length) return;
+    const ids = availableCoreCompetencies.value.map((item) => item.id);
+    if (!window.confirm(`จะเพิ่มอีก ${ids.length} รายการที่ยังไม่ได้เพิ่ม ยืนยัน?`)) return;
+    const context = `${currentPositionId.value}:${selectedConfigRoundId.value}`;
+    isUpdatingCompetencies.value = true;
 
     router.post(route('hr.position-competencies.store'), {
         position_id: currentPositionId.value,
         assessment_round_id: selectedConfigRoundId.value,
-        competency_ids: availableCoreCompetencies.value.map((item) => item.id),
+        competency_ids: ids,
     }, {
         preserveScroll: true,
+        onSuccess: () => {
+            if (context === `${currentPositionId.value}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
+                showCompetencyFeedback(`เพิ่มในชุด CC แล้ว ${ids.length} รายการ`, ids);
+            }
+        },
+        onFinish: () => { isUpdatingCompetencies.value = false; },
     });
 };
 
 const removeCompetency = (itemId) => {
-    if (!selectedConfigRoundId.value || !currentPositionId.value) return;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value) return;
+    const item = assignedCompetencies.value.find((competency) => competency.id === itemId);
+    if (!item || !window.confirm(`นำสมรรถนะ “${item.n}” ออกจากชุดของตำแหน่ง “${positionLabel.value}”?`)) return;
+    isUpdatingCompetencies.value = true;
 
     router.delete(route('hr.position-competencies.destroy'), {
         data: {
@@ -603,11 +682,15 @@ const removeCompetency = (itemId) => {
             competency_id: itemId,
         },
         preserveScroll: true,
+        onFinish: () => { isUpdatingCompetencies.value = false; },
     });
 };
 
 const saveFcSelectionRule = () => {
     if (fcSelectionRuleDisabled.value) return;
+    const impact = defaultFcAffectedUnitCount.value === null ? 'ใช้กับสังกัดที่ไม่มีค่าเฉพาะหน่วย' : `มีผลกับ ${defaultFcAffectedUnitCount.value} หน่วยที่ยังไม่ตั้งค่าเฉพาะ`;
+    if (!window.confirm(`บันทึกค่าเริ่มต้น ${normalizedRequiredFcCount.value} ข้อ สำหรับ “${positionLabel.value}”?\n${impact}`)) return;
+    isSavingFcRule.value = true;
 
     router.put(route('hr.position-fc-selection-rules.update'), {
         position_id: currentPositionId.value,
@@ -615,6 +698,8 @@ const saveFcSelectionRule = () => {
         required_fc_count: normalizedRequiredFcCount.value,
     }, {
         preserveScroll: true,
+        onSuccess: () => showCompetencyFeedback('บันทึกค่าเริ่มต้นแล้ว'),
+        onFinish: () => { isSavingFcRule.value = false; },
     });
 };
 
@@ -625,20 +710,37 @@ const unitFcRulePayload = () => ({
 });
 const saveUnitFcRule = () => {
     if (unitFcRuleDisabled.value) return;
+    isSavingFcRule.value = true;
     router.put(route('hr.position-fc-unit-rules.update'), {
         ...unitFcRulePayload(),
         required_fc_count: Number(unitRequiredFcCount.value || 0),
-    }, { preserveScroll: true });
+    }, { preserveScroll: true, onSuccess: () => showCompetencyFeedback('บันทึกค่าเฉพาะหน่วยแล้ว'), onFinish: () => { isSavingFcRule.value = false; } });
 };
 const resetUnitFcRule = () => {
-    if (!hasUnitFcRule.value) return;
+    if (!hasUnitFcRule.value || isSavingFcRule.value) return;
+    if (!window.confirm(`ลบค่าเฉพาะของ “${selectedScope.value?.label}” และใช้ค่าเริ่มต้น ${savedRequiredFcCount.value} ข้อ?`)) return;
+    isSavingFcRule.value = true;
     router.delete(route('hr.position-fc-unit-rules.destroy'), {
         data: unitFcRulePayload(),
         preserveScroll: true,
+        onSuccess: () => {
+
+            showCompetencyFeedback('ปิดค่าเฉพาะหน่วยและใช้ค่าเริ่มต้นแล้ว');
+        },
+        onFinish: () => { isSavingFcRule.value = false; },
     });
 };
 
-const importRoundConfiguration = (source) => {
+const importPreview = computed(() => {
+    const allowedIds = new Set(roundCompetencyItems.value.map((item) => item.id));
+    const source = props.positionCompetencies?.[importSourceId.value] || {};
+    const target = positionCompetenciesForRound.value;
+    const sourceKeys = new Set(Object.entries(source).flatMap(([position, ids]) => ids.filter((id) => allowedIds.has(id)).map((id) => `${position}:${id}`)));
+    const targetKeys = new Set(Object.entries(target).flatMap(([position, ids]) => ids.map((id) => `${position}:${id}`)));
+    return { incoming: sourceKeys.size, existing: targetKeys.size, added: [...sourceKeys].filter((key) => !targetKeys.has(key)).length };
+});
+const importRoundConfiguration = () => {
+    const source = importSourceRounds.value.find((round) => Number(round.id) === Number(importSourceId.value));
     const target = selectedConfigRound.value;
     if (!source || !target || isImportingRound.value) return;
 
@@ -796,12 +898,13 @@ const formatWeight = (weight) => {
                     :idp-review-items="page.props.idpReviewItems || []"
                 />
                 <template v-else-if="activePage === 'hr-position-competencies'">
+                    <div class="position-setup-top">
                     <div class="position-hero mb14">
                         <div>
                             <div class="position-kicker">COMPETENCY SETUP</div>
                             <div class="sec-t position-title">กำหนดสมรรถนะประจำตำแหน่ง</div>
                             <div class="sec-s position-sub">
-                                เลือกตำแหน่ง แล้วกำหนดชุดสมรรถนะที่ต้องใช้ประเมิน ก่อนนำไปตั้งระดับความคาดหวังในรอบประเมิน
+                                เลือกตำแหน่ง แล้วเพิ่มสมรรถนะที่ใช้ในรอบประเมิน
                             </div>
                         </div>
                         <div class="position-hero-metrics">
@@ -829,25 +932,25 @@ const formatWeight = (weight) => {
                             <span v-if="importSourceRounds.length">นำเข้าชุดสมรรถนะจากรอบอื่นมาใช้กับรอบนี้</span>
                             <span v-else>ยังไม่มีรอบการประเมินอื่นสำหรับนำเข้า</span>
                             <button
-                                class="btn btn-p btn-sm"
+                                class="btn btn-s btn-sm"
                                 type="button"
                                 :disabled="!selectedConfigRoundId || !importSourceRounds.length"
                                 @click="openModal('round-import')"
                             >
-                                นำเข้าสมรรถนะประจำตำแหน่ง
+                                นำเข้าจากรอบอื่น
                             </button>
                         </div>
                     </div>
                     <div class="position-scope mb14">
                         <div class="position-workline">
-                            <div class="position-scope-label">สายงาน</div>
+                            <div class="position-scope-label filter-step-label"><span class="step-number">1</span>สายงาน</div>
                             <div v-if="worklineOptions.length" class="position-segments">
                                 <button
                                     v-for="workline in worklineOptions"
                                     :key="workline"
                                     :class="{ active: selectedWorkline === workline }"
                                     type="button"
-                                    @click="selectedWorkline = workline"
+                                    @click="changeWorkline(workline)"
                                 >
                                     {{ workline }}
                                 </button>
@@ -856,18 +959,18 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-picker">
                             <div class="fg mb0">
-                                <label class="lbl">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</label>
-                                <select v-model="selectedOrgScope" class="sel">
-                                    <option value="">{{ isSupportWorkline ? 'ยังไม่มีข้อมูลหน่วย' : 'ยังไม่มีข้อมูลภาควิชา/หน่วยงาน' }}</option>
+                                <label class="lbl filter-step-label"><span class="step-number">2</span>{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</label>
+                                <select v-model="selectedOrgScope" class="sel" @change="changeOrganizationScope">
+                                    <option value="">{{ organizationScopes.length ? 'เลือกหน่วย/ภาควิชา' : 'ยังไม่มีข้อมูลหน่วย/ภาควิชา' }}</option>
                                     <option v-for="scope in organizationScopes" :key="scope.key" :value="scope.key">
                                         {{ scope.label }}
                                     </option>
                                 </select>
                             </div>
                             <div class="fg mb0">
-                                <label class="lbl">ตำแหน่ง</label>
-                                <select v-model="selectedPosition" class="sel" :disabled="needsPositionBeforeMapping">
-                                    <option v-if="!positionOptions.length" value="">ไม่มีตำแหน่งใน{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</option>
+                                <label class="lbl filter-step-label"><span class="step-number">3</span>ตำแหน่ง</label>
+                                <select v-model="selectedPosition" class="sel" :disabled="!selectedOrgScope || needsPositionBeforeMapping">
+                                    <option value="">{{ positionOptions.length ? 'เลือกตำแหน่ง' : 'ยังไม่มีตำแหน่งให้เลือก' }}</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
                                         {{ position }}
                                     </option>
@@ -879,19 +982,12 @@ const formatWeight = (weight) => {
                         </div>
                     </div>
 
+                    <p v-if="filterResetHint && (!selectedOrgScope || !selectedPosition)" class="setup-helper" role="status">เลือกหน่วย/ตำแหน่งใหม่</p>
+                    <div class="position-context-strip">{{ selectedWorkline || 'เลือกสายงาน' }} · {{ organizationScopeLabel }} · {{ positionLabel }}</div>
                     <div class="position-board mb14">
-                        <div class="position-card selected">
-                            <div class="position-card-label">ตำแหน่งที่กำลังกำหนด</div>
-                            <div class="position-card-title">{{ positionLabel }}</div>
-                            <div class="position-card-sub">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ organizationScopeLabel }}</div>
-                        </div>
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
                             <div class="position-card-title">{{ assignedCompetencies.length }}</div>
-                            <div class="position-card-sub">{{ assignedCompetencies.length ? 'เลือกไว้ในหน้านี้' : 'ยังไม่มีรายการ' }}</div>
-                        </div>
-                        <div class="position-card type-breakdown-card">
-                            <div class="position-card-label">แยกตามประเภทที่กำหนด</div>
                             <div class="type-breakdown">
                                 <div>
                                     <span>CC</span>
@@ -906,104 +1002,72 @@ const formatWeight = (weight) => {
                                     <strong>{{ assignedManagerialCompetencyCount }}</strong>
                                 </div>
                             </div>
-                            <div class="position-card-sub">นับจากรายการที่ผูกกับตำแหน่งนี้</div>
                         </div>
                         <div class="position-card">
                             <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title" :class="assignedCoreCompetencyCount < coreCompetencyCount ? 'warn' : 'complete'">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
-                            <div class="position-card-sub">{{ coreCompetencyCount ? 'รอเลือกจากพจนานุกรม' : 'ยังไม่มีข้อมูล CC พื้นฐาน' }}</div>
+                            <div class="position-card-title" :class="coreCompetencyCount ? (assignedCoreCompetencyCount < coreCompetencyCount ? 'warn' : 'complete') : ''">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
+                            <div class="position-card-sub">CC พื้นฐานที่เลือกแล้ว {{ assignedCoreCompetencyCount }} จาก {{ coreCompetencyCount }}</div>
+                            <div class="cc-progress" :class="{ 'is-done': coreCompetencyCount > 0 && assignedCoreCompetencyCount >= coreCompetencyCount }" role="progressbar" aria-label="CC พื้นฐานที่เลือกแล้ว" :aria-valuenow="Math.min(assignedCoreCompetencyCount, coreCompetencyCount)" :aria-valuemin="0" :aria-valuemax="coreCompetencyCount || 1"><span :style="{ width: `${coreCompetencyCount ? Math.min(100, assignedCoreCompetencyCount / coreCompetencyCount * 100) : 0}%` }"></span></div>
                         </div>
-                        <div class="position-card fc-rule-card">
-                            <div class="position-card-label">กำหนดจำนวน FC ที่ต้องเลือก</div>
-                            <p class="fc-rule-intro">เลือกได้จาก FC {{ assignedFcCompetencyCount }} ข้อที่ผูกกับตำแหน่งนี้</p>
+                        <div class="position-card fc-rule-card fc-animated-section">
+                            <header class="fc-animated-head">
+                                <div class="fc-title-line">
+                                    <h3>กำหนดจำนวน FC ที่ต้องเลือก <small>(จาก FC {{ assignedFcCompetencyCount }} ข้อ)</small></h3>
+                                    <span v-if="currentPositionId" class="fc-effective">ผลที่ใช้จริง: {{ effectiveFcCount }} ข้อ · {{ hasUnitFcRule ? 'ค่าหน่วยงาน' : 'ค่าตำแหน่ง' }}</span>
+                                </div>
+                                <label class="unit-fc-toggle fc-header-toggle">
+                                    <input type="checkbox" role="switch" v-model="showDefaultFc" aria-controls="position-fc-settings"  />
+                                    <span class="unit-fc-toggle-track" aria-hidden="true"></span>
+                                    <span>แสดงค่าเริ่มต้นของตำแหน่ง</span>
+                                </label>
+                            </header>
+                            <div class="fc-display-stage" :class="{ 'has-secondary': showDefaultFc }">
+                                <div class="fc-primary" :class="{ 'is-disabled': showDefaultFc }" :inert="showDefaultFc" :aria-disabled="showDefaultFc"><fieldset id="unit-fc-settings" class="fc-display-card" :disabled="showDefaultFc">
+                                    <div class="fc-card-label">
+                                        <h4><label for="unit-fc-count">ค่าเฉพาะหน่วย</label></h4><span class="fc-result-badge">ผลที่ใช้จริง: {{ effectiveFcCount }} ข้อ</span>
+                                        <span class="fc-info-icon" tabindex="0" :title="`ใช้กับ ${selectedScope?.label || 'หน่วยนี้'} เท่านั้น หากยังไม่มีค่า จะใช้ค่าเริ่มต้นของตำแหน่ง สวิตช์ด้านบนใช้แสดงค่าเริ่มต้นเท่านั้น`" :aria-label="`ใช้กับ ${selectedScope?.label || 'หน่วยนี้'} เท่านั้น`">ⓘ</span>
 
-                            <div class="fc-rule-sections">
-                            <section class="fc-rule-section">
-                                <div class="fc-rule-section-head">
-                                    <strong>ค่าเริ่มต้นของตำแหน่ง</strong>
-                                    <span class="fc-rule-badge default">ใช้เป็นค่าพื้นฐาน</span>
-                                </div>
-                                <p>ใช้กับทุกหน่วยที่ยังไม่ได้ตั้งค่าเฉพาะหน่วย</p>
-                                <label class="fc-rule-field-label" for="position-fc-count">จำนวนข้อที่ต้องเลือก</label>
-                                <div class="fc-rule-control">
-                                    <input
-                                        id="position-fc-count"
-                                        v-model.number="requiredFcCount"
-                                        class="inp fc-rule-input"
-                                        type="number"
-                                        min="0"
-                                        :max="assignedFcCompetencyCount"
-                                        :disabled="!selectedConfigRoundId || !currentPositionId || assignedFcCompetencyCount === 0"
-                                    />
-                                    <button class="btn btn-p btn-sm" type="button" :disabled="fcSelectionRuleDisabled" @click="saveFcSelectionRule">
-                                        บันทึกค่าเริ่มต้น
-                                    </button>
-                                </div>
-                                <div v-if="fcSelectionRuleError" class="position-card-sub fc-rule-message is-warning">
-                                    {{ fcSelectionRuleError }}
-                                </div>
-                                <p v-else class="fc-rule-help">
-                                    บุคลากรเลือก {{ savedRequiredFcCount }} จาก {{ assignedFcCompetencyCount }} ข้อ · ตั้งเป็น 0 หากไม่ต้องเลือก FC ก่อนประเมิน
-                                </p>
-                            </section>
+\n                            </div>
+                                    <div class="fc-inline-row">
+                                        <input id="unit-fc-count" v-model.number="unitRequiredFcCount" class="inp fc-rule-input" type="number" min="0" :max="assignedFcCompetencyCount" :disabled="!selectedUnitId || !currentPositionId || !selectedConfigRoundId || assignedFcCompetencyCount === 0" title="จำนวน FC เฉพาะหน่วย ตั้งเป็น 0 หากไม่ต้องเลือก FC ก่อนประเมิน" />
+                                        <button class="btn btn-p btn-sm" type="button" :disabled="unitFcRuleDisabled" @click="saveUnitFcRule">บันทึกค่าหน่วยงาน</button>
+                                        <button v-if="hasUnitFcRule" class="btn btn-s btn-sm unit-fc-reset-btn" type="button" :disabled="isSavingFcRule" @click="resetUnitFcRule">ลบค่าทับ</button>
+                                    </div>
+                                    <div v-if="unitFcRuleError" class="position-card-sub fc-rule-message is-warning">{{ unitFcRuleError }}</div>
+                                </fieldset></div>
+<div class="fc-secondary" :aria-hidden="!showDefaultFc" :inert="!showDefaultFc"><section id="position-fc-settings" class="fc-display-card">
+                                    <div class="fc-card-label">
+                                        <h4><label for="position-fc-count">ค่าเริ่มต้นของตำแหน่ง</label></h4>
+                                        <span class="fc-info-icon" tabindex="0" :title="defaultFcAffectedUnitCount !== null ? `มีผลกับ ${defaultFcAffectedUnitCount} หน่วยที่ยังไม่ตั้งค่าเฉพาะ` : 'ใช้กับสังกัดที่ไม่มีค่าเฉพาะหน่วย'" :aria-label="defaultFcAffectedUnitCount !== null ? `มีผลกับ ${defaultFcAffectedUnitCount} หน่วยที่ยังไม่ตั้งค่าเฉพาะ` : 'ใช้กับสังกัดที่ไม่มีค่าเฉพาะหน่วย'">ⓘ</span>
 
-                            <section v-if="selectedUnitId && currentPositionId" class="fc-rule-section unit">
-                                <div class="fc-rule-section-head">
-                                    <strong>ข้อกำหนดเฉพาะหน่วย</strong>
-                                    <span class="fc-rule-badge" :class="hasUnitFcRule ? 'override' : 'inherited'">
-                                        {{ hasUnitFcRule ? 'ใช้ค่าเฉพาะหน่วย' : 'ใช้ค่าเริ่มต้น' }}
-                                    </span>
-                                </div>
-                                <p>
-                                    {{ hasUnitFcRule
-                                        ? `ตั้งแยกสำหรับ${selectedScope?.label || 'หน่วยนี้'} หน่วยอื่นยังใช้ค่าเริ่มต้น ${savedRequiredFcCount} ข้อ`
-                                        : `ยังไม่ได้ตั้งแยก หน่วยนี้จึงใช้ค่าเริ่มต้น ${savedRequiredFcCount} ข้อ` }}
-                                </p>
-                                <label class="fc-rule-field-label" for="unit-fc-count">จำนวนข้อที่ต้องเลือกในหน่วยนี้</label>
-                                <div class="fc-rule-control fc-unit-rule-control">
-                                    <input
-                                        id="unit-fc-count"
-                                        v-model.number="unitRequiredFcCount"
-                                        class="inp fc-rule-input"
-                                        type="number"
-                                        min="0"
-                                        :max="assignedFcCompetencyCount"
-                                        :disabled="!selectedConfigRoundId || assignedFcCompetencyCount === 0"
-                                    />
-                                    <button class="btn btn-p btn-sm" type="button" :disabled="unitFcRuleDisabled" @click="saveUnitFcRule">
-                                        บันทึกค่าเฉพาะหน่วย
-                                    </button>
-                                </div>
-                                <button v-if="hasUnitFcRule" class="btn btn-s btn-sm unit-fc-reset-btn" type="button" @click="resetUnitFcRule">
-                                    ลบค่าทับและใช้ค่าเริ่มต้น
-                                </button>
-                                <div v-if="unitFcRuleError" class="position-card-sub fc-rule-message is-warning">
-                                    {{ unitFcRuleError }}
-                                </div>
-                                <p v-else class="fc-rule-help">
-                                    {{ hasUnitFcRule
-                                        ? `หน่วยนี้ต้องเลือก ${savedUnitRequiredFcCount} จาก ${assignedFcCompetencyCount} ข้อ`
-                                        : `ปัจจุบันหน่วยนี้ต้องเลือก ${savedRequiredFcCount} จาก ${assignedFcCompetencyCount} ข้อ` }}
-                                </p>
-                            </section>
+                                    </div>
+                                    <div class="fc-inline-row">
+                                        <input id="position-fc-count" v-model.number="requiredFcCount" class="inp fc-rule-input" type="number" min="0" :max="assignedFcCompetencyCount" :disabled="!selectedConfigRoundId || !currentPositionId || assignedFcCompetencyCount === 0" title="จำนวน FC ที่ต้องเลือกก่อนประเมิน ตั้งเป็น 0 หากไม่ต้องเลือก FC ก่อนประเมิน" />
+                                        <button class="btn btn-p btn-sm" type="button" :disabled="fcSelectionRuleDisabled" @click="saveFcSelectionRule">บันทึกค่าตำแหน่ง</button>
+                                    </div>
+                                    <div v-if="fcSelectionRuleError" class="position-card-sub fc-rule-message is-warning">{{ fcSelectionRuleError }}</div>
+                                </section>                                </div>
                             </div>
                         </div>
                     </div>
-
-                    <div class="position-layout">
+                    </div>
+                    <div class="position-layout competency-workspace">
+                        <div class="competency-toast" role="status" aria-live="polite" aria-atomic="true"><span v-if="competencyFeedback">✓ {{ competencyFeedback }}</span></div>
                         <section class="position-panel assigned">
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
-                                    <div class="cs">ระดับความคาดหวังของแต่ละคนดึงจากระดับตำแหน่งที่กำหนดไว้ในข้อมูลผู้ใช้</div>
+                                    <h2 class="assigned-position-name">{{ positionLabel }}</h2>
+                                    <div class="assigned-position-scope">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ organizationScopeLabel }}</div>
+                                    <div class="cs">แยกตามหมวด {{ isManagementWorkline ? 'CC / MC / FC' : 'CC / FC' }} · ระดับคาดหวังอิงจากระดับตำแหน่งของผู้ใช้</div>
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
-                                    :disabled="!selectedConfigRoundId || !currentPositionId || !availableCoreCompetencies.length"
+                                    :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentPositionId || !availableCoreCompetencies.length"
                                     type="button"
                                     @click="addAllCoreCompetencies"
                                 >
-                                    เพิ่ม CC ทั้งหมด
+                                    เพิ่ม CC ที่ยังไม่มี ({{ availableCoreCompetencies.length }})
                                 </button>
                             </div>
                             <div v-if="mismatchedAssignedCompetencies.length" class="format-mismatch-note" role="alert">
@@ -1015,19 +1079,32 @@ const formatWeight = (weight) => {
                                     <div class="empty-symbol">ไม่มีข้อมูล</div>
                                     <div class="fw8">{{ needsPositionBeforeMapping ? 'ต้องเพิ่มตำแหน่งก่อน' : 'ยังไม่ได้กำหนดสมรรถนะให้ตำแหน่งนี้' }}</div>
                                     <div class="muted fs12">
-                                        {{ needsPositionBeforeMapping ? 'ระบบต้องมีตำแหน่งจริงในฐานข้อมูลก่อน จึงจะบันทึกการผูกสมรรถนะได้' : 'เลือกจากพจนานุกรมด้านขวาเพื่อเพิ่มเข้าชุดนี้' }}
+                                        {{ needsPositionBeforeMapping ? 'ให้ผู้ดูแลระบบเพิ่มตำแหน่งก่อน' : 'เพิ่มรายการจากพจนานุกรมด้านขวา' }}
                                     </div>
                                 </div>
-                                <div v-for="item in assignedCompetencies" v-else :key="item.id" class="assigned-row">
-                                    <div>
-                                        <div class="dictionary-code">{{ codeOf(item) }} <span class="b bgr">{{ item.t }}</span></div>
-                                        <div class="dictionary-name">{{ item.n }}</div>
-                                    </div>
-                                    <div class="assigned-actions">
-                                        <button class="btn btn-s btn-sm" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
-                                        <button class="btn btn-s btn-sm danger-text" type="button" @click="removeCompetency(item.id)">ลบ</button>
-                                    </div>
-                                </div>
+                                <section v-for="group in assignedCompetencyGroups" :key="group.type" class="assigned-category" :aria-label="`สมรรถนะหมวด ${group.type}`">
+                                    <header class="assigned-category-head">
+                                        <h3>{{ group.type || 'ไม่ระบุหมวด' }}</h3>
+                                        <span>{{ group.items.length }} รายการ</span>
+                                    </header>
+                                    <table v-if="group.items.length" class="assigned-category-table">
+                                        <caption class="sr-only">สมรรถนะประจำตำแหน่งหมวด {{ group.type }}</caption>
+                                        <thead><tr><th scope="col">สมรรถนะ</th><th scope="col">จัดการ</th></tr></thead>
+                                        <tbody>
+                                            <tr v-for="item in group.items" :key="item.id" :ref="(element) => element ? assignedRowElements.set(item.id, element) : assignedRowElements.delete(item.id)" class="comp-row" :class="{ 'is-new': newCompetencyIds.includes(item.id) }">
+                                                <td>
+                                                    <div v-if="codeOf(item) || item.t !== group.type" class="dictionary-code">{{ codeOf(item) }} <span v-if="item.t !== group.type" class="b bgr">{{ item.t }}</span></div>
+                                                    <div class="dictionary-name">{{ item.n }}</div>
+                                                </td>
+                                                <td><div class="assigned-actions">
+                                                    <button class="btn btn-s btn-sm" type="button" :aria-label="`รายละเอียด ${item.n}`" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                                    <button class="btn btn-sm btn-danger-soft" type="button" :disabled="isUpdatingCompetencies" :aria-label="`ลบ ${item.n} ออกจากตำแหน่ง`" @click="removeCompetency(item.id)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>ลบ</button>
+                                                </div></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div v-else class="assigned-category-empty"><p>ยังไม่ได้กำหนดสมรรถนะหมวด {{ group.type }}</p></div>
+                                </section>
                             </div>
                         </section>
 
@@ -1039,10 +1116,10 @@ const formatWeight = (weight) => {
                                 </div>
                             </div>
                             <div class="dictionary-tools">
-                                <input v-model="dictionarySearch" class="inp" placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" />
-                                <select v-model="dictionaryType" class="sel">
-                                    <option value="all">ทั้งหมด</option>
-                                    <option v-for="type in competencyTypes" :key="type" :value="type">{{ type }}</option>
+                                <input ref="dictionaryInput" v-model="dictionarySearch" class="inp" placeholder="ค้นหารหัส / ชื่อ / คำอธิบาย" aria-label="ค้นหารหัส / ชื่อ / คำอธิบาย" />
+                                <select v-model="dictionaryType" class="sel" aria-label="กรองหมวดสมรรถนะ">
+                                    <option value="all">หมวด: ทั้งหมด</option>
+                                    <option v-for="type in competencyTypes" :key="type" :value="type">หมวด: {{ type }}</option>
                                 </select>
                             </div>
                             <div class="dictionary-list">
@@ -1055,18 +1132,24 @@ const formatWeight = (weight) => {
                                     <div class="dictionary-main">
                                         <div class="dictionary-code">
                                             <span v-if="codeOf(item)">{{ codeOf(item) }}</span>
-                                            <span class="b bgr">{{ item.t }}</span>
-                                            <button class="dictionary-detail-button" type="button" @click="openCompetencyDetail(item)">รายละเอียด</button>
+                                            <span class="competency-type-badge" :class="`type-${competencyCategory(item.t).toLowerCase()}`">{{ item.t }}</span>
+                                            <button class="dictionary-info-button" type="button" :title="`ดูรายละเอียด ${item.n}`" :aria-label="`ดูรายละเอียด ${item.n}`" @click="openCompetencyDetail(item)">ⓘ</button>
                                         </div>
                                         <div class="dictionary-name">{{ item.n }}</div>
+                                        <p class="dictionary-description" :title="item.det || 'ไม่มีคำอธิบาย'">{{ item.det || 'ไม่มีคำอธิบาย' }}</p>
                                     </div>
-                                    <button
+                                    <div v-if="assignedCompetencyIds.has(item.id)" class="added-control" tabindex="0">
+                                        <span class="badge-added"><span aria-hidden="true">✓</span> เพิ่มแล้ว</span>
+                                        <button class="added-remove" type="button" :disabled="isUpdatingCompetencies" :aria-label="`เอา ${item.n} ออกจากชุด`" @click="removeCompetency(item.id)">เอาออก</button>
+                                    </div>
+                                    <span v-else-if="competencyCategory(item.t) === 'MC' && !isManagementWorkline" class="mc-workline-restriction">เฉพาะสายบริหาร</span>
+                                    <button v-else
                                         class="btn btn-p btn-sm"
-                                        :disabled="!selectedConfigRoundId || !selectedPosition || assignedCompetencyIds.has(item.id)"
+                                        :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentPositionId"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >
-                                        {{ assignedCompetencyIds.has(item.id) ? 'เพิ่มแล้ว' : 'เพิ่ม' }}
+                                        เพิ่ม
                                     </button>
                                 </div>
                             </div>
@@ -1216,23 +1299,21 @@ const formatWeight = (weight) => {
                 <div class="mo-b">
                     <template v-if="activeModal === 'round-import'">
                         <div class="round-import-note">
-                            เมื่อเลือกรอบ ระบบจะแทนที่สมรรถนะประจำตำแหน่งและจำนวน FC ของรอบนี้ทันที
+                            การนำเข้าจะแทนที่ชุดสมรรถนะและค่า FC ของทั้งรอบ “{{ selectedConfigRound?.name }}”
                         </div>
                         <div class="round-import-list" aria-label="เลือกรอบการประเมินต้นทาง">
-                            <button
-                                v-for="round in importSourceRounds"
-                                :key="round.id"
-                                class="round-import-option"
-                                type="button"
-                                :disabled="isImportingRound"
-                                @click="importRoundConfiguration(round)"
-                            >
-                                <span>
-                                    <strong>{{ round.name }}</strong>
-                                </span>
-                                <span v-if="isImportingRound" class="round-import-action">กำลังนำเข้า…</span>
-                                <span v-else class="round-import-action">เลือกใช้</span>
-                            </button>
+                            <label class="lbl" for="round-import-source">รอบต้นทาง</label>
+                            <select id="round-import-source" v-model="importSourceId" class="sel" :disabled="isImportingRound">
+                                <option value="">เลือกรอบต้นทาง</option>
+                                <option v-for="round in importSourceRounds" :key="round.id" :value="round.id">{{ round.name }}</option>
+                            </select>
+                            <div v-if="importSourceId" class="import-preview" role="status">
+                                <p>จำนวนด้านล่างนับรายการผูกสมรรถนะตามตำแหน่ง/สังกัดที่แสดงในระบบ</p>
+                                <p>นำเข้า {{ importPreview.incoming }} รายการ (เป็นรายการใหม่ {{ importPreview.added }} รายการ)</p>
+                                <p>แทนที่รายการเดิมทั้งหมด {{ importPreview.existing }} รายการ พร้อมค่า FC เริ่มต้นและเฉพาะหน่วย</p>
+                                <p>นำเข้าเฉพาะสมรรถนะรูปแบบเดียวกับรอบปลายทาง</p>
+                            </div>
+                            <div class="flex g8"><button class="btn btn-s" type="button" :disabled="isImportingRound" @click="closeModal">ยกเลิก</button><button class="btn btn-p" type="button" :disabled="!importSourceId || isImportingRound" @click="importRoundConfiguration">{{ isImportingRound ? 'กำลังนำเข้า…' : 'ยืนยันนำเข้าและแทนที่' }}</button></div>
                         </div>
                     </template>
                     <template v-else-if="activeModal === 'competency-detail' && selectedDetailCompetency">
@@ -2124,6 +2205,23 @@ const formatWeight = (weight) => {
     display: grid;
     gap: 10px;
     padding: 14px;
+}
+
+.assigned-category { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.assigned-category-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--color-primary-soft); border-bottom: 1px solid var(--border); }
+.assigned-category-head h3 { margin: 0; color: var(--color-primary); font-size: 15px; font-weight: 800; }
+.assigned-category-head > span { color: var(--color-text-secondary); font-size: 13px; }
+.assigned-category-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.assigned-category-table th { padding: 8px 12px; background: var(--color-page); color: var(--color-text-secondary); font-size: 12px; font-weight: 600; text-align: left; }
+.assigned-category-table th:last-child { width: 174px; }
+.assigned-category-table td { padding: 12px; border-top: 1px solid var(--border); vertical-align: middle; overflow-wrap: anywhere; }
+.assigned-category-table tbody tr:hover { background: var(--color-primary-soft); }
+.assigned-category-table .dictionary-name { white-space: normal; }
+.assigned-category-empty { margin: 0; padding: 16px 14px; color: var(--color-text-secondary); font-size: 13px; }
+@media (max-width: 900px) {
+    .assigned-category-table th:last-child { width: 112px; }
+    .assigned-category-table .assigned-actions { flex-direction: column; align-items: stretch; gap: 6px; }
+    .assigned-category-table td { padding: 10px; }
 }
 
 .assigned-empty {
@@ -3155,4 +3253,138 @@ const formatWeight = (weight) => {
         font-size: 22px;
     }
 }
+/* Scoped to the two competency columns. */
+.competency-workspace { position: relative; font-size: 14px; }
+.competency-workspace :is(.ct, .cs, .fs12, small, .dictionary-code, .b, th, .btn-sm, .inp, .sel) { font-size: 13px; }
+.competency-workspace :is(.cs, .muted, small) { color: var(--color-text-secondary); }
+.competency-workspace .position-panel-head { align-items: flex-start; flex-wrap: wrap; }
+.competency-workspace .assigned-position-name { margin: 6px 0 4px; font-size: 18px; line-height: 1.5; color: var(--color-text); overflow-wrap: anywhere; }
+.competency-workspace .assigned-position-scope { margin-bottom: 6px; font-size: 13px; color: var(--color-text-secondary); }
+.competency-workspace .assigned-category-head { flex-wrap: wrap; font-weight: 600; }
+.competency-workspace .assigned-category-empty p { margin: 0 0 12px; }
+.competency-workspace .btn-sm { padding: 6px 12px; border-radius: 8px; }
+.competency-workspace .btn-s { border: 1px solid var(--color-border); background: #fff; }
+.competency-workspace .btn-s:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
+.competency-workspace .assigned-actions { gap: 14px; }
+.competency-workspace .assigned-category-table th:last-child { width: 190px; }
+.competency-workspace .btn-danger-soft { display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: #b42318; border: 1px solid #f5c2bd; background: #fff; }
+.competency-workspace .btn-danger-soft:hover:not(:disabled) { background: #fdecea; border-color: #b42318; color: #b42318; }
+.competency-workspace .comp-row { scroll-margin-block: 90px; transition: background .15s ease; }
+.competency-workspace .comp-row:hover { background: #fafafa; }
+.competency-workspace .comp-row.is-new { animation: competency-row-flash 1.6s ease; outline: 2px solid var(--color-primary-border); outline-offset: -2px; }
+@keyframes competency-row-flash { from { background: var(--color-primary-soft); } to { background: transparent; } }
+.competency-workspace .competency-toast { position: fixed; z-index: 1100; bottom: 24px; right: 24px; max-width: calc(100vw - 48px); pointer-events: none; }
+.competency-workspace .competency-toast > span { display: block; padding: 12px 18px; border: 1px solid #bbdfc5; border-radius: 10px; background: #e8f5ec; color: #166534; box-shadow: 0 4px 16px rgb(0 0 0 / .1); font-size: 14px; }
+.competency-workspace .dictionary-tools { grid-template-columns: minmax(0, 1fr) 156px; }
+.competency-workspace .dictionary-row { min-height: 0; gap: 12px; padding: 12px 16px; border-color: var(--color-border); transition: box-shadow .2s ease, border-color .2s ease; }
+.competency-workspace .dictionary-row:hover { background: #fff; border-color: var(--color-primary-border); box-shadow: 0 3px 12px rgb(0 0 0 / .06); }
+.competency-workspace .dictionary-code { gap: 6px; }
+.competency-workspace .dictionary-description { margin: 5px 0 0; font-size: 13px; color: #5f6673; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.competency-workspace .dictionary-info-button { display: inline-grid; place-items: center; min-width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--color-text-secondary); font-size: 17px; cursor: pointer; }
+.competency-workspace .dictionary-info-button:hover { color: var(--color-primary); background: var(--color-primary-soft); }
+.competency-workspace .competency-type-badge { display: inline-flex; padding: 3px 8px; border-radius: 999px; background: #f3f4f6; color: #4b5563; font-size: 13px; font-weight: 600; }
+.competency-workspace .type-cc { color: #9a3412; background: #fff1e6; }
+.competency-workspace .type-mc { color: #5b21b6; background: #f3eefe; }
+.competency-workspace .type-fc { color: #155e75; background: #e9f6fa; }
+.competency-workspace .badge-added { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 999px; color: #15803d; background: #e8f5ec; font-size: 13px; white-space: nowrap; }
+.competency-workspace .added-control { display: grid; justify-items: center; gap: 4px; }
+.competency-workspace .added-remove { visibility: hidden; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; color: #b42318; font-size: 13px; cursor: pointer; }
+.competency-workspace .added-control:hover .added-remove, .competency-workspace .added-control:focus-within .added-remove { visibility: visible; }
+.competency-workspace .added-remove:hover { background: #fdecea; }
+.competency-workspace :is(button, input, select, [tabindex]):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.competency-workspace button:disabled { opacity: .6; cursor: not-allowed; }
+@media (hover: none) { .competency-workspace .added-remove { visibility: visible; } }
+@media (max-width: 992px) {
+    .competency-workspace { grid-template-columns: minmax(0, 1fr); }
+    .competency-workspace .dictionary { position: static; }
+}
+@media (max-width: 640px) {
+    .competency-workspace .dictionary-tools { grid-template-columns: minmax(0, 1fr); }
+    .competency-workspace .assigned-category-table th:last-child { width: 108px; }
+    .competency-workspace .assigned-actions { flex-direction: column; align-items: stretch; gap: 10px; }
+    .competency-workspace .dictionary-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
+@media (prefers-reduced-motion: reduce) { .competency-workspace *, .competency-workspace *::before, .competency-workspace *::after { transition: none !important; animation: none !important; } }
+.position-setup-top { font-size: 14px; }
+.position-setup-top .unit-fc-toggle { display: flex; align-items: center; gap: 10px; position: relative; margin: 14px 0; color: var(--color-text); font-size: 14px; cursor: pointer; }
+.position-setup-top .unit-fc-toggle input { position: absolute; width: 44px; height: 26px; opacity: 0; cursor: pointer; }
+.position-setup-top .unit-fc-toggle-track { display: block; flex: 0 0 44px; height: 26px; padding: 3px; box-sizing: border-box; border-radius: 999px; background: #737b85; }
+.position-setup-top .unit-fc-toggle-track::after { content: ''; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+.position-setup-top .unit-fc-toggle input:checked + .unit-fc-toggle-track { background: var(--color-primary); }
+.position-setup-top .unit-fc-toggle input:checked + .unit-fc-toggle-track::after { transform: translateX(18px); }
+.position-setup-top .unit-fc-toggle input:focus-visible + .unit-fc-toggle-track { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.position-setup-top .unit-fc-toggle input:disabled { cursor: wait; }
+.position-setup-top .unit-fc-toggle input:disabled + .unit-fc-toggle-track { opacity: .6; }
+.position-setup-top :is(.position-kicker, .position-sub, .position-card-label, .position-card-sub, .position-scope-label, .position-hero-metrics small, .round-config-copy, .lbl, .fc-rule-intro, .fc-rule-help, .fc-rule-field-label, .fc-rule-section p, .fc-rule-badge, .btn-sm, .position-warning) { font-size: 13px; }
+.position-setup-top :is(.position-sub, .position-card-sub, .position-card-label, .position-hero-metrics small, .round-config-copy, .fc-rule-intro, .fc-rule-help, .fc-rule-section p) { color: #5f6673; }
+.position-setup-top .position-hero-metrics > div { cursor: default; border: 0; box-shadow: none; border-radius: 0; background: transparent; }
+.position-setup-top .position-scope { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 2fr); align-items: start; gap: 20px; }
+.position-setup-top .position-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.position-setup-top .filter-step-label { display: flex; align-items: center; gap: 6px; min-height: 24px; margin-bottom: 10px; color: #5f6673; font-size: 13px; font-weight: 600; }
+.position-setup-top .step-number { display: inline-grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--color-primary); color: #fff; font-size: 13px; }
+.position-setup-top .position-segments button { font-size: 14px; padding: 8px 18px; border-radius: 999px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text-secondary); }
+.position-setup-top .position-segments button.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.position-setup-top .position-segments button:hover { border-color: var(--color-primary); }
+.position-context-strip { margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); background: #fff; overflow-wrap: anywhere; }
+.position-setup-top .position-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 16px; }
+.position-setup-top .position-card { min-width: 0; padding: 16px 20px; border-radius: 12px; }
+.position-setup-top .fc-rule-card { grid-column: 1 / -1; }
+.position-setup-top .type-breakdown { margin-top: 12px; }
+.position-setup-top .cc-progress { margin-top: 14px; height: 6px; overflow: hidden; border-radius: 999px; background: #eceff3; }
+.position-setup-top .cc-progress > span { display: block; height: 100%; background: #b45309; transition: width .3s ease; }
+.position-setup-top .cc-progress.is-done > span { background: #15803d; }
+.position-setup-top .position-card-title.warn { color: #b45309; }
+.position-setup-top .position-card-title.complete { color: #15803d; }
+.position-setup-top .fc-effective { padding: 10px 14px; margin: 12px 0 16px; border-radius: 10px; background: var(--color-primary-soft); font-size: 14px; }
+.position-setup-top .fc-rule-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.position-setup-top .fc-rule-section { min-width: 0; padding: 20px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.position-setup-top .fc-rule-section.is-active { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-soft); }
+.position-setup-top .fc-rule-section.is-inactive { background: #f9fafb; }
+.position-setup-top .fc-rule-section.is-active .fc-rule-badge { color: #15803d; background: #e8f5ec; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.position-setup-top .fc-rule-input { font-size: 18px; padding: 8px 12px; border-radius: 8px; }
+.position-setup-top .unit-fc-reset-btn { color: #b42318; border: 1px solid #f5c2bd; background: #fff; }
+.position-setup-top .unit-fc-reset-btn:hover { background: #fdecea; border-color: #b42318; }
+.position-setup-top .setup-helper { margin: -4px 0 14px; font-size: 13px; color: #5f6673; }
+.position-setup-top :is(button, input, select):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.position-setup-top button:disabled { cursor: not-allowed; opacity: .6; }
+.import-preview { padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; color: var(--color-text-secondary); }
+@media (max-width: 992px) { .position-setup-top .position-scope, .position-setup-top .fc-rule-sections { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .position-setup-top .position-picker, .position-setup-top .position-board { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .position-setup-top *, .position-setup-top *::before, .position-setup-top *::after { transition: none !important; animation: none !important; } }
+.position-setup-top .fc-animated-section { container-type: inline-size; padding: 16px 20px; min-height: 0; }
+.position-setup-top .fc-animated-head { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 16px; }
+.position-setup-top .fc-title-line { display: contents; }
+.position-setup-top .fc-animated-head h3 { margin: 0; color: var(--color-text); font-size: 16px; font-weight: 600; }
+.position-setup-top .fc-animated-head small { font-size: 13px; color: #5f6673; font-weight: 400; }
+.position-setup-top .fc-animated-head .fc-effective { margin: 0; padding: 3px 10px; border-radius: 999px; font-size: 13px; }
+.position-setup-top .fc-header-toggle { margin: 0; font-size: 14px; }
+.position-setup-top .fc-display-stage { display: flex; position: relative; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin: 14px 0 0; }
+.position-setup-top .fc-primary, .position-setup-top .fc-secondary { flex: 0 0 460px; width: 460px; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.position-setup-top .fc-primary { transition: opacity .25s ease; }
+.position-setup-top .fc-primary.is-disabled { opacity: .55; pointer-events: none; }
+.position-setup-top .fc-secondary { position: absolute; top: 0; left: 476px; overflow: hidden; opacity: 0; transform: translateX(-24px); visibility: hidden; transition: opacity .25s ease, transform .3s cubic-bezier(.4,0,.2,1), visibility 0s linear .3s; }
+.position-setup-top .has-secondary .fc-secondary { position: relative; left: auto; top: auto; opacity: 1; transform: none; visibility: visible; transition: opacity .25s ease .05s, transform .3s cubic-bezier(.4,0,.2,1), visibility 0s; }
+.position-setup-top .fc-display-card { min-width: 0; margin: 0; box-sizing: border-box; padding: 12px 16px; border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; background: #fff; transition: border-color .25s ease; }
+.position-setup-top .is-disabled .fc-display-card { border-left-color: #d1d5db; }
+.position-setup-top .fc-card-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.position-setup-top .fc-card-label h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--color-text); }
+.position-setup-top .fc-result-badge { padding: 3px 10px; border-radius: 999px; background: var(--color-primary-soft); color: var(--color-primary); font-size: 13px; }
+.position-setup-top .fc-info-icon { font-size: 14px; color: #5f6673; cursor: help; }
+.position-setup-top .fc-info-icon:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.position-setup-top .fc-inline-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.position-setup-top .fc-inline-row .fc-rule-input { width: 80px; min-width: 80px; max-width: 80px; padding: 6px 10px; font-size: 16px; border: 1px solid var(--color-border); border-radius: 8px; }
+.position-setup-top .fc-inline-row .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+.position-setup-top .fc-display-card .fc-rule-message { font-size: 13px; }
+.position-setup-top .fc-display-card .btn:disabled { background: #e5e7eb; border-color: #e5e7eb; color: #9ca3af; opacity: 1; cursor: not-allowed; }
+.position-setup-top .fc-display-card:disabled .btn { background: #e5e7eb; border-color: #e5e7eb; color: #9ca3af; opacity: 1; }
+.position-setup-top .fc-display-card .fc-inline-row { flex-wrap: nowrap; }
+@media (max-width: 768px) {
+    .position-setup-top .fc-display-stage { flex-direction: column; }
+    .position-setup-top .fc-primary, .position-setup-top .fc-secondary { flex-basis: auto; width: 100%; }
+    .position-setup-top .fc-secondary { display: none; }
+    .position-setup-top .has-secondary .fc-secondary { display: block; }
+    .position-setup-top .fc-display-card .fc-inline-row { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .position-setup-top .fc-primary, .position-setup-top .fc-secondary, .position-setup-top .has-secondary .fc-secondary, .position-setup-top .fc-display-card { transition: none !important; } }
+.competency-workspace .mc-workline-restriction { font-size: 13px; color: #5f6673; white-space: nowrap; }
 </style>

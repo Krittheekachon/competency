@@ -13,6 +13,13 @@ use Illuminate\Validation\ValidationException;
 
 class StructureController extends Controller
 {
+    private function validateWorklinePositionName(string $name, string $field): void
+    {
+        if (! preg_match('/^(คณบดี|ผู้อำนวยการ|ผอ\.?)$/u', trim($name))) {
+            throw ValidationException::withMessages([$field => 'ตำแหน่งระดับสายงานสงวนไว้สำหรับคณบดีหรือผู้อำนวยการเท่านั้น']);
+        }
+    }
+
     public function storePositionTitle(Request $request): RedirectResponse
     {
         $data = $request->validate([
@@ -30,6 +37,10 @@ class StructureController extends Controller
             : ($data['workline_type'] ?? null);
         if (($data['placement_scope'] ?? null) === 'workline' && (! $worklineId || $worklineType !== 'management')) {
             throw ValidationException::withMessages(['workline_id' => 'เพิ่มตำแหน่งระดับสายงานได้เฉพาะสายบริหารเท่านั้น']);
+        }
+
+        if (($data['placement_scope'] ?? null) === 'workline') {
+            $this->validateWorklinePositionName($data['name'], 'name');
         }
 
         $exists = DB::table('position_titles')
@@ -74,6 +85,10 @@ class StructureController extends Controller
             $type = app(\App\Services\SsoWorklineNormalizer::class)->structureType(DB::table('worklines')->where('id', $data['workline_id'])->value('name'));
             if ($type !== 'management' || (int) $title->workline_id !== (int) $data['workline_id']) {
                 throw ValidationException::withMessages(['position_title_id' => 'กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหารนี้']);
+            }
+            $this->validateWorklinePositionName($title->name, 'position_title_id');
+            if (DB::table('positions')->where('position_title_id', $title->id)->exists()) {
+                throw ValidationException::withMessages(['position_title_id' => 'ตำแหน่งระดับสายงานต้องไม่สังกัดภาควิชา/หน่วยงาน']);
             }
             if ($title->is_workline_position) {
                 throw ValidationException::withMessages(['position_title_id' => 'เพิ่มตำแหน่งนี้ในระดับสายงานแล้ว']);

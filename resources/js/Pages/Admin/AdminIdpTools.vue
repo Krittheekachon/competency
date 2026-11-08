@@ -1,6 +1,6 @@
 <script setup>
 import { router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   formDefinitions,
   hasGroupedRowFields,
@@ -10,12 +10,31 @@ import {
 import { coachingApproachDescriptions } from '../../coachingApproachDescriptions';
 
 const props = defineProps({
+  idpFillMode: { type: String, default: 'quick' },
   competencies: { type: Array, default: () => [] },
   idpLearningMethods: { type: Array, default: () => [] },
   learningCatalogs: { type: Array, default: () => [] },
   learningMethods: { type: Array, default: () => [] },
   deliveryTypeSettings: { type: Array, default: () => [] },
 });
+const selectedFillMode = ref(props.idpFillMode);
+const fillModeSaving = ref(false);
+const fillModeMessage = ref('');
+const fillModeError = ref('');
+watch(() => props.idpFillMode, value => { selectedFillMode.value = value; });
+const saveFillMode = () => {
+  if (fillModeSaving.value || selectedFillMode.value === props.idpFillMode) return;
+  if (!window.confirm('มีผลกับผู้ใช้ทุกคนที่ยังไม่ส่งแผน ยืนยันบันทึก?')) return;
+  fillModeSaving.value = true;
+  fillModeMessage.value = '';
+  fillModeError.value = '';
+  router.put(route('admin.idp-fill-mode.update'), { idp_fill_mode: selectedFillMode.value }, {
+    preserveScroll: true,
+    onSuccess: () => { fillModeMessage.value = 'บันทึกรูปแบบการกรอกแผน IDP แล้ว'; },
+    onError: errors => { fillModeError.value = String(errors.idp_fill_mode || 'บันทึกไม่สำเร็จ'); },
+    onFinish: () => { fillModeSaving.value = false; },
+  });
+};
 
 const focusTabs = [
   { key: 'experiential', label: 'Experiential Focus' },
@@ -421,6 +440,15 @@ const deliveryTypeDisplay = (value) => {
       </div>
     </div>
 
+    <section class="card fill-mode-settings" aria-labelledby="idp-fill-mode-title">
+      <div class="fill-mode-heading"><div><h2 id="idp-fill-mode-title">รูปแบบการกรอกแผน IDP</h2><p>แผนที่ส่งแล้วไม่ได้รับผลกระทบ · แผนที่มีกิจกรรมบันทึกไว้ยังเปิดตามรูปแบบเดิม</p></div><button class="btn btn-p" type="button" :disabled="fillModeSaving || selectedFillMode === props.idpFillMode" @click="saveFillMode">{{ fillModeSaving ? 'กำลังบันทึก…' : 'บันทึก' }}</button></div>
+      <div class="fill-mode-options">
+        <label class="fill-mode-option" :class="{ selected: selectedFillMode === 'quick' }"><input v-model="selectedFillMode" type="radio" value="quick" name="idp-fill-mode" :disabled="fillModeSaving" /><span><strong>เลือกอย่างเดียว (แนะนำ)</strong><small>ผู้ใช้เลือกพฤติกรรมและวิธี แล้วส่งได้เลย</small></span></label>
+        <label class="fill-mode-option" :class="{ selected: selectedFillMode === 'form' }"><input v-model="selectedFillMode" type="radio" value="form" name="idp-fill-mode" :disabled="fillModeSaving" /><span><strong>กรอกฟอร์มรายละเอียด</strong><small>ผู้ใช้กรอกเป้าหมาย ตัวชี้วัด และรายละเอียดกิจกรรม</small></span></label>
+      </div>
+      <p v-if="fillModeError" class="fill-mode-error" role="alert">{{ fillModeError }}</p>
+      <div v-if="fillModeMessage" class="fill-mode-toast" role="status">✓ {{ fillModeMessage }}<button type="button" aria-label="ปิดข้อความ" @click="fillModeMessage = ''">×</button></div>
+    </section>
     <div class="focus-tabs">
       <button
         v-for="tab in focusTabs"
@@ -1422,4 +1450,9 @@ const deliveryTypeDisplay = (value) => {
   .tool-actions, .panel-actions { justify-content: flex-start; }
   .panel-head { align-items: flex-start; flex-direction: column; }
 }
+.fill-mode-settings { margin-bottom: 20px; padding: 18px 20px; }
+.fill-mode-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }.fill-mode-heading h2 { margin: 0; font-size: 18px; font-weight: 600; }.fill-mode-heading p { margin: 6px 0 0; color: #5f6673; font-size: 13px; }
+.fill-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }.fill-mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--color-border); border-radius: 10px; background: #fff; cursor: pointer; }.fill-mode-option.selected { border-color: var(--color-primary); background: var(--color-primary-soft); }.fill-mode-option input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--color-primary); }.fill-mode-option strong { display: block; font-size: 15px; }.fill-mode-option small { display: block; margin-top: 6px; font-size: 14px; color: #5f6673; }.fill-mode-option:focus-within { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.fill-mode-error { color: #b42318; font-size: 14px; }.fill-mode-toast { display: flex; align-items: center; gap: 12px; position: fixed; right: 24px; bottom: 24px; z-index: 1200; max-width: calc(100vw - 48px); padding: 12px 16px; border: 1px solid #bbdfc5; border-radius: 10px; background: #e8f5ec; color: #166534; font-size: 14px; box-shadow: 0 4px 16px rgb(0 0 0 / .1); }.fill-mode-toast button { border: 0; background: transparent; color: inherit; min-width: 32px; min-height: 32px; font-size: 20px; cursor: pointer; }
+@media (max-width: 768px) { .fill-mode-options { grid-template-columns: minmax(0, 1fr); } }
 </style>

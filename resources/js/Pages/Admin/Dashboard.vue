@@ -9,6 +9,8 @@ import {
     ROLES_CONFIG,
 } from '../../data';
 import AdminDict from './AdminDict.vue';
+import ReviewerPresetFields from './ReviewerPresetFields.vue';
+import IdpChainModule from './IdpChainModule.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -38,7 +40,7 @@ const supportOrgFromGroups = (groups = {}) => Object.fromEntries(
 );
 const adminPageStorageKey = 'admin-active-page';
 const requestedPage = ref(typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('page')
+    ? new URLSearchParams(window.location.search).get('page') || usePage().props.prototypePage
     : null);
 const savedAdminPage = typeof window !== 'undefined'
     ? window.sessionStorage.getItem(adminPageStorageKey)
@@ -354,6 +356,7 @@ const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: 
 const visibleAdminPageIds = new Set([
     'admin-users',
     'admin-org-structure',
+    'admin-idp-chains',
     'admin-dict',
     'admin-idp-tools',
     'admin-fc-topic-review',
@@ -390,6 +393,7 @@ const implementedAdminPages = new Set([
     'emp-idp-detail',
     'admin-users',
     'admin-org-structure',
+    'admin-idp-chains',
     'admin-dict',
     'admin-idp-tools',
     'admin-fc-topic-review',
@@ -1268,8 +1272,16 @@ const showsPositionSection = computed(() =>
     (requiresOrganizationStructure.value || isManagementExecutive.value) && Boolean(userForm.value.w),
 );
 
-const requestPageChange = (page) => {
-    activePage.value = page;
+const requestPageChange = (nextPage) => {
+    if (nextPage === 'admin-idp-chains') {
+        window.location.assign(route('admin.idp-chains', { type: 'eval' }));
+        return;
+    }
+    if (page.props.prototypePage) {
+        window.location.assign(route('dashboard', { page: nextPage }));
+        return;
+    }
+    activePage.value = nextPage;
 };
 
 const parseOrgPath = (path = '') => {
@@ -1862,6 +1874,8 @@ const logout = () => router.post(route('logout'));
                     :worklines="worklines"
                 />
 
+                <IdpChainModule v-else-if="activePage === 'admin-idp-chains'" />
+
                 <AdminOrgStructure
                     v-else-if="activePage === 'admin-org-structure'"
                     :organization-chart="page.props.organizationChart"
@@ -1910,6 +1924,7 @@ const logout = () => router.post(route('logout'));
 
                 <AdminIdpTools
                     v-else-if="activePage === 'admin-idp-tools'"
+                    :idp-fill-mode="page.props.idpFillMode || 'quick'"
                     :competencies="competencies"
                     :idp-learning-methods="idpLearningMethods"
                     :learning-catalogs="hrCatalogItems"
@@ -2389,6 +2404,7 @@ const logout = () => router.post(route('logout'));
         <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title">
             <div class="reviewer-modal-head">
                 <div>
+                    <a :href="route('admin.idp-chains', { type: activeReviewerTemplateType === 'idp' ? 'idp' : 'eval' })" style="font-size:14px">ไปจัดการที่โมดูลใหม่ ›</a>
                     <h3 id="reviewer-template-modal-title">{{ activeReviewerTemplateTitle }}</h3>
                     <p>{{ activeReviewerTemplateSubtitle }}</p>
                 </div>
@@ -2634,105 +2650,12 @@ const logout = () => router.post(route('logout'));
                     </div>
                 </div>
 
-                <div v-else class="assessment-template-builder">
-                    <div class="template-builder-grid">
-                        <div class="fg">
-                            <label class="lbl req">ชื่อ{{ activeReviewerTemplateTitle }}</label>
-                            <input
-                                v-model="assessmentTemplateForm.name"
-                                class="inp modal-input"
-                                :placeholder="activeReviewerTemplateType === 'idp' ? 'เช่น ลำดับ IDP สายสนับสนุน' : 'เช่น ลำดับประเมินสายสนับสนุน'"
-                            />
-                        </div>
-                        <div class="fg">
-                            <label class="lbl">คำอธิบาย</label>
-                            <input
-                                v-model="assessmentTemplateForm.description"
-                                class="inp modal-input"
-                                placeholder="อธิบายว่าใช้กับกลุ่มไหน"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="template-builder-section">
-                        <div class="template-builder-head">
-                            <div>
-                                <h4>ลำดับผู้ประเมิน</h4>
-                                <p>เลือกเป็นชื่อคนจริงตามลำดับ เช่น นาย A -> นาย B -> นาย C</p>
-                            </div>
-                        </div>
-
-                        <div class="template-picker-row">
-                            <select v-model="assessmentTemplateForm.reviewer_pick" class="sel modal-input">
-                                <option value="">เลือกผู้ประเมิน</option>
-                                <option
-                                    v-for="person in templateReviewerOptions"
-                                    :key="`template-reviewer-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
-                            <button class="btn btn-s" type="button" @click="addTemplateReviewer">+ เพิ่มลำดับ</button>
-                        </div>
-
-                        <div v-if="selectedTemplateReviewerIds.length" class="template-chain-list">
-                            <div
-                                v-for="(reviewerId, index) in selectedTemplateReviewerIds"
-                                :key="`template-selected-reviewer-${reviewerId}`"
-                                class="template-chain-item"
-                            >
-                                <span class="template-chain-no">{{ index + 1 }}</span>
-                                <span>{{ templatePersonLabel(reviewerId) }}</span>
-                                <button class="btn btn-s" type="button" @click="removeTemplateReviewer(index)">ลบ</button>
-                            </div>
-                        </div>
-                        <div v-else class="reviewer-template-empty compact">
-                            ยังไม่ได้เพิ่มผู้ประเมิน
-                        </div>
-                    </div>
-
-                    <div v-if="!isEditingAssessmentTemplate" class="template-builder-section">
-                        <div class="template-builder-head">
-                            <div>
-                                <h4>ผู้ใช้ที่จะใช้ลำดับนี้</h4>
-                                <p>เลือกได้ภายหลัง หากต้องการสร้างลำดับเก็บไว้ก่อน</p>
-                            </div>
-                        </div>
-
-                        <div class="template-picker-row">
-                            <select v-model="assessmentTemplateForm.user_pick" class="sel modal-input">
-                                <option value="">เลือกผู้ใช้</option>
-                                <option
-                                    v-for="person in templateAssignmentUserOptions"
-                                    :key="`template-user-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
-                            <button class="btn btn-s" type="button" @click="addTemplateAssignmentUser">+ เพิ่มผู้ใช้</button>
-                        </div>
-
-                        <div v-if="selectedTemplateUserIds.length" class="template-user-list">
-                            <div
-                                v-for="(userId, index) in selectedTemplateUserIds"
-                                :key="`template-selected-user-${userId}`"
-                                class="template-user-chip"
-                            >
-                                <span>{{ templatePersonLabel(userId) }}</span>
-                                <button type="button" @click="removeTemplateAssignmentUser(index)">×</button>
-                            </div>
-                        </div>
-                        <div v-else class="reviewer-template-empty compact">
-                            ยังไม่ได้เพิ่มผู้ใช้
-                        </div>
-                    </div>
-
-                    <p v-if="assessmentTemplateError" class="reviewer-template-form-error" role="alert">
-                        {{ assessmentTemplateError }}
-                    </p>
-                </div>
+                <ReviewerPresetFields v-else
+                    :assessment-template-form="assessmentTemplateForm" :active-reviewer-template-title="activeReviewerTemplateTitle" :active-reviewer-template-type="activeReviewerTemplateType"
+                    :template-reviewer-options="templateReviewerOptions" :selected-template-reviewer-ids="selectedTemplateReviewerIds" :template-person-label="templatePersonLabel"
+                    :add-template-reviewer="addTemplateReviewer" :remove-template-reviewer="removeTemplateReviewer" :is-editing-assessment-template="isEditingAssessmentTemplate"
+                    :template-assignment-user-options="templateAssignmentUserOptions" :add-template-assignment-user="addTemplateAssignmentUser" :selected-template-user-ids="selectedTemplateUserIds"
+                    :remove-template-assignment-user="removeTemplateAssignmentUser" :assessment-template-error="assessmentTemplateError" />
 
             </div>
 

@@ -106,8 +106,8 @@ const navSections = computed(() => {
             { id: 'emp-assess', ic: '', lb: 'ประเมินตนเอง' },
             { id: 'emp-gap', ic: '', lb: 'ผลการประเมิน' },
             { id: 'emp-idp', ic: '', lb: 'IDP ของฉัน' },
-            { id: 'emp-progress', ic: '', lb: 'อัปเดตความก้าวหน้า' },
-            { id: 'emp-idp-detail', ic: '', lb: 'รายละเอียด IDP' },
+            { id: 'emp-progress', ic: '', lb: 'รายงานความก้าวหน้า' },
+            { id: 'emp-idp-detail', ic: '', lb: 'ประวัติ IDP' },
         ],
     }];
     const isHeadRole = ['dept_head', 'division_head', 'academic_department_head', 'supervisor', 'deputy_dean', 'assistant_dean'].includes(authRoleKey.value);

@@ -74,8 +74,8 @@ class IdpController extends Controller
         $validated = $request->validate([
             'items' => ['present', 'array'],
             'items.*.competencyGapId' => ['required', 'integer'],
-            'items.*.goal' => [$required, 'string'],
-            'items.*.successCriteria' => [$required, 'string'],
+            'items.*.goal' => ['nullable', 'string'],
+            'items.*.successCriteria' => ['nullable', 'string'],
             'items.*.activities' => ['present', 'array'],
             'items.*.activities.*.methodKey' => [$required, 'string', 'max:255'],
             'items.*.activities.*.developmentToolId' => ['nullable', 'integer', 'exists:idp_learning_methods,id'],
@@ -83,7 +83,7 @@ class IdpController extends Controller
             'items.*.activities.*.activityName' => ['nullable', 'string', 'max:255'],
             'items.*.activities.*.activityDescription' => ['nullable', 'string'],
             'items.*.activities.*.documentReferenceNumber' => ['nullable', 'string', 'max:255'],
-            'items.*.activities.*.weightPercent' => [$required, 'integer', 'min:1', 'max:100'],
+            'items.*.activities.*.weightPercent' => ['nullable', 'integer'],
             'items.*.activities.*.startDate' => ['nullable', 'date'],
             'items.*.activities.*.endDate' => ['nullable', 'date'],
             'items.*.activities.*.formCode' => ['nullable', 'string', 'max:120'],
@@ -172,6 +172,38 @@ class IdpController extends Controller
             ->keyBy('id');
 
         $items = $this->withAuthoritativeActivityData($items, $toolsById, $catalogsById, $planGaps !== null);
+        $items = $items->map(function (array $item, int $index) use ($status): array {
+            $mode = app(\App\Services\IdpFillMode::class)->forUserGap((int) auth()->id(), (int) $item['competencyGapId']);
+            $item['_fillMode'] = $mode;
+            if ($mode === 'form') {
+                validator(['items' => [$index => $item]], [
+                    "items.$index.goal" => [$status === 'submitted' ? 'required' : 'nullable', 'string'],
+                    "items.$index.successCriteria" => [$status === 'submitted' ? 'required' : 'nullable', 'string'],
+                    "items.$index.activities.*.weightPercent" => [$status === 'submitted' ? 'required' : 'nullable', 'integer', 'min:1', 'max:100'],
+                ])->validate();
+                $item['activities'] = array_map(function (array $activity): array {
+                    // A client-supplied quick marker must not change a form plan's saved mode.
+                    unset($activity['formDetails']['_behaviorPlan']);
+                    return $activity;
+                }, $item['activities'] ?? []);
+                return $item;
+            }
+            $activities = array_values($item['activities'] ?? []);
+            if (count($activities) > 100) {
+                throw ValidationException::withMessages(["items.$index.activities" => 'เลือกวิธีพัฒนาได้ไม่เกิน 100 วิธีต่อแผน']);
+            }
+            $descriptions = collect($activities)->flatMap(fn (array $activity) => $activity['formDetails']['behaviors'] ?? [])
+                ->pluck('description')->filter()->unique()->values();
+            $topics = $descriptions->isNotEmpty() ? $descriptions->implode("\n") : collect($activities)->pluck('activityName')->filter()->implode("\n");
+            $item['goal'] = filled($item['goal'] ?? null) ? $item['goal'] : ($topics !== '' ? 'พัฒนา: '.$topics : null);
+            $item['successCriteria'] = filled($item['successCriteria'] ?? null) ? $item['successCriteria'] : ($topics !== '' ? 'สามารถปฏิบัติได้: '.$topics : null);
+            $item['activities'] = array_map(function (array $activity, int $activityIndex) use ($activities): array {
+                $activity['weightPercent'] = intdiv(100, count($activities)) + ($activityIndex === 0 ? 100 % count($activities) : 0);
+                $activity['formDetails'] = [...($activity['formDetails'] ?? []), '_behaviorPlan' => true];
+                return $activity;
+            }, $activities, array_keys($activities));
+            return $item;
+        });
 
         $this->validateActivities(
             $items,
@@ -360,6 +392,7 @@ class IdpController extends Controller
                         'activityDescription' => $catalog->description ?? '',
                         'formCode' => 'form_10_training',
                         'formDetails' => [
+                            ...array_intersect_key($activity['formDetails'] ?? [], array_flip(['_behaviorPlan', 'behaviors'])),
                             '_formCode' => 'form_10_training',
                             '_saved' => true,
                             '_courseOnly' => true,
@@ -521,6 +554,25 @@ class IdpController extends Controller
                             "$prefix.developmentToolId" => 'Formal Learning ต้องเลือกจาก Learning Catalog',
                         ]);
                     }
+                }
+
+                // Behavior-first plans generate their goal and method details in the UI.
+                // Keep all ownership, method, catalog and weight checks above unchanged.
+                if (($item['_fillMode'] ?? 'form') === 'quick') {
+                    $behaviors = $activity['formDetails']['behaviors'] ?? [];
+                    if (! is_array($behaviors)) {
+                        throw ValidationException::withMessages(["$prefix.formDetails" => 'รายการพฤติกรรมไม่ถูกต้อง']);
+                    }
+                    foreach ($behaviors as $behavior) {
+                        if (! is_array($behavior)
+                            || ! $coveredGaps->contains('id', $behavior['gapId'] ?? null)
+                            || blank($behavior['description'] ?? null)) {
+                            throw ValidationException::withMessages([
+                                "$prefix.formDetails" => 'พฤติกรรมที่เลือกต้องอยู่ในสมรรถนะของแผนนี้',
+                            ]);
+                        }
+                    }
+                    continue;
                 }
 
                 $requiresForm = $focusType === 'formal'

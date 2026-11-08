@@ -24,7 +24,7 @@ class AssessmentMethodResolver
     {
         return match ($method) {
             self::FACULTY => 'วิธีคณะวิศวกรรมศาสตร์',
-            default => 'วิธีประเมินเดิม',
+            default => 'รูปแบบตามกำหนดมหาวิทยาลัย',
         };
     }
 
@@ -33,7 +33,7 @@ class AssessmentMethodResolver
     {
         return match ($method) {
             self::FACULTY => 'รูปแบบคณะวิศวกรรมศาสตร์',
-            default => 'รูปแบบมหาวิทยาลัย',
+            default => 'รูปแบบตามกำหนดมหาวิทยาลัย',
         };
     }
 

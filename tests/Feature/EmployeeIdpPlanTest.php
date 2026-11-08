@@ -16,6 +16,11 @@ class EmployeeIdpPlanTest extends TestCase
     use RefreshDatabase;
 
     private const DEV_NOTIFICATION_RECIPIENT = 'developer@example.test';
+    protected function setUp(): void
+    {
+        parent::setUp();
+        app(\App\Services\IdpFillMode::class)->save('form');
+    }
 
     public function test_employee_can_save_one_competency_plan_with_multiple_activities(): void
     {
@@ -858,6 +863,70 @@ class EmployeeIdpPlanTest extends TestCase
                 ->assertUnprocessable()
                 ->assertExactJsonStructure(['message', 'errors' => ['items.0.activities.0.formDetails.planRows']]);
         }
+    }
+
+    public function test_behavior_selection_plan_can_submit_without_manual_project_form_fields(): void
+    {
+        Mail::fake();
+        $reviewer = User::factory()->create(['role_id' => $this->roleId('supervisor')]);
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id, 'reviewer_id' => $reviewer->id,
+            'step_order' => 1, 'chain_type' => 'idp', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $gapId = $this->approvedGap($employee, $this->competencyId('CC-BEHAVIOR-PLAN'));
+        DB::table('learning_method_types')->insert([
+            'key' => 'experiential-learning', 'label' => 'Experiential Learning', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $toolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'experiential', 'title' => 'Project Assignment',
+            'form_code' => 'form_3_project_assignment', 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $payload = $this->completePlanPayload($gapId, $toolId);
+        $payload['activities'][0]['formCode'] = 'form_3_project_assignment';
+        $payload['activities'][0]['startDate'] = null;
+        $payload['activities'][0]['endDate'] = null;
+        $payload['activities'][0]['formDetails'] = [
+            '_behaviorPlan' => true, '_saved' => true,
+            'behaviors' => [['key' => "$gapId:1:1.2", 'gapId' => $gapId, 'level' => 1, 'code' => '1.2', 'description' => 'พฤติกรรมที่ต้องพัฒนา']],
+            'planRows' => [['developmentGoal' => 'พฤติกรรมที่ต้องพัฒนา', 'developmentApproach' => 'Project Assignment']],
+        ];
+        $this->actingAs($employee)->post(route('employee.idp.submit-item'), ['item' => $payload])
+            ->assertSessionHasErrors('items.0.activities.0.formDetails.planRows.0.assignmentTopic');
+        app(\App\Services\IdpFillMode::class)->save('quick');
+        unset($payload['goal'], $payload['successCriteria'], $payload['activities'][0]['weightPercent']);
+        $payload['activities'] = array_fill(0, 3, $payload['activities'][0]);
+        $this->post(route('employee.idp.submit-item'), ['item' => $payload])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('idp_items', ['competency_gap_id' => $gapId, 'status' => 'review_step_1']);
+        $activity = DB::table('idp_activities')->where('idp_learning_method_id', $toolId)->first();
+        $details = json_decode($activity->form_details, true);
+        $this->assertTrue($details['_behaviorPlan']);
+        $this->assertSame('1.2', $details['behaviors'][0]['code']);
+        $this->assertSame([34, 33, 33], DB::table('idp_activities')->orderBy('id')->pluck('weight_percent')->map(fn ($weight) => (int) $weight)->all());
+        $this->assertDatabaseHas('idp_items', ['competency_gap_id' => $gapId, 'goal' => 'พัฒนา: พฤติกรรมที่ต้องพัฒนา']);
+        app(\App\Services\IdpFillMode::class)->save('form');
+        $this->get('/dashboard')->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->where('idpFillMode', 'form')->where('currentUserIdp.fillMode', 'quick'));
+    }
+
+    public function test_form_draft_cannot_change_its_saved_mode_with_a_client_marker(): void
+    {
+        $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $gapId = $this->approvedGap($employee, $this->competencyId('CC-FORM-MODE'));
+        DB::table('learning_method_types')->insert([
+            'key' => 'experiential-learning', 'label' => 'Experiential Learning', 'is_active' => true,
+        ]);
+        $toolId = DB::table('idp_learning_methods')->insertGetId([
+            'focus_type' => 'experiential', 'title' => 'Project Assignment', 'is_active' => true,
+        ]);
+        $payload = $this->completePlanPayload($gapId, $toolId);
+        $payload['activities'][0]['formDetails'] = ['_behaviorPlan' => true];
+        $this->actingAs($employee)->postJson(route('employee.idp.draft'), ['items' => [$payload]])->assertOk();
+        app(\App\Services\IdpFillMode::class)->save('quick');
+        $this->assertSame('form', app(\App\Services\IdpFillMode::class)->forUserGap($employee->id, $gapId));
+        $this->get('/dashboard')->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->where('idpFillMode', 'quick')->where('currentUserIdp.fillMode', 'form'));
     }
 
     private function approvedGap(User $employee, int $competencyId): int

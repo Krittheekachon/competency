@@ -896,7 +896,7 @@ onBeforeUnmount(() => {
                 :key="person.userId"
                 type="button"
                 class="attention-row"
-                :aria-label="`ดูรายละเอียด IDP ของ ${person.name || 'บุคลากร'}`"
+                :aria-label="`ดูประวัติ IDP ของ ${person.name || 'บุคลากร'}`"
                 @click="openIdpPerson(person)"
               >
                 <div class="attention-person">

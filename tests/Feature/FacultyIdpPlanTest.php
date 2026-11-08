@@ -32,6 +32,7 @@ class FacultyIdpPlanTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        app(\App\Services\IdpFillMode::class)->save('form');
         Mail::fake();
 
         $this->roundId = DB::table('assessment_rounds')->insertGetId([
@@ -149,6 +150,22 @@ class FacultyIdpPlanTest extends TestCase
             [['courseName' => 'หลักสูตรทีม', 'courseDescription' => 'ฝึกการทำงานเป็นทีม']],
             json_decode($activity->form_details, true)['planRows'],
         );
+    }
+
+    public function test_behavior_selections_survive_faculty_course_normalization_and_reload(): void
+    {
+        app(\App\Services\IdpFillMode::class)->save('quick');
+        $courseId = $this->catalog('หลักสูตรทีม', 'CC-B');
+        $plan = $this->formalPlan($courseId);
+        $plan['activities'][0]['formDetails'] = [
+            '_behaviorPlan' => true, '_saved' => true,
+            'behaviors' => [['key' => 'team-1', 'gapId' => $this->gapIds['CC-B'], 'level' => 1, 'code' => '1.2', 'description' => 'ทำงานร่วมกับทีม']],
+        ];
+        $this->actingAs($this->employee)->postJson(route('employee.idp.draft'), ['items' => [$plan]])->assertOk();
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+            ->where('currentUserIdp.items.0.activities.0.formDetails._behaviorPlan', true)
+            ->where('currentUserIdp.items.0.activities.0.formDetails.behaviors.0.gapId', $this->gapIds['CC-B']));
+        $this->post(route('employee.idp.submit-item'), ['item' => $plan])->assertSessionHasNoErrors();
     }
 
     public function test_complete_formal_draft_edits_reload_with_all_activities_and_failed_gaps(): void

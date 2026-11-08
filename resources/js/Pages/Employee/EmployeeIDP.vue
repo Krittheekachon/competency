@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
+import BehaviorIdpPlanner from './BehaviorIdpPlanner.vue';
+import IdpMissingIndicators from './IdpMissingIndicators.vue';
 import {
   formDefinitions,
   hasGroupedRowFields,
@@ -92,10 +94,22 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
+// Existing detailed activity forms remain available for plans created with the previous UI.
+const hasLegacyActivities = computed(() => (props.idp?.items || []).some(item =>
+  (item.activities || []).some(activity => !activity.formDetails?._behaviorPlan)));
+const showLegacyIdp = computed(() => (props.idp as any)?.fillMode === 'form'
+  || (!(props.idp as any)?.fillMode && ((page.props.idpFillMode || 'quick') === 'form' || hasLegacyActivities.value)));
 const facultyIdpReadiness = computed(() => page.props.facultyIdpReadiness as { ready: boolean; message: string } | null);
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
 const activeFormActivityKey = ref<string | null>(null);
+const activeBehaviorForm = ref<{ description: string; key: string } | null>(null);
+const behaviorFormSnapshot = ref<Plan | null>(null);
+const behaviorEditor = ref<HTMLElement | null>(null);
+const behaviorEditorSaving = ref(false);
+let allowBehaviorEditorSave = false;
+let behaviorReturnFocus: HTMLElement | null = null;
+let behaviorBodyOverflow = '';
 type BuilderFocus = 'experiential' | 'social' | 'formal';
 const activityBuilderOpen = ref(false);
 const activityBuilderFocus = ref<BuilderFocus>('experiential');
@@ -755,6 +769,7 @@ const scheduleAutoSave = (delay = 1000, force = false) => {
 };
 
 const performAutoSave = async (force = false): Promise<boolean> => {
+  if (activeBehaviorForm.value && !allowBehaviorEditorSave) return false;
   if (!force && activeFormActivityKey.value !== null) {
     queuedSave.value = false;
     return false;
@@ -814,7 +829,7 @@ const performAutoSave = async (force = false): Promise<boolean> => {
 };
 
 watch(plans, () => {
-  if (activeFormActivityKey.value !== null
+  if (activeBehaviorForm.value || activeFormActivityKey.value !== null
     || plans.value.every((plan) => isPlanLocked(plan))
     || signature() === lastSavedSignature.value) return;
   saveState.value = 'idle';
@@ -1029,26 +1044,92 @@ const submitSelectedPlan = async () => {
     onFinish: () => { saveState.value = 'idle'; },
   });
 };
+const formBehaviorGroups = computed(() => failedGaps.value.flatMap(gap => {
+  const plan = usesFacultyPlan.value ? plans.value[0] : plans.value.find(item => item.competencyGapId === gap.id);
+  if (!plan) return [];
+  return [{ gap, plan, rows: [{ key: `${gap.id}:skill`, level: 0, code: gap.cd || '', description: gap.n }] }];
+}));
+const formBehaviorTotal = computed(() => formBehaviorGroups.value.reduce((total, group) => total + group.rows.length, 0));
+const formBehaviorDone = computed(() => formBehaviorGroups.value.reduce((total, group) => total + (!planIssue(group.plan) ? group.rows.length : 0), 0));
+const openBehaviorEditor = async (plan: Plan, row: { key: string; description: string }) => {
+  if (saveState.value === 'saving') return;
+  clearAutoSaveTimer();
+  behaviorReturnFocus = document.activeElement as HTMLElement;
+  behaviorBodyOverflow = document.body.style.overflow;
+  selectedGapId.value = plan.competencyGapId;
+  behaviorFormSnapshot.value = JSON.parse(JSON.stringify(plan));
+  activeBehaviorForm.value = { key: row.key, description: row.description };
+  document.body.style.overflow = 'hidden';
+  await nextTick();
+  behaviorEditor.value?.focus();
+};
+const closeBehaviorEditor = async () => {
+  if (behaviorEditorSaving.value || !activeBehaviorForm.value) return;
+  if (!selectedPlanLocked.value && JSON.stringify(selectedPlan.value) !== JSON.stringify(behaviorFormSnapshot.value)
+    && !window.confirm('มีข้อมูลที่ยังไม่บันทึก ต้องการทิ้งการแก้ไข?')) return;
+  clearAutoSaveTimer();
+  if (behaviorFormSnapshot.value && !selectedPlanLocked.value) {
+    const index = plans.value.findIndex(plan => plan.competencyGapId === behaviorFormSnapshot.value?.competencyGapId);
+    if (index >= 0) plans.value[index] = JSON.parse(JSON.stringify(behaviorFormSnapshot.value));
+  }
+  closeActivityBuilder();
+  activeFormActivityKey.value = null;
+  activeBehaviorForm.value = null;
+  behaviorFormSnapshot.value = null;
+  document.body.style.overflow = behaviorBodyOverflow;
+  await nextTick();
+  behaviorReturnFocus?.focus();
+};
+const saveBehaviorEditor = async () => {
+  if (!selectedPlan.value || selectedPlanLocked.value || selectedPlanIssue.value || behaviorEditorSaving.value) return;
+  clearAutoSaveTimer();
+  behaviorEditorSaving.value = true;
+  allowBehaviorEditorSave = true;
+  try {
+    if (await performAutoSave(true)) {
+      activeBehaviorForm.value = null;
+      behaviorFormSnapshot.value = null;
+      document.body.style.overflow = behaviorBodyOverflow;
+      await nextTick();
+      behaviorReturnFocus?.focus();
+    }
+  } finally { allowBehaviorEditorSave = false; behaviorEditorSaving.value = false; }
+};
+const openFirstIncompleteBehavior = () => {
+  const group = formBehaviorGroups.value.find(group => !isPlanLocked(group.plan) && planIssue(group.plan));
+  if (group?.rows[0]) void openBehaviorEditor(group.plan, group.rows[0]);
+};
+const behaviorEditorKeydown = (event: KeyboardEvent) => {
+  if (activityBuilderOpen.value || activeFormActivityKey.value || showCoachingApproachHelp.value) return;
+  if (event.key === 'Escape') { event.preventDefault(); void closeBehaviorEditor(); }
+  if (event.key !== 'Tab') return;
+  const targets = [...(behaviorEditor.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') || [])];
+  const first = targets[0], last = targets[targets.length - 1];
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === behaviorEditor.value)) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+};
+onBeforeUnmount(() => { if (activeBehaviorForm.value) document.body.style.overflow = behaviorBodyOverflow; });
 </script>
 
 <template>
-  <section class="idp-page">
+  <BehaviorIdpPlanner v-if="!showLegacyIdp" v-bind="props" />
+  <section v-else class="idp-page">
     <div v-if="facultyIdpReadiness && !facultyIdpReadiness.ready" class="revision-alert" role="alert" data-testid="faculty-idp-readiness">
       {{ facultyIdpReadiness.message }}
     </div>
     <header class="page-header">
       <div>
         <h1>แผนพัฒนา IDP</h1>
-        <p class="subtitle">{{ usesFacultyPlan ? 'หนึ่งคนหนึ่งแผน รวมทุกสมรรถนะที่ต้องพัฒนา และเพิ่มกิจกรรมพัฒนาได้หลายรายการ' : 'หนึ่งสมรรถนะต่อหนึ่งแผน และเพิ่มกิจกรรมพัฒนาได้หลายรายการ' }}</p>
+        <p class="subtitle">{{ props.user?.t }}{{ props.user?.n || '-' }} · {{ props.user?.p || '-' }} · {{ props.user?.sso || '-' }}</p>
       </div>
     </header>
 
-    <section v-if="!hasIdpReviewerSteps" class="idp-readiness-panel">
+    <div v-if="!hasIdpReviewerSteps" class="revision-alert" role="alert">ยังไม่ได้กำหนดผู้อนุมัติ IDP กรุณาติดต่อผู้ดูแลระบบ</div><section v-if="!showLegacyIdp &amp;&amp; !hasIdpReviewerSteps" class="idp-readiness-panel">
       <header>
         <span class="idp-readiness-symbol" aria-hidden="true">!</span>
         <div>
-          <h2>ยังไม่สามารถจัดทำแผนพัฒนา IDP ได้</h2>
-          <p>ระบบยังไม่ได้กำหนดลำดับผู้อนุมัติ IDP สำหรับคุณ</p>
+          <h2>ยังเริ่มแผน IDP ไม่ได้</h2>
+          <p>ยังไม่ได้กำหนดผู้อนุมัติ IDP</p>
         </div>
         <div class="idp-readiness-count"><strong>0/1</strong><span>รายการพร้อม</span></div>
       </header>
@@ -1061,130 +1142,32 @@ const submitSelectedPlan = async () => {
         <span class="idp-readiness-owner">รอ Admin</span>
       </div>
       <footer>
-        <strong>ต้องดำเนินการอย่างไร?</strong>
-        <span>ติดต่อผู้ดูแลระบบ (Admin) พร้อมแจ้งชื่อและตำแหน่ง เมื่อกำหนดลำดับแล้วหน้านี้จะเปิดให้ใช้งานอัตโนมัติ</span>
+        <strong>ติดต่อผู้ดูแลระบบ</strong>
+        <span>แจ้งชื่อและตำแหน่ง เพื่อให้กำหนดผู้อนุมัติ IDP</span>
       </footer>
     </section>
 
     <div v-else-if="idpGaps.length === 0" class="empty-state">
       <strong>ยังไม่มีสมรรถนะที่ต้องจัดทำ IDP</strong>
-      <span>ระบบจะแสดงรายการเมื่อผลประเมินได้รับอนุมัติและมี Gap ติดลบ</span>
+      <span>รายการจะแสดงเมื่อผลประเมินอนุมัติแล้วและต้องพัฒนา</span>
     </div>
 
-    <div v-else class="workspace">
-      <aside class="plan-nav">
-        <div class="plan-nav-meta">
-          <div class="person">
-            <span>{{ props.user?.sso || '-' }}</span>
-            <strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong>
-            <small>{{ props.user?.p || props.user?.displayOrganization || props.user?.organization?.display || '-' }}</small>
-          </div>
-          <div class="nav-heading">
-            <strong>{{ usesFacultyPlan ? 'แผนพัฒนารายบุคคล' : 'สมรรถนะที่ต้องพัฒนา' }}</strong>
-            <span>{{ failedGaps.length }}</span>
-          </div>
-        </div>
-        <div class="plan-nav-scroll">
-          <button
-            v-for="plan in plans"
-            :key="plan.competencyGapId"
-            class="plan-nav-item"
-            :class="{ active: selectedGapId === plan.competencyGapId }"
-            :aria-current="selectedGapId === plan.competencyGapId ? 'true' : undefined"
-            type="button"
-            @click="selectedGapId = plan.competencyGapId"
-          >
-            <span v-if="gapForPlan(plan)?.cd" class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
-            <span class="competency-copy">
-              <strong>{{ gapForPlan(plan)?.n }}</strong>
-              <small>{{ planNavDetail(plan) }}</small>
-            </span>
-            <span class="plan-status-badge" :class="`is-${planNavStatus(plan).tone}`">
-              {{ planNavStatus(plan).label }}
-            </span>
-          </button>
-        </div>
-      </aside>
-
-      <main class="plan-content">
-        <div v-if="!selectedPlan || !selectedGap" class="select-prompt">
-          <strong>เลือกสมรรถนะเพื่อจัดการแผน</strong>
-          <span>แต่ละสมรรถนะจะมีเป้าหมายและรายการกิจกรรมของตัวเอง</span>
-        </div>
-
-        <template v-else>
-          <section class="competency-header">
-            <div>
-              <span v-if="selectedGap.cd" class="type-tag">{{ selectedGap.cd }}</span>
-              <h2>{{ selectedGap.n }}</h2>
-              <p v-if="usesFacultyPlan" class="faculty-plan-copy">
-                รวมทุกสมรรถนะที่ต่ำกว่า 80% ไว้ในแผนเดียว กรอกกิจกรรมและส่งอนุมัติทั้งแผนครั้งเดียว
-              </p>
-            </div>
-            <ul v-if="usesFacultyPlan" class="faculty-plan-competencies">
-              <li v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
-                <span v-if="gap.cd" class="competency-code">{{ gap.cd }}</span>
-                <strong>{{ gap.n }}</strong>
-                <small>Actual {{ formatNumber(gap.actual) }} / Expected {{ formatNumber(gap.expected) }}<template v-if="gap.achievementPercentage !== null && gap.achievementPercentage !== undefined"> · {{ formatNumber(gap.achievementPercentage) }}%</template></small>
-              </li>
-            </ul>
-            <div v-else class="score-row">
-              <div><span>Expected</span><strong>{{ formatNumber(selectedGap.expected) }}</strong></div>
-              <div><span>Actual</span><strong>{{ formatNumber(selectedGap.actual) }}</strong></div>
-              <div class="negative"><span>Gap</span><strong>{{ formatNumber(selectedGap.gap) }}</strong></div>
-            </div>
-          </section>
-
-          <section class="plan-review-route" aria-label="ลำดับอนุมัติ IDP">
-            <header>
-              <div><h3>ลำดับอนุมัติ IDP</h3><p>{{ usesFacultyPlan ? 'ส่งอนุมัติทั้งแผนครั้งเดียวตามลำดับนี้' : `สถานะของ ${selectedGap.cd} · แต่ละสมรรถนะส่งอนุมัติแยกกัน` }}</p></div>
-            </header>
-            <ol>
-              <li v-for="step in idpApprovalSteps" :key="`${step.step}-${step.id}`"
-                :class="{ current: isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step) }">
-                <b>{{ step.step }}</b>
-                <div>
-                  <strong>{{ step.name }}</strong>
-                  <small>{{ step.position || step.label }}</small>
-                  <em v-if="isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step)">กำลังรออนุมัติ</em>
-                </div>
-              </li>
-            </ol>
-            <footer><strong>หมายเหตุ</strong><span>หากลำดับผู้อนุมัติไม่ถูกต้อง กรุณาติดต่อ Admin</span></footer>
-          </section>
-
-          <div v-if="selectedPlan.status === 'revision_required' && selectedPlan.rejectComment" class="revision-alert">
-            <strong>{{ selectedPlan.rejectReviewerName ? `ถูกส่งกลับโดย ${selectedPlan.rejectReviewerName}` : 'ถูกส่งกลับให้แก้ไข' }}</strong>
-            <span>{{ selectedPlan.rejectComment }}</span>
-          </div>
-
-          <section class="section-card behavior-section">
-            <header class="section-title">
-              <div>
-                <span class="section-number">01</span>
-                <div><h3>พฤติกรรมที่ต้องพัฒนา</h3><p>ข้อมูลจากผลประเมิน แก้ไขไม่ได้</p></div>
-              </div>
-              <b class="section-badge">ต้องพัฒนา · {{ coveredGaps(selectedGap).reduce((total, gap) => total + missingIndicators(gap).length, 0) }} ข้อ</b>
-            </header>
-            <div class="section-body indicator-list">
-              <template v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
-                <div v-if="usesFacultyPlan" class="indicator-group-title">
-                  <strong>{{ gap.cd ? `${gap.cd} · ${gap.n}` : gap.n }}</strong>
-                  <small v-if="gap.developmentRecommendation">{{ gap.developmentRecommendation }}</small>
-                </div>
-                <div v-for="indicator in missingIndicators(gap)" :key="`${gap.id}-${indicator.level}-${indicator.code}`" class="indicator-row">
-                  <span>ระดับ {{ indicator.level }} · ข้อ {{ indicator.code }}</span>
-                  <p>{{ indicator.description }}</p>
-                </div>
-                <div v-if="missingIndicators(gap).length === 0" class="indicator-row">
-                  <span>Competency Gap</span>
-                  <p>พัฒนา {{ gap.n }} ให้ถึงระดับที่คาดหวัง</p>
-                </div>
-              </template>
-            </div>
-          </section>
-
-          <section class="section-card goal-section">
+    <div v-if="hasIdpReviewerSteps && idpGaps.length" class="form-behavior-overview">
+      <header class="form-list-heading"><h2>ทักษะที่ต้องพัฒนา</h2><span>{{ props.user?.t }}{{ props.user?.n || '-' }} · {{ props.user?.p || '-' }}</span></header>
+      <section v-for="(group, index) in formBehaviorGroups" :key="group.gap.id" class="form-skill-card">
+        <button type="button" class="form-behavior-row" :class="!planIssue(group.plan) ? 'is-done' : 'is-pending'" :disabled="saveState === 'saving'" @click="openBehaviorEditor(group.plan, group.rows[0])">
+          <span class="status-dot" aria-hidden="true"><svg v-if="!planIssue(group.plan)" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="3"><path d="m4 10 4 4 8-8" /></svg></span>
+          <span class="form-behavior-copy"><strong>{{ group.gap.n }}</strong><span v-if="group.gap.actual != null && group.gap.expected != null" class="form-behavior-chip">ผลประเมินระดับ {{ group.gap.actual }} / คาดหวังระดับ {{ group.gap.expected }}</span></span>
+          <span :class="!planIssue(group.plan) ? 'form-edit-label' : 'badge-pending'">{{ isPlanLocked(group.plan) ? 'ดูรายละเอียด' : !planIssue(group.plan) ? 'แก้ไข' : 'ต้องกรอก ›' }}</span>
+        </button>
+        <IdpMissingIndicators :groups="group.gap.missingIndicators || []" />
+      </section>
+    </div>
+    <Teleport to="body">
+      <div v-if="activeBehaviorForm && selectedPlan && selectedGap" class="behavior-editor-overlay" @click.self="closeBehaviorEditor" @keydown="behaviorEditorKeydown">
+        <section ref="behaviorEditor" class="behavior-form-editor" role="dialog" aria-modal="true" aria-labelledby="behavior-editor-title" tabindex="-1">
+          <header class="behavior-editor-heading"><div><h2 id="behavior-editor-title">{{ activeBehaviorForm.description }}</h2><span>ใช้ฟอร์มแผนร่วมเดิมของ{{ usesFacultyPlan ? 'บุคลากร' : 'สมรรถนะ' }}</span></div><button type="button" aria-label="ปิด" @click="closeBehaviorEditor">×</button></header>
+          <div class="behavior-editor-body">          <section class="section-card goal-section">
             <header class="section-title">
               <div>
                 <span class="section-number">02</span>
@@ -1278,7 +1261,7 @@ const submitSelectedPlan = async () => {
                 </div>
               </article>
 
-              <div v-if="activityBuilderOpen && !selectedPlanLocked" class="activity-builder">
+<Teleport to="body"><div v-if="activityBuilderOpen && !selectedPlanLocked" class="form-method-overlay" @click.self="closeActivityBuilder" @keydown.esc.stop="closeActivityBuilder">              <div v-if="activityBuilderOpen && !selectedPlanLocked" class="activity-builder">
                 <header class="activity-builder-head">
                   <div>
                     <strong>เลือกเครื่องมือสำหรับกิจกรรม</strong>
@@ -1351,9 +1334,126 @@ const submitSelectedPlan = async () => {
                 </div>
               </div>
 
-              <button v-if="!selectedPlanLocked && !activityBuilderOpen" class="add-activity" type="button" @click="openActivityBuilder()">
+</div></Teleport>              <button v-if="!selectedPlanLocked && !activityBuilderOpen" class="add-activity" type="button" @click="openActivityBuilder()">
                 <span>+</span> เลือกเครื่องมือ / หลักสูตร
               </button>
+            </div>
+          </section>
+
+          </div>
+          <footer class="behavior-editor-foot"><span v-if="selectedPlanIssue" role="status">{{ selectedPlanIssue }}</span><span v-if="submitError" role="alert">{{ submitError }}</span><button class="btn btn-s" type="button" :disabled="behaviorEditorSaving" @click="closeBehaviorEditor">{{ selectedPlanLocked ? 'ปิด' : 'ยกเลิก' }}</button><button v-if="!selectedPlanLocked" class="btn btn-p" type="button" :disabled="!!selectedPlanIssue || behaviorEditorSaving || saveState === 'saving'" @click="saveBehaviorEditor">{{ behaviorEditorSaving ? 'กำลังบันทึก…' : 'บันทึก' }}</button></footer>
+        </section>
+      </div>
+    </Teleport>    <div v-if="!showLegacyIdp" class="workspace">
+      <aside class="plan-nav">
+        <div class="plan-nav-meta">
+          <div class="person">
+            <span>{{ props.user?.sso || '-' }}</span>
+            <strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong>
+            <small>{{ props.user?.p || props.user?.displayOrganization || props.user?.organization?.display || '-' }}</small>
+          </div>
+          <div class="nav-heading">
+            <strong>{{ usesFacultyPlan ? 'แผนพัฒนารายบุคคล' : 'สมรรถนะที่ต้องพัฒนา' }}</strong>
+            <span>{{ failedGaps.length }}</span>
+          </div>
+        </div>
+        <div class="plan-nav-scroll">
+          <button
+            v-for="plan in plans"
+            :key="plan.competencyGapId"
+            class="plan-nav-item"
+            :class="{ active: selectedGapId === plan.competencyGapId }"
+            :aria-current="selectedGapId === plan.competencyGapId ? 'true' : undefined"
+            type="button"
+            @click="selectedGapId = plan.competencyGapId"
+          >
+            <span v-if="gapForPlan(plan)?.cd" class="competency-code">{{ gapForPlan(plan)?.cd }}</span>
+            <span class="competency-copy">
+              <strong>{{ gapForPlan(plan)?.n }}</strong>
+              <small>{{ planNavDetail(plan) }}</small>
+            </span>
+            <span class="plan-status-badge" :class="`is-${planNavStatus(plan).tone}`">
+              {{ planNavStatus(plan).label }}
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="plan-content">
+        <div v-if="!selectedPlan || !selectedGap" class="select-prompt">
+          <strong>เลือกสมรรถนะเพื่อจัดการแผน</strong>
+          <span>แต่ละสมรรถนะจะมีเป้าหมายและรายการกิจกรรมของตัวเอง</span>
+        </div>
+
+        <template v-else>
+          <section class="competency-header">
+            <div>
+              <span v-if="selectedGap.cd" class="type-tag">{{ selectedGap.cd }}</span>
+              <h2>{{ selectedGap.n }}</h2>
+              <p v-if="usesFacultyPlan" class="faculty-plan-copy">
+                รวมสมรรถนะที่ต่ำกว่า 80% และส่งอนุมัติในแผนเดียว
+              </p>
+            </div>
+            <ul v-if="usesFacultyPlan" class="faculty-plan-competencies">
+              <li v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
+                <span v-if="gap.cd" class="competency-code">{{ gap.cd }}</span>
+                <strong>{{ gap.n }}</strong>
+                <small>Actual {{ formatNumber(gap.actual) }} / Expected {{ formatNumber(gap.expected) }}<template v-if="gap.achievementPercentage !== null && gap.achievementPercentage !== undefined"> · {{ formatNumber(gap.achievementPercentage) }}%</template></small>
+              </li>
+            </ul>
+            <div v-else class="score-row">
+              <div><span>Expected</span><strong>{{ formatNumber(selectedGap.expected) }}</strong></div>
+              <div><span>Actual</span><strong>{{ formatNumber(selectedGap.actual) }}</strong></div>
+              <div class="negative"><span>Gap</span><strong>{{ formatNumber(selectedGap.gap) }}</strong></div>
+            </div>
+          </section>
+
+          <section class="plan-review-route" aria-label="ลำดับอนุมัติ IDP">
+            <header>
+              <div><h3>ลำดับอนุมัติ IDP</h3><p>{{ usesFacultyPlan ? 'ส่งอนุมัติทั้งแผนครั้งเดียวตามลำดับนี้' : `สถานะของ ${selectedGap.cd} · แต่ละสมรรถนะส่งอนุมัติแยกกัน` }}</p></div>
+            </header>
+            <ol>
+              <li v-for="step in idpApprovalSteps" :key="`${step.step}-${step.id}`"
+                :class="{ current: isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step) }">
+                <b>{{ step.step }}</b>
+                <div>
+                  <strong>{{ step.name }}</strong>
+                  <small>{{ step.position || step.label }}</small>
+                  <em v-if="isReviewStatus(selectedPlan.status) && Number(selectedPlan.currentReviewStep || selectedPlan.status.split('_').pop()) === Number(step.step)">กำลังรออนุมัติ</em>
+                </div>
+              </li>
+            </ol>
+            <footer><strong>หมายเหตุ</strong><span>หากลำดับผู้อนุมัติไม่ถูกต้อง กรุณาติดต่อ Admin</span></footer>
+          </section>
+
+          <div v-if="selectedPlan.status === 'revision_required' && selectedPlan.rejectComment" class="revision-alert">
+            <strong>{{ selectedPlan.rejectReviewerName ? `ถูกส่งกลับโดย ${selectedPlan.rejectReviewerName}` : 'ถูกส่งกลับให้แก้ไข' }}</strong>
+            <span>{{ selectedPlan.rejectComment }}</span>
+          </div>
+
+          <section class="section-card behavior-section">
+            <header class="section-title">
+              <div>
+                <span class="section-number">01</span>
+                <div><h3>พฤติกรรมที่ต้องพัฒนา</h3><p>ข้อมูลจากผลประเมิน แก้ไขไม่ได้</p></div>
+              </div>
+              <b class="section-badge">ต้องพัฒนา · {{ coveredGaps(selectedGap).reduce((total, gap) => total + missingIndicators(gap).length, 0) }} ข้อ</b>
+            </header>
+            <div class="section-body indicator-list">
+              <template v-for="gap in coveredGaps(selectedGap)" :key="gap.id">
+                <div v-if="usesFacultyPlan" class="indicator-group-title">
+                  <strong>{{ gap.cd ? `${gap.cd} · ${gap.n}` : gap.n }}</strong>
+                  <small v-if="gap.developmentRecommendation">{{ gap.developmentRecommendation }}</small>
+                </div>
+                <div v-for="indicator in missingIndicators(gap)" :key="`${gap.id}-${indicator.level}-${indicator.code}`" class="indicator-row">
+                  <span>ระดับ {{ indicator.level }} · ข้อ {{ indicator.code }}</span>
+                  <p>{{ indicator.description }}</p>
+                </div>
+                <div v-if="missingIndicators(gap).length === 0" class="indicator-row">
+                  <span>Competency Gap</span>
+                  <p>พัฒนา {{ gap.n }} ให้ถึงระดับที่คาดหวัง</p>
+                </div>
+              </template>
             </div>
           </section>
 
@@ -1364,7 +1464,7 @@ const submitSelectedPlan = async () => {
       </main>
     </div>
 
-    <div v-if="activeFormActivity && formDefinitionFor(activeFormActivity) && selectedGap && selectedPlan" class="form-modal-backdrop">
+    <div v-if="activeFormActivity && formDefinitionFor(activeFormActivity) && selectedGap && selectedPlan" class="form-modal-backdrop" @click.self="closeActivityForm()" @keydown.esc.stop="closeActivityForm()">
       <div class="form-modal">
         <header class="form-modal-top">
           <div>
@@ -1939,25 +2039,9 @@ const submitSelectedPlan = async () => {
       </div>
     </div>
 
-    <footer v-if="hasIdpReviewerSteps && idpGaps.length" class="submit-bar">
-      <div>
-        <strong>{{ selectedPlan ? `${selectedGap?.cd || selectedGap?.n} · ${planStatusLabel(selectedPlan)}` : 'เลือกสมรรถนะ' }}</strong>
-        <span v-if="submitError" id="idp-submit-reason" class="submit-reason" role="alert">
-          {{ submitError }}
-        </span>
-        <span v-else-if="selectedPlanIssue" id="idp-submit-reason" class="submit-reason" role="status">
-          ยังส่งไม่ได้: {{ selectedPlanIssue }}
-        </span>
-        <span v-else-if="saveState === 'saving'" id="idp-submit-reason" role="status">กำลังบันทึกข้อมูล กรุณารอสักครู่</span>
-        <span v-else-if="selectedPlan && !selectedPlanLocked" class="submit-ready" role="status">ข้อมูลครบแล้ว พร้อมส่งอนุมัติ</span>
-        <span v-if="selectedPlan?.status === 'revision_required'">เมื่อส่งใหม่ ระบบจะเริ่มตรวจจากผู้อนุมัติลำดับแรกอีกครั้ง</span>
-        <span v-else-if="selectedPlanLocked">สมรรถนะอื่นยังสามารถจัดทำและส่งแยกได้</span>
-        <span v-else-if="saveState === 'saved'">บันทึกร่างล่าสุดแล้ว</span>
-        <span v-else>ข้อมูลร่างจะบันทึกอัตโนมัติหลังหยุดกรอก</span>
-      </div>
-      <button type="button" :aria-describedby="submitError || selectedPlanIssue || saveState === 'saving' ? 'idp-submit-reason' : undefined" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!selectedPlanIssue" @click="submitSelectedPlan">
-        {{ selectedPlanLocked ? planStatusLabel(selectedPlan) : (usesFacultyPlan ? 'ส่งแผนให้ผู้อนุมัติ' : 'ส่งสมรรถนะนี้ให้หัวหน้า') }}
-      </button>
+    <footer v-if="hasIdpReviewerSteps && idpGaps.length" class="submit-bar form-overview-submit">
+      <div><div class="form-completion-progress" aria-hidden="true"><span :style="{ width: `${formBehaviorTotal ? formBehaviorDone / formBehaviorTotal * 100 : 0}%` }"></span></div><strong>กรอกแล้ว {{ formBehaviorDone }}/{{ formBehaviorTotal }} ทักษะ</strong></div>
+      <div class="form-submit-actions"><button v-if="selectedPlanIssue" type="button" class="form-submit-issue" @click="openFirstIncompleteBehavior">{{ selectedPlanIssue }}</button><span v-if="submitError" role="alert">{{ submitError }}</span><button type="button" :disabled="!selectedPlan || selectedPlanLocked || saveState === 'saving' || !!selectedPlanIssue" @click="submitSelectedPlan">{{ selectedPlanLocked ? planStatusLabel(selectedPlan) : (usesFacultyPlan ? 'ส่งแผนให้ผู้อนุมัติ' : 'ส่งสมรรถนะนี้ให้หัวหน้า') }}</button></div>
     </footer>
   </section>
 </template>
@@ -2327,4 +2411,27 @@ select:disabled { cursor: not-allowed; }
   .section-title { align-items: flex-start; }
   .submit-bar button { width: 100%; }
 }
+.idp-page { width: 100%; max-width: 1100px; box-sizing: border-box; margin-inline: auto; padding: 24px 20px 100px; border-radius: 16px; background: #f6f4f1; font-size: 16px; }.idp-page .subtitle { font-size: 14px; color: #5f6673; }
+.form-behavior-overview { display: grid; gap: 20px; min-width: 0; }.form-list-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; justify-content: space-between; }.form-list-heading h2 { margin: 0; font-size: 18px; font-weight: 600; }.form-list-heading > span { font-size: 14px; color: #5f6673; }
+.form-skill-card { overflow: hidden; background: #fff; border: 1px solid #ece8e3; border-left: 4px solid var(--color-primary); border-radius: 14px; box-shadow: 0 1px 3px rgb(0 0 0 / .05); }.form-skill-card > header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #ece8e3; background: #fffaf6; }.form-skill-card h3 { flex: 1; min-width: 0; margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }.form-skill-card header > span:last-child { font-size: 14px; color: #5f6673; }.form-skill-number { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--color-primary); color: #fff; font-weight: 700; }
+.form-skill-body { display: grid; gap: 10px; padding: 12px 20px 16px; }.form-behavior-row { display: flex; align-items: center; gap: 14px; width: 100%; min-width: 0; min-height: 60px; padding: 14px 16px; border: 1px solid #ece8e3; border-radius: 10px; background: #fff; text-align: left; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }.form-behavior-row:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgb(0 0 0 / .07); border-color: var(--color-primary-border); }.form-behavior-row.is-pending { border-left: 4px solid #f59e0b; }.form-behavior-row.is-done { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.status-dot { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border: 2px solid #f59e0b; box-sizing: border-box; border-radius: 50%; }.is-done .status-dot { background: #16a34a; border-color: #16a34a; color: #fff; }.form-behavior-copy { display: grid; gap: 8px; flex: 1; min-width: 0; }.form-behavior-copy strong { font-size: 16px; font-weight: 400; line-height: 1.6; overflow-wrap: anywhere; }.form-behavior-chip { justify-self: start; padding: 3px 10px; border-radius: 999px; background: #f6f3f0; color: #625d58; font-size: 14px; }.badge-pending, .form-edit-label { flex-shrink: 0; padding: 5px 12px; border-radius: 999px; background: #fff1e0; color: #b45309; font-size: 14px; }.form-edit-label { border: 1px solid var(--color-primary-border); background: #fff; color: var(--color-primary); }
+.behavior-editor-overlay { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .4); }.behavior-form-editor { display: flex; flex-direction: column; width: min(720px, 94vw); max-height: 90vh; overflow: hidden; border-radius: 14px; background: #fff; box-shadow: 0 20px 64px rgb(0 0 0 / .2); }.behavior-editor-heading { display: flex; justify-content: space-between; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #ece8e3; }.behavior-editor-heading h2 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.5; }.behavior-editor-heading span { display: block; margin-top: 6px; color: #5f6673; font-size: 14px; }.behavior-editor-heading button { flex: 0 0 36px; height: 36px; border: 0; background: transparent; font-size: 24px; cursor: pointer; }
+.behavior-editor-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; }.behavior-editor-body .section-card { margin-top: 0; margin-bottom: 16px; border-color: #e5dfd8; border-radius: 10px; }.behavior-editor-body .section-number, .behavior-editor-body .section-badge { display: none; }.behavior-editor-body .section-title { background: #fffaf6; }.behavior-editor-body :is(label, input, textarea, button, strong) { font-size: 16px; }.behavior-editor-body :is(small, label > span, .weight-total, .section-title p, .activity-identity > div > span, .activity-readonly-meta small, .activity-detail-action span) { font-size: 14px; }.behavior-editor-foot { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 14px 20px; border-top: 1px solid #ece8e3; }.behavior-editor-foot > span { flex: 1; font-size: 14px; color: #b45309; }.behavior-editor-foot .btn { min-height: 40px; font-size: 14px; }
+.form-method-overlay { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .4); }.form-method-overlay > .activity-builder { width: min(640px, 94vw); max-height: 85vh; margin: 0; overflow-y: auto; box-sizing: border-box; background: #fff; }.form-method-overlay :is(button, strong) { font-size: 16px; }.form-method-overlay :is(small, span) { font-size: 14px; }.form-modal-backdrop { z-index: 1700; }.approach-modal-backdrop { z-index: 1800; }
+.form-overview-submit { bottom: 16px; border-radius: 14px; gap: 14px; }.form-overview-submit > div:first-child { display: flex; align-items: center; gap: 12px; }.form-overview-submit strong { font-size: 15px; }.form-completion-progress { width: 100px; height: 6px; overflow: hidden; border-radius: 999px; background: #ece8e3; }.form-completion-progress > span { display: block; height: 100%; background: var(--color-primary); }.form-submit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }.form-overview-submit .form-submit-issue { max-width: 300px; padding: 6px 0; border: 0; background: transparent; color: #b45309; text-align: left; text-decoration: underline; font-size: 14px; }.form-overview-submit button { font-size: 14px; min-height: 40px; }
+.form-behavior-row:focus-visible, .behavior-form-editor:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+@media (max-width: 768px) { .idp-page { padding: 16px 12px 120px; }.form-skill-body { padding: 10px 12px 14px; }.form-skill-card > header { padding: 14px; }.form-behavior-row { gap: 10px; padding: 12px; }.badge-pending, .form-edit-label { padding: 4px 8px; }.behavior-editor-overlay, .form-method-overlay { align-items: end; padding: 0; }.behavior-form-editor { width: 100%; max-width: 100vw; border-radius: 14px 14px 0 0; }.behavior-editor-body { padding: 12px; }.behavior-editor-body .goal-grid { grid-template-columns: minmax(0, 1fr); }.form-method-overlay > .activity-builder { width: 100%; border-radius: 14px 14px 0 0; }.form-overview-submit { flex-wrap: wrap; }.form-submit-actions { width: 100%; }.form-submit-actions > button:last-child { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .form-behavior-row { transition: none !important; } }
+.behavior-editor-heading h2 { font-size: 16px; }
+.behavior-editor-body :is(label, input, textarea, button, strong),
+.form-method-overlay :is(button, strong) { font-size: 14px; }
+.behavior-editor-body :is(h3, h4), .form-modal .form-title-band h3 { font-size: 16px; }
+.form-modal .form-paper { font-size: 14px; }
+.form-modal :is(input, select, textarea, button, label, td, th, p, small, strong),
+.behavior-form-editor :is(input, select, textarea, button, label, td, th, p, small),
+.form-method-overlay :is(input, select, button, label, strong, small),
+.approach-modal-backdrop :is(p, li, span, small, button, strong) { font-size: 14px; }
+.form-modal :is(h3, h4), .behavior-form-editor :is(h2, h3, h4) { font-size: 16px; }
+.form-skill-card > .form-behavior-row { border: 0; border-radius: 10px; }.form-skill-card .form-behavior-copy strong { font-weight: 600; }
 </style>

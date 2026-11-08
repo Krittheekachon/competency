@@ -153,6 +153,10 @@ class AssessmentRoundController extends Controller
             'self_assess_start' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date'],
             'self_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_start'],
             'supervisor_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_end'],
+            'approval_start' => ['nullable', 'date'],
+            'approval_end' => ['nullable', 'date', Rule::when($request->filled('approval_start'), ['after_or_equal:approval_start'])],
+            'progress_report_start' => ['nullable', 'date', Rule::when($request->filled('approval_end'), ['after_or_equal:approval_end'])],
+            'progress_report_end' => ['nullable', 'date', Rule::when($request->filled('progress_report_start'), ['after_or_equal:progress_report_start'])],
             'is_active' => ['required', 'boolean'],
             'copy_from_round_id' => ['nullable', 'integer', 'exists:assessment_rounds,id'],
             'assessment_method' => ['nullable', 'string', Rule::in(AssessmentMethodResolver::allowed())],
@@ -165,6 +169,9 @@ class AssessmentRoundController extends Controller
             'supervisor_assess_end.required' => 'กรุณาระบุวันสิ้นสุดการตรวจของหัวหน้าก่อนเปิดใช้งานรอบ',
             'self_assess_end.after_or_equal' => 'วันสิ้นสุดการประเมินต้องไม่ก่อนวันเริ่มการประเมิน',
             'supervisor_assess_end.after_or_equal' => 'วันสิ้นสุดการตรวจของหัวหน้าต้องไม่ก่อนวันสิ้นสุดการประเมิน',
+            'approval_end.after_or_equal' => 'วันสิ้นสุดช่วงอนุมัติต้องไม่ก่อนวันเริ่มช่วงอนุมัติ',
+            'progress_report_start.after_or_equal' => 'ช่วงรายงานความก้าวหน้าต้องไม่เริ่มก่อนสิ้นสุดช่วงอนุมัติ',
+            'progress_report_end.after_or_equal' => 'วันสิ้นสุดรายงานความก้าวหน้าต้องไม่ก่อนวันเริ่มรายงาน',
         ]);
 
         $storedYear = $round ? (int) DB::table('assessment_rounds')->where('id', $round)->value('year') : null;
@@ -225,6 +232,10 @@ class AssessmentRoundController extends Controller
             'self_assess_start' => $data['self_assess_start'] ?? null,
             'self_assess_end' => $data['self_assess_end'] ?? null,
             'supervisor_assess_end' => $data['supervisor_assess_end'] ?? null,
+            'approval_start' => $data['approval_start'] ?? null,
+            'approval_end' => $data['approval_end'] ?? null,
+            'progress_report_start' => $data['progress_report_start'] ?? null,
+            'progress_report_end' => $data['progress_report_end'] ?? null,
             'is_active' => $isActive ?? (bool) $data['is_active'],
         ];
     }

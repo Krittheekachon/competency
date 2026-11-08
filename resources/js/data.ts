@@ -1,4 +1,4 @@
-﻿export const ROLES_CONFIG = {
+export const ROLES_CONFIG = {
   admin: { lbl: "ผู้ดูแลระบบ", name: "วิชัย ระบบดี", av: "ว", pos: "ผู้ดูแลระบบคณะ", col: "#B93620" },
   hr: { lbl: "งานทรัพยากรบุคคล", name: "คุณมาลี ดีเสมอ", av: "ม", pos: "งานทรัพยากรบุคคล", col: "#C7432B" },
   employee: { lbl: "บุคลากร", name: "สมชาย มีสุข", av: "ส", pos: "นักวิชาการศึกษา · สายสนับสนุน", col: "#D84A2F" },
@@ -20,8 +20,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "แผนพัฒนา IDP" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     }
   ],
@@ -32,8 +32,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -52,8 +52,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -71,8 +71,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -91,8 +91,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -111,8 +111,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -131,8 +131,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -151,8 +151,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -202,8 +202,8 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "ผลการประเมิน" },
         { id: "emp-idp", ic: "", lb: "IDP ของฉัน" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" },
-        { id: "emp-idp-detail", ic: "", lb: "รายละเอียด IDP" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" },
+        { id: "emp-idp-detail", ic: "", lb: "ประวัติ IDP" }
       ]
     },
     {
@@ -229,7 +229,7 @@ export const NAV_CONFIG = {
         { id: "emp-assess", ic: "", lb: "ประเมินตนเอง" },
         { id: "emp-gap", ic: "", lb: "สรุปผลสมรรถนะ" },
         { id: "emp-idp", ic: "", lb: "แผนพัฒนา IDP" },
-        { id: "emp-progress", ic: "", lb: "อัปเดตความก้าวหน้า" }
+        { id: "emp-progress", ic: "", lb: "รายงานความก้าวหน้า" }
       ]
     },
     {
@@ -237,6 +237,7 @@ export const NAV_CONFIG = {
       items: [
         { id: "admin-users", ic: "", lb: "จัดการผู้ใช้งาน" },
         { id: "admin-org-structure", ic: "", lb: "จัดการโครงสร้างองค์กร & สมรรถนะ" },
+        { id: "admin-idp-chains", ic: "", lb: "ลำดับการประเมิน & IDP" },
         { id: "admin-dict", ic: "", lb: "พจนานุกรมสมรรถนะ" },
         { id: "admin-idp-tools", ic: "", lb: "เครื่องมือ / แนวทาง สำหรับทำแผน IDP" }
       ]
@@ -249,8 +250,8 @@ export const PAGE_TITLES = {
   "emp-assess": "ประเมินตนเอง",
   "emp-gap": "สรุปผลสมรรถนะ",
   "emp-idp": "แผนพัฒนารายบุคคล",
-  "emp-progress": "อัปเดตความก้าวหน้า",
-  "emp-idp-detail": "รายละเอียด IDP",
+  "emp-progress": "รายงานความก้าวหน้า",
+  "emp-idp-detail": "ประวัติ IDP",
   "sup-assess": "ประเมินทีมงาน",
   "sup-gap": "ผลการประเมินของทีม",
   "sup-idp": "IDP & ติดตามทีม",
@@ -275,6 +276,7 @@ export const PAGE_TITLES = {
   "hr-idp-overview": "ภาพรวม IDP คณะ",
   "admin-users": "จัดการผู้ใช้งาน",
   "admin-org-structure": "จัดการโครงสร้างองค์กร & สมรรถนะ",
+  "admin-idp-chains": "ลำดับการประเมิน & IDP",
   "admin-dict": "พจนานุกรมสมรรถนะ",
   "admin-idp-tools": "เครื่องมือ / แนวทาง สำหรับทำแผน IDP"
 };
