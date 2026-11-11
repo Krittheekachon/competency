@@ -7,8 +7,11 @@ const props = defineProps<{ gaps?: any[]; idp?: any; user?: any; learningMethods
 const page = usePage();
 type Behavior = { key: string; gapId: number; level: number; code: string; description: string };
 const gaps = computed(() => (props.gaps || []).filter(gap => gap.requiresIdp && ['approved', 'dean_approved'].includes(gap.status)));
-const faculty = computed(() => gaps.value.some(gap => gap.assessmentMethod === 'faculty'));
+const faculty = computed(() => (page.props as any).activeAssessmentMethod?.method === 'faculty'
+  || gaps.value.some(gap => gap.assessmentMethod === 'faculty'));
 const selections = ref<Record<string, string[]>>({});
+// Ticked skills; a ticked skill may not have methods yet. Methods are set from the › button.
+const ticked = ref<Set<string>>(new Set());
 const savedItems = computed(() => props.idp?.items || []);
 const legacyActivities = computed(() => savedItems.value.flatMap((item: any) => (item.activities || []).filter((activity: any) => !activity.formDetails?._behaviorPlan)));
 const planFor = (gapId: number) => faculty.value ? savedItems.value[0] : savedItems.value.find((item: any) => item.competencyGapId === gapId);
@@ -23,6 +26,16 @@ const steps = computed(() => props.user?.idpReviewerSteps || []);
 const readiness = computed(() => page.props.facultyIdpReadiness as any);
 const modalRows = ref<Behavior[]>([]);
 const modalMethods = ref<string[]>([]);
+const otherEnabled = ref(false);
+const otherText = ref('');
+const otherInput = ref<HTMLInputElement | null>(null);
+const otherReady = computed(() => otherEnabled.value && Boolean(otherText.value.trim()));
+const modalSelectionCount = computed(() => modalMethods.value.length + (otherReady.value ? 1 : 0));
+const canConfirmMethods = computed(() => modalSelectionCount.value > 0 && (!otherEnabled.value || otherReady.value));
+const toggleOther = async () => {
+  otherEnabled.value = !otherEnabled.value;
+  if (otherEnabled.value) { await nextTick(); otherInput.value?.focus(); }
+};
 const methodSearch = ref('');
 const methodType = ref<string | null>(null);
 const modal = ref<HTMLElement | null>(null);
@@ -34,9 +47,17 @@ const saved = ref(false);
 let timer: ReturnType<typeof setTimeout> | undefined;
 let savePromise: Promise<boolean> | null = null;
 let revision = 0;
+let savedRevision = 0;
 let previousFocus: HTMLElement | null = null;
 let previousOverflow = '';
-const optionKey = (activity: any) => activity.learningCatalogId ? `catalog:${activity.learningCatalogId}` : `tool:${activity.developmentToolId}`;
+const OTHER_PREFIX = 'other:';
+const isOtherKey = (key: string) => key.startsWith(OTHER_PREFIX);
+const otherName = (key: string) => key.slice(OTHER_PREFIX.length);
+const optionKey = (activity: any) => {
+  if (activity.learningCatalogId) return `catalog:${activity.learningCatalogId}`;
+  if (activity.developmentToolId) return `tool:${activity.developmentToolId}`;
+  return `${OTHER_PREFIX}${activity.activityName || ''}`;
+};
 const hydrate = () => {
   const next: Record<string, string[]> = {};
   for (const item of savedItems.value) for (const activity of item.activities || []) {
@@ -46,8 +67,10 @@ const hydrate = () => {
     }
   }
   selections.value = next;
+  ticked.value = new Set(Object.keys(next));
 };
-watch(() => props.idp, hydrate, { immediate: true });
+// A props refresh must not replace selections the user changed but the server has not saved yet.
+watch(() => props.idp, () => { if (revision === savedRevision) hydrate(); }, { immediate: true });
 const tools = computed(() => (props.idpLearningMethods || []).filter(tool => tool.isActive !== false && ['experiential', 'social'].includes(tool.focusType)).map(tool => ({
   key: `tool:${tool.id}`, name: tool.title, type: tool.focusType === 'social' ? 'Social' : 'Experiential',
   methodKey: tool.focusType === 'social' ? 'social-learning' : 'experiential-learning', developmentToolId: tool.id, learningCatalogId: null, formCode: tool.formCode || '',
@@ -75,9 +98,13 @@ const filteredOptions = computed(() => availableOptions.value.filter(option =>
 const methodTypeTone = (type: string) => ({ Experiential: 'tone-experiential', Social: 'tone-social', Formal: 'tone-formal' }[type] || 'tone-other');
 const resetMethodFilters = () => { methodSearch.value = ''; methodType.value = null; };
 const selectedRows = computed(() => behaviors.value.filter(row => selections.value[row.key]?.length));
+const isTicked = (row: Behavior) => ticked.value.has(row.key) || Boolean(selections.value[row.key]?.length);
+const tickedRows = computed(() => behaviors.value.filter(isTicked));
+const tickedWithoutMethod = computed(() => tickedRows.value.filter(row => !locked(row.gapId) && !selections.value[row.key]?.length));
 const editableRows = computed(() => behaviors.value.filter(row => !locked(row.gapId)));
 const summaryFor = (row: Behavior) => {
   const keys = selections.value[row.key] || [];
+  if (keys[0] && isOtherKey(keys[0])) return `${otherName(keys[0]) || 'อื่นๆ'}${keys.length > 1 ? ` +${keys.length - 1}` : ''}`;
   const first = options.value.find(option => option.key === keys[0]);
   const stored = savedItems.value.flatMap((item: any) => item.activities || []).find((activity: any) => optionKey(activity) === keys[0]);
   return `${first?.name || stored?.activityName || 'วิธีที่บันทึกไว้'}${keys.length > 1 ? ` +${keys.length - 1}` : ''}`;
@@ -90,12 +117,16 @@ const closeModal = async () => {
   previousFocus?.focus();
 };
 const openMethods = async (rows: Behavior[]) => {
-  if (saving.value || submitting.value || !rows.length) return;
+  if (submitting.value || !rows.length) return;
   previousFocus = document.activeElement as HTMLElement;
   previousOverflow = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
   modalRows.value = rows;
-  modalMethods.value = rows.length === 1 ? [...(selections.value[rows[0].key] || [])] : [];
+  const current = rows.length === 1 ? [...(selections.value[rows[0].key] || [])] : [];
+  const other = current.find(isOtherKey);
+  modalMethods.value = current.filter(key => !isOtherKey(key));
+  otherEnabled.value = Boolean(other);
+  otherText.value = other ? otherName(other) : '';
   resetMethodFilters();
   await nextTick();
   searchInput.value?.focus();
@@ -120,9 +151,19 @@ const planPayloads = () => {
     const item = {
       competencyGapId: anchor, goal: previous?.goal || (descriptions ? `พัฒนา: ${descriptions}` : ''), successCriteria: previous?.successCriteria || (descriptions ? `พัฒนาทักษะต่อไปนี้ได้:\n${descriptions}` : ''),
       activities: keys.map((key, index) => {
+        const related = rows.filter(row => selections.value[row.key]?.includes(key));
+        if (isOtherKey(key)) {
+          const name = otherName(key);
+          const goal = related.map(row => row.description).join('\n');
+          return {
+            methodKey: 'other-learning', developmentToolId: null, learningCatalogId: null, activityName: name,
+            activityDescription: goal, weightPercent: Math.floor(100 / keys.length) + (index === 0 ? 100 % keys.length : 0),
+            startDate: null, endDate: null, documentReferenceNumber: '', formCode: '',
+            formDetails: { _behaviorPlan: true, _saved: true, behaviors: related, detail: { developmentGoal: goal }, planRows: [{ developmentGoal: goal, developmentApproach: name }] },
+          };
+        }
         const option = options.value.find(option => option.key === key);
         const stored = (planFor(anchor)?.activities || []).find((activity: any) => optionKey(activity) === key);
-        const related = rows.filter(row => selections.value[row.key]?.includes(key));
         return {
           methodKey: option?.methodKey || stored?.methodKey, developmentToolId: option?.developmentToolId ?? stored?.developmentToolId ?? null,
           learningCatalogId: option?.learningCatalogId ?? stored?.learningCatalogId ?? null, activityName: option?.name || stored?.activityName,
@@ -159,7 +200,7 @@ const saveDraft = (): Promise<boolean> => {
       const response = await fetch(route('employee.idp.draft'), { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '' }, body: JSON.stringify(payload) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(Object.values(body.errors || {}).flat()[0] || body.message || 'บันทึกร่างไม่สำเร็จ'));
-      error.value = ''; saved.value = true; return true;
+      error.value = ''; saved.value = true; savedRevision = Math.max(savedRevision, version); return true;
     } catch (failure) { error.value = failure instanceof Error ? failure.message : 'บันทึกร่างไม่สำเร็จ'; return false; }
     finally { saving.value = false; savePromise = null; if (version !== revision) scheduleSave(); }
   })();
@@ -168,23 +209,42 @@ const saveDraft = (): Promise<boolean> => {
 const scheduleSave = () => { clearTimeout(timer); saved.value = false; timer = setTimeout(() => { void saveDraft(); }, 500); };
 const changed = () => { revision++; scheduleSave(); };
 const confirmMethods = () => {
-  if (!modalMethods.value.length) return;
+  if (!canConfirmMethods.value) return;
+  const chosen = [...modalMethods.value, ...(otherReady.value ? [`${OTHER_PREFIX}${otherText.value.trim().slice(0, 255)}`] : [])];
   const next = { ...selections.value };
-  for (const row of modalRows.value) next[row.key] = [...modalMethods.value];
+  for (const row of modalRows.value) next[row.key] = chosen;
+  ticked.value = new Set([...ticked.value, ...modalRows.value.map(row => row.key)]);
   const maxMethods = new Set(Object.values(next).flat()).size + legacyActivities.value.length;
   if (maxMethods > 100) { error.value = 'เลือกวิธีพัฒนาได้ไม่เกิน 100 วิธีต่อแผน'; return; }
   selections.value = next;
   void closeModal(); changed();
 };
+const canEditRow = (row: Behavior) => !locked(row.gapId) && !submitting.value && Boolean(steps.value.length);
+// Clicking the row (or its circle) only ticks/unticks; it never opens the picker.
 const toggleBehavior = (row: Behavior) => {
-  if (locked(row.gapId) || saving.value || submitting.value || !steps.value.length) return;
-  if (selections.value[row.key]?.length) { const next = { ...selections.value }; delete next[row.key]; selections.value = next; changed(); }
-  else void openMethods([row]);
+  if (!canEditRow(row)) return;
+  if (!isTicked(row)) { ticked.value = new Set([...ticked.value, row.key]); return; }
+  if (selections.value[row.key]?.length) {
+    if (!window.confirm(`ยกเลิกทักษะ “${row.description}” และลบวิธีพัฒนาที่เลือกไว้?`)) return;
+    const next = { ...selections.value }; delete next[row.key]; selections.value = next; changed();
+  }
+  const nextTicked = new Set(ticked.value); nextTicked.delete(row.key); ticked.value = nextTicked;
 };
+// Native change, then re-sync the box: a cancelled confirm or locked row keeps the stored state.
+const onTickChange = (row: Behavior, event: Event) => {
+  toggleBehavior(row);
+  const box = event.target as HTMLInputElement;
+  void nextTick(() => { box.checked = isTicked(row); });
+};
+// The › button opens the picker; confirming it also ticks the skill.
+const openRow = (row: Behavior) => { if (canEditRow(row)) void openMethods([row]); };
+// "เลือกทั้งหมด" ticks every editable skill without touching chosen methods.
+const tickAll = () => { ticked.value = new Set([...ticked.value, ...editableRows.value.map(row => row.key)]); };
 const blockReason = computed(() => {
   if (readiness.value && !readiness.value.ready) return readiness.value.message;
   if (!steps.value.length) return 'ยังไม่ได้กำหนดผู้อนุมัติ IDP กรุณาติดต่อผู้ดูแลระบบ';
   if (!editableRows.value.length) return 'แผนอยู่ระหว่างอนุมัติหรืออนุมัติแล้ว';
+  if (tickedWithoutMethod.value.length) return `ทักษะที่ติ๊กไว้ยังไม่ได้กำหนดวิธีพัฒนา ${tickedWithoutMethod.value.length} ทักษะ (กด › เพื่อกำหนด)`;
   if (!selectedRows.value.some(row => !locked(row.gapId))) return 'เลือกทักษะและวิธีพัฒนาอย่างน้อย 1 ทักษะ';
   return '';
 });
@@ -206,30 +266,29 @@ onBeforeUnmount(() => { clearTimeout(timer); if (modalRows.value.length) documen
     <div v-if="error || (readiness && !readiness.ready) || !steps.length" class="planner-alert" role="alert">{{ error || readiness?.message || 'ยังไม่ได้กำหนดผู้อนุมัติ IDP กรุณาติดต่อผู้ดูแลระบบ' }}</div>
     <header class="planner-person">
       <div class="planner-person-copy"><h1>แผนพัฒนา IDP</h1><div class="planner-person-meta"><strong>{{ props.user?.t }}{{ props.user?.n || '-' }}</strong><span aria-hidden="true">·</span><span>{{ props.user?.p || '-' }}</span><span aria-hidden="true">·</span><span>รหัส {{ props.user?.sso || '-' }}</span><template v-if="props.idp?.year"><span aria-hidden="true">·</span><span>ปีแผน {{ props.idp.year }}</span></template></div></div>
-      <nav v-if="steps.length" class="approve-flow" aria-label="ลำดับอนุมัติ IDP"><span>ลำดับอนุมัติ</span><ol><li v-for="(step, index) in steps" :key="step.id"><span v-if="index" class="approval-connector" aria-hidden="true"></span><span class="approver-chip" tabindex="0" :title="`${step.name || step.label || ''}${step.position ? ` · ${step.position}` : ''}`" :aria-label="`ลำดับ ${step.step}: ${step.name || step.label || ''}${step.position ? ` · ${step.position}` : ''}`"><span class="step-dot">{{ step.step }}</span></span></li></ol></nav>
+
     </header>
-    <div class="planner-list-head"><div><h2>เลือกทักษะที่ต้องการพัฒนา</h2><p><span class="hint-icon" aria-hidden="true">ⓘ</span> เลือกทักษะ แล้วกำหนดวิธีพัฒนา</p></div><button type="button" class="btn btn-s" :disabled="!editableRows.length || saving || submitting || !steps.length" @click="openMethods(editableRows)">เลือกทั้งหมด</button></div>
+    <div class="planner-list-head"><div><h2>เลือกทักษะที่ต้องการพัฒนาและกำหนดวิธีพัฒนา</h2></div><button type="button" class="btn btn-s" :disabled="!editableRows.some(row => !isTicked(row)) || submitting || !steps.length" @click="tickAll">เลือกทั้งหมด</button></div>
     <details v-if="legacyActivities.length" class="legacy-activities"><summary>กิจกรรมเดิมที่ยังเก็บไว้ {{ legacyActivities.length }} รายการ</summary><ul><li v-for="(activity, index) in legacyActivities" :key="index">{{ activity.activityName }}</li></ul></details>
     <p v-if="!gaps.length" class="planner-empty">ยังไม่มีสมรรถนะที่ต้องจัดทำ IDP</p>
     <section v-for="(group, groupIndex) in groups" :key="group.gap.id" class="behavior-group">
       <div class="skill-body">
       <p v-if="planFor(group.gap.id)?.rejectComment" class="planner-alert">ส่งกลับแก้ไข: {{ planFor(group.gap.id)?.rejectComment }}</p>
-      <div v-for="row in group.rows" :key="row.key" class="beh-row" :class="{ 'is-checked': selections[row.key]?.length, 'is-locked': locked(row.gapId) }" @click="toggleBehavior(row)">
-        <label class="behavior-select" @click.stop>
-          <span class="chk"><input type="checkbox" :checked="Boolean(selections[row.key]?.length)" :disabled="locked(row.gapId) || saving || submitting || !steps.length" :aria-label="row.description" @click.stop @change="toggleBehavior(row)" /><span class="box" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 10 4 4 8-8" /></svg></span></span>
+      <div v-for="row in group.rows" :key="row.key" class="beh-row" :class="{ 'is-checked': isTicked(row), 'is-locked': locked(row.gapId) }" @click="toggleBehavior(row)">
+        <div class="behavior-select">
+          <span class="chk"><input type="checkbox" :checked="isTicked(row)" :disabled="locked(row.gapId) || submitting || !steps.length" :aria-label="`ติ๊กเลือกทักษะ: ${row.description}`" @click.stop @change="onTickChange(row, $event)" /><span class="box" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 10 4 4 8-8" /></svg></span></span>
           <span class="behavior-copy">
             <span class="behavior-copy-top"><span class="skill-num">{{ groupIndex + 1 }}</span><span class="beh-text">{{ row.description }}</span></span>
             <span v-if="group.gap.actual != null && group.gap.expected != null" class="behavior-meta">ผลประเมินระดับ {{ group.gap.actual }} / คาดหวังระดับ {{ group.gap.expected }}</span>
           </span>
-        </label>
-        <button v-if="selections[row.key]?.length && !locked(row.gapId)" class="btn-edit" type="button" :disabled="saving || submitting" :aria-label="`แก้ไขวิธีพัฒนา: ${row.description}`" @click.stop="openMethods([row])"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z" /></svg>แก้ไข</button>
-        <span v-else-if="!locked(row.gapId)" class="beh-arrow" aria-hidden="true">›</span>
+        </div>
+        <button v-if="!locked(row.gapId)" class="beh-arrow" type="button" :disabled="submitting || !steps.length" :aria-label="`${selections[row.key]?.length ? 'แก้ไข' : 'กำหนด'}วิธีพัฒนา: ${row.description}`" :title="selections[row.key]?.length ? 'แก้ไขวิธีพัฒนา' : 'กำหนดวิธีพัฒนา'" @click.stop="openRow(row)">›</button>
       </div>
       <IdpMissingIndicators :groups="group.gap.missingIndicators || []" />
       <p v-if="!group.rows.length" class="planner-empty">ไม่มีทักษะที่ต้องพัฒนาในผลประเมินนี้</p>
       </div>
     </section>
-    <footer class="planner-sticky"><div class="sticky-summary"><div class="selection-progress" role="progressbar" aria-label="ทักษะที่กำหนดวิธีพัฒนาแล้ว" :aria-valuenow="selectedRows.length" :aria-valuemin="0" :aria-valuemax="behaviors.length || 1"><span :style="{ width: `${behaviors.length ? selectedRows.length / behaviors.length * 100 : 0}%` }"></span></div><span>เลือก <strong>{{ selectedRows.length }}/{{ behaviors.length }}</strong> ทักษะ · กำหนดวิธีแล้ว {{ selectedRows.length }} ทักษะ</span><small v-if="saving">กำลังบันทึก</small><small v-else-if="saved">บันทึกร่างแล้ว</small></div><div class="sticky-submit"><small v-if="blockReason && steps.length && (!readiness || readiness.ready)">{{ blockReason }}</small><button type="button" class="btn btn-p" :disabled="Boolean(blockReason) || saving || submitting" @click="submit">{{ submitting ? 'กำลังส่ง…' : 'ส่งแผนให้ผู้อนุมัติ' }}</button></div></footer>
+    <footer class="planner-sticky"><div class="sticky-summary"><div class="selection-progress" role="progressbar" aria-label="ทักษะที่กำหนดวิธีพัฒนาแล้ว" :aria-valuenow="selectedRows.length" :aria-valuemin="0" :aria-valuemax="behaviors.length || 1"><span :style="{ width: `${behaviors.length ? selectedRows.length / behaviors.length * 100 : 0}%` }"></span></div><span>เลือก <strong>{{ tickedRows.length }}/{{ behaviors.length }}</strong> ทักษะ · กำหนดวิธีแล้ว {{ selectedRows.length }} ทักษะ</span><small v-if="saving">กำลังบันทึก</small><small v-else-if="saved">บันทึกร่างแล้ว</small></div><div class="sticky-submit"><small v-if="blockReason && steps.length && (!readiness || readiness.ready)">{{ blockReason }}</small><button type="button" class="btn btn-p" :disabled="Boolean(blockReason) || saving || submitting" @click="submit">{{ submitting ? 'กำลังส่ง…' : 'ส่งแผนให้ผู้อนุมัติ' }}</button></div></footer>
     <Teleport to="body">
       <div v-if="modalRows.length" class="behavior-modal-backdrop" @click.self="closeModal" @keydown="modalKeydown">
         <section ref="modal" class="behavior-modal" role="dialog" aria-modal="true" aria-labelledby="behavior-method-title">
@@ -252,8 +311,15 @@ onBeforeUnmount(() => { clearTimeout(timer); if (modalRows.value.length) documen
               <span class="method-name">{{ option.name }}</span><small class="planner-chip method-type" :class="methodTypeTone(option.type)">{{ option.type }}</small>
             </label>
             <div v-if="!filteredOptions.length" class="method-empty"><p>ไม่พบวิธีที่ตรงกับเงื่อนไข</p><button type="button" @click="resetMethodFilters">ล้างตัวกรอง</button></div>
+            <div class="method-row method-other" :class="{ 'is-checked': otherEnabled }">
+              <label class="method-other-toggle">
+                <span class="chk"><input type="checkbox" :checked="otherEnabled" @change="toggleOther" /><span class="box" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 10 4 4 8-8" /></svg></span></span>
+                <span class="method-name">อื่นๆ (ระบุเอง)</span>
+              </label>
+              <input v-if="otherEnabled" ref="otherInput" v-model="otherText" class="method-other-input" maxlength="255" placeholder="พิมพ์วิธีพัฒนาที่ต้องการ" aria-label="ระบุวิธีพัฒนาอื่นๆ" @keydown.enter.prevent="confirmMethods" />
+            </div>
           </div>
-          <footer><button type="button" class="btn btn-s" @click="closeModal">ยกเลิก</button><button type="button" class="btn btn-p" :disabled="!modalMethods.length" @click="confirmMethods">ยืนยัน (เลือก {{ modalMethods.length }})</button></footer>
+          <footer><button type="button" class="btn btn-s" @click="closeModal">ยกเลิก</button><button type="button" class="btn btn-p" :disabled="!canConfirmMethods" @click="confirmMethods">ยืนยัน (เลือก {{ modalSelectionCount }})</button></footer>
         </section>
       </div>
     </Teleport>
@@ -342,4 +408,13 @@ input:focus-visible, button:focus-visible { outline: 2px solid var(--color-prima
 .behavior-modal { font-size: 14px; }.behavior-modal h2 { font-size: 16px; }.behavior-modal :is(p, input, label, .method-name, .btn) { font-size: 14px; }
 @media (max-width: 768px) { .behavior-group .beh-row { padding: 14px 12px; }.behavior-meta { padding-left: 0; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.method-other { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; cursor: default; }
+.method-other-toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.method-row .method-other-input { display: block; width: 100%; height: auto; min-height: 42px; flex: none; box-sizing: border-box; border: 1px solid var(--color-border, #dde2e6); border-radius: 8px; padding: 8px 12px; background: #fff; color: var(--color-text); font: inherit; font-size: 15px; accent-color: auto; cursor: text; }
+.method-row .method-other-input:focus { border-color: var(--color-primary, #c7432b); outline: none; box-shadow: 0 0 0 3px rgba(199, 67, 43, .12); }
+.method-other-hint { color: #b45309; font-size: 13px; }
+.beh-row, .beh-row .behavior-select { cursor: pointer; }
+.beh-row.is-locked, .beh-row.is-locked .behavior-select { cursor: default; }
+button.beh-arrow { display: inline-grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; margin-left: auto; border: 1px solid #e5dfd8; border-radius: 10px; background: #fff; color: #968a7f; font: inherit; font-size: 26px; line-height: 1; cursor: pointer; }
+button.beh-arrow:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-soft); }
 </style>

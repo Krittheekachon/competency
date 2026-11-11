@@ -12,8 +12,17 @@ class IdpChainPrototypeTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_prototype_is_hidden_unless_the_feature_flag_is_enabled(): void
+    {
+        config(['app.idp_chain_prototype_enabled' => false]);
+        $admin = User::factory()->create(['role_id' => DB::table('roles')->where('key', 'admin')->value('id')]);
+        $this->actingAs($admin)->get(route('admin.idp-chains'))->assertNotFound();
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page->where('features.idpChainPrototype', false));
+    }
+
     public function test_admin_can_open_the_prototype_without_real_chain_data(): void
     {
+        config(['app.idp_chain_prototype_enabled' => true]);
         $admin = User::factory()->create(['role_id' => DB::table('roles')->where('key', 'admin')->value('id')]);
         $this->actingAs($admin)->get(route('admin.idp-chains', ['type' => 'idp']))
             ->assertOk()->assertInertia(fn (Assert $page) => $page

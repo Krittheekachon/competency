@@ -230,20 +230,8 @@ class UserController extends Controller
         if ($roleKey === 'dean') return true;
         if ($this->isManagementExecutive($roleKey, $request->input('w'))) return true;
 
-        if (! in_array($roleKey, ['division_head', 'dept_head'], true)) {
-            return false;
-        }
-
-        $workline = (string) $request->input('w', '');
-        if (! in_array($workline, ['สายสนับสนุน', 'สายงานสนับสนุน'], true)) {
-            return false;
-        }
-
-        $pathCount = count(array_filter(array_map('trim', explode(' > ', (string) $request->input('d', '')))));
-
-        return $roleKey === 'division_head'
-            ? $pathCount >= 1 && $pathCount < 3
-            : $pathCount === 2;
+        // Every support-line user, whatever the role, sits at ฝ่าย > งาน > หน่วย with a position and level.
+        return false;
     }
 
     private function assertReviewerTemplateIsValid(mixed $templateId, string $chainType, string $field): void
@@ -377,7 +365,16 @@ class UserController extends Controller
             if ($titles->count() !== 1) {
                 throw ValidationException::withMessages(['p' => 'กรุณาเลือกตำแหน่งจากทะเบียนของสายบริหารที่เลือก']);
             }
-            $data['d'] = null;
+            // An executive keeps the academic department they belong to (optional).
+            $homeDepartment = trim((string) ($data['d'] ?? ''));
+            if ($homeDepartment !== '' && ! DB::table('job_families')
+                ->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
+                ->whereIn('worklines.name', ['สายวิชาการ', 'สายงานวิชาการ', 'วิชาการ'])
+                ->where('job_families.name', $homeDepartment)
+                ->exists()) {
+                throw ValidationException::withMessages(['d' => 'กรุณาเลือกภาควิชาที่สังกัดจากสายวิชาการ']);
+            }
+            $data['d'] = $homeDepartment !== '' ? $homeDepartment : null;
             $data['p'] = $titles->first()->name;
             $data['_position_id'] = null;
             $data['_position_title_id'] = $titles->first()->id;
@@ -445,84 +442,25 @@ class UserController extends Controller
 
     private function validatedSupportStructureData(array $data, int $worklineId): array
     {
-        $roleKey = $this->normalizeRoleKey($data['r']);
+        // Everyone sits at ฝ่าย > งาน > หน่วย; only a head of งาน (supervisor) stops at ฝ่าย > งาน.
         $path = array_values(array_filter(array_map('trim', explode(' > ', $data['d']))));
-        $pathCount = count($path);
-        if ($pathCount < 1 || $pathCount > 3) {
-            throw ValidationException::withMessages(['d' => 'กรุณาเลือกฝ่าย งาน และหน่วยให้ครบถ้วน']);
+        $isWorkHead = in_array($data['r'] ?? null, \App\Services\SupportUnitResolver::WORK_LEVEL_ROLES, true);
+        if (count($path) !== 3 && ! ($isWorkHead && count($path) === 2)) {
+            throw ValidationException::withMessages(['d' => $isWorkHead
+                ? 'กรุณาเลือกฝ่ายและงานที่ดูแล'
+                : 'กรุณาเลือกฝ่าย งาน และหน่วยให้ครบถ้วน']);
         }
 
-        if ($pathCount < 3) {
-            if ($pathCount === 1 && $roleKey !== 'division_head') {
-                throw ValidationException::withMessages(['d' => 'กรุณาเลือกฝ่าย งาน และหน่วยให้ครบถ้วน']);
-            }
-
-            if ($pathCount === 2 && ! in_array($roleKey, ['division_head', 'dept_head'], true)) {
-                throw ValidationException::withMessages(['d' => 'กรุณาเลือกฝ่าย งาน และหน่วยให้ครบถ้วน']);
-            }
-
-            $departmentExists = DB::table('support_departments')
-                ->where('name', $path[0])
-                ->exists();
-            if (! $departmentExists) {
-                throw ValidationException::withMessages(['d' => 'กรุณาเลือกฝ่ายที่กำหนดไว้ในระบบ']);
-            }
-
-            if ($pathCount === 2) {
-                $workExists = DB::table('support_works')
-                    ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
-                    ->where('support_departments.name', $path[0])
-                    ->where('support_works.name', $path[1])
-                    ->exists();
-
-                if (! $workExists) {
-                    throw ValidationException::withMessages(['d' => 'กรุณาเลือกงานที่กำหนดไว้ในฝ่ายนี้']);
-                }
-            }
-
-            if (filled($data['p'] ?? null) || filled($data['l'] ?? null)) {
-                if (filled($data['p'] ?? null)) {
-                    if ($pathCount < 2) {
-                        throw ValidationException::withMessages(['p' => 'กรุณาเลือกงานก่อนเลือกตำแหน่ง']);
-                    }
-
-                    $positionId = $this->positionIdForSupportWork($worklineId, $path[0], $path[1], (string) $data['p']);
-                    if (! $positionId) {
-                        throw ValidationException::withMessages(['p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในงานนี้']);
-                    }
-                    $data['_position_id'] = $positionId;
-                } else {
-                    $data['p'] = null;
-                    $data['_position_id'] = null;
-                }
-
-                $data['_level_id'] = $this->levelIdForWorkline($worklineId, (string) ($data['l'] ?? ''));
-
-                return $data;
-            }
-
-            $data['p'] = null;
-            $data['l'] = null;
-            $data['_position_id'] = null;
-            $data['_level_id'] = null;
-
-            return $data;
+        $divisionName = $path[0];
+        $workName = $path[1];
+        $unitName = $path[2] ?? null;
+        if (! app(\App\Services\SupportUnitResolver::class)->isPlaced($data['d'], $data['r'] ?? null)) {
+            throw ValidationException::withMessages(['d' => $unitName === null
+                ? 'กรุณาเลือกงานที่กำหนดไว้ในฝ่ายนี้'
+                : 'กรุณาเลือกหน่วยที่กำหนดไว้ในฝ่ายและงานนี้']);
         }
 
-        [$divisionName, $workName, $unitName] = $path;
-        $unitId = DB::table('support_units')
-            ->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
-            ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
-            ->where('support_departments.name', $divisionName)
-            ->where('support_works.name', $workName)
-            ->where('support_units.name', $unitName)
-            ->value('support_units.id');
-
-        if (! $unitId) {
-            throw ValidationException::withMessages(['d' => 'กรุณาเลือกหน่วยที่กำหนดไว้ในฝ่ายและงานนี้']);
-        }
-
-        [$positionId, $levelId] = $this->validatePositionAndLevelForSupportWork($data, $worklineId, $divisionName, $workName);
+        [$positionId, $levelId] = $this->validatePositionAndLevelForSupportWork($data, $worklineId, $divisionName, $workName, $unitName);
 
         $data['_position_id'] = $positionId;
         $data['_level_id'] = $levelId;
@@ -530,9 +468,9 @@ class UserController extends Controller
         return $data;
     }
 
-    private function validatePositionAndLevelForSupportWork(array $data, int $worklineId, string $divisionName, string $workName): array
+    private function validatePositionAndLevelForSupportWork(array $data, int $worklineId, string $divisionName, string $workName, ?string $unitName = null): array
     {
-        $positionId = $this->positionIdForSupportWork($worklineId, $divisionName, $workName, (string) ($data['p'] ?? ''));
+        $positionId = $this->positionIdForSupportWork($worklineId, $divisionName, $workName, (string) ($data['p'] ?? ''), $unitName);
         if (! $positionId) {
             throw ValidationException::withMessages(['p' => 'กรุณาเลือกตำแหน่งที่กำหนดไว้ในงานนี้']);
         }
@@ -587,7 +525,11 @@ class UserController extends Controller
         return $positionId ? (int) $positionId : null;
     }
 
-    private function positionIdForSupportWork(int $worklineId, string $divisionName, string $workName, string $positionName): ?int
+    /**
+     * Support positions are global; the user's unit is stored in users.department. A legacy
+     * unit-scoped position is used only when no global one exists, and then from the user's own unit.
+     */
+    private function positionIdForSupportWork(int $worklineId, string $divisionName, string $workName, string $positionName, ?string $unitName = null): ?int
     {
         $globalPositionId = DB::table('positions')
             ->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
@@ -607,6 +549,7 @@ class UserController extends Controller
             ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
             ->where('support_departments.name', $divisionName)
             ->where('support_works.name', $workName)
+            ->when($unitName !== null, fn ($query) => $query->where('support_units.name', $unitName))
             ->where('positions.name', $positionName)
             ->orderBy('positions.id')
             ->value('positions.id');

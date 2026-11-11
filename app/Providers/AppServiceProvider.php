@@ -13,7 +13,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One lookup cache per request for support unit paths.
+        $this->app->scoped(\App\Services\SupportUnitResolver::class);
     }
 
     /**

@@ -14,8 +14,9 @@ const props = defineProps<{
 }>();
 
 const page = usePage();
-const assessmentMethod = computed(() => String((page.props.activeAssessmentMethod as any)?.method || 'standard'));
-const usesFacultyMethod = computed(() => assessmentMethod.value === 'faculty');
+const roundAssessmentMethod = computed(() => String((page.props.activeAssessmentMethod as any)?.method || 'standard'));
+// Assessed per competency: MC keeps the university format inside a faculty round.
+const methodOf = (competency: any) => String(competency?.assessmentMethod || roundAssessmentMethod.value);
 const assessmentWindow = computed(() => props.assessmentWindow || {});
 const isSelfAssessmentClosed = computed(() => assessmentWindow.value.status === 'closed');
 const assignedCompetencies = computed(() => props.competencies || []);
@@ -75,6 +76,8 @@ const allBlockReasons = computed(() => [
 ].filter(Boolean));
 const isAssessmentBlocked = computed(() => Boolean(props.blocked) || allBlockReasons.value.length > 0);
 const selectedCompetency = ref<any | null>(null);
+const assessmentMethod = computed(() => methodOf(selectedCompetency.value));
+const usesFacultyMethod = computed(() => assessmentMethod.value === 'faculty');
 const checkedIndicators = ref<Record<string, boolean>>({});
 const competencyNotes = ref<Record<string, string>>({});
 const isSaving = ref(false);
@@ -465,9 +468,22 @@ const facultyScore = computed(() => {
   if (selectedThree < Number(levelThree?.indicators?.length || 0)) return 3;
   return selectedFive >= 2 ? 5 : 4;
 });
+// Same rule as facultyScore / FacultyAssessmentScorer, shown to the person being assessed.
+const facultyCriteria = computed(() => {
+  const count = (value: number) => Number((selectedCompetency.value?.levels || []).find((item: any) => Number(item.lvl) === value)?.indicators?.length || 0);
+  const one = count(1);
+  const three = count(3);
+  return [
+    { level: 1, rule: 'เลือกพฤติกรรมระดับ 1 อย่างน้อย 1 ข้อ' },
+    { level: 2, rule: `เลือกพฤติกรรมระดับ 1 ครบทุกข้อ (${one} ข้อ)` },
+    { level: 3, rule: 'ผ่านระดับ 2 และเลือกพฤติกรรมระดับ 3 อย่างน้อย 1 ข้อ' },
+    { level: 4, rule: `เลือกพฤติกรรมระดับ 1 และระดับ 3 ครบทุกข้อ (${one + three} ข้อ)` },
+    { level: 5, rule: 'ผ่านระดับ 4 และเลือกพฤติกรรมระดับ 5 อย่างน้อย 2 ข้อ' },
+  ];
+});
 const currentScore = computed(() => usesFacultyMethod.value
   ? facultyScore.value.toFixed(2)
-  : (selectedIndicators.value * 0.25).toFixed(2));
+  : Math.min(5, selectedIndicators.value * 0.25).toFixed(2));
 const noteKey = computed(() => String(selectedCompetency.value?.id || ''));
 const selectedEvidences = computed(() => competencyEvidences.value[noteKey.value] || []);
 const requiresLevelEvidence = computed(() => usesFacultyMethod.value && facultyScore.value >= 5);
@@ -946,6 +962,19 @@ onBeforeUnmount(() => {
               <div class="description-label">คำอธิบายสมรรถนะ</div>
               <p>{{ selectedCompetency.det || 'ไม่มีคำอธิบาย' }}</p>
             </div>
+          </section>
+
+          <section v-if="usesFacultyMethod && scoringLevels.length" class="faculty-criteria" aria-label="เงื่อนไขการได้ระดับ">
+            <div class="faculty-criteria-head">
+              <strong>เงื่อนไขการได้ระดับ</strong>
+              <span>ตอนนี้ได้ระดับ {{ facultyScore }}</span>
+            </div>
+            <ol class="faculty-criteria-list">
+              <li v-for="row in facultyCriteria" :key="row.level" :class="{ reached: facultyScore >= row.level, current: facultyScore === row.level }">
+                <span class="faculty-criteria-level">ระดับ {{ row.level }}</span>
+                <span>{{ row.rule }}</span>
+              </li>
+            </ol>
           </section>
 
           <div v-if="!scoringLevels.length" class="empty-card compact">
@@ -1749,6 +1778,50 @@ onBeforeUnmount(() => {
 }
 .emp-level-head h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 900; }
 .emp-level-head p { margin: 5px 0 0; color: var(--text3); font-size: 12px; }
+.faculty-criteria {
+  margin-bottom: 14px;
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px 14px;
+}
+.faculty-criteria-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.faculty-criteria-head span {
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.faculty-criteria-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.faculty-criteria-list li {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  border-radius: 8px;
+  padding: 5px 8px;
+  color: var(--text2, #475569);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.faculty-criteria-list li.reached { color: #065f46; }
+.faculty-criteria-list li.current { background: #ecfdf5; font-weight: 700; }
+.faculty-criteria-level { font-weight: 700; white-space: nowrap; }
 .emp-level-status {
   border-radius: 999px;
   background: #dbeafe;

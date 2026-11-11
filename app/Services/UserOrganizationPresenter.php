@@ -21,24 +21,27 @@ class UserOrganizationPresenter
     {
         $structure = $user->position_id ? $this->forPosition((int) $user->position_id) : null;
 
-        if (! $structure && app(SsoWorklineNormalizer::class)->structureType($user->workline) === 'management'
-            && trim((string) $user->department) === '') {
-            return ['type' => 'management', 'departmentName' => null, 'workName' => null, 'unitName' => null, 'display' => $user->workline];
+        if (! $structure && app(SsoWorklineNormalizer::class)->structureType($user->workline) === 'management') {
+            // Executives may keep their home academic department; they still sit in the management workline.
+            $homeDepartment = trim((string) $user->department);
+            return [
+                'type' => 'management',
+                'departmentName' => $homeDepartment !== '' ? $homeDepartment : null,
+                'workName' => null,
+                'unitName' => null,
+                'display' => $homeDepartment !== '' ? $this->withPrefix($homeDepartment, 'ภาควิชา') : (string) $user->workline,
+            ];
         }
 
         if (($structure['workName'] ?? null) || ($structure['unitName'] ?? null)) {
-            $workDisplay = $this->withPrefix($structure['workName'], 'งาน');
-            $unitDisplay = $this->withPrefix($structure['unitName'], 'หน่วย');
+            return $this->supportOrganization($structure['departmentName'], $structure['workName'], $structure['unitName']);
+        }
 
-            return [
-                'type' => 'support',
-                'departmentName' => $structure['departmentName'],
-                'workName' => $structure['workName'],
-                'unitName' => $structure['unitName'],
-                'display' => collect([$workDisplay, $unitDisplay])
-                    ->filter()
-                    ->implode(' · '),
-            ];
+        // Support positions are global (no support_unit_id); the unit is kept in the validated users.department path.
+        $isSupportUser = app(SsoWorklineNormalizer::class)->structureType($user->workline) === 'support'
+            || app(SsoWorklineNormalizer::class)->structureType($structure['worklineName'] ?? null) === 'support';
+        if ($isSupportUser && ($path = app(SupportUnitResolver::class)->fromDepartmentPath($user->department ?? null))) {
+            return $this->supportOrganization($path['departmentName'], $path['workName'], $path['unitName']);
         }
 
         if ($structure['academicDepartmentName'] ?? null) {
@@ -153,6 +156,23 @@ class UserOrganizationPresenter
         ];
     }
 
+    /** @return array{type: string, departmentName: ?string, workName: ?string, unitName: ?string, display: string} */
+    private function supportOrganization(?string $departmentName, ?string $workName, ?string $unitName): array
+    {
+        $display = collect([$this->withPrefix($workName, 'งาน'), $this->withPrefix($unitName, 'หน่วย')])
+            ->filter()
+            ->implode(' · ');
+
+        return [
+            'type' => 'support',
+            'departmentName' => $departmentName,
+            'workName' => $workName,
+            'unitName' => $unitName,
+            // Division heads sit above any work/unit.
+            'display' => $display !== '' ? $display : ($this->withPrefix($departmentName, 'ฝ่าย') ?? ''),
+        ];
+    }
+
     private function withPrefix(?string $value, string $prefix): ?string
     {
         $value = trim((string) $value);
@@ -160,6 +180,9 @@ class UserOrganizationPresenter
             return null;
         }
 
-        return str_starts_with($value, $prefix) ? $value : $prefix.' '.$value;
+        // "สาขาวิชา..." is already an academic department name; don't show "ภาควิชา สาขาวิชา...".
+        $alreadyNamed = str_starts_with($value, $prefix) || ($prefix === 'ภาควิชา' && str_starts_with($value, 'สาขาวิชา'));
+
+        return $alreadyNamed ? $value : $prefix.' '.$value;
     }
 }

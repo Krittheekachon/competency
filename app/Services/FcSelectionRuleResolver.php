@@ -8,24 +8,29 @@ use Illuminate\Support\Facades\DB;
 /**
  * Resolves how many FC topics a user must pre-select in a round.
  *
- * A unit rule (position_fc_unit_rules) for the user's support unit overrides the
+ * A unit rule (position_fc_unit_rules) for the user's support unit (position unit, else the
+ * users.department path) overrides the
  * position rule (position_fc_selection_rules). FC choices always come from the position.
  */
 class FcSelectionRuleResolver
 {
-    public function __construct(private PositionTitleResolver $positionTitles) {}
+    public function __construct(
+        private PositionTitleResolver $positionTitles,
+        private SupportUnitResolver $supportUnits,
+    ) {}
 
-    public function requiredCount(int $positionTitleId, ?int $positionId, int $roundId): int
+    public function requiredCount(int $positionTitleId, ?int $positionId, int $roundId, ?string $department = null): int
     {
         return $this->requiredCountsForUsers(collect([(object) [
             'id' => 0,
             'position_id' => $positionId,
             'position_title_id' => $positionTitleId,
+            'department' => $department,
         ]]), $roundId)->get(0, 0);
     }
 
     /**
-     * @param  Collection<int, object>  $users  rows with id, position_id and optionally position_title_id
+     * @param  Collection<int, object>  $users  rows with id, position_id and optionally position_title_id and department
      * @return Collection<int, int> required count keyed by user id
      */
     public function requiredCountsForUsers(Collection $users, int $roundId): Collection
@@ -34,14 +39,14 @@ class FcSelectionRuleResolver
             return collect();
         }
 
-        $positionIds = $users->pluck('position_id')->filter()->map(fn ($id): int => (int) $id)->unique();
-        $unitByPosition = $positionIds->isEmpty()
-            ? collect()
-            : DB::table('positions')->whereIn('id', $positionIds)->pluck('support_unit_id', 'id');
+        // Global support positions carry no unit; the unit then comes from users.department.
         $context = $users->mapWithKeys(fn (object $user): array => [
             (int) $user->id => [
                 'titleId' => $this->positionTitleId($user),
-                'unitId' => $user->position_id ? (int) ($unitByPosition[(int) $user->position_id] ?? 0) : 0,
+                'unitId' => (int) ($this->supportUnits->unitIdFor(
+                    $user->position_id ? (int) $user->position_id : null,
+                    $user->department ?? null,
+                ) ?? 0),
             ],
         ]);
         $titleIds = $context->pluck('titleId')->filter()->unique()->values();

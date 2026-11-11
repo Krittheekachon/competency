@@ -56,7 +56,7 @@ class FacultyIdpPlanService
         if (! $hasSnapshot) {
             $pending[] = 'ยังไม่มีข้อมูลตำแหน่งและสายผู้ประเมินประจำรอบ';
         }
-        $fcCount = app(FcSelectionRuleResolver::class)->requiredCount((int) $titleId, $user->position_id, $roundId);
+        $fcCount = app(FcSelectionRuleResolver::class)->requiredCount((int) $titleId, $user->position_id, $roundId, $user->department);
         if ($fcCount > 0) {
             $selection = DB::table('fc_topic_selections')
                 ->where('user_id', $userId)

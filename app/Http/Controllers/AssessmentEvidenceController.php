@@ -224,7 +224,7 @@ class AssessmentEvidenceController extends Controller
     private function editableAssessment(Request $request, int $competencyId): Assessment
     {
         $round = $this->assessmentRoundWindow->activeRound();
-        if (! $this->assessmentMethods->isFaculty((int) $round->id)) {
+        if (! $this->assessmentMethods->isFacultyCompetency((int) $round->id, $competencyId)) {
             throw ValidationException::withMessages(['evidence' => 'รอบประเมินนี้ไม่ได้ใช้การแนบหลักฐานระดับ 5']);
         }
 

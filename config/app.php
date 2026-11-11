@@ -56,6 +56,9 @@ return [
 
     'mock_sso_enabled' => (bool) env('MOCK_SSO_ENABLED', false),
 
+    // UI prototype of bulk reviewer-chain presets (mock data only). Keep off outside local review.
+    'idp_chain_prototype_enabled' => (bool) env('IDP_CHAIN_PROTOTYPE_ENABLED', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

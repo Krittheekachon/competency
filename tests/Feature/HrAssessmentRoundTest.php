@@ -245,55 +245,6 @@ class HrAssessmentRoundTest extends TestCase
         ])->assertSessionHasErrors(['self_assess_end', 'supervisor_assess_end']);
     }
 
-    public function test_hr_can_save_edit_and_validate_approval_and_progress_windows(): void
-    {
-        $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);
-        $this->actingAs($hr)->post(route('hr.assessment-rounds.store'), [
-            'name' => 'ช่วงเวลางานอนุมัติและรายงาน',
-            'self_assess_start' => '2026-10-01',
-            'self_assess_end' => '2026-10-15',
-            'supervisor_assess_end' => '2026-10-31',
-            'approval_start' => '2026-11-01',
-            'approval_end' => '2026-11-15',
-            'progress_report_start' => '2026-11-16',
-            'progress_report_end' => '2026-12-15',
-            'is_active' => false,
-        ])->assertRedirect()->assertSessionHasNoErrors();
-
-        $roundId = (int) DB::table('assessment_rounds')->where('name', 'ช่วงเวลางานอนุมัติและรายงาน')->value('id');
-        $this->assertDatabaseHas('assessment_rounds', [
-            'id' => $roundId,
-            'approval_start' => '2026-11-01',
-            'approval_end' => '2026-11-15',
-            'progress_report_start' => '2026-11-16',
-            'progress_report_end' => '2026-12-15',
-        ]);
-
-        $this->actingAs($hr)->put(route('hr.assessment-rounds.update', $roundId), [
-            'name' => 'ช่วงเวลางานอนุมัติและรายงาน',
-            'approval_start' => '2026-11-02',
-            'approval_end' => '2026-11-18',
-            'progress_report_start' => '2026-11-19',
-            'progress_report_end' => '2026-12-20',
-            'is_active' => false,
-        ])->assertRedirect()->assertSessionHasNoErrors();
-
-        $this->assertDatabaseHas('assessment_rounds', [
-            'id' => $roundId,
-            'approval_start' => '2026-11-02',
-            'progress_report_end' => '2026-12-20',
-        ]);
-
-        $this->actingAs($hr)->put(route('hr.assessment-rounds.update', $roundId), [
-            'name' => 'ช่วงเวลางานอนุมัติและรายงาน',
-            'approval_start' => '2026-11-20',
-            'approval_end' => '2026-11-18',
-            'progress_report_start' => '2026-11-17',
-            'progress_report_end' => '2026-11-16',
-            'is_active' => false,
-        ])->assertSessionHasErrors(['approval_end', 'progress_report_start', 'progress_report_end']);
-    }
-
     public function test_round_can_be_activated_when_individual_user_configuration_is_incomplete(): void
     {
         $hr = User::factory()->create(['role_id' => $this->roleId('hr')]);

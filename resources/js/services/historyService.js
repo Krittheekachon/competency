@@ -1,141 +1,180 @@
-const viewer = { id: 'self', name: 'นางสาวกมลชนก วัฒนชัย', position: 'วิศวกรโยธา', unit: 'ภาควิชาวิศวกรรมโยธา' };
-const people = [viewer, { id: 'unit-1', name: 'นายธนกร พิมพ์ใจ', position: 'วิศวกรไฟฟ้า', unit: 'ภาควิชาวิศวกรรมไฟฟ้า' }, { id: 'unit-2', name: 'นางสาวปวีณา ศรีสุวรรณ', position: 'นักวิชาการศึกษา', unit: 'สำนักงานคณบดี' }];
-const periods = [
-  { id: '2569-1', year: 2569, round: 1, label: 'รอบที่ 1/2569', range: 'ต.ค. 68 – มี.ค. 69', current: true },
-  { id: '2568-2', year: 2568, round: 2, label: 'รอบที่ 2/2568', range: 'เม.ย. 68 – ก.ย. 68', current: false },
-  { id: '2568-1', year: 2568, round: 1, label: 'รอบที่ 1/2568', range: 'ต.ค. 67 – มี.ค. 68', current: false },
-  { id: '2567-2', year: 2567, round: 2, label: 'รอบที่ 2/2567', range: 'เม.ย. 67 – ก.ย. 67', current: false },
-  { id: '2567-1', year: 2567, round: 1, label: 'รอบที่ 1/2567', range: 'ต.ค. 66 – มี.ค. 67', current: false },
-  { id: '2566-2', year: 2566, round: 2, label: 'รอบที่ 2/2566', range: 'เม.ย. 66 – ก.ย. 66', current: false },
-  { id: '2566-1', year: 2566, round: 1, label: 'รอบที่ 1/2566', range: 'ต.ค. 65 – มี.ค. 66', current: false },
-];
-const skillNames = ['การสื่อสารและประสานงาน', 'การวิเคราะห์และแก้ปัญหา', 'การวางแผนงานอย่างเป็นระบบ', 'การทำงานร่วมกัน'];
-const methods = ['อบรมหลักสูตรการสื่อสารในงานวิชาชีพ', 'ฝึกปฏิบัติกับงานจริง', 'แลกเปลี่ยนเรียนรู้กับผู้เชี่ยวชาญ'];
-const statusValues = ['approved', 'pending', 'draft', 'rejected', 'approved', 'pending'];
-const ownPlansByRound = {
-  '2569-1': [0, 1], '2568-2': [2], '2568-1': [], '2567-2': [3], '2567-1': [], '2566-2': [4, 5], '2566-1': [],
+import { formDefinitions } from '../idpFormDefinitions';
+
+// Read-only history of the signed-in user. Data comes from:
+// - GET employee.history.idp                        → { periods, plans }
+// - GET employee.history.evaluation-periods         → { periods }
+// - GET employee.history.evaluations {round}        → { rows } (same shape as currentUserCompetencyGaps)
+
+const getJson = async (url) => {
+  const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
 };
 
-const makePlan = (owner, period, index, planIndex) => {
-  const status = statusValues[index % statusValues.length];
-  const fillMode = (index + period.year + period.round) % 3 === 0 ? 'form' : 'quick';
-  const skillCount = index % 3 + 1;
-  return {
-    id: `${owner.id}-${period.id}-${planIndex + 1}`,
-    ownerId: owner.id,
-    ownerName: owner.name,
-    roundId: period.id,
-    roundLabel: period.label,
-    roundRange: period.range,
-    planCode: `IDP-${period.year}-${period.round}-${String(planIndex + 1).padStart(3, '0')}`,
-    submittedAt: status === 'draft' ? '' : `${period.year - 543}-${String((index % 9) + 1).padStart(2, '0')}-${String((index % 25) + 1).padStart(2, '0')}`,
-    status,
-    fillMode,
-    skills: Array.from({ length: skillCount }, (_, skillIndex) => {
-      const skillNumber = (index + skillIndex) % skillNames.length;
-      const behaviorCount = 1 + ((index + skillIndex) % 2);
-      const skill = {
-        id: `${owner.id}-${period.id}-${planIndex}-skill-${skillIndex}`,
-        name: skillNames[skillNumber],
-        actualLevel: Math.max(1, 2 + ((index + skillIndex) % 2)),
-        expectedLevel: 4,
-        behaviors: Array.from({ length: behaviorCount }, (_, behaviorIndex) => ({
-          id: `${skillNumber}-${behaviorIndex}`,
-          level: 2 + behaviorIndex,
-          text: ['สื่อสารข้อมูลให้ผู้เกี่ยวข้องเข้าใจตรงกัน', 'วิเคราะห์สาเหตุและเสนอแนวทางแก้ไขที่เหมาะสม', 'จัดลำดับงานและติดตามผลตามเป้าหมาย'][((index + skillIndex + behaviorIndex) % 3)],
-          methods: [methods[(index + skillIndex + behaviorIndex) % methods.length], ...(behaviorIndex === 1 ? [methods[(index + 1) % methods.length]] : [])],
-        })),
-      };
-      if (fillMode === 'form') {
-        const filled = (index + skillIndex) % 2 === 0;
-        const formFields = filled
-          ? [{ label: 'ชื่อ', value: owner.name }, { label: 'รหัสพนักงาน', value: 'EN-00428' }, { label: 'ตำแหน่ง', value: owner.position }]
-          : [{ label: 'ชื่อ', value: '' }, { label: 'รหัสพนักงาน', value: '' }, { label: 'ตำแหน่ง', value: '' }];
-        const makeMethod = (methodIndex, type, formTitle, sectionTitle) => ({
-          name: methods[methodIndex % methods.length], type, formTitle, filled,
-          sections: [
-            { title: 'ข้อมูลผู้รับการพัฒนา', badge: 'ดึงจากระบบ', fields: formFields },
-            { title: 'ข้อมูลประกอบการวางแผน', badge: 'จากสมรรถนะที่ต้องพัฒนา', fields: [{ label: 'ชื่อสมรรถนะ', value: filled ? skill.name : '' }, { label: 'Gap', value: filled ? `ระดับ ${skill.actualLevel} → ${skill.expectedLevel}` : '' }] },
-            { title: sectionTitle, fields: [], repeatable: [0, 1].map((topicIndex) => ({ title: `${sectionTitle === 'ผู้สอนงาน' ? 'หัวข้อการสอนงาน' : 'หัวข้อกิจกรรม'} ${topicIndex + 1}`, fields: [{ label: 'หัวข้อทักษะ / ประเด็น', value: filled ? skill.name : '' }, { label: 'เป้าหมายในการพัฒนา', value: filled ? 'นำทักษะไปประยุกต์ใช้กับงานจริง' : '' }, { label: 'ช่วงเวลาดำเนินการ', value: filled ? `ไตรมาส ${topicIndex + 1}` : '' }] })) },
-          ],
-        });
-        skill.methods = [makeMethod(index + skillIndex, 'Coaching', 'แบบฟอร์มการสอนงาน (Coaching)', 'ผู้สอนงาน')];
-      }
-      return skill;
-    }),
-    approvals: status === 'draft' ? [] : [
-      { approver: 'หัวหน้าหน่วยงาน', status: status === 'rejected' ? 'ไม่อนุมัติ' : 'อนุมัติแล้ว', date: `${period.year - 543}-03-12`, comment: status === 'rejected' ? 'โปรดเพิ่มตัวชี้วัดผลการพัฒนาให้ชัดเจน' : 'เห็นชอบตามแผน' },
-      ...(status === 'approved' ? [{ approver: 'ผู้บังคับบัญชาตามสายการประเมิน', status: 'อนุมัติแล้ว', date: `${period.year - 543}-03-20`, comment: 'อนุมัติแผน IDP' }] : status === 'pending' ? [{ approver: 'ผู้บังคับบัญชาลำดับถัดไป', status: 'รออนุมัติ', date: '', comment: '' }] : []),
-    ],
-  };
+const monthYear = (value) => {
+  if (!value) return '';
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
 };
-
-const plans = periods.flatMap((period) => {
-  const ownIndexes = ownPlansByRound[period.id] || [];
-  return [
-    ...ownIndexes.map((index, planIndex) => makePlan(viewer, period, index, planIndex)),
-    ...people.slice(1).flatMap((person, personIndex) => (personIndex === 0 && period.id === '2568-1' ? [] : [makePlan(person, period, period.year + personIndex, personIndex)])),
-  ];
+const dateOnly = (value) => (value ? String(value).slice(0, 10) : '');
+const toPeriod = (period) => ({
+  ...period,
+  range: [monthYear(period.startDate), monthYear(period.endDate)].filter(Boolean).join(' – '),
 });
-
-export function listPeriods() {
-  return [{ id: 'all', label: 'ทุกรอบ', range: '', current: false }, ...periods.map((period) => ({ ...period }))];
-}
+const ALL_PERIOD = { id: 'all', label: 'ทุกรอบ', range: '', current: false };
 
 export function getViewerScope() {
-  return { scope: 'self', viewer: { ...viewer }, people: people.map((person) => ({ ...person })) };
+  // Only the signed-in user's own history is exposed for now.
+  return { scope: 'self', viewer: { id: 'self', name: '' }, people: [] };
 }
 
-export function listIdpPlans({ roundId = 'all', ownerId = 'self' } = {}) {
-  return Promise.resolve(plans.filter((plan) => (ownerId === 'all' || plan.ownerId === ownerId) && (roundId === 'all' || plan.roundId === roundId)).map((plan) => ({
-    ...plan,
-    skills: plan.skills.map((skill) => ({ ...skill, behaviors: skill.behaviors.map((behavior) => ({ ...behavior, methods: [...behavior.methods] })) })),
-  })));
-}
-
-export function getIdpPlan(id) {
-  const plan = plans.find((item) => item.id === id);
-  return Promise.resolve(plan ? {
-    ...plan,
-    skills: plan.skills.map((skill) => ({ ...skill, methods: skill.methods?.map((method) => ({ ...method, sections: method.sections.map((section) => ({ ...section, fields: section.fields.map((field) => ({ ...field })), repeatable: section.repeatable?.map((item) => ({ ...item, fields: item.fields.map((field) => ({ ...field })) })) })) })) || skill.behaviors.flatMap((behavior) => behavior.methods).map((name) => ({ name })), behaviors: skill.behaviors.map((behavior) => ({ ...behavior, methods: [...behavior.methods] })) })),
-    approvals: plan.approvals.map((approval) => ({ ...approval })),
-  } : null);
-}
-
-const evaluationRowsByRound = {
-  '2568-2': [
-    { cd: 'CC01', n: 'การสื่อสารและประสานงาน', t: 'CC', expected: 4, actual: 3, gap: -1, requiresIdp: true },
-    { cd: 'MC02', n: 'การวิเคราะห์และแก้ปัญหา', t: 'MC', expected: 3, actual: 4, gap: 1, requiresIdp: false },
-    { cd: 'FC03', n: 'การวางแผนงานอย่างเป็นระบบ', t: 'FC', expected: 3, actual: 3, gap: 0, requiresIdp: false },
-  ],
-  '2568-1': [],
-  '2567-2': [
-    { cd: 'CC01', n: 'การสื่อสารและประสานงาน', t: 'CC', expected: 4, actual: 2, gap: -2, requiresIdp: true },
-    { cd: 'MC02', n: 'การวิเคราะห์และแก้ปัญหา', t: 'MC', expected: 3, actual: 2, gap: -1, requiresIdp: true },
-  ],
-  '2567-1': [
-    { cd: 'CC01', n: 'การสื่อสารและประสานงาน', t: 'CC', expected: 3, actual: 4, gap: 1, requiresIdp: false },
-    { cd: 'MC02', n: 'การวิเคราะห์และแก้ปัญหา', t: 'MC', expected: 3, actual: 3, gap: 0, requiresIdp: false },
-    { cd: 'FC03', n: 'การวางแผนงานอย่างเป็นระบบ', t: 'FC', expected: 4, actual: 2, gap: -2, requiresIdp: true },
-    { cd: 'CC04', n: 'การทำงานร่วมกัน', t: 'CC', expected: 3, actual: 4, gap: 1, requiresIdp: false },
-  ],
-  '2566-2': [
-    { cd: 'CC01', n: 'การสื่อสารและประสานงาน', t: 'CC', expected: 3, actual: 2, gap: -1, requiresIdp: true },
-    { cd: 'MC02', n: 'การวิเคราะห์และแก้ปัญหา', t: 'MC', expected: 2, actual: 4, gap: 2, requiresIdp: false },
-  ],
+let idpHistoryRequest = null;
+const loadIdpHistory = () => {
+  idpHistoryRequest ||= getJson(route('employee.history.idp')).catch((error) => {
+    idpHistoryRequest = null;
+    throw error;
+  });
+  return idpHistoryRequest;
 };
 
-export function listEvaluationResults({ roundId } = {}) {
-  const source = evaluationRowsByRound[roundId] || [];
-  return Promise.resolve(source.map((row, index) => ({
-    ...row,
-    id: `${roundId}-${row.cd}`,
-    competencyId: `${roundId}-${row.cd}`,
-    status: 'approved',
-    achievementPercentage: row.expected ? Math.round((row.actual / row.expected) * 100) : null,
-    det: `รายละเอียดสมรรถนะ${row.n} และแนวทางการประเมินตามระดับที่กำหนด`,
-    checkedIndicatorKeys: [],
-    levels: Array.from({ length: 5 }, (_, levelIndex) => ({ id: `${roundId}-${row.cd}-level-${levelIndex + 1}`, lvl: levelIndex + 1, indicators: [`สามารถปฏิบัติงาน${row.n}ตามระดับ ${levelIndex + 1}`, `แสดงพฤติกรรม${row.n}อย่างต่อเนื่อง`] })),
-    reviewerComments: [{ reviewerId: `reviewer-${index}`, reviewerName: 'ผู้ประเมินตามสายงาน', reviewStep: 1, comment: row.requiresIdp ? 'ควรวางแผนพัฒนาสมรรถนะนี้เพิ่มเติม' : 'ผลการประเมินเป็นไปตามเกณฑ์', createdAt: '2025-09-12T09:00:00+07:00' }],
-  })));
+export async function listPeriods() {
+  const { periods } = await loadIdpHistory();
+  return [ALL_PERIOD, ...periods.map(toPeriod)];
+}
+
+export async function listEvaluationPeriods() {
+  const { periods } = await getJson(route('employee.history.evaluation-periods'));
+  return periods.map(toPeriod);
+}
+
+export async function listEvaluationResults({ roundId } = {}) {
+  if (!roundId || roundId === 'none') return [];
+  const { rows } = await getJson(route('employee.history.evaluations', { round: roundId }));
+  return rows;
+}
+
+const planStatus = (status) => {
+  if (status === 'approved') return 'approved';
+  if (status === 'revision_required') return 'rejected';
+  if (status === 'draft') return 'draft';
+  return 'pending';
+};
+const hasValue = (value) => (Array.isArray(value) ? value.some(hasValue) : value !== null && value !== undefined && String(value).trim() !== '');
+const displayValue = (value) => {
+  if (Array.isArray(value)) return value.filter(hasValue).map(displayValue).join(', ');
+  if (value && typeof value === 'object') return Object.values(value).filter(hasValue).map(displayValue).join(', ');
+  return hasValue(value) ? String(value) : '';
+};
+
+function methodForActivity(activity) {
+  const details = activity.formDetails || {};
+  const definition = formDefinitions[activity.formCode] || null;
+  const sections = [{
+    title: 'ข้อมูลกิจกรรม',
+    fields: [
+      { label: 'ชื่อกิจกรรม', value: activity.name },
+      { label: 'รายละเอียด', value: activity.description },
+      { label: 'วันที่เริ่มต้น', value: dateOnly(activity.startDate) },
+      { label: 'วันที่สิ้นสุด', value: dateOnly(activity.endDate) },
+      { label: 'น้ำหนัก (%)', value: activity.weightPercent ?? '' },
+    ].filter((field) => hasValue(field.value)),
+  }];
+  if (definition?.detailFields?.length) {
+    sections.push({
+      title: definition.detailTitle || 'รายละเอียด',
+      fields: definition.detailFields.map((field) => ({ label: field.label, value: displayValue(details[field.key]) })),
+    });
+  }
+  const rows = Array.isArray(details.planRows) ? details.planRows : [];
+  if (definition?.rowFields?.length && rows.length) {
+    sections.push({
+      title: definition.rowTitle || 'รายละเอียดแผน',
+      fields: [],
+      repeatable: rows.map((row, index) => ({
+        title: `${definition.rowTitle || 'รายการ'} ${index + 1}`,
+        fields: definition.rowFields.map((field) => ({ label: field.label, value: displayValue(row?.[field.key]) })),
+      })),
+    });
+  }
+  if (!definition) {
+    const extra = Object.entries(details)
+      .filter(([key, value]) => !key.startsWith('_') && !['behaviors', 'planRows'].includes(key) && hasValue(value))
+      .map(([key, value]) => ({ label: key, value: displayValue(value) }));
+    if (extra.length) sections.push({ title: 'รายละเอียดเพิ่มเติม', fields: extra });
+  }
+  const visibleSections = sections.filter((section) => section.fields.length || section.repeatable?.length);
+
+  return {
+    name: activity.name || activity.methodLabel || 'วิธีพัฒนา',
+    type: activity.methodLabel || '',
+    formTitle: definition?.title || activity.name || 'รายละเอียดกิจกรรม',
+    filled: visibleSections.some((section) => section.fields.some((field) => hasValue(field.value))
+      || section.repeatable?.some((row) => row.fields.some((field) => hasValue(field.value)))),
+    sections: visibleSections,
+  };
+}
+
+function behaviorsForGap(plan, gap) {
+  const single = plan.gaps.length === 1;
+  const byKey = new Map();
+  plan.activities.forEach((activity) => {
+    (activity.formDetails?.behaviors || []).forEach((behavior) => {
+      if (!behavior || (!single && Number(behavior.gapId) !== gap.id)) return;
+      const key = behavior.key || `${behavior.level}:${behavior.code}:${behavior.description}`;
+      if (!byKey.has(key)) byKey.set(key, { id: key, level: behavior.level ?? '-', text: behavior.description || '', methods: [] });
+      const name = activity.name || activity.methodLabel;
+      if (name && !byKey.get(key).methods.includes(name)) byKey.get(key).methods.push(name);
+    });
+  });
+  return [...byKey.values()];
+}
+
+function toPlan(plan, periodsById) {
+  const period = periodsById.get(plan.roundId);
+  const methods = plan.activities.map(methodForActivity);
+  const skills = plan.gaps.map((gap, index) => ({
+    id: `${plan.id}-${gap.id}`,
+    name: gap.name,
+    actualLevel: gap.actualLevel ?? '-',
+    expectedLevel: gap.expectedLevel ?? '-',
+    behaviors: behaviorsForGap(plan, gap),
+    // A faculty-method plan covers several competencies with one shared set of activities.
+    methods: index === 0 ? methods : [],
+    sharedMethodsNote: index === 0 ? '' : `ใช้วิธีพัฒนาร่วมกับ ${plan.gaps[0].name}`,
+  }));
+  const approvals = plan.reviews.map((review) => ({
+    approver: review.reviewerName || `ผู้อนุมัติลำดับ ${review.step}`,
+    status: review.decision === 'approved' ? 'อนุมัติแล้ว' : 'ส่งกลับแก้ไข',
+    date: dateOnly(review.decidedAt),
+    comment: review.comment,
+  }));
+  if (plan.pendingReviewer) approvals.push({ approver: plan.pendingReviewer.name, status: 'รออนุมัติ', date: '', comment: '' });
+
+  return {
+    id: plan.id,
+    ownerId: 'self',
+    roundId: plan.roundId,
+    roundLabel: period?.label || 'ไม่ระบุรอบ',
+    roundRange: period?.range || '',
+    planCode: `IDP-${period?.year ?? plan.year ?? ''}-${String(plan.id).padStart(4, '0')}`,
+    submittedAt: dateOnly(plan.submittedAt),
+    status: planStatus(plan.status),
+    fillMode: plan.fillMode,
+    skills,
+    approvals,
+  };
+}
+
+async function allPlans() {
+  const { periods, plans } = await loadIdpHistory();
+  const periodsById = new Map(periods.map((period) => [period.id, toPeriod(period)]));
+  return plans.map((plan) => toPlan(plan, periodsById));
+}
+
+export async function listIdpPlans({ roundId = 'all' } = {}) {
+  return (await allPlans()).filter((plan) => roundId === 'all' || plan.roundId === roundId);
+}
+
+export async function getIdpPlan(id) {
+  return (await allPlans()).find((plan) => plan.id === id) || null;
 }

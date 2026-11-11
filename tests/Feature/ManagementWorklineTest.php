@@ -130,6 +130,42 @@ class ManagementWorklineTest extends TestCase
         $this->assertDatabaseCount('job_families', 0);
     }
 
+    public function test_management_executives_keep_their_home_academic_department(): void
+    {
+        $admin = $this->actor('admin');
+        $managementId = DB::table('worklines')->insertGetId(['name' => 'สายบริหาร']);
+        $academicId = DB::table('worklines')->insertGetId(['name' => 'สายวิชาการ']);
+        DB::table('job_families')->insert(['name' => 'สาขาวิชาวิศวกรรมเครื่องกล', 'workline_id' => $academicId]);
+        $title = $this->title('management', 'คณบดี');
+        $payload = [
+            'sso' => 'qa-home-dean', 'username' => 'qa.home.dean', 'password' => 'test-password',
+            'password_confirmation' => 'test-password', 'fn' => 'QA', 'ln' => 'Dean',
+            'em' => 'qa.home.dean@example.test', 'r' => 'dean', 'w' => 'สายบริหาร',
+            'd' => 'สาขาวิชาวิศวกรรมเครื่องกล', 'p' => 'คณบดี', 'position_title_id' => $title,
+        ];
+
+        $this->actingAs($admin)->post(route('admin.users.store'), $payload)->assertSessionHasNoErrors();
+        $user = User::where('sso', 'qa-home-dean')->firstOrFail();
+        $this->assertSame('สาขาวิชาวิศวกรรมเครื่องกล', $user->department);
+        $this->assertNull($user->position_id);
+        $organization = app(UserOrganizationPresenter::class)->forUser($user);
+        $this->assertSame('management', $organization['type']);
+        $this->assertSame('สาขาวิชาวิศวกรรมเครื่องกล', $organization['departmentName']);
+        $this->assertSame('สาขาวิชาวิศวกรรมเครื่องกล', $organization['display']);
+        $readiness = app(\App\Services\AssessmentReadinessService::class);
+        $this->assertFalse($readiness->organizationReady($user), 'a level of the management workline is still required');
+        $levelId = DB::table('levels')->insertGetId(['name' => 'รองศาสตราจารย์', 'workline_id' => $managementId, 'expected_level' => 4]);
+        $user->forceFill(['level' => 'รองศาสตราจารย์', 'level_id' => $levelId])->save();
+        $this->assertTrue($readiness->organizationReady($user->fresh()));
+        $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page
+            ->where('organizationChart.nodes', fn ($nodes) => collect(collect($nodes)->firstWhere('key', 'workline:'.$managementId)['members'])->contains('id', $user->id))
+        );
+
+        $this->post(route('admin.users.store'), [
+            ...$payload, 'sso' => 'qa-bad-home', 'username' => 'qa.bad.home', 'em' => 'qa.bad.home@example.test', 'd' => 'ภาควิชาที่ไม่มีจริง',
+        ])->assertSessionHasErrors('d');
+    }
+
     public function test_dean_can_be_assigned_a_management_catalog_position(): void
     {
         $admin = $this->actor('admin');

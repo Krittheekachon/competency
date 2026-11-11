@@ -98,7 +98,7 @@ const page = usePage();
 const hasLegacyActivities = computed(() => (props.idp?.items || []).some(item =>
   (item.activities || []).some(activity => !activity.formDetails?._behaviorPlan)));
 const showLegacyIdp = computed(() => (props.idp as any)?.fillMode === 'form'
-  || (!(props.idp as any)?.fillMode && ((page.props.idpFillMode || 'quick') === 'form' || hasLegacyActivities.value)));
+  || (!(props.idp as any)?.fillMode && ((page.props.idpFillMode || 'form') === 'form' || hasLegacyActivities.value)));
 const facultyIdpReadiness = computed(() => page.props.facultyIdpReadiness as { ready: boolean; message: string } | null);
 const plans = ref<Plan[]>([]);
 const selectedGapId = ref<number | null>(null);
@@ -128,7 +128,9 @@ const failedGaps = computed(() => (props.gaps || [])
   .sort((a, b) => String(a.cd).localeCompare(String(b.cd))));
 // Faculty rounds use one plan per person: every failed competency is folded into a single plan
 // anchored on the gap the server already saved (or the first failed gap).
-const usesFacultyPlan = computed(() => failedGaps.value.some((gap) => gap.assessmentMethod === 'faculty'));
+// The plan type follows the round: an MC assessed in the university format still belongs to the faculty plan.
+const usesFacultyPlan = computed(() => (page.props as any).activeAssessmentMethod?.method === 'faculty'
+  || failedGaps.value.some((gap) => gap.assessmentMethod === 'faculty'));
 const idpGaps = computed<Gap[]>(() => {
   if (!usesFacultyPlan.value || !failedGaps.value.length) return failedGaps.value;
   const savedGapIds = new Set((props.idp?.items || []).map((item) => item.competencyGapId));

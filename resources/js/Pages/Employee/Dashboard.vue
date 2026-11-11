@@ -262,7 +262,7 @@ const logout = () => router.post(route('logout'));
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 
                 <FcTopicApproval
                     v-else-if="activePage === 'emp-fc-topic-approval' && fcTopicApprovalModule.enabled"

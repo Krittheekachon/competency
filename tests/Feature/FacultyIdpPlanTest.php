@@ -242,6 +242,52 @@ class FacultyIdpPlanTest extends TestCase
         ]);
     }
 
+    public function test_employee_can_type_their_own_other_development_method(): void
+    {
+        $plan = $this->otherPlan('  เข้าร่วมเวทีแลกเปลี่ยนเรียนรู้ของคณะ  ');
+        $this->actingAs($this->employee)
+            ->post(route('employee.idp.submit-item'), ['item' => $plan])
+            ->assertSessionHasNoErrors();
+
+        $activity = DB::table('idp_activities')->first();
+        $this->assertSame('เข้าร่วมเวทีแลกเปลี่ยนเรียนรู้ของคณะ', $activity->activity_name);
+        $this->assertNull($activity->idp_learning_method_id);
+        $this->assertNull($activity->learning_catalog_id);
+        $this->assertSame(
+            DB::table('learning_method_types')->where('key', 'other-learning')->value('id'),
+            $activity->method_type_id,
+        );
+    }
+
+    public function test_other_development_method_needs_a_name_and_no_tool(): void
+    {
+        $this->actingAs($this->employee)
+            ->post(route('employee.idp.submit-item'), ['item' => $this->otherPlan('   ')])
+            ->assertSessionHasErrors('items.0.activities.0.activityName');
+
+        $withTool = $this->otherPlan('อ่านหนังสือ');
+        $withTool['activities'][0]['developmentToolId'] = $this->toolId;
+        $this->post(route('employee.idp.submit-item'), ['item' => $withTool])
+            ->assertSessionHasErrors('items.0.activities.0.methodKey');
+        $this->assertSame(0, DB::table('idp_activities')->count());
+    }
+
+    private function otherPlan(string $name): array
+    {
+        return [
+            'competencyGapId' => $this->gapIds['CC-A'],
+            'goal' => 'พัฒนาสมรรถนะ',
+            'successCriteria' => 'ผ่านเกณฑ์',
+            'activities' => [[
+                'methodKey' => 'other-learning',
+                'developmentToolId' => null,
+                'learningCatalogId' => null,
+                'activityName' => $name,
+                'weightPercent' => 100,
+            ]],
+        ];
+    }
+
     private function plan(int $gapId, array $weights): array
     {
         return [

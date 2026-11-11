@@ -534,160 +534,102 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_create_dept_head_without_support_unit(): void
+    public function test_head_roles_cannot_save_a_partial_support_path(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
         $this->createSupportStructure();
 
+        foreach ([
+            ['dept_head', 'ฝ่ายบริหาร > งานบุคคล'],
+            ['division_head', 'ฝ่ายบริหาร > งานบุคคล'],
+            ['division_head', 'ฝ่ายบริหาร'],
+        ] as $index => [$role, $department]) {
+            $this->actingAs($admin)
+                ->post(route('admin.users.store'), $this->supportHeadPayload("partial-head-{$index}", $role, $department))
+                ->assertSessionHasErrors('d');
+
+            $this->assertDatabaseMissing('users', ['sso' => "partial-head-{$index}"]);
+        }
+    }
+
+    public function test_head_roles_use_the_same_full_support_structure_as_everyone(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $this->createSupportStructure();
+
+        foreach (['dept_head', 'division_head'] as $role) {
+            $this->actingAs($admin)
+                ->post(route('admin.users.store'), $this->supportHeadPayload("full-{$role}", $role, 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา'))
+                ->assertRedirect()
+                ->assertSessionDoesntHaveErrors(['d', 'p', 'l']);
+
+            $this->assertDatabaseHas('users', [
+                'sso' => "full-{$role}",
+                'department' => 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา',
+                'position' => 'นักทรัพยากรบุคคล',
+                'level' => 'ปฏิบัติการ',
+                'role_id' => $this->roleId($role),
+            ]);
+            $this->assertNotNull(DB::table('users')->where('sso', "full-{$role}")->value('position_id'));
+            $this->assertNotNull(DB::table('users')->where('sso', "full-{$role}")->value('level_id'));
+        }
+
         $this->actingAs($admin)
             ->post(route('admin.users.store'), [
-                'sso' => 'dept-head-no-unit',
-                't' => 'นาย',
-                'fn' => 'หัวหน้างาน',
-                'ln' => 'ทดสอบ',
-                'fe' => 'Department',
-                'le' => 'Head',
-                'em' => 'dept-head-no-unit@example.com',
-                'username' => 'dept.head.no.unit',
-                'password' => 'secure-password',
-                'password_confirmation' => 'secure-password',
-                'ph' => null,
-                'w' => 'สายสนับสนุน',
-                'd' => 'ฝ่ายบริหาร > งานบุคคล',
+                ...$this->supportHeadPayload('full-head-no-position', 'division_head', 'ฝ่ายบริหาร > งานบุคคล > หน่วยพัฒนา'),
                 'p' => '',
                 'l' => '',
-                'r' => 'dept_head',
-                'act' => true,
             ])
+            ->assertSessionHasErrors(['p']);
+    }
+
+    public function test_work_head_sits_at_their_work_without_a_unit(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $this->createSupportStructure();
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), $this->supportHeadPayload('work-head', 'supervisor', 'ฝ่ายบริหาร > งานบุคคล'))
             ->assertRedirect()
             ->assertSessionDoesntHaveErrors(['d', 'p', 'l']);
-
         $this->assertDatabaseHas('users', [
-            'sso' => 'dept-head-no-unit',
+            'sso' => 'work-head',
             'department' => 'ฝ่ายบริหาร > งานบุคคล',
-            'position' => null,
-            'level' => null,
-            'position_id' => null,
-            'level_id' => null,
-            'role_id' => $this->roleId('dept_head'),
+            'role_id' => $this->roleId('supervisor'),
         ]);
+        $this->assertNotNull(DB::table('users')->where('sso', 'work-head')->value('position_id'));
+
+        foreach (['ฝ่ายบริหาร', 'ฝ่ายบริหาร > งานที่ไม่มีจริง'] as $index => $department) {
+            $this->actingAs($admin)
+                ->post(route('admin.users.store'), $this->supportHeadPayload("work-head-bad-{$index}", 'supervisor', $department))
+                ->assertSessionHasErrors('d');
+        }
+        $this->actingAs($admin)
+            ->post(route('admin.users.store'), $this->supportHeadPayload('employee-at-work', 'employee', 'ฝ่ายบริหาร > งานบุคคล'))
+            ->assertSessionHasErrors('d');
     }
 
-    public function test_admin_can_save_optional_support_position_when_selected(): void
+    private function supportHeadPayload(string $sso, string $role, string $department): array
     {
-        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
-        $this->createSupportStructure();
-
-        $this->actingAs($admin)
-            ->post(route('admin.users.store'), [
-                'sso' => 'dept-head-with-position',
-                't' => 'นาย',
-                'fn' => 'หัวหน้างาน',
-                'ln' => 'มีตำแหน่ง',
-                'fe' => 'Department',
-                'le' => 'Head',
-                'em' => 'dept-head-with-position@example.com',
-                'username' => 'dept.head.with.position',
-                'password' => 'secure-password',
-                'password_confirmation' => 'secure-password',
-                'ph' => null,
-                'w' => 'สายสนับสนุน',
-                'd' => 'ฝ่ายบริหาร > งานบุคคล',
-                'p' => 'นักทรัพยากรบุคคล',
-                'l' => 'ปฏิบัติการ',
-                'r' => 'dept_head',
-                'act' => true,
-            ])
-            ->assertRedirect()
-            ->assertSessionDoesntHaveErrors(['d', 'p', 'l']);
-
-        $this->assertDatabaseHas('users', [
-            'sso' => 'dept-head-with-position',
-            'department' => 'ฝ่ายบริหาร > งานบุคคล',
-            'position' => 'นักทรัพยากรบุคคล',
-            'level' => 'ปฏิบัติการ',
-            'role_id' => $this->roleId('dept_head'),
-        ]);
-        $this->assertNotNull(DB::table('users')->where('sso', 'dept-head-with-position')->value('position_id'));
-        $this->assertNotNull(DB::table('users')->where('sso', 'dept-head-with-position')->value('level_id'));
-    }
-
-    public function test_admin_can_save_optional_support_level_without_position(): void
-    {
-        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
-        $this->createSupportStructure();
-
-        $this->actingAs($admin)
-            ->post(route('admin.users.store'), [
-                'sso' => 'division-head-with-level',
-                't' => 'นาง',
-                'fn' => 'หัวหน้าฝ่าย',
-                'ln' => 'มีระดับ',
-                'fe' => 'Division',
-                'le' => 'Head',
-                'em' => 'division-head-with-level@example.com',
-                'username' => 'division.head.with.level',
-                'password' => 'secure-password',
-                'password_confirmation' => 'secure-password',
-                'ph' => null,
-                'w' => 'สายสนับสนุน',
-                'd' => 'ฝ่ายบริหาร',
-                'p' => '',
-                'l' => 'ปฏิบัติการ',
-                'r' => 'division_head',
-                'act' => true,
-            ])
-            ->assertRedirect()
-            ->assertSessionDoesntHaveErrors(['d', 'p', 'l']);
-
-        $this->assertDatabaseHas('users', [
-            'sso' => 'division-head-with-level',
-            'department' => 'ฝ่ายบริหาร',
-            'position' => null,
-            'level' => 'ปฏิบัติการ',
-            'position_id' => null,
-            'role_id' => $this->roleId('division_head'),
-        ]);
-        $this->assertNotNull(DB::table('users')->where('sso', 'division-head-with-level')->value('level_id'));
-    }
-
-    public function test_admin_can_create_division_head_without_support_work_or_unit(): void
-    {
-        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
-        $this->createSupportStructure();
-
-        $this->actingAs($admin)
-            ->post(route('admin.users.store'), [
-                'sso' => 'division-head-no-work',
-                't' => 'นาง',
-                'fn' => 'หัวหน้าฝ่าย',
-                'ln' => 'ทดสอบ',
-                'fe' => 'Division',
-                'le' => 'Head',
-                'em' => 'division-head-no-work@example.com',
-                'username' => 'division.head.no.work',
-                'password' => 'secure-password',
-                'password_confirmation' => 'secure-password',
-                'ph' => null,
-                'w' => 'สายสนับสนุน',
-                'd' => 'ฝ่ายบริหาร',
-                'p' => '',
-                'l' => '',
-                'r' => 'division_head',
-                'act' => true,
-            ])
-            ->assertRedirect()
-            ->assertSessionDoesntHaveErrors(['d', 'p', 'l']);
-
-        $this->assertDatabaseHas('users', [
-            'sso' => 'division-head-no-work',
-            'department' => 'ฝ่ายบริหาร',
-            'position' => null,
-            'level' => null,
-            'position_id' => null,
-            'level_id' => null,
-            'role_id' => $this->roleId('division_head'),
-        ]);
+        return [
+            'sso' => $sso,
+            't' => 'นาย',
+            'fn' => 'หัวหน้า',
+            'ln' => $sso,
+            'fe' => 'Support',
+            'le' => 'Head',
+            'em' => "{$sso}@example.com",
+            'username' => str_replace('_', '.', $sso),
+            'password' => 'secure-password',
+            'password_confirmation' => 'secure-password',
+            'ph' => null,
+            'w' => 'สายสนับสนุน',
+            'd' => $department,
+            'p' => 'นักทรัพยากรบุคคล',
+            'l' => 'ปฏิบัติการ',
+            'r' => $role,
+            'act' => true,
+        ];
     }
 
     public function test_admin_can_toggle_user_status(): void
@@ -1171,11 +1113,25 @@ class AdminUserControllerTest extends TestCase
             ],
         ]);
 
+        $secondAssignedUser = User::factory()->create([
+            'role_id' => $this->roleId('employee'),
+            'is_active' => true,
+        ]);
+
         $this->actingAs($admin)
             ->post(route('admin.reviewer-chain-templates.users.store', $templateId), [
-                'user_ids' => [$assignedUser->id],
+                'user_ids' => [$assignedUser->id, $secondAssignedUser->id],
             ])
             ->assertRedirect();
+
+        foreach ([1 => $reviewerA->id, 2 => $reviewerB->id] as $step => $reviewerId) {
+            $this->assertDatabaseHas('user_reviewer_steps', [
+                'user_id' => $secondAssignedUser->id,
+                'chain_type' => 'assessment',
+                'step_order' => $step,
+                'reviewer_id' => $reviewerId,
+            ]);
+        }
 
         $this->assertDatabaseHas('reviewer_chain_template_assignments', [
             'template_id' => $templateId,

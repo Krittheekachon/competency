@@ -14,7 +14,7 @@ return new class extends Migration
             $table->text('value')->nullable();
             $table->timestamps();
         });
-        DB::table('system_settings')->insert(['key' => 'idp_fill_mode', 'value' => 'quick', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('system_settings')->insert(['key' => 'idp_fill_mode', 'value' => 'form', 'created_at' => now(), 'updated_at' => now()]);
     }
 
     public function down(): void

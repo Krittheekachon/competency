@@ -232,6 +232,12 @@ class NotificationDigestService
 
     private function missingExpectationLevels(): array
     {
+        // A round with one fixed expected level does not read levels.expected_level.
+        $fixedRound = DB::table('assessment_rounds')->where('is_active', true)->where('expected_level_mode', 'fixed')->exists();
+        if ($fixedRound) {
+            return [];
+        }
+
         return DB::table('levels')
             ->leftJoin('worklines', 'levels.workline_id', '=', 'worklines.id')
             ->leftJoin('job_families', 'levels.job_family_id', '=', 'job_families.id')

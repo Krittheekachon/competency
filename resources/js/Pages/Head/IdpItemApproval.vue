@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import IdpActivityFormReadonly from '../../Components/IdpActivityFormReadonly.vue';
+import IdpMissingIndicators from '../Employee/IdpMissingIndicators.vue';
 
 const props = defineProps({
     items: {
@@ -113,9 +114,16 @@ const formatWeight = (value) => {
     return number.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 };
 
+// A faculty-method plan is one item covering every failed competency; skip the item list and open it.
+const isFacultyPlanItem = (item) => Array.isArray(item?.planCompetencies) && item.planCompetencies.length > 0;
+const skipsItemList = (group) => group?.items?.length === 1 && isFacultyPlanItem(group.items[0]);
+// Methods the employee chose for one skill of a faculty plan (an activity may cover several skills).
+const methodsForSkill = (item, gapId) => (item?.activities || []).filter((activity) =>
+    (activity.formDetails?.behaviors || []).some((behavior) => Number(behavior.gapId) === Number(gapId)));
+const methodTypeLabel = (activity) => (activity.methodLabel || '').replace(/\s*Learning$/i, '') || 'อื่นๆ';
 const openEmployee = (group) => {
     selectedUserKey.value = group.key;
-    selectedId.value = null;
+    selectedId.value = skipsItemList(group) ? group.items[0].id : null;
     selectedActivityId.value = null;
 };
 
@@ -149,6 +157,10 @@ const openActivity = async (activityId) => {
 const backOneLevel = () => {
     if (selectedActivityId.value !== null) {
         selectedActivityId.value = null;
+        return;
+    }
+    if (skipsItemList(selectedGroup.value)) {
+        closeDetails();
         return;
     }
     selectedId.value = null;
@@ -234,9 +246,6 @@ const reject = (item) => {
                 <div class="queue-plan-summary">
                     <span class="queue-column-label">แผนที่รอตรวจ</span>
                     <strong>{{ group.visibleItems.length }} สมรรถนะ · {{ group.visibleItems.reduce((total, item) => total + item.activities.length, 0) }} กิจกรรม</strong>
-                    <div class="queue-competency-codes">
-                        <span v-for="item in group.visibleItems" :key="item.id">{{ item.competencyCode || item.competencyName }}</span>
-                    </div>
                 </div>
 
                 <div class="queue-submitted">
@@ -262,7 +271,7 @@ const reject = (item) => {
                 </template>
                 <template v-else>
                     <div>
-                        <button v-if="selectedItem" class="back-button" type="button" @click="backOneLevel">← หัวข้อ IDP ทั้งหมด</button>
+                        <button v-if="selectedItem && !skipsItemList(selectedGroup)" class="back-button" type="button" @click="backOneLevel">← หัวข้อ IDP ทั้งหมด</button>
                     </div>
                     <button type="button" @click="closeDetails">ปิด</button>
                 </template>
@@ -299,10 +308,34 @@ const reject = (item) => {
                 <div class="competency">
                     <span class="review-step">{{ statusLabel(selectedItem) }}</span>
                     <span v-if="selectedItem.competencyCode">{{ selectedItem.competencyCode }}</span>
-                    <strong>{{ selectedItem.competencyName }}</strong>
+                    <strong>{{ selectedItem.planSkills?.length ? `แผนพัฒนารายบุคคล · ${selectedItem.planSkills.length} ทักษะ` : selectedItem.competencyName }}</strong>
                 </div>
             </div>
 
+            <div v-if="selectedItem.planSkills?.length" class="faculty-skill-list">
+                <section v-for="(skill, index) in selectedItem.planSkills" :key="skill.gapId" class="faculty-skill">
+                    <header>
+                        <b>{{ index + 1 }}</b>
+                        <div>
+                            <strong>{{ skill.name }}</strong>
+                            <span v-if="skill.actual != null && skill.expected != null">ผลประเมินระดับ {{ skill.actual }} / คาดหวังระดับ {{ skill.expected }}</span>
+                        </div>
+                    </header>
+                    <IdpMissingIndicators :groups="skill.missingIndicators || []" />
+                    <div class="faculty-skill-methods">
+                        <span class="faculty-skill-label">วิธีพัฒนาที่เลือก</span>
+                        <ul v-if="methodsForSkill(selectedItem, skill.gapId).length">
+                            <li v-for="activity in methodsForSkill(selectedItem, skill.gapId)" :key="activity.id">
+                                <span>{{ activity.name }}</span>
+                                <small :class="`method-${methodTypeLabel(activity).toLowerCase()}`">{{ methodTypeLabel(activity) }}</small>
+                            </li>
+                        </ul>
+                        <p v-else>ไม่ได้เลือกวิธีพัฒนาสำหรับทักษะนี้</p>
+                    </div>
+                </section>
+            </div>
+
+            <template v-else>
             <div class="plan-copy">
                 <div><span>เป้าหมาย</span><p>{{ selectedItem.goal }}</p></div>
                 <div><span>ตัวชี้วัดความสำเร็จ</span><p>{{ selectedItem.successCriteria }}</p></div>
@@ -320,6 +353,7 @@ const reject = (item) => {
                     <em>ดูรายละเอียด ›</em>
                 </button>
             </div>
+            </template>
 
             <textarea
                 v-if="selectedItem.canReview"
@@ -409,8 +443,6 @@ const reject = (item) => {
 .queue-plan-summary { display: grid; gap: 5px; min-width: 0; }
 .queue-plan-summary > strong, .queue-submitted strong { color: #34463f; font-size: 12px; font-weight: 800; }
 .queue-column-label { color: #7a8782; font-size: 10px; font-weight: 800; }
-.queue-competency-codes { display: flex; flex-wrap: wrap; gap: 5px; }
-.queue-competency-codes span { border-radius: 5px; background: #e8f3ef; padding: 3px 7px; color: #1f705c; font-size: 10px; font-weight: 900; }
 .queue-submitted { display: grid; gap: 5px; }
 .queue-action { display: grid; min-width: 0; justify-items: end; gap: 8px; }
 .queue-action button { display: inline-flex; align-items: center; gap: 8px; min-width: 108px; justify-content: center; border: 1px solid #8eb5a9; background: #fff; color: #216b58; }
@@ -557,4 +589,21 @@ button:disabled { opacity: .55; cursor: wait; }
     .queue-action { grid-template-columns: 1fr auto; align-items: center; justify-items: start; }
     .queue-action button { justify-self: end; }
 }
+.faculty-skill-list { display: grid; gap: 12px; padding: 16px 20px 4px; }
+.faculty-skill { overflow: hidden; border: 1px solid #ece8e3; border-radius: 12px; background: #fff; }
+.faculty-skill > header { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; background: #faf7f5; }
+.faculty-skill > header b { display: inline-grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 999px; background: var(--color-primary, #c7432b); color: #fff; font-size: 14px; }
+.faculty-skill > header div { display: grid; gap: 2px; min-width: 0; }
+.faculty-skill > header strong { font-size: 16px; overflow-wrap: anywhere; }
+.faculty-skill > header span { color: #625d58; font-size: 13px; }
+.faculty-skill-methods { display: grid; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid #ece8e3; }
+.faculty-skill-label { color: #625d58; font-size: 14px; font-weight: 600; }
+.faculty-skill-methods ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.faculty-skill-methods li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 1px solid #ece8e3; border-radius: 8px; font-size: 14px; }
+.faculty-skill-methods li span { min-width: 0; overflow-wrap: anywhere; }
+.faculty-skill-methods li small { flex: none; padding: 2px 10px; border-radius: 999px; background: #f3f4f6; color: #4b5563; font-size: 12px; font-weight: 600; }
+.faculty-skill-methods li small.method-experiential { background: #fff1ea; color: #b45309; }
+.faculty-skill-methods li small.method-social { background: #f3eefe; color: #6d28d9; }
+.faculty-skill-methods li small.method-formal { background: #e8f3ef; color: #1f705c; }
+.faculty-skill-methods p { margin: 0; color: #9a9086; font-size: 14px; }
 </style>

@@ -22,6 +22,9 @@ class AssessmentReadinessService
     public function organizationReady(User $user): bool
     {
         $worklineId = DB::table('worklines')->where('name', $user->workline)->value('id');
+        if ($worklineId && app(SsoWorklineNormalizer::class)->structureType($user->workline) === 'management' && ! $user->position_id) {
+            return $this->managementExecutiveReady($user, (int) $worklineId);
+        }
         if (! $worklineId || ! $user->position_id || ! $user->level_id) return false;
         $position = DB::table('positions')->where('id', $user->position_id)->first(['id', 'name', 'job_family_id', 'support_unit_id']);
         $level = DB::table('levels')->where('id', $user->level_id)->first(['id', 'name', 'workline_id', 'job_family_id']);
@@ -31,24 +34,16 @@ class AssessmentReadinessService
         $path = array_values(array_filter(array_map('trim', explode(' > ', $department))));
         $isSupportPath = isset($path[0]) && DB::table('support_departments')->where('name', $path[0])->exists();
         if ($isSupportPath) {
-            $workExists = count($path) >= 2 && DB::table('support_works')->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
-                ->where('support_departments.name', $path[0])->where('support_works.name', $path[1])->exists();
-            $unitId = count($path) === 3 ? DB::table('support_units')->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
-                ->join('support_departments', 'support_works.support_department_id', '=', 'support_departments.id')
-                ->where('support_departments.name', $path[0])->where('support_works.name', $path[1])->where('support_units.name', $path[2])
-                ->value('support_units.id') : null;
-            $roleKey = $user->role?->key ?? DB::table('roles')->where('id', $user->role_id)->value('key');
-            $roleKey = match ($roleKey) { 'manager_dept' => 'dept_head', 'manager' => 'dean', default => $roleKey };
-            $validPath = match ($roleKey) {
-                'division_head' => count($path) === 1 || (count($path) === 2 && $workExists) || (count($path) === 3 && $unitId),
-                'dept_head' => (count($path) === 2 && $workExists) || (count($path) === 3 && $unitId),
-                default => count($path) === 3 && $unitId,
-            };
-            if (! $validPath) return false;
+            // ฝ่าย > งาน > หน่วย for everyone; ฝ่าย > งาน for a head of งาน.
+            $resolver = app(\App\Services\SupportUnitResolver::class);
+            if (! $resolver->isPlaced($department, $user->role?->key)) return false;
+            $unitId = $resolver->fromDepartmentPath($department)['unitId'] ?? null;
 
             $globalPositionMatches = DB::table('positions')->join('job_families', 'positions.job_family_id', '=', 'job_families.id')
                 ->where('positions.id', $position->id)->where('job_families.workline_id', $worklineId)->whereNull('positions.support_unit_id')->exists();
-            if ($position->support_unit_id && (int) $position->support_unit_id !== (int) $unitId) return false;
+            if ($position->support_unit_id && $unitId && (int) $position->support_unit_id !== (int) $unitId) return false;
+            if ($position->support_unit_id && ! $unitId && ! DB::table('support_units')->join('support_works', 'support_units.support_work_id', '=', 'support_works.id')
+                ->where('support_units.id', $position->support_unit_id)->where('support_works.name', $path[1])->exists()) return false;
             if (! $position->support_unit_id && ! $globalPositionMatches) return false;
         } else {
             $familyName = trim(explode(' > ', $department)[0] ?? '');
@@ -59,5 +54,24 @@ class AssessmentReadinessService
 
         if ($isSupportPath && $level->job_family_id !== null) return false;
         return true;
+    }
+
+    /**
+     * Executives in สายบริหาร hold a workline title (no organization position), a level of that workline,
+     * and optionally the academic department they belong to.
+     */
+    private function managementExecutiveReady(User $user, int $worklineId): bool
+    {
+        if (! $user->position_title_id || ! $user->level_id) return false;
+        if (! DB::table('position_titles')->where('id', $user->position_title_id)->where('workline_id', $worklineId)->where('name', $user->position)->exists()) return false;
+        if (! DB::table('levels')->where('id', $user->level_id)->where('workline_id', $worklineId)->where('name', $user->level)->exists()) return false;
+
+        $homeDepartment = trim((string) $user->department);
+
+        return $homeDepartment === '' || DB::table('job_families')
+            ->join('worklines', 'job_families.workline_id', '=', 'worklines.id')
+            ->whereIn('worklines.name', ['สายวิชาการ', 'สายงานวิชาการ', 'วิชาการ'])
+            ->where('job_families.name', $homeDepartment)
+            ->exists();
     }
 }

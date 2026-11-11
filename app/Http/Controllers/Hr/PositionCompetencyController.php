@@ -10,6 +10,7 @@ use App\Services\PositionTitleResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PositionCompetencyController extends Controller
 {
@@ -22,7 +23,9 @@ class PositionCompetencyController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'position_id' => ['nullable', 'integer', 'exists:positions,id', 'required_without:position_title_id'],
+            // A workline-level position (e.g. dean) has no position row, so it is bound by its title.
+            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id', 'required_without:position_id'],
             'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'competency_id' => ['nullable', 'integer', 'exists:competencies,id'],
             'competency_ids' => ['nullable', 'array'],
@@ -50,11 +53,14 @@ class PositionCompetencyController extends Controller
         }
 
         $now = now();
-        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
+        $byTitle = empty($data['position_id']);
+        $positionTitleId = $byTitle
+            ? $this->worklinePositionTitleId((int) $data['position_title_id'])
+            : $this->positionTitleId((int) $data['position_id']);
 
         $rows = $competencyIds->map(fn (int $competencyId) => [
             'assessment_round_id' => $data['assessment_round_id'],
-            'position_id' => $data['position_id'],
+            'position_id' => $byTitle ? null : $data['position_id'],
             'position_title_id' => $positionTitleId,
             'competency_id' => $competencyId,
             'created_at' => $now,
@@ -62,7 +68,9 @@ class PositionCompetencyController extends Controller
         ])->all();
 
         DB::table('position_competencies')->insertOrIgnore($rows);
-        $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
+        $byTitle
+            ? $this->syncUsersForTitleIfActive($positionTitleId, (int) $data['assessment_round_id'])
+            : $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
 
         return back()->with('success', 'ผูกสมรรถนะกับตำแหน่งเรียบร้อยแล้ว');
     }
@@ -70,18 +78,24 @@ class PositionCompetencyController extends Controller
     public function destroy(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'position_id' => ['required', 'integer', 'exists:positions,id'],
+            'position_id' => ['nullable', 'integer', 'exists:positions,id', 'required_without:position_title_id'],
+            'position_title_id' => ['nullable', 'integer', 'exists:position_titles,id', 'required_without:position_id'],
             'assessment_round_id' => ['required', 'integer', 'exists:assessment_rounds,id'],
             'competency_id' => ['required', 'integer', 'exists:competencies,id'],
         ]);
 
-        $positionTitleId = $this->positionTitleId((int) $data['position_id']);
+        $byTitle = empty($data['position_id']);
+        $positionTitleId = $byTitle
+            ? $this->worklinePositionTitleId((int) $data['position_title_id'])
+            : $this->positionTitleId((int) $data['position_id']);
         DB::table('position_competencies')
             ->where('position_title_id', $positionTitleId)
             ->where('competency_id', $data['competency_id'])
             ->where('assessment_round_id', $data['assessment_round_id'])
             ->delete();
-        $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
+        $byTitle
+            ? $this->syncUsersForTitleIfActive($positionTitleId, (int) $data['assessment_round_id'])
+            : $this->syncUsersForPositionIfActive((int) $data['position_id'], (int) $data['assessment_round_id']);
 
         return back()->with('success', 'ลบสมรรถนะออกจากตำแหน่งเรียบร้อยแล้ว');
     }
@@ -169,10 +183,10 @@ class PositionCompetencyController extends Controller
         $now = now();
         // Only competencies of the target round's format can be carried across.
         $targetMethod = $this->assessmentMethods->forRoundId((int) $data['target_round_id'])['method'];
-        $sourceRows = DB::table('position_competencies')
+        $sourceQuery = DB::table('position_competencies')
             ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
-            ->where('position_competencies.assessment_round_id', $data['source_round_id'])
-            ->where('competencies.assessment_method', $targetMethod)
+            ->where('position_competencies.assessment_round_id', $data['source_round_id']);
+        $sourceRows = $this->assessmentMethods->whereCompatibleWithMethod($sourceQuery, $targetMethod)
             ->get(['position_competencies.position_id', 'position_competencies.position_title_id', 'position_competencies.competency_id']);
         $sourceRules = DB::table('position_fc_selection_rules')
             ->where('assessment_round_id', $data['source_round_id'])
@@ -253,6 +267,32 @@ class PositionCompetencyController extends Controller
             ->where('position_competencies.assessment_round_id', $roundId)
             ->whereIn('competency_types.code', ['FC', 'FC1', 'FC2'])
             ->count();
+    }
+
+    /** Only workline-level positions (no position rows) may be bound by title alone. */
+    private function worklinePositionTitleId(int $titleId): int
+    {
+        $isWorklinePosition = DB::table('position_titles')->where('id', $titleId)->value('is_workline_position');
+        if (! $isWorklinePosition) {
+            throw ValidationException::withMessages([
+                'position_title_id' => 'กำหนดสมรรถนะตามชื่อตำแหน่งได้เฉพาะตำแหน่งระดับสายงาน (สายบริหาร) ตำแหน่งอื่นให้เลือกจากภาควิชา/หน่วยงาน',
+            ]);
+        }
+
+        return $titleId;
+    }
+
+    private function syncUsersForTitleIfActive(int $positionTitleId, int $roundId): void
+    {
+        if (! $this->isActiveRound($roundId)) {
+            return;
+        }
+
+        User::query()
+            ->where('is_active', true)
+            ->where('position_title_id', $positionTitleId)
+            ->get()
+            ->each(fn (User $user) => $this->competencyAssessmentSync->syncUser($user));
     }
 
     private function syncUsersForPositionIfActive(int $positionId, int $roundId): void

@@ -9,7 +9,8 @@ class IdpFillMode
     public function current(): string
     {
         $mode = DB::table('system_settings')->where('key', 'idp_fill_mode')->value('value');
-        return in_array($mode, ['quick', 'form'], true) ? $mode : 'quick';
+        // Default stays on the existing detailed form until the quick mode policy (checklist C05) is confirmed.
+        return in_array($mode, ['quick', 'form'], true) ? $mode : 'form';
     }
 
     public function save(string $mode): void

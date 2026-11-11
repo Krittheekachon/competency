@@ -30,6 +30,7 @@ class AssessmentRoundController extends Controller
                 ...$this->roundValues($data, false),
                 'assessment_method' => $method,
                 'assessment_method_version' => AssessmentMethodResolver::CURRENT_VERSIONS[$method],
+                ...$this->expectedLevelValues($data),
                 'snapshot_required' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -73,6 +74,7 @@ class AssessmentRoundController extends Controller
             DB::table('assessment_rounds')->where('id', $round)->update([
                 ...$this->roundValues($data, false),
                 ...$this->methodValues($round, $data['assessment_method'] ?? null),
+                ...$this->expectedLevelPolicyValues($round, $data),
                 'updated_at' => now(),
             ]);
 
@@ -153,14 +155,15 @@ class AssessmentRoundController extends Controller
             'self_assess_start' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date'],
             'self_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_start'],
             'supervisor_assess_end' => [Rule::requiredIf(fn (): bool => $request->boolean('is_active')), 'nullable', 'date', 'after_or_equal:self_assess_end'],
-            'approval_start' => ['nullable', 'date'],
-            'approval_end' => ['nullable', 'date', Rule::when($request->filled('approval_start'), ['after_or_equal:approval_start'])],
-            'progress_report_start' => ['nullable', 'date', Rule::when($request->filled('approval_end'), ['after_or_equal:approval_end'])],
-            'progress_report_end' => ['nullable', 'date', Rule::when($request->filled('progress_report_start'), ['after_or_equal:progress_report_start'])],
             'is_active' => ['required', 'boolean'],
             'copy_from_round_id' => ['nullable', 'integer', 'exists:assessment_rounds,id'],
             'assessment_method' => ['nullable', 'string', Rule::in(AssessmentMethodResolver::allowed())],
+            'expected_level_mode' => ['nullable', 'string', Rule::in(['by_level', 'fixed'])],
+            'expected_level_fixed' => ['nullable', 'integer', 'between:1,5', Rule::requiredIf(fn (): bool => $request->input('expected_level_mode') === 'fixed')],
         ], [
+            'expected_level_mode.in' => 'รูปแบบระดับความคาดหวังที่เลือกไม่ถูกต้อง',
+            'expected_level_fixed.required' => 'กรุณาเลือกระดับความคาดหวังที่ใช้กับทุกคนในรอบนี้',
+            'expected_level_fixed.between' => 'ระดับความคาดหวังต้องอยู่ระหว่าง 1 ถึง 5',
             'assessment_method.in' => 'วิธีการประเมินที่เลือกไม่ถูกต้อง',
             'name.required' => 'กรุณาระบุชื่อรอบการประเมิน',
             'name.unique' => 'ชื่อรอบการประเมินนี้ถูกใช้แล้ว',
@@ -169,9 +172,6 @@ class AssessmentRoundController extends Controller
             'supervisor_assess_end.required' => 'กรุณาระบุวันสิ้นสุดการตรวจของหัวหน้าก่อนเปิดใช้งานรอบ',
             'self_assess_end.after_or_equal' => 'วันสิ้นสุดการประเมินต้องไม่ก่อนวันเริ่มการประเมิน',
             'supervisor_assess_end.after_or_equal' => 'วันสิ้นสุดการตรวจของหัวหน้าต้องไม่ก่อนวันสิ้นสุดการประเมิน',
-            'approval_end.after_or_equal' => 'วันสิ้นสุดช่วงอนุมัติต้องไม่ก่อนวันเริ่มช่วงอนุมัติ',
-            'progress_report_start.after_or_equal' => 'ช่วงรายงานความก้าวหน้าต้องไม่เริ่มก่อนสิ้นสุดช่วงอนุมัติ',
-            'progress_report_end.after_or_equal' => 'วันสิ้นสุดรายงานความก้าวหน้าต้องไม่ก่อนวันเริ่มรายงาน',
         ]);
 
         $storedYear = $round ? (int) DB::table('assessment_rounds')->where('id', $round)->value('year') : null;
@@ -189,6 +189,11 @@ class AssessmentRoundController extends Controller
     /**
      * The method can change only until the first self-assessment is submitted in the round.
      */
+    private function assessmentMethods(): AssessmentMethodResolver
+    {
+        return app(AssessmentMethodResolver::class);
+    }
+
     private function methodValues(int $round, ?string $method): array
     {
         $current = DB::table('assessment_rounds')->where('id', $round)->value('assessment_method');
@@ -207,11 +212,10 @@ class AssessmentRoundController extends Controller
         }
 
         // Position competencies belong to one dictionary format; switching would mix the two.
-        $boundOtherFormat = DB::table('position_competencies')
+        $boundQuery = DB::table('position_competencies')
             ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
-            ->where('position_competencies.assessment_round_id', $round)
-            ->where('competencies.assessment_method', '!=', $method)
-            ->exists();
+            ->where('position_competencies.assessment_round_id', $round);
+        $boundOtherFormat = $this->assessmentMethods()->whereIncompatibleWithMethod($boundQuery, $method)->exists();
         if ($boundOtherFormat) {
             throw ValidationException::withMessages([
                 'assessment_method' => 'รอบนี้ผูกสมรรถนะ'.AssessmentMethodResolver::formatLabel((string) $current).'ไว้กับตำแหน่งแล้ว กรุณาลบสมรรถนะประจำตำแหน่งของรอบนี้ก่อนเปลี่ยนวิธีประเมิน',
@@ -224,6 +228,47 @@ class AssessmentRoundController extends Controller
         ];
     }
 
+    /** @return array{expected_level_mode: string, expected_level_fixed: int|null} */
+    private function expectedLevelValues(array $data): array
+    {
+        $fixed = ($data['expected_level_mode'] ?? 'by_level') === 'fixed';
+
+        return [
+            'expected_level_mode' => $fixed ? 'fixed' : 'by_level',
+            'expected_level_fixed' => $fixed ? (int) $data['expected_level_fixed'] : null,
+        ];
+    }
+
+    /**
+     * The expected-level policy is frozen once any gap exists in the round: gaps keep the expected
+     * level they were scored against, so changing the rule afterwards would mix two standards.
+     */
+    private function expectedLevelPolicyValues(int $round, array $data): array
+    {
+        if (! array_key_exists('expected_level_mode', $data) || $data['expected_level_mode'] === null) {
+            return [];
+        }
+
+        $new = $this->expectedLevelValues($data);
+        $current = DB::table('assessment_rounds')->where('id', $round)->first(['expected_level_mode', 'expected_level_fixed']);
+        if ($current->expected_level_mode === $new['expected_level_mode']
+            && (int) $current->expected_level_fixed === (int) $new['expected_level_fixed']) {
+            return [];
+        }
+
+        $locked = DB::table('competency_gaps')
+            ->join('assessments', 'assessments.id', '=', 'competency_gaps.assessment_id')
+            ->where('assessments.assessment_round_id', $round)
+            ->exists();
+        if ($locked) {
+            throw ValidationException::withMessages([
+                'expected_level_mode' => 'ไม่สามารถเปลี่ยนระดับความคาดหวังได้ เนื่องจากรอบนี้เริ่มประเมินแล้ว',
+            ]);
+        }
+
+        return $new;
+    }
+
     private function roundValues(array $data, ?bool $isActive = null): array
     {
         return [
@@ -232,10 +277,6 @@ class AssessmentRoundController extends Controller
             'self_assess_start' => $data['self_assess_start'] ?? null,
             'self_assess_end' => $data['self_assess_end'] ?? null,
             'supervisor_assess_end' => $data['supervisor_assess_end'] ?? null,
-            'approval_start' => $data['approval_start'] ?? null,
-            'approval_end' => $data['approval_end'] ?? null,
-            'progress_report_start' => $data['progress_report_start'] ?? null,
-            'progress_report_end' => $data['progress_report_end'] ?? null,
             'is_active' => $isActive ?? (bool) $data['is_active'],
         ];
     }
@@ -244,10 +285,10 @@ class AssessmentRoundController extends Controller
     {
         $now = now();
         // Only competencies of the new round's format can be carried across.
-        $competencies = DB::table('position_competencies')
+        $sourceQuery = DB::table('position_competencies')
             ->join('competencies', 'competencies.id', '=', 'position_competencies.competency_id')
-            ->where('position_competencies.assessment_round_id', $sourceRoundId)
-            ->where('competencies.assessment_method', $method)
+            ->where('position_competencies.assessment_round_id', $sourceRoundId);
+        $competencies = $this->assessmentMethods()->whereCompatibleWithMethod($sourceQuery, $method)
             ->get(['position_competencies.position_id', 'position_competencies.position_title_id', 'position_competencies.competency_id'])
             ->map(fn (object $row): array => [
                 'assessment_round_id' => $targetRoundId,

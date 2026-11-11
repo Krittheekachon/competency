@@ -506,7 +506,7 @@ class AdminDashboardUserStructureSyncTest extends TestCase
             );
     }
 
-    public function test_dashboard_accepts_support_heads_without_unit_when_path_is_valid(): void
+    public function test_dashboard_flags_support_heads_without_unit_like_everyone_else(): void
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
@@ -585,10 +585,13 @@ class AdminDashboardUserStructureSyncTest extends TestCase
                     $divisionHead = $users->firstWhere('n', 'ZZ Division Head Without Unit');
                     $deptHead = $users->firstWhere('n', 'ZZ Dept Head Without Unit');
 
+                    // Roles share the same ฝ่าย > งาน > หน่วย structure; a missing unit is an issue for heads too.
                     return $divisionHead
                         && $deptHead
-                        && $divisionHead['structureStatus'] === 'ok'
-                        && $deptHead['structureStatus'] === 'ok';
+                        && $divisionHead['structureStatus'] !== 'ok'
+                        && $deptHead['structureStatus'] !== 'ok'
+                        && in_array('ฝ่าย งาน หรือหน่วยนี้ไม่มีในโครงสร้างสายสนับสนุนปัจจุบัน', $divisionHead['structureIssues'], true)
+                        && in_array('ฝ่าย งาน หรือหน่วยนี้ไม่มีในโครงสร้างสายสนับสนุนปัจจุบัน', $deptHead['structureIssues'], true);
                 })
             );
     }

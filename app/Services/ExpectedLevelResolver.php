@@ -20,6 +20,8 @@ class ExpectedLevelResolver
 
     private ?int $activeRoundIdCache = null;
 
+    private ?int $fixedLevelCache = null;
+
     private bool $activeRoundIdResolved = false;
 
     public function resetRequestCache(): void
@@ -30,6 +32,18 @@ class ExpectedLevelResolver
         $this->worklineIdCache = [];
         $this->activeRoundIdCache = null;
         $this->activeRoundIdResolved = false;
+        $this->fixedLevelCache = null;
+    }
+
+    /** The round-wide expected level when the active round uses a fixed value, otherwise null. */
+    public function fixedLevelForActiveRound(): ?int
+    {
+        $roundId = $this->activeRoundId();
+        if (! $roundId) {
+            return null;
+        }
+
+        return $this->fixedLevelCache;
     }
 
     public function forUserCompetency(User $user, int $competencyId): ?int
@@ -85,12 +99,14 @@ class ExpectedLevelResolver
                 ->map(fn ($id): int => (int) $id)
                 ->flip();
 
-        $expectedLevel = $levelIds->isEmpty()
+        $expectedLevel = $this->fixedLevelCache !== null
+            ? $this->fixedLevelCache
+            : ($levelIds->isEmpty()
             ? null
             : DB::table('levels')
                 ->whereIn('id', $levelIds)
                 ->whereNotNull('expected_level')
-                ->value('expected_level');
+                ->value('expected_level'));
         $expectedLevel = $expectedLevel === null ? null : (int) $expectedLevel;
 
         foreach ($unresolvedIds as $competencyId) {
@@ -221,14 +237,17 @@ class ExpectedLevelResolver
             return $this->activeRoundIdCache;
         }
 
-        $id = DB::table('assessment_rounds')
+        $round = DB::table('assessment_rounds')
             ->where('is_active', true)
             ->orderByDesc('year')
             ->orderByDesc('id')
-            ->value('id');
+            ->first(['id', 'expected_level_mode', 'expected_level_fixed']);
 
         $this->activeRoundIdResolved = true;
+        $this->fixedLevelCache = $round && $round->expected_level_mode === 'fixed' && $round->expected_level_fixed
+            ? (int) $round->expected_level_fixed
+            : null;
 
-        return $this->activeRoundIdCache = $id ? (int) $id : null;
+        return $this->activeRoundIdCache = $round ? (int) $round->id : null;
     }
 }

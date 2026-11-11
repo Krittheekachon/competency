@@ -15,13 +15,11 @@ const form = useForm({
     self_assess_start: '',
     self_assess_end: '',
     supervisor_assess_end: '',
-    approval_start: '',
-    approval_end: '',
-    progress_report_start: '',
-    progress_report_end: '',
     is_active: true,
     copy_from_round_id: props.rounds[0]?.id || '',
     assessment_method: 'standard',
+    expected_level_mode: 'by_level',
+    expected_level_fixed: 4,
 });
 
 const activeRound = computed(() => props.rounds.find((round) => round.isActive) || null);
@@ -33,27 +31,14 @@ const activeRemainingCount = computed(() => Math.max(
     activeEligibleCount.value - activeSubmittedCount.value,
     0,
 ));
-const dateGroups = computed(() => [
-    { start: form.self_assess_start, end: form.supervisor_assess_end || form.self_assess_end },
-    { start: form.approval_start, end: form.approval_end },
-    { start: form.progress_report_start, end: form.progress_report_end },
-]);
 const dateOrderInvalid = computed(() => Boolean(
     (form.self_assess_start && form.self_assess_end && form.self_assess_end < form.self_assess_start)
-    || (form.self_assess_end && form.supervisor_assess_end && form.supervisor_assess_end < form.self_assess_end)
-    || (form.approval_start && form.approval_end && form.approval_end < form.approval_start)
-    || (form.progress_report_start && form.progress_report_end && form.progress_report_end < form.progress_report_start),
+    || (form.self_assess_end && form.supervisor_assess_end && form.supervisor_assess_end < form.self_assess_end),
 ));
 const canSubmitEditor = computed(() => Boolean(form.name.trim()) && !dateOrderInvalid.value && !form.processing);
 const dateDuration = (start, end) => {
     if (!start || !end || end < start) return null;
     return Math.floor((new Date(`${end}T00:00:00`) - new Date(`${start}T00:00:00`)) / 86400000) + 1;
-};
-const rangeOverlapsPrevious = (index) => {
-    if (index < 1) return false;
-    const previous = dateGroups.value[index - 1];
-    const current = dateGroups.value[index];
-    return Boolean(previous.end && current.start && current.start < previous.end);
 };
 
 const resetForm = () => {
@@ -102,13 +87,11 @@ const editRound = (round) => {
     form.self_assess_start = round.selfAssessStart || '';
     form.self_assess_end = round.selfAssessEnd || '';
     form.supervisor_assess_end = round.supervisorAssessEnd || '';
-    form.approval_start = round.approvalStart || '';
-    form.approval_end = round.approvalEnd || '';
-    form.progress_report_start = round.progressReportStart || '';
-    form.progress_report_end = round.progressReportEnd || '';
     form.is_active = round.isActive;
     form.copy_from_round_id = '';
     form.assessment_method = round.assessmentMethod || 'standard';
+    form.expected_level_mode = round.expectedLevelMode || 'by_level';
+    form.expected_level_fixed = round.expectedLevelFixed || 4;
     form.clearErrors();
     showEditor();
 };
@@ -134,18 +117,6 @@ const submit = () => {
     }
     if (form.self_assess_end && form.supervisor_assess_end && form.supervisor_assess_end < form.self_assess_end) {
         form.setError('supervisor_assess_end', 'วันสิ้นสุดการตรวจของหัวหน้าต้องไม่ก่อนวันสิ้นสุดการประเมิน');
-        return;
-    }
-    if (form.approval_start && form.approval_end && form.approval_end < form.approval_start) {
-        form.setError('approval_end', 'วันสิ้นสุดช่วงอนุมัติต้องไม่ก่อนวันเริ่มช่วงอนุมัติ');
-        return;
-    }
-    if (form.approval_end && form.progress_report_start && form.progress_report_start < form.approval_end) {
-        form.setError('progress_report_start', 'ช่วงรายงานความก้าวหน้าต้องไม่เริ่มก่อนสิ้นสุดช่วงอนุมัติ');
-        return;
-    }
-    if (form.progress_report_start && form.progress_report_end && form.progress_report_end < form.progress_report_start) {
-        form.setError('progress_report_end', 'วันสิ้นสุดรายงานความก้าวหน้าต้องไม่ก่อนวันเริ่มรายงาน');
         return;
     }
 
@@ -254,27 +225,17 @@ const dateLabel = (value) => value
                             <em v-if="form.errors.name">{{ form.errors.name }}</em>
                         </label>
                         <div class="date-table" role="group" aria-label="กำหนดช่วงวันที่">
-                            <span></span><span class="head">เริ่ม</span><span></span><span class="head">สิ้นสุด</span><span></span>
-                            <span class="hint date-global-hint">เลือกวันที่จากปฏิทิน (ค.ศ.)</span>
-                            <span class="row-label">ช่วงการประเมิน</span>
+                            <div class="date-head"><span class="hint date-global-hint"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>เลือกวันที่จากปฏิทิน (ค.ศ.)</span><span class="head head-start">เริ่ม</span><span class="head head-end">สิ้นสุด</span></div>
+                            <div class="date-row">
+                            <span class="row-label"><span class="row-name">ช่วงการประเมิน</span><b class="need-tag is-required">จำเป็นก่อนเปิดรอบ</b><span class="info-tip row-tip" tabindex="0" role="note" :data-tip="`พนักงานประเมินตนเองและส่งผลได้เฉพาะในช่วงนี้`" aria-label="พนักงานประเมินตนเองและส่งผลได้เฉพาะในช่วงนี้">ⓘ</span></span>
                             <label class="field date-cell" :class="{ 'is-error': form.self_assess_start && form.self_assess_end && form.self_assess_end < form.self_assess_start }"><span class="sr-only">เริ่มช่วงการประเมิน</span><input v-model="form.self_assess_start" aria-label="เริ่มช่วงการประเมิน" type="date" lang="en-GB"><em v-if="form.errors.self_assess_start">{{ form.errors.self_assess_start }}</em></label><span class="arrow" aria-hidden="true"></span>
                             <label class="field date-cell" :class="{ 'is-error': form.self_assess_start && form.self_assess_end && form.self_assess_end < form.self_assess_start }"><span class="sr-only">สิ้นสุดช่วงการประเมิน</span><input v-model="form.self_assess_end" aria-label="สิ้นสุดช่วงการประเมิน" type="date" lang="en-GB" :min="form.self_assess_start || undefined"><em v-if="form.self_assess_end && form.self_assess_start && form.self_assess_end < form.self_assess_start">วันสิ้นสุดต้องไม่ก่อนวันเริ่ม</em><em v-else-if="form.errors.self_assess_end">{{ form.errors.self_assess_end }}</em></label>
                             <span class="days">{{ dateDuration(form.self_assess_start, form.supervisor_assess_end || form.self_assess_end) ? `${dateDuration(form.self_assess_start, form.supervisor_assess_end || form.self_assess_end)} วัน` : '' }}</span>
-                            <span class="divider"></span>
-                            <span class="row-label">ช่วงอนุมัติ</span>
-                            <label class="field date-cell"><span class="sr-only">เริ่มช่วงอนุมัติ</span><input v-model="form.approval_start" aria-label="เริ่มช่วงอนุมัติ" type="date" lang="en-GB"><em v-if="form.errors.approval_start">{{ form.errors.approval_start }}</em></label><span class="arrow" aria-hidden="true"></span>
-                            <label class="field date-cell" :class="{ 'is-error': form.approval_start && form.approval_end && form.approval_end < form.approval_start }"><span class="sr-only">สิ้นสุดช่วงอนุมัติ</span><input v-model="form.approval_end" aria-label="สิ้นสุดช่วงอนุมัติ" type="date" lang="en-GB" :min="form.approval_start || undefined"><em v-if="form.approval_start && form.approval_end && form.approval_end < form.approval_start">วันสิ้นสุดต้องไม่ก่อนวันเริ่ม</em><em v-else-if="form.errors.approval_end">{{ form.errors.approval_end }}</em></label>
-                            <span class="days">{{ dateDuration(form.approval_start, form.approval_end) ? `${dateDuration(form.approval_start, form.approval_end)} วัน` : '' }}</span>
-                            <span v-if="rangeOverlapsPrevious(1)" class="warn-box date-warning">ช่วงนี้ซ้อนกับช่วงก่อนหน้า</span>
-                            <span class="divider"></span>
-                            <span class="row-label">ช่วงรายงานความก้าวหน้า</span>
-                            <label class="field date-cell"><span class="sr-only">เริ่มช่วงรายงานความก้าวหน้า</span><input v-model="form.progress_report_start" aria-label="เริ่มช่วงรายงานความก้าวหน้า" type="date" lang="en-GB" :min="form.approval_end || undefined"><em v-if="form.errors.progress_report_start">{{ form.errors.progress_report_start }}</em></label><span class="arrow" aria-hidden="true"></span>
-                            <label class="field date-cell" :class="{ 'is-error': form.progress_report_start && form.progress_report_end && form.progress_report_end < form.progress_report_start }"><span class="sr-only">สิ้นสุดช่วงรายงานความก้าวหน้า</span><input v-model="form.progress_report_end" aria-label="สิ้นสุดช่วงรายงานความก้าวหน้า" type="date" lang="en-GB" :min="form.progress_report_start || undefined"><em v-if="form.progress_report_start && form.progress_report_end && form.progress_report_end < form.progress_report_start">วันสิ้นสุดต้องไม่ก่อนวันเริ่ม</em><em v-else-if="form.errors.progress_report_end">{{ form.errors.progress_report_end }}</em></label>
-                            <span class="days">{{ dateDuration(form.progress_report_start, form.progress_report_end) ? `${dateDuration(form.progress_report_start, form.progress_report_end)} วัน` : '' }}</span>
-                            <span v-if="rangeOverlapsPrevious(2)" class="warn-box date-warning">ช่วงนี้ซ้อนกับช่วงก่อนหน้า</span>
-                            <span class="divider"></span>
-                            <span class="row-label">หัวหน้าตรวจผลได้ถึง</span><span class="dash-cell">—</span><span></span>
+                            </div>
+                            <div class="date-row">
+                            <span class="row-label"><span class="row-name">หัวหน้าตรวจผลได้ถึง</span><b class="need-tag is-required">จำเป็นก่อนเปิดรอบ</b><span class="info-tip row-tip" tabindex="0" role="note" :data-tip="`ผู้ประเมินตรวจและอนุมัติได้ทันทีที่พนักงานส่ง จนถึงวันนี้ ต้องไม่ก่อนวันสิ้นสุดการประเมิน`" aria-label="ผู้ประเมินตรวจและอนุมัติได้ทันทีที่พนักงานส่ง จนถึงวันนี้ ต้องไม่ก่อนวันสิ้นสุดการประเมิน">ⓘ</span></span><span class="dash-cell">—</span><span></span>
                             <label class="field date-cell" :class="{ 'is-error': form.self_assess_end && form.supervisor_assess_end && form.supervisor_assess_end < form.self_assess_end }"><span class="sr-only">หัวหน้าตรวจผลได้ถึง</span><input v-model="form.supervisor_assess_end" aria-label="หัวหน้าตรวจผลได้ถึง" type="date" lang="en-GB" :min="form.self_assess_end || form.self_assess_start || undefined"><em v-if="form.supervisor_assess_end && form.self_assess_end && form.supervisor_assess_end < form.self_assess_end">วันสิ้นสุดต้องไม่ก่อนวันเริ่ม</em><em v-else-if="form.errors.supervisor_assess_end">{{ form.errors.supervisor_assess_end }}</em></label><span class="days"></span>
+                            </div>
                         </div>
                         <div class="setting-pair">
                         <label class="field copy-field">
@@ -284,6 +245,20 @@ const dateLabel = (value) => value
                                 <option value="faculty">รูปแบบตามกำหนดคณะ</option>
                             </select>
                             <em v-if="form.errors.assessment_method">{{ form.errors.assessment_method }}</em>
+                        </label>
+                        <label class="field copy-field">
+                            <span>ระดับความคาดหวัง <span class="info-tip" tabindex="0" :title="editingRound?.expectedLevelLocked ? 'ล็อกแล้ว เนื่องจากรอบนี้เริ่มประเมินแล้ว' : 'ตามระดับตำแหน่ง: ใช้ค่าที่ตั้งไว้ในหน้าโครงสร้าง / ค่าคงที่: ทุกคนในรอบนี้คาดหวังระดับเดียวกัน เปลี่ยนไม่ได้เมื่อเริ่มประเมินแล้ว'">ⓘ</span></span>
+                            <span class="expect-row">
+                                <select v-model="form.expected_level_mode" :disabled="editingRound?.expectedLevelLocked">
+                                    <option value="by_level">ตามระดับตำแหน่ง</option>
+                                    <option value="fixed">ค่าคงที่ทุกคน</option>
+                                </select>
+                                <select v-if="form.expected_level_mode === 'fixed'" v-model.number="form.expected_level_fixed" :disabled="editingRound?.expectedLevelLocked" aria-label="ระดับความคาดหวังคงที่">
+                                    <option v-for="level in [1, 2, 3, 4, 5]" :key="level" :value="level">ระดับ {{ level }}</option>
+                                </select>
+                            </span>
+                            <em v-if="form.errors.expected_level_mode">{{ form.errors.expected_level_mode }}</em>
+                            <em v-else-if="form.errors.expected_level_fixed">{{ form.errors.expected_level_fixed }}</em>
                         </label>
                         <label v-if="!isEditing && rounds.length" class="field copy-field">
                             <span>คัดลอกชุดสมรรถนะจาก <span class="info-tip" tabindex="0" title="คัดลอกสมรรถนะจากรอบที่เลือก" aria-label="คัดลอกสมรรถนะจากรอบที่เลือก">ⓘ</span></span>
@@ -326,12 +301,9 @@ const dateLabel = (value) => value
                     <thead>
                         <tr>
                             <th>รอบประเมิน</th>
-                            <th>วิธีประเมิน</th>
-                            <th>รอบประเมินตนเอง</th>
-                            <th>หัวหน้าตรวจถึง</th>
-                            <th>ช่วงอนุมัติ</th>
-                            <th>รายงานความก้าวหน้า</th>
-                            <th class="number-column">ผู้ส่ง / ทั้งหมด</th>
+                            <th>วิธีการประเมิน</th>
+                            <th>ระยะเวลาประเมิน</th>
+                            <th class="number-column">ประเมินแล้ว</th>
                             <th>สถานะ</th>
                             <th><span class="sr-only">การทำงาน</span></th>
                         </tr>
@@ -347,10 +319,7 @@ const dateLabel = (value) => value
                                 >ยังไม่พร้อม</span>
                             </td>
                             <td><span class="method-badge" :class="round.assessmentMethod">{{ round.assessmentMethod === 'faculty' ? 'รูปแบบตามกำหนดคณะ' : round.assessmentMethodLabel }}</span></td>
-                            <td>{{ dateLabel(round.selfAssessStart) }} <span class="date-separator">ถึง</span> {{ dateLabel(round.selfAssessEnd) }}</td>
-                            <td>{{ dateLabel(round.supervisorAssessEnd) }}</td>
-                            <td>{{ dateLabel(round.approvalStart) }} <span class="date-separator">ถึง</span> {{ dateLabel(round.approvalEnd) }}</td>
-                            <td>{{ dateLabel(round.progressReportStart) }} <span class="date-separator">ถึง</span> {{ dateLabel(round.progressReportEnd) }}</td>
+                            <td>{{ dateLabel(round.selfAssessStart) }}<span class="date-separator">ถึง {{ dateLabel(round.supervisorAssessEnd || round.selfAssessEnd) }}</span></td>
                             <td class="number-column assessment-cell">
                                 {{ Number(round.submittedUserCount || 0).toLocaleString('th-TH') }}
                                 <span>/ {{ Number(round.eligibleUserCount || 0).toLocaleString('th-TH') }} คน</span>
@@ -395,6 +364,8 @@ const dateLabel = (value) => value
 </template>
 
 <style scoped>
+.field .expect-row { display: flex !important; gap: 8px; }
+.field .expect-row select { flex: 1; min-width: 0; }
 .round-page { --ink: oklch(29% .035 253); --muted: oklch(61% .035 253); --line: oklch(89% .018 253); --surface: oklch(99% .005 253); --canvas: oklch(97% .012 253); --accent: oklch(53% .145 165); --accent-dark: oklch(43% .12 165); --accent-soft: oklch(95% .045 165); width: 100%; color: var(--ink); font-family: 'Sarabun', sans-serif; font-size: 14px; line-height: 1.6; font-synthesis-weight: none; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }.page-heading h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.025em; }.page-heading h1 span { margin-left: 5px; color: oklch(59% .16 35); font-size: 16px; }.page-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
 .create-button,.save-button,.activate-button { border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: oklch(98% .008 165); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }.create-button { min-height: 42px; padding: 9px 17px; }.create-button span { margin-right: 3px; font-size: 16px; line-height: 0; }.create-button:hover,.save-button:hover,.activate-button:hover { border-color: var(--accent-dark); background: var(--accent-dark); }
@@ -404,7 +375,7 @@ const dateLabel = (value) => value
 .editor-grid { display: grid; grid-template-columns: minmax(0,1fr); row-gap: 22px; padding: 20px 22px 24px; }.field { display: grid; align-content: start; gap: 6px; min-width: 0; }.field > span { font-size: 12px; font-weight: 700; }.field input,.field select { width: 100%; height: 40px; box-sizing: border-box; border: 1px solid oklch(83% .025 253); border-radius: 7px; padding: 0 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; outline: 0; }.field input:hover,.field select:hover { border-color: oklch(72% .045 253); }.field input:focus-visible,.field select:focus-visible,.round-page button:focus-visible { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 3px oklch(72% .09 165 / .22); }.field em { color: oklch(52% .18 28); font-size: 11px; font-style: normal; }.date-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }.date-hint { grid-column: 1 / -1; margin: 0 0 -4px; color: var(--muted); font-size: 11px; }.copy-field { max-width: 460px; }.field-note { color: var(--muted); font-size: 11px; }
 .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); background: var(--canvas); padding: 13px 22px; }.active-toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }.active-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }.active-toggle > span { display: grid; gap: 1px; }.active-toggle b { font-size: 12px; }.active-toggle small { color: var(--muted); font-size: 11px; }.editor-footer > div { display: flex; gap: 8px; }.secondary-button,.save-button { min-height: 38px; border-radius: 7px; padding: 8px 14px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }.secondary-button { border: 1px solid oklch(83% .025 253); background: var(--surface); color: var(--ink); }.secondary-button:hover { background: var(--canvas); }.save-button:disabled { opacity: .55; cursor: wait; }
 .round-readiness-error { display: grid; gap: 3px; margin: 0 22px 18px; border: 1px solid oklch(78% .11 29); border-radius: 8px; background: oklch(96% .035 29); padding: 10px 12px; color: oklch(46% .16 29); font-size: 12px; }.round-readiness-error strong { font-weight: 800; }
-.round-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 10px oklch(32% .03 253 / .055); }.round-table-card > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; }.round-table-card > header h2 { margin: 0; font-size: 14px; font-weight: 700; }.round-table-card > header span { color: var(--muted); font-size: 12px; }.table-scroll { overflow-x: auto; border-top: 1px solid var(--line); }table { width: 100%; min-width: 820px; border-collapse: collapse; }th,td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }th { background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 700; }td { color: oklch(49% .03 253); font-size: 13px; }tbody tr:last-child td { border-bottom: 0; }tbody tr:hover { background: oklch(98% .008 253); }tbody tr.current { background: var(--accent-soft); }td strong { color: var(--ink); font-size: 13px; font-weight: 700; }.date-separator { margin: 0 3px; color: oklch(72% .025 253); }.number-column { text-align: center; }.assessment-cell { color: var(--accent-dark); font-weight: 800; }.assessment-cell span { color: var(--muted); font-weight: 600; }
+.round-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); box-shadow: 0 4px 10px oklch(32% .03 253 / .055); }.round-table-card > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; }.round-table-card > header h2 { margin: 0; font-size: 14px; font-weight: 700; }.round-table-card > header span { color: var(--muted); font-size: 12px; }.table-scroll { overflow-x: auto; border-top: 1px solid var(--line); }table { width: 100%; min-width: 0; border-collapse: collapse; }th,td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }th { background: var(--canvas); color: var(--muted); font-size: 11px; font-weight: 700; }td { color: oklch(49% .03 253); font-size: 13px; }tbody tr:last-child td { border-bottom: 0; }tbody tr:hover { background: oklch(98% .008 253); }tbody tr.current { background: var(--accent-soft); }td strong { color: var(--ink); font-size: 13px; font-weight: 700; }.date-separator { margin: 0 3px; color: oklch(72% .025 253); }.number-column { text-align: center; }.assessment-cell { color: var(--accent-dark); font-weight: 800; }.assessment-cell span { color: var(--muted); font-weight: 600; }
 .status-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 9px; font-size: 11px; font-weight: 700; }.status-badge.open { background: oklch(93% .06 145); color: oklch(42% .13 145); }.status-badge.closed { background: oklch(94% .012 253); color: var(--muted); }.status-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }.row-actions { display: flex; justify-content: flex-end; gap: 6px; }.edit-button,.activate-button { min-height: 32px; padding: 5px 10px; }.edit-button { border: 1px solid oklch(83% .025 253); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }.edit-button:hover { border-color: oklch(70% .045 253); background: var(--canvas); }.activate-button { font-size: 12px; }
 .method-badge { display: inline-flex; border-radius: 999px; padding: 4px 8px; background: oklch(94% .012 253); color: var(--muted); font-size: 11px; font-weight: 700; }.method-badge.faculty { background: oklch(94% .045 55); color: oklch(45% .12 45); }
 .readiness-badge { display: inline-flex; margin-left: 8px; border-radius: 999px; background: oklch(94% .045 29); padding: 3px 7px; color: oklch(49% .17 29); font-size: 10px; font-weight: 700; }.activate-button:disabled { border-color: var(--line); background: var(--canvas); color: var(--muted); cursor: not-allowed; }
@@ -489,9 +460,16 @@ const dateLabel = (value) => value
 .name-field { margin-bottom:12px; }
 .name-field input { height:38px; border-radius:8px; padding:6px 10px; font-size:15px; background:#fff; }
 .date-global-hint { grid-column:1/-1; margin:0 0 2px; color:#5f6673; font-size:14px; text-align:left; }
-.date-table { display:grid; grid-template-columns:180px minmax(0,1fr) auto minmax(0,1fr) 64px; column-gap:10px; row-gap:8px; align-items:center; }
+.date-table { display:grid; grid-template-columns:230px minmax(0,1fr) auto minmax(0,1fr) 64px; column-gap:10px; row-gap:8px; align-items:center; }
+.date-table { padding:14px 16px; border:1px solid #e5e0da; border-radius:10px; background:#fff; }
 .date-table > .head { color:#5f6673; font-size:14px; font-weight:500; }
-.date-table .row-label { color:var(--ink); font-size:15px; font-weight:600; }
+.date-table .row-label { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; color:var(--ink); font-size:15px; font-weight:600; }
+.date-table .row-name { white-space:nowrap; }
+.date-table .need-tag { padding:1px 7px; border:1px solid #d9dee6; border-radius:999px; background:#f6f7f9; color:#5f6673; font-size:11px; font-weight:700; line-height:1.5; }
+.date-table .need-tag.is-required { border-color:#f3c7bd; background:#fff4f0; color:#b4472f; }
+.date-table .row-tip { position:relative; margin:0; }
+.date-table .row-tip::after { content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 8px); z-index:30; width:max-content; max-width:260px; padding:8px 10px; border-radius:8px; background:#1f2937; color:#fff; font-size:12px; font-weight:500; line-height:1.5; white-space:normal; text-align:left; box-shadow:0 8px 20px rgba(15,23,42,.18); opacity:0; visibility:hidden; transform:translate(-30%, 4px); transition:opacity .12s ease, transform .12s ease; pointer-events:none; }
+.date-table .row-tip:hover::after,.date-table .row-tip:focus-visible::after { opacity:1; visibility:visible; transform:translate(-30%, 0); }
 .date-table .arrow::before { color:#9a9086; content:'→'; }
 .date-table .days { color:#5f6673; font-size:14px; text-align:right; white-space:nowrap; }
 .date-table .divider { grid-column:1/-1; height:0; margin:1px 0; border-top:1px solid #f0ece7; }
@@ -501,7 +479,6 @@ const dateLabel = (value) => value
 .date-table .field input:focus { border-color:var(--brand); outline:none; box-shadow:0 0 0 3px var(--brand-soft); }
 .date-table .field.is-error input { border-color:#b42318; }
 .date-table .field em { margin-top:1px; font-size:14px; line-height:1.25; }
-.date-table .date-warning { grid-column:2/-1; justify-self:start; margin:0; padding:4px 9px; font-size:14px; }
 .date-table .dash-cell { color:#9a9086; font-size:15px; text-align:center; }
 .setting-pair { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
 .setting-pair .field { gap:5px; }
@@ -524,7 +501,6 @@ const dateLabel = (value) => value
   .date-table .row-label { grid-column:1/-1; margin-top:3px; font-size:14px; }
   .date-table .arrow,.date-table .days { display:none; }
   .date-table .divider { margin:3px 0; }
-  .date-table .date-warning { grid-column:1/-1; }
   .date-table .dash-cell { display:none; }
   .date-table .date-global-hint { grid-column:1/-1; display:block; }
   .setting-pair { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
@@ -539,4 +515,66 @@ const dateLabel = (value) => value
   .round-editor { width:100%; height:100dvh; max-height:100dvh; border-radius:0; }
   .setting-pair { grid-template-columns:1fr; }
 }
+
+/* Compact editor, card rows (matches the approved mock-up) */
+.round-editor { width:min(780px,96vw); font-size:14px; }
+.editor-heading { min-height:0; padding:14px 22px 12px; align-items:flex-start; background:linear-gradient(#fff,#fbfaf9); }
+.editor-heading > div > span { display:inline-flex; align-items:center; gap:6px; color:var(--brand); font-size:12px; font-weight:700; }
+.editor-heading > div > span::before { width:6px; height:6px; border-radius:50%; background:var(--brand); content:''; }
+.editor-heading h2 { margin:2px 0 0; font-size:17px; font-weight:800; }
+.editor-heading p { margin:1px 0 0; font-size:12.5px; }
+.icon-close { width:28px; height:28px; border:0; background:transparent; font-size:20px; }
+.editor-grid { padding:14px 22px 14px; }
+.name-field { margin-bottom:12px; }
+.field > span { font-size:13px; font-weight:700; }
+.name-field input,.date-table .field input,.setting-pair .field select { height:34px; border-radius:8px; padding:4px 10px; font-size:14px; }
+.date-table { display:block; padding:10px 12px 12px; border:1px solid #ece7e1; border-radius:12px; background:#faf8f6; }
+.date-head,.date-row { display:grid; grid-template-columns:262px minmax(0,1fr) 14px minmax(0,1fr) 52px; align-items:center; column-gap:8px; }
+.date-head { padding:0 12px 6px; }
+.date-head .date-global-hint { grid-column:1; grid-row:1; display:flex; align-items:center; gap:6px; margin:0; font-size:12.5px; color:#6b7280; }
+.date-head .head { color:#6b7280; font-size:12.5px; font-weight:600; text-align:center; }
+.date-head .head-start { grid-column:2; grid-row:1; }
+.date-head .head-end { grid-column:4; grid-row:1; }
+.date-row { margin-top:8px; padding:9px 12px; border:1px solid #ece7e1; border-radius:10px; background:#fff; box-shadow:0 1px 2px rgb(31 41 55 / .04); }
+.date-row:first-of-type { margin-top:0; }
+.date-table .row-label { flex-wrap:nowrap; gap:4px 6px; font-size:14px; }
+.date-table .row-label .info-tip { flex:none; }
+.date-table .need-tag { border-color:#c9d8ee; background:#eef4fc; color:#2f5f9e; }
+.date-table .need-tag.is-required { border-color:#f3c7bd; background:#fff4f0; color:#b4472f; }
+.date-table .days { justify-self:end; padding:1px 8px; border-radius:999px; background:#f1f2f4; color:#4b5563; font-size:12px; font-weight:600; }
+.date-table .days:empty { display:none; }
+.setting-pair { margin-top:12px; gap:12px; }
+.setting-pair .field > span { font-size:13px; }
+.field .expect-row { gap:6px; }
+.editor-footer { min-height:0; padding:10px 22px; background:#fbfaf9; }
+.active-toggle .toggle-copy { display:flex !important; flex-wrap:nowrap; align-items:center; gap:4px 10px; }
+.active-toggle b { font-size:14px; }
+.active-toggle small.active-warning { white-space:nowrap; display:inline-flex; align-items:center; gap:4px; margin:0; padding:2px 8px; font-size:12px; }
+.active-toggle small.active-warning::before { content:'\26A0'; font-size:11px; }
+.secondary-button,.save-button { min-height:36px; padding:6px 16px; font-size:14px; border-radius:8px; }
+.round-editor { font-size:13px; }
+.editor-heading h2 { font-size:16px; }
+.editor-heading p,.editor-heading > div > span { font-size:12px; }
+.field > span,.setting-pair .field > span { font-size:12px; }
+.name-field input,.date-table .field input,.setting-pair .field select { height:32px; font-size:13px; }
+.date-head .date-global-hint,.date-head .head { font-size:12px; }
+.date-table .row-label { font-size:13px; }
+.date-table .days { font-size:11px; }
+.date-table .need-tag { font-size:10.5px; }
+.active-toggle b { font-size:13px; }
+.active-toggle small.active-warning { font-size:11px; }
+.secondary-button,.save-button { min-height:34px; font-size:13px; }
+.round-editor .setting-pair .field select { font-weight:400; }
+@media (max-width:768px) {
+  .date-head { display:none; }
+  .date-row { grid-template-columns:minmax(0,1fr) minmax(0,1fr); row-gap:6px; }
+  .date-row .row-label { grid-column:1/-1; }
+  .date-row .arrow,.date-row .days,.date-row .dash-cell { display:none; }
+  .date-row > span:empty { display:none; }
+}
+.round-table-card th,.round-table-card td { padding: 12px 8px; white-space: nowrap; font-size: 13px; vertical-align: middle; }
+.round-table-card th,.round-table-card th:first-child,.round-table-card td:first-child,.round-table-card td:nth-child(2) { white-space: normal; }
+.round-table-card .method-badge { white-space: nowrap; }
+.round-table-card td:first-child strong { display: block; min-width: 9em; }
+.round-table-card .date-separator { display: inline; margin: 0 0 0 6px; color: var(--muted); }
 </style>

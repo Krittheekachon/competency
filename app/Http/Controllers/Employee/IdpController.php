@@ -21,6 +21,7 @@ class IdpController extends Controller
         'experiential-learning',
         'social-learning',
         'formal-learning',
+        'other-learning',
     ];
 
     public function __construct(
@@ -142,7 +143,7 @@ class IdpController extends Controller
         $invalidMethodKeys = $submittedMethodKeys->diff(self::CANONICAL_LEARNING_METHOD_KEYS);
         if ($invalidMethodKeys->isNotEmpty()) {
             throw ValidationException::withMessages([
-                'items' => 'ประเภทการเรียนรู้ต้องเป็น Experiential, Social หรือ Formal เท่านั้น',
+                'items' => 'ประเภทการเรียนรู้ต้องเป็น Experiential, Social, Formal หรืออื่นๆ เท่านั้น',
             ]);
         }
 
@@ -327,6 +328,8 @@ class IdpController extends Controller
                     $activityName = $catalog?->name;
                     if ($tool) {
                         $activityName = $tool->title;
+                    } elseif (! $catalog && ($activity['methodKey'] ?? '') === 'other-learning') {
+                        $activityName = trim((string) ($activity['activityName'] ?? '')) ?: null;
                     }
 
                     DB::table('idp_activities')->insert([
@@ -437,6 +440,15 @@ class IdpController extends Controller
                     ];
                 }
 
+                // "อื่นๆ": the employee's own method name is the only data it carries.
+                if (($activity['methodKey'] ?? '') === 'other-learning') {
+                    return [
+                        ...$activity,
+                        'activityName' => mb_substr(trim((string) ($activity['activityName'] ?? '')), 0, 255),
+                        'formCode' => '',
+                    ];
+                }
+
                 return [
                     ...$activity,
                     'activityName' => '',
@@ -528,6 +540,19 @@ class IdpController extends Controller
                     if ($catalogId) {
                         throw ValidationException::withMessages([
                             "$prefix.learningCatalogId" => 'Learning Catalog ใช้ได้กับ Formal Learning เท่านั้น',
+                        ]);
+                    }
+                }
+
+                if ($focusType === 'other') {
+                    if ($toolId || $catalogId) {
+                        throw ValidationException::withMessages([
+                            "$prefix.methodKey" => 'วิธีพัฒนาอื่นๆ ต้องระบุชื่อเอง ไม่ต้องเลือกเครื่องมือหรือหลักสูตร',
+                        ]);
+                    }
+                    if ($status === 'submitted' && blank($activity['activityName'] ?? null)) {
+                        throw ValidationException::withMessages([
+                            "$prefix.activityName" => 'กรุณาระบุวิธีพัฒนาอื่นๆ',
                         ]);
                     }
                 }
@@ -953,6 +978,7 @@ class IdpController extends Controller
             'experiential-learning' => 'experiential',
             'social-learning' => 'social',
             'formal-learning' => 'formal',
+            'other-learning' => 'other',
             default => '',
         };
     }

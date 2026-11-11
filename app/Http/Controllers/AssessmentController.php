@@ -173,7 +173,8 @@ class AssessmentController extends Controller
         $employee->setAttribute('assessment_round_id', $this->activeAssessmentRoundId());
         $competencyName = $this->competencyName((int) ($data['competency_id'] ?? 0));
         $competencyType = $this->competencyTypeCode((int) $data['competency_id']);
-        $reviewerCanScore = $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())
+        // University-format competencies (e.g. MC in a faculty round) are approval-only: nobody re-scores them.
+        $reviewerCanScore = $this->usesFacultyRules((int) $data['competency_id'])
             && $this->facultyPermissions->canScore($request->user(), $employee, $competencyType);
         $evidenceRequested = false;
 
@@ -239,7 +240,7 @@ class AssessmentController extends Controller
                 $reviewerScore,
             );
 
-            if ($decision['approved_status'] === 'approved' && $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+            if ($decision['approved_status'] === 'approved' && $this->usesFacultyRules((int) $data['competency_id'])) {
                 foreach ($assessmentIds as $assessmentId) {
                     $this->assertFacultyScoresComplete($employee, (int) $assessmentId, (int) $data['competency_id']);
                 }
@@ -379,7 +380,7 @@ class AssessmentController extends Controller
      */
     private function returnStatusForRejection(User $employee, int $competencyId, int $reviewStep): string
     {
-        if (! $this->assessmentMethods->isFaculty($this->activeAssessmentRoundId())) {
+        if (! $this->usesFacultyRules($competencyId)) {
             return 'revision_required';
         }
 
@@ -536,6 +537,7 @@ class AssessmentController extends Controller
             (int) $positionTitleId,
             $user->position_id ? (int) $user->position_id : null,
             $roundId,
+            $user->department,
         );
 
         if ($requiredCount <= 0) {
@@ -621,12 +623,14 @@ class AssessmentController extends Controller
         $submittedStatus = $submit
             ? $this->initialSubmittedStatusForUser($request->user())
             : ($existingStatus === 'revision_required' ? 'revision_required' : 'draft');
-        $actualLevel = $this->assessmentMethods->isFaculty($roundId)
+        $facultyRules = $this->usesFacultyRules($competencyId);
+        $actualLevel = $facultyRules
             ? $this->facultyScorer->scoreForCompetency($competencyId, array_keys($checkedIndicators))
-            : round((float) $data['score'], 2);
+            // University format: 0.25 per behaviour, never above the 5.00 maximum (some competencies have 21 behaviours).
+            : min(5.0, max(0.0, round((float) $data['score'], 2)));
 
         if ($submit
-            && $this->assessmentMethods->isFaculty($roundId)
+            && $facultyRules
             && $actualLevel >= AssessmentLevelEvidenceService::FACULTY_EVIDENCE_LEVEL
             && ! ($existingAssessment && $this->levelEvidences->existsFor((int) $existingAssessment->id, $competencyId))) {
             throw ValidationException::withMessages([
@@ -671,7 +675,7 @@ class AssessmentController extends Controller
             $competencyId
         );
         $gapResult = $this->gapCalculator->calculate(
-            $this->assessmentMethods->forRoundId($roundId)['method'],
+            $this->assessmentMethods->methodForCompetency($roundId, $competencyId),
             $actualLevel,
             $expectedLevel,
         );
@@ -699,7 +703,7 @@ class AssessmentController extends Controller
         $now = now();
         $expectedLevel = $this->expectedLevelResolver->forUserCompetency($employee, $competencyId);
         $roundId = $this->activeAssessmentRoundId();
-        $assessmentMethod = $this->assessmentMethods->forRoundId($roundId)['method'];
+        $assessmentMethod = $this->assessmentMethods->methodForCompetency($roundId, $competencyId);
 
         Assessment::query()
             ->whereIn('id', $assessmentIds)
@@ -736,6 +740,12 @@ class AssessmentController extends Controller
                     'created_at' => $now,
                 ]);
             });
+    }
+
+    /** Faculty scoring rules apply to this competency (not the university format used for MC in a faculty round). */
+    private function usesFacultyRules(int $competencyId): bool
+    {
+        return $this->assessmentMethods->isFacultyCompetency($this->activeAssessmentRoundId(), $competencyId);
     }
 
     private function activeAssessmentRoundId(): int

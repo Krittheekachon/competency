@@ -10,7 +10,7 @@ import {
 import { coachingApproachDescriptions } from '../../coachingApproachDescriptions';
 
 const props = defineProps({
-  idpFillMode: { type: String, default: 'quick' },
+  idpFillMode: { type: String, default: 'form' },
   competencies: { type: Array, default: () => [] },
   idpLearningMethods: { type: Array, default: () => [] },
   learningCatalogs: { type: Array, default: () => [] },

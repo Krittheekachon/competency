@@ -54,6 +54,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    positionTitles: {
+        type: Array,
+        default: () => [],
+    },
     positionCompetencies: {
         type: Object,
         default: () => ({}),
@@ -291,11 +295,18 @@ const supportUnitScopes = computed(() => Object.entries(props.supportOrg || {}).
         ]),
     }))),
 ));
+// Workline-level positions (dean, deputy dean, assistant dean) belong to no department, so they get their own scope.
+const WORKLINE_SCOPE = '__workline_positions__';
+const worklineTitles = computed(() => (props.positionTitles || [])
+    .filter((title) => title.isWorklinePosition && title.worklineName === selectedWorkline.value));
 const organizationScopes = computed(() => {
     if (isSupportWorkline.value) return supportUnitScopes.value;
 
     const departments = props.jobFamiliesByWorkline?.[selectedWorkline.value] || {};
-    return Object.keys(departments).map((name) => ({ key: name, label: name, positions: departments[name] || [] }));
+    const scopes = Object.keys(departments).map((name) => ({ key: name, label: name, positions: departments[name] || [] }));
+    return isManagementWorkline.value && worklineTitles.value.length
+        ? [{ key: WORKLINE_SCOPE, label: 'ระดับสายงาน (ไม่สังกัดภาควิชา/หน่วยงาน)', positions: worklineTitles.value.map((title) => title.name) }, ...scopes]
+        : scopes;
 });
 const selectedScope = computed(() => organizationScopes.value.find((scope) => scope.key === selectedOrgScope.value) || null);
 
@@ -365,18 +376,33 @@ const currentPosition = computed(() => {
         : (unitPosition || globalPosition || null);
 });
 const currentPositionId = computed(() => currentPosition.value?.id || null);
-watch([currentPositionId, selectedConfigRoundId, activePage], clearCompetencyFeedback);
+// What the competency set is bound to: a position, or (workline-level positions) the title itself.
+const currentWorklineTitle = computed(() => (selectedOrgScope.value === WORKLINE_SCOPE
+    ? worklineTitles.value.find((title) => title.name === selectedPosition.value) || null
+    : null));
+const currentTarget = computed(() => {
+    if (currentWorklineTitle.value) {
+        return { key: `title:${currentWorklineTitle.value.id}`, payload: { position_title_id: currentWorklineTitle.value.id } };
+    }
+    return currentPositionId.value ? { key: String(currentPositionId.value), payload: { position_id: currentPositionId.value } } : null;
+});
+watch([() => currentTarget.value?.key, selectedConfigRoundId, activePage], clearCompetencyFeedback);
 
 const competencyItems = computed(() => props.competencies || []);
 // A round only accepts competencies of its own dictionary format (university or faculty).
 const selectedRoundMethod = computed(() => selectedConfigRound.value?.assessmentMethod || 'standard');
 const selectedRoundFormatLabel = computed(() => (selectedRoundMethod.value === 'faculty' ? 'รูปแบบตามกำหนดคณะ' : 'รูปแบบตามกำหนดมหาวิทยาลัย'));
-const roundCompetencyItems = computed(() => competencyItems.value.filter((item) => (item.method || 'standard') === selectedRoundMethod.value));
+// A faculty round assesses MC in the university format, so those MC items are allowed too.
+const fitsSelectedRound = (item) => {
+    const method = item.method || 'standard';
+    return method === selectedRoundMethod.value
+        || (selectedRoundMethod.value === 'faculty' && method === 'standard' && String(item.t || '').toUpperCase() === 'MC');
+};
+const roundCompetencyItems = computed(() => competencyItems.value.filter(fitsSelectedRound));
 const competencyTypes = computed(() => {
     return [...new Set(['CC', 'MC', 'FC', ...roundCompetencyItems.value.map((item) => competencyCategory(item.t)).filter(Boolean)])];
 });
-const coreCompetencyCount = computed(() => roundCompetencyItems.value.filter((item) => item.t === 'CC').length);
-const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRound.value?.[currentPositionId.value] || []));
+const assignedCompetencyIds = computed(() => new Set(positionCompetenciesForRound.value?.[currentTarget.value?.key] || []));
 const assignedCompetencies = computed(() => {
     return competencyItems.value.filter((item) => assignedCompetencyIds.value.has(item.id));
 });
@@ -391,7 +417,7 @@ const assignedCompetencyGroups = computed(() => {
 // Faculty-format competencies have no user-facing code.
 const codeOf = (item) => ((item?.method || 'standard') === 'faculty' ? '' : (item?.cd || ''));
 const mismatchedAssignedCompetencies = computed(() => assignedCompetencies.value
-    .filter((item) => (item.method || 'standard') !== selectedRoundMethod.value));
+    .filter((item) => !fitsSelectedRound(item)));
 const assignedCoreCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'CC').length);
 const assignedFcCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => String(item.t || '').startsWith('FC')).length);
 const assignedManagerialCompetencyCount = computed(() => assignedCompetencies.value.filter((item) => item.t === 'MC').length);
@@ -628,18 +654,18 @@ const deleteCatalog = (item) => {
 
 const addCompetency = (item) => {
     if (competencyCategory(item.t) === 'MC' && !isManagementWorkline.value) return;
-    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value || assignedCompetencyIds.value.has(item.id)) return;
-    const context = `${currentPositionId.value}:${selectedConfigRoundId.value}`;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentTarget.value || assignedCompetencyIds.value.has(item.id)) return;
+    const context = `${currentTarget.value.key}:${selectedConfigRoundId.value}`;
     isUpdatingCompetencies.value = true;
 
     router.post(route('hr.position-competencies.store'), {
-        position_id: currentPositionId.value,
+        ...currentTarget.value.payload,
         assessment_round_id: selectedConfigRoundId.value,
         competency_id: item.id,
     }, {
         preserveScroll: true,
         onSuccess: () => {
-            if (context === `${currentPositionId.value}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
+            if (context === `${currentTarget.value?.key}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
                 showCompetencyFeedback(`เพิ่มในชุด ${competencyCategory(item.t)} แล้ว`, [item.id]);
             }
         },
@@ -648,20 +674,20 @@ const addCompetency = (item) => {
 };
 
 const addAllCoreCompetencies = () => {
-    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value || !availableCoreCompetencies.value.length) return;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentTarget.value || !availableCoreCompetencies.value.length) return;
     const ids = availableCoreCompetencies.value.map((item) => item.id);
     if (!window.confirm(`จะเพิ่มอีก ${ids.length} รายการที่ยังไม่ได้เพิ่ม ยืนยัน?`)) return;
-    const context = `${currentPositionId.value}:${selectedConfigRoundId.value}`;
+    const context = `${currentTarget.value.key}:${selectedConfigRoundId.value}`;
     isUpdatingCompetencies.value = true;
 
     router.post(route('hr.position-competencies.store'), {
-        position_id: currentPositionId.value,
+        ...currentTarget.value.payload,
         assessment_round_id: selectedConfigRoundId.value,
         competency_ids: ids,
     }, {
         preserveScroll: true,
         onSuccess: () => {
-            if (context === `${currentPositionId.value}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
+            if (context === `${currentTarget.value?.key}:${selectedConfigRoundId.value}` && activePage.value === 'hr-position-competencies') {
                 showCompetencyFeedback(`เพิ่มในชุด CC แล้ว ${ids.length} รายการ`, ids);
             }
         },
@@ -670,14 +696,14 @@ const addAllCoreCompetencies = () => {
 };
 
 const removeCompetency = (itemId) => {
-    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentPositionId.value) return;
+    if (isUpdatingCompetencies.value || !selectedConfigRoundId.value || !currentTarget.value) return;
     const item = assignedCompetencies.value.find((competency) => competency.id === itemId);
     if (!item || !window.confirm(`นำสมรรถนะ “${item.n}” ออกจากชุดของตำแหน่ง “${positionLabel.value}”?`)) return;
     isUpdatingCompetencies.value = true;
 
     router.delete(route('hr.position-competencies.destroy'), {
         data: {
-            position_id: currentPositionId.value,
+            ...currentTarget.value.payload,
             assessment_round_id: selectedConfigRoundId.value,
             competency_id: itemId,
         },
@@ -868,7 +894,7 @@ const formatWeight = (weight) => {
                     v-else-if="activePage === 'emp-progress'"
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
                 <HeadDashboard
                     v-else-if="activePage === 'hr-fc-topic-review' && fcTopicApprovalModule.enabled"
                     embedded
@@ -943,7 +969,7 @@ const formatWeight = (weight) => {
                     </div>
                     <div class="position-scope mb14">
                         <div class="position-workline">
-                            <div class="position-scope-label filter-step-label"><span class="step-number">1</span>สายงาน</div>
+                            <div class="position-scope-label filter-step-label">สายงาน</div>
                             <div v-if="worklineOptions.length" class="position-segments">
                                 <button
                                     v-for="workline in worklineOptions"
@@ -959,7 +985,7 @@ const formatWeight = (weight) => {
                         </div>
                         <div class="position-picker">
                             <div class="fg mb0">
-                                <label class="lbl filter-step-label"><span class="step-number">2</span>{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</label>
+                                <label class="lbl filter-step-label">{{ isSupportWorkline ? 'หน่วย' : 'ภาควิชา/หน่วยงาน' }}</label>
                                 <select v-model="selectedOrgScope" class="sel" @change="changeOrganizationScope">
                                     <option value="">{{ organizationScopes.length ? 'เลือกหน่วย/ภาควิชา' : 'ยังไม่มีข้อมูลหน่วย/ภาควิชา' }}</option>
                                     <option v-for="scope in organizationScopes" :key="scope.key" :value="scope.key">
@@ -968,7 +994,7 @@ const formatWeight = (weight) => {
                                 </select>
                             </div>
                             <div class="fg mb0">
-                                <label class="lbl filter-step-label"><span class="step-number">3</span>ตำแหน่ง</label>
+                                <label class="lbl filter-step-label">ตำแหน่ง</label>
                                 <select v-model="selectedPosition" class="sel" :disabled="!selectedOrgScope || needsPositionBeforeMapping">
                                     <option value="">{{ positionOptions.length ? 'เลือกตำแหน่ง' : 'ยังไม่มีตำแหน่งให้เลือก' }}</option>
                                     <option v-for="position in positionOptions" :key="position" :value="position">
@@ -982,8 +1008,6 @@ const formatWeight = (weight) => {
                         </div>
                     </div>
 
-                    <p v-if="filterResetHint && (!selectedOrgScope || !selectedPosition)" class="setup-helper" role="status">เลือกหน่วย/ตำแหน่งใหม่</p>
-                    <div class="position-context-strip">{{ selectedWorkline || 'เลือกสายงาน' }} · {{ organizationScopeLabel }} · {{ positionLabel }}</div>
                     <div class="position-board mb14">
                         <div class="position-card">
                             <div class="position-card-label">สมรรถนะของตำแหน่งนี้</div>
@@ -1002,12 +1026,6 @@ const formatWeight = (weight) => {
                                     <strong>{{ assignedManagerialCompetencyCount }}</strong>
                                 </div>
                             </div>
-                        </div>
-                        <div class="position-card">
-                            <div class="position-card-label">CC พื้นฐาน</div>
-                            <div class="position-card-title" :class="coreCompetencyCount ? (assignedCoreCompetencyCount < coreCompetencyCount ? 'warn' : 'complete') : ''">{{ assignedCoreCompetencyCount }}/{{ coreCompetencyCount }}</div>
-                            <div class="position-card-sub">CC พื้นฐานที่เลือกแล้ว {{ assignedCoreCompetencyCount }} จาก {{ coreCompetencyCount }}</div>
-                            <div class="cc-progress" :class="{ 'is-done': coreCompetencyCount > 0 && assignedCoreCompetencyCount >= coreCompetencyCount }" role="progressbar" aria-label="CC พื้นฐานที่เลือกแล้ว" :aria-valuenow="Math.min(assignedCoreCompetencyCount, coreCompetencyCount)" :aria-valuemin="0" :aria-valuemax="coreCompetencyCount || 1"><span :style="{ width: `${coreCompetencyCount ? Math.min(100, assignedCoreCompetencyCount / coreCompetencyCount * 100) : 0}%` }"></span></div>
                         </div>
                         <div class="position-card fc-rule-card fc-animated-section">
                             <header class="fc-animated-head">
@@ -1058,12 +1076,14 @@ const formatWeight = (weight) => {
                                 <div>
                                     <div class="ct">ชุดสมรรถนะประจำตำแหน่ง</div>
                                     <h2 class="assigned-position-name">{{ positionLabel }}</h2>
-                                    <div class="assigned-position-scope">{{ selectedWorkline || 'ยังไม่มีสายงาน' }} · {{ organizationScopeLabel }}</div>
-                                    <div class="cs">แยกตามหมวด {{ isManagementWorkline ? 'CC / MC / FC' : 'CC / FC' }} · ระดับคาดหวังอิงจากระดับตำแหน่งของผู้ใช้</div>
+                                    <div class="assigned-position-scope">
+                                        <span class="scope-chip">{{ selectedWorkline || 'ยังไม่มีสายงาน' }}</span>
+                                        <span class="scope-chip scope-chip-unit">{{ organizationScopeLabel }}</span>
+                                    </div>
                                 </div>
                                 <button
                                     class="btn btn-t btn-sm"
-                                    :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentPositionId || !availableCoreCompetencies.length"
+                                    :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentTarget || !availableCoreCompetencies.length"
                                     type="button"
                                     @click="addAllCoreCompetencies"
                                 >
@@ -1112,7 +1132,7 @@ const formatWeight = (weight) => {
                             <div class="position-panel-head">
                                 <div>
                                     <div class="ct">พจนานุกรมสมรรถนะ</div>
-                                    <div class="cs">แสดงเฉพาะ{{ selectedRoundFormatLabel }} ตามวิธีประเมินของรอบนี้</div>
+                                    <div class="cs">แสดงเฉพาะ{{ selectedRoundFormatLabel }} ตามวิธีประเมินของรอบนี้{{ selectedRoundMethod === 'faculty' ? ' (MC ใช้รูปแบบตามกำหนดมหาวิทยาลัย)' : '' }}</div>
                                 </div>
                             </div>
                             <div class="dictionary-tools">
@@ -1145,7 +1165,7 @@ const formatWeight = (weight) => {
                                     <span v-else-if="competencyCategory(item.t) === 'MC' && !isManagementWorkline" class="mc-workline-restriction">เฉพาะสายบริหาร</span>
                                     <button v-else
                                         class="btn btn-p btn-sm"
-                                        :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentPositionId"
+                                        :disabled="isUpdatingCompetencies || !selectedConfigRoundId || !currentTarget"
                                         type="button"
                                         @click="addCompetency(item)"
                                     >
@@ -3258,8 +3278,10 @@ const formatWeight = (weight) => {
 .competency-workspace :is(.ct, .cs, .fs12, small, .dictionary-code, .b, th, .btn-sm, .inp, .sel) { font-size: 13px; }
 .competency-workspace :is(.cs, .muted, small) { color: var(--color-text-secondary); }
 .competency-workspace .position-panel-head { align-items: flex-start; flex-wrap: wrap; }
-.competency-workspace .assigned-position-name { margin: 6px 0 4px; font-size: 18px; line-height: 1.5; color: var(--color-text); overflow-wrap: anywhere; }
-.competency-workspace .assigned-position-scope { margin-bottom: 6px; font-size: 13px; color: var(--color-text-secondary); }
+.competency-workspace .assigned-position-name { margin: 6px 0 8px; font-size: 22px; font-weight: 800; line-height: 1.4; color: var(--color-text); overflow-wrap: anywhere; }
+.competency-workspace .assigned-position-scope { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.competency-workspace .scope-chip { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--color-border); border-radius: 999px; background: #f8fafc; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.competency-workspace .scope-chip-unit { border-color: #f3c7bd; background: #fff4f0; color: var(--color-primary); font-weight: 700; }
 .competency-workspace .assigned-category-head { flex-wrap: wrap; font-weight: 600; }
 .competency-workspace .assigned-category-empty p { margin: 0 0 12px; }
 .competency-workspace .btn-sm { padding: 6px 12px; border-radius: 8px; }
@@ -3321,18 +3343,13 @@ const formatWeight = (weight) => {
 .position-setup-top .position-scope { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 2fr); align-items: start; gap: 20px; }
 .position-setup-top .position-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .position-setup-top .filter-step-label { display: flex; align-items: center; gap: 6px; min-height: 24px; margin-bottom: 10px; color: #5f6673; font-size: 13px; font-weight: 600; }
-.position-setup-top .step-number { display: inline-grid; place-items: center; flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--color-primary); color: #fff; font-size: 13px; }
 .position-setup-top .position-segments button { font-size: 14px; padding: 8px 18px; border-radius: 999px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text-secondary); }
 .position-setup-top .position-segments button.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
 .position-setup-top .position-segments button:hover { border-color: var(--color-primary); }
-.position-context-strip { margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--color-border); border-radius: 10px; color: var(--color-text-secondary); background: #fff; overflow-wrap: anywhere; }
-.position-setup-top .position-board { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 16px; }
+.position-setup-top .position-board { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 16px; }
 .position-setup-top .position-card { min-width: 0; padding: 16px 20px; border-radius: 12px; }
 .position-setup-top .fc-rule-card { grid-column: 1 / -1; }
 .position-setup-top .type-breakdown { margin-top: 12px; }
-.position-setup-top .cc-progress { margin-top: 14px; height: 6px; overflow: hidden; border-radius: 999px; background: #eceff3; }
-.position-setup-top .cc-progress > span { display: block; height: 100%; background: #b45309; transition: width .3s ease; }
-.position-setup-top .cc-progress.is-done > span { background: #15803d; }
 .position-setup-top .position-card-title.warn { color: #b45309; }
 .position-setup-top .position-card-title.complete { color: #15803d; }
 .position-setup-top .fc-effective { padding: 10px 14px; margin: 12px 0 16px; border-radius: 10px; background: var(--color-primary-soft); font-size: 14px; }
@@ -3344,7 +3361,6 @@ const formatWeight = (weight) => {
 .position-setup-top .fc-rule-input { font-size: 18px; padding: 8px 12px; border-radius: 8px; }
 .position-setup-top .unit-fc-reset-btn { color: #b42318; border: 1px solid #f5c2bd; background: #fff; }
 .position-setup-top .unit-fc-reset-btn:hover { background: #fdecea; border-color: #b42318; }
-.position-setup-top .setup-helper { margin: -4px 0 14px; font-size: 13px; color: #5f6673; }
 .position-setup-top :is(button, input, select):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .position-setup-top button:disabled { cursor: not-allowed; opacity: .6; }
 .import-preview { padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; color: var(--color-text-secondary); }

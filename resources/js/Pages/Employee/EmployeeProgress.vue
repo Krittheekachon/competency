@@ -37,7 +37,8 @@ type ApprovedActivity = {
   endDate: string;
   documentReferenceNumber: string;
   formCode: string;
-  planDetails: { planRows?: PlanRow[] };
+  methodKey?: string;
+  planDetails: { planRows?: PlanRow[]; _behaviorPlan?: boolean; behaviors?: Array<{ gapId?: number; description?: string }> };
   goal: string;
   successCriteria: string;
   updates: ProgressUpdate[];
@@ -92,6 +93,54 @@ const planRows = (activity: ApprovedActivity): PlanRow[] => activity.planDetails
 const topicTitle = (activity: ApprovedActivity, index: number) => {
   const row = planRows(activity)[index] || {};
   return String(row.assignmentTopic || row.skillTopic || row.topic || row.learningTopic || row.courseName || activity.name || 'กิจกรรมพัฒนา').trim();
+};
+// Faculty-method plan: one plan for all failed skills; each method lists the skills it develops.
+const isFacultyGroup = (group: { activities: ApprovedActivity[] } | null) => Boolean(group?.activities.length)
+  && group!.activities.every((activity) => activity.planDetails?._behaviorPlan);
+const skillsForActivity = (activity: ApprovedActivity) => [...new Set((activity.planDetails?.behaviors || [])
+  .map((behavior) => String(behavior.description || '').trim()).filter(Boolean))];
+const skillsForGroup = (group: { activities: ApprovedActivity[] }) => [...new Set(group.activities.flatMap(skillsForActivity))];
+// One section per skill; a method chosen for several skills appears under each of them (same updates).
+const skillSections = (group: { activities: ApprovedActivity[] }) => {
+  const sections = skillsForGroup(group).map((skill) => ({
+    skill,
+    activities: group.activities.filter((activity) => skillsForActivity(activity).includes(skill)),
+  }));
+  const unassigned = group.activities.filter((activity) => !skillsForActivity(activity).length);
+  return unassigned.length ? [...sections, { skill: 'วิธีพัฒนาอื่นๆ', activities: unassigned }] : sections;
+};
+// Update history is folded by default; the "อัปเดตแล้ว n ครั้ง" toggle opens it.
+const openHistories = ref<Set<string>>(new Set());
+const historyKey = (activity: ApprovedActivity, topicIndex: number) => `${activity.id}:${topicIndex}`;
+const isHistoryOpen = (activity: ApprovedActivity, topicIndex: number) => openHistories.value.has(historyKey(activity, topicIndex));
+const toggleHistory = (activity: ApprovedActivity, topicIndex: number) => {
+  const next = new Set(openHistories.value);
+  const key = historyKey(activity, topicIndex);
+  if (next.has(key)) next.delete(key); else next.add(key);
+  openHistories.value = next;
+};
+const isActivityUpdated = (activity: ApprovedActivity) => planRows(activity).every((_, topicIndex) => submittedUpdatesFor(activity, topicIndex).length > 0);
+const sectionUpdatedCount = (activities: ApprovedActivity[]) => activities.filter(isActivityUpdated).length;
+const sharedSkills = (activity: ApprovedActivity, current: string) => skillsForActivity(activity).filter((skill) => skill !== current);
+const groupTitle = (group: ActivityGroup) => isFacultyGroup(group) ? 'แผนพัฒนารายบุคคล' : group.name;
+const methodType = (activity: ApprovedActivity) => {
+  const byKey: Record<string, { label: string; tone: string }> = {
+    'experiential-learning': { label: 'Experiential', tone: 'experiential' },
+    'social-learning': { label: 'Social', tone: 'social' },
+    'formal-learning': { label: 'Formal', tone: 'formal' },
+    'other-learning': { label: 'อื่นๆ', tone: 'other' },
+  };
+  if (activity.methodKey && byKey[activity.methodKey]) return byKey[activity.methodKey];
+  if (['form_3_project_assignment', 'form_4_ojt'].includes(activity.formCode)) return { label: 'Experiential', tone: 'experiential' };
+  if (['form_5_coaching', 'form_6_mentoring', 'form_7_group_activity', 'form_8_feedback', 'form_9_field_trip'].includes(activity.formCode)) return { label: 'Social', tone: 'social' };
+  if (activity.formCode === 'form_10_training') return { label: 'Formal', tone: 'formal' };
+  return { label: 'อื่นๆ', tone: 'other' };
+};
+const dateRange = (start?: unknown, end?: unknown) => {
+  const from = start ? String(start) : '';
+  const to = end ? String(end) : '';
+  if (!from && !to) return '';
+  return `${formatDate(from || undefined)} ถึง ${formatDate(to || undefined)}`;
 };
 const activityTypeLabel = (activity: ApprovedActivity) => {
   if (['form_3_project_assignment', 'form_4_ojt'].includes(activity.formCode)) return 'Experiential Learning';
@@ -195,6 +244,7 @@ const saveUpdate = () => {
     forceFormData: true,
     preserveScroll: true,
     onSuccess: () => {
+      openHistories.value = new Set([...openHistories.value, historyKey(activity, topicIndex)]);
       confirmUpdateOpen.value = false;
       updateDialog.value = null;
     },
@@ -229,7 +279,7 @@ const formatDate = (value?: string) => {
 <template>
   <section class="employee-page">
     <header class="page-head">
-      <div><h1>รายงานความก้าวหน้า</h1><p>บันทึกสิ่งที่ทำในแต่ละหัวข้อ แล้วส่งเมื่อเสร็จครบทั้งสมรรถนะ</p></div>
+      <div><h1>รายงานความก้าวหน้า</h1><p>{{ isFacultyGroup(selectedGroup) ? 'บันทึกสิ่งที่ทำในแต่ละวิธีพัฒนา แล้วส่งให้หัวหน้าตรวจเมื่ออัปเดตครบทุกวิธี' : 'บันทึกสิ่งที่ทำในแต่ละหัวข้อ แล้วส่งเมื่อเสร็จครบทั้งสมรรถนะ' }}</p></div>
     </header>
 
     <div v-if="firstError" class="page-error">{{ firstError }}</div>
@@ -238,7 +288,7 @@ const formatDate = (value?: string) => {
       <span>กิจกรรมจะแสดงหลังแผน IDP ผ่านการอนุมัติครบทุกลำดับ</span>
     </div>
 
-    <nav v-if="groupedActivities.length" class="competency-switcher" aria-label="เลือกสมรรถนะที่ต้องการอัปเดต">
+    <nav v-if="groupedActivities.length > 1" class="competency-switcher" aria-label="เลือกสมรรถนะที่ต้องการอัปเดต">
       <button
         v-for="group in groupedActivities"
         :key="group.idpItemId"
@@ -251,13 +301,94 @@ const formatDate = (value?: string) => {
       >
         <span v-if="group.code" class="competency-tab-code">{{ group.code }}</span>
         <span class="competency-tab-copy">
-          <strong>{{ group.name }}</strong>
+          <strong>{{ groupTitle(group) }}</strong>
           <small>{{ completionMeta(group.completion).label }} · อัปเดตแล้ว {{ updatedTopicTotal(group) }}/{{ topicTotal(group) }} หัวข้อ</small>
         </span>
       </button>
     </nav>
 
-    <section v-if="selectedGroup" :key="selectedGroup.idpItemId" class="competency-section">
+    <section v-if="selectedGroup && isFacultyGroup(selectedGroup)" :key="`faculty-${selectedGroup.idpItemId}`" class="faculty-progress">
+      <header class="faculty-plan-head">
+        <div class="faculty-plan-copy">
+          <small>แผน IDP ที่อนุมัติแล้ว</small>
+          <h2>แผนพัฒนารายบุคคล</h2>
+          <span class="status-pill" :class="completionMeta(selectedGroup.completion).className">{{ completionMeta(selectedGroup.completion).label }}</span>
+        </div>
+        <div class="faculty-plan-stat">
+          <div class="faculty-plan-count"><strong>{{ updatedTopicTotal(selectedGroup) }}</strong><span>/ {{ topicTotal(selectedGroup) }} วิธี</span></div>
+          <small>อัปเดตแล้ว</small>
+        </div>
+      </header>
+
+      <section v-if="selectedGroup.completion?.review" class="review-feedback" :class="selectedGroup.completion.review.decision">
+        <header>
+          <div><small>ความคิดเห็นจากหัวหน้า</small><strong>{{ selectedGroup.completion.review.reviewerName }}</strong></div>
+          <time>{{ formatDate(selectedGroup.completion.review.decidedAt) }}</time>
+        </header>
+        <p v-if="selectedGroup.completion.review.comment">{{ selectedGroup.completion.review.comment }}</p>
+        <p v-if="selectedGroup.completion.review.operationReason"><b>เหตุผลที่ไม่เป็นไปตามแผน:</b> {{ selectedGroup.completion.review.operationReason }}</p>
+        <p v-if="selectedGroup.completion.review.achievementNote"><b>สิ่งที่ควรพัฒนาต่อ:</b> {{ selectedGroup.completion.review.achievementNote }}</p>
+      </section>
+
+      <section v-for="(section, sectionIndex) in skillSections(selectedGroup)" :key="section.skill" class="skill-section">
+        <header class="skill-section-head">
+          <span class="skill-section-number">{{ sectionIndex + 1 }}</span>
+          <h3>{{ section.skill }}</h3>
+          <small class="skill-section-count" :class="{ done: sectionUpdatedCount(section.activities) === section.activities.length }">อัปเดต {{ sectionUpdatedCount(section.activities) }}/{{ section.activities.length }}</small>
+        </header>
+        <div class="method-list">
+          <template v-for="activity in section.activities" :key="`${section.skill}-${activity.id}`">
+            <article v-for="(row, topicIndex) in planRows(activity)" :key="`${activity.id}-${topicIndex}`" class="method-card" :class="{ 'is-updated': submittedUpdatesFor(activity, topicIndex).length }">
+              <header class="method-card-head">
+                <span class="method-status" :class="{ done: submittedUpdatesFor(activity, topicIndex).length }" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m5 10 3.5 3.5L15 7" /></svg></span>
+                <div class="method-card-copy">
+                  <div class="method-card-title"><h4>{{ topicTitle(activity, topicIndex) }}</h4><span class="method-type" :class="`tone-${methodType(activity).tone}`">{{ methodType(activity).label }}</span></div>
+                  <p v-if="sharedSkills(activity, section.skill).length" class="method-skills">ใช้ร่วมกับ: {{ sharedSkills(activity, section.skill).join(' · ') }}</p>
+                </div>
+                <div class="method-card-side">
+                  <button v-if="submittedUpdatesFor(activity, topicIndex).length" class="update-count done history-toggle" type="button" :aria-expanded="isHistoryOpen(activity, topicIndex)" @click="toggleHistory(activity, topicIndex)">
+                    อัปเดตแล้ว {{ submittedUpdatesFor(activity, topicIndex).length }} ครั้ง
+                    <svg :class="{ open: isHistoryOpen(activity, topicIndex) }" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
+                  </button>
+                  <span v-else class="update-count">ยังไม่อัปเดต</span>
+                  <button v-if="!isLocked(activity.completion)" class="method-update-button" type="button" @click="openNewUpdate(activity, topicIndex)">+ อัปเดต</button>
+                </div>
+              </header>
+              <div v-if="submittedUpdatesFor(activity, topicIndex).length && isHistoryOpen(activity, topicIndex)" class="method-timeline">
+                <article v-for="update in submittedUpdatesFor(activity, topicIndex)" :key="update.publicId" class="method-update">
+                  <div class="method-update-head"><strong>{{ formatDate(update.periodStart) }} – {{ formatDate(update.periodEnd) }}</strong><small>ส่งเมื่อ {{ formatDate(update.submittedAt) }}</small></div>
+                  <p>{{ update.progressNote }}</p>
+                  <div v-if="update.evidences.length" class="evidence-list">
+                    <a v-for="evidence in update.evidences" :key="evidence.publicId" :href="evidence.url" target="_blank" rel="noopener noreferrer">
+                      {{ evidence.kind === 'link' ? 'ลิงก์' : evidence.kind === 'image' ? 'รูปภาพ' : 'ไฟล์' }}: {{ evidence.name }}
+                    </a>
+                  </div>
+                </article>
+              </div>
+            </article>
+          </template>
+        </div>
+      </section>
+
+      <footer class="completion-actions">
+        <div class="completion-summary">
+          <strong>{{ canSubmitCompletion(selectedGroup) ? 'อัปเดตครบทุกวิธีแล้ว พร้อมส่งให้หัวหน้าตรวจ' : `เหลืออีก ${remainingTopicTotal(selectedGroup)} วิธีที่ยังไม่ได้อัปเดต` }}</strong>
+          <span>อัปเดตแล้ว {{ updatedTopicTotal(selectedGroup) }}/{{ topicTotal(selectedGroup) }} วิธี</span>
+        </div>
+        <span
+          v-if="!isLocked(selectedGroup.completion)"
+          class="submit-completion-wrap"
+          :class="{ 'has-tooltip': !canSubmitCompletion(selectedGroup) }"
+          :tabindex="canSubmitCompletion(selectedGroup) ? undefined : 0"
+        >
+          <button class="submit-completion" type="button" :disabled="processing || !canSubmitCompletion(selectedGroup)" @click="requestSubmitCompletion(selectedGroup)">ส่งให้หัวหน้าตรวจ</button>
+          <span v-if="!canSubmitCompletion(selectedGroup)" class="submit-tooltip" role="tooltip">ต้องเพิ่มอัปเดตให้ครบอีก {{ remainingTopicTotal(selectedGroup) }} วิธี</span>
+        </span>
+        <span v-else class="status-pill" :class="completionMeta(selectedGroup.completion).className">{{ completionMeta(selectedGroup.completion).label }}</span>
+      </footer>
+    </section>
+
+    <section v-else-if="selectedGroup" :key="selectedGroup.idpItemId" class="competency-section">
       <header class="competency-head">
         <div class="competency-copy"><span v-if="selectedGroup.code">{{ selectedGroup.code }}</span><div><small>สมรรถนะที่เลือก</small><h2>{{ selectedGroup.name }}</h2></div></div>
       </header>
@@ -283,7 +414,7 @@ const formatDate = (value?: string) => {
           <div class="topic-summary">
             <span class="topic-index">หัวข้อ {{ topicIndex + 1 }}</span>
             <h4>{{ topicTitle(activity, topicIndex) }}</h4>
-            <p>{{ formatDate(String(row.developmentStart || activity.startDate)) }}  ถึง  {{ formatDate(String(row.developmentEnd || activity.endDate)) }}</p>
+            <p v-if="dateRange(row.developmentStart || activity.startDate, row.developmentEnd || activity.endDate)">{{ dateRange(row.developmentStart || activity.startDate, row.developmentEnd || activity.endDate) }}</p>
           </div>
 
           <div class="timeline">
@@ -350,7 +481,7 @@ const formatDate = (value?: string) => {
         <div class="confirm-body">
           <div class="completion-confirm-name">
             <span v-if="completionConfirmGroup.code">{{ completionConfirmGroup.code }}</span>
-            <strong>{{ completionConfirmGroup.name }}</strong>
+            <strong>{{ groupTitle(completionConfirmGroup) }}</strong>
           </div>
           <p id="completion-confirm-warning" class="confirm-warning"><strong>หลังจากส่งแล้ว</strong> คุณจะเพิ่มหรือแก้ไขข้อมูลของสมรรถนะนี้ไม่ได้ จนกว่าหัวหน้าจะส่งกลับให้แก้ไข</p>
         </div>
@@ -363,7 +494,7 @@ const formatDate = (value?: string) => {
 
     <div v-if="updateDialog" class="modal-backdrop" @click.self="closeUpdate">
       <article class="form-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title">
-        <header><div class="dialog-title"><small>{{ updateDialog.activity.competencyCode || updateDialog.activity.competencyName }} · หัวข้อ {{ updateDialog.topicIndex + 1 }}</small><h2 id="update-title">{{ topicTitle(updateDialog.activity, updateDialog.topicIndex) }}</h2><p>บันทึกผลงานในช่วงนี้ โดยสามารถกลับมาเพิ่มครั้งถัดไปได้</p></div><button type="button" aria-label="ปิด" @click="closeUpdate">×</button></header>
+        <header><div class="dialog-title"><small>{{ updateDialog.activity.planDetails?._behaviorPlan ? `แผนพัฒนารายบุคคล · ${methodType(updateDialog.activity).label}` : `${updateDialog.activity.competencyCode || updateDialog.activity.competencyName} · หัวข้อ ${updateDialog.topicIndex + 1}` }}</small><h2 id="update-title">{{ topicTitle(updateDialog.activity, updateDialog.topicIndex) }}</h2><p>บันทึกผลงานในช่วงนี้ โดยสามารถกลับมาเพิ่มครั้งถัดไปได้</p></div><button type="button" aria-label="ปิด" @click="closeUpdate">×</button></header>
         <div class="dialog-body">
           <section class="update-details">
             <div class="date-grid">
@@ -644,4 +775,61 @@ input:disabled { background: #eef2f0; color: #9aa5a0; }
   .form-dialog > footer { display: grid; grid-template-columns: 1fr 1fr; }
   .form-dialog > footer .primary { grid-column: 1 / -1; }
 }
+.faculty-progress { --fp-line: #e3e8e6; --fp-muted: #6b7671; display: grid; gap: 16px; }
+.faculty-plan-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 32px; padding: 22px 24px; border: 1px solid var(--fp-line); border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgb(16 24 20 / .04); }
+.faculty-plan-copy { display: grid; justify-items: start; gap: 6px; }
+.faculty-plan-copy small { color: var(--fp-muted); font-size: 13px; }
+.faculty-plan-copy h2 { margin: 0; font-size: 22px; font-weight: 800; line-height: 1.3; }
+.faculty-plan-stat { display: grid; justify-items: end; gap: 4px; }
+.faculty-plan-count { display: flex; align-items: baseline; gap: 6px; }
+.faculty-plan-count strong { color: var(--progress-green); font-size: 30px; font-weight: 800; line-height: 1; }
+.faculty-plan-count span { color: var(--fp-muted); font-size: 15px; }
+.faculty-plan-stat > small { color: var(--fp-muted); font-size: 13px; }
+.skill-section { overflow: hidden; border: 1px solid var(--fp-line); border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgb(16 24 20 / .04); }
+.skill-section-head { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--fp-line); background: #fafbfa; }
+.skill-section-number { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 8px; background: #e9f1ee; color: var(--progress-green); font-size: 14px; font-weight: 800; }
+.skill-section-head h3 { flex: 1; min-width: 0; margin: 0; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.skill-section-count { padding: 3px 10px; border-radius: 999px; background: #f1f3f2; color: var(--fp-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.skill-section-count.done { background: #e3f3ea; color: #147745; }
+.method-list { display: grid; }
+.method-card + .method-card { border-top: 1px solid var(--fp-line); }
+.method-card-head { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px 20px; }
+.method-status { display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid #cfd8d4; border-radius: 999px; background: #fff; }
+.method-status svg { width: 14px; height: 14px; fill: none; stroke: transparent; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.method-status.done { border-color: var(--progress-green); background: var(--progress-green); }
+.method-status.done svg { stroke: #fff; }
+.method-card-copy { display: grid; gap: 3px; min-width: 0; }
+.method-card-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.method-card-title h4 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.method-type { padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1.6; }
+.method-type.tone-experiential { background: #fdf0e6; color: #b45309; }
+.method-type.tone-social { background: #f1ecfd; color: #6d28d9; }
+.method-type.tone-formal { background: #e6f2ee; color: #1f705c; }
+.method-type.tone-other { background: #f1f2f4; color: #4b5563; }
+.method-skills { margin: 0; color: var(--fp-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.method-card-side { display: flex; align-items: center; gap: 14px; }
+.update-count { color: #9aa29e; font-size: 13px; white-space: nowrap; }
+.update-count.done { color: #147745; font-weight: 600; }
+.method-update-button { min-height: 34px; padding: 5px 14px; border: 1px solid #b9d3c9; border-radius: 8px; background: #fff; color: var(--progress-green); font: inherit; font-size: 14px; font-weight: 700; white-space: nowrap; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.method-update-button:hover { border-color: var(--progress-green); background: #eef6f2; }
+.method-update-button:focus-visible { outline: 3px solid rgba(36, 114, 96, .25); outline-offset: 2px; }
+.method-timeline { display: grid; gap: 8px; padding: 0 20px 16px 58px; }
+.method-update { display: grid; gap: 4px; padding: 10px 14px; border: 1px solid var(--fp-line); border-left: 3px solid var(--progress-green); border-radius: 8px; background: #fafcfb; }
+.method-update-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; }
+.method-update-head small { color: var(--fp-muted); }
+.method-update p { margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.faculty-progress .completion-actions { margin: 4px 0 0; padding: 14px 20px; border-color: var(--fp-line); border-radius: 14px; box-shadow: 0 -4px 18px rgb(16 24 20 / .08); }
+.faculty-progress .completion-summary strong { font-size: 14px; white-space: normal; }
+.faculty-progress .completion-summary > span { font-size: 12px; }
+.faculty-progress .submit-completion { min-height: 42px; border-radius: 9px; font-size: 14px; }
+@media (max-width: 720px) {
+  .faculty-plan-stat { justify-items: start; width: 100%; }
+  .method-card-head { grid-template-columns: 24px minmax(0, 1fr); }
+  .method-card-side { grid-column: 2 / -1; justify-content: space-between; }
+  .method-timeline { padding-left: 20px; }
+}
+.history-toggle { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 13px; cursor: pointer; }
+.history-toggle:hover { background: #eef6f2; }
+.history-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.history-toggle svg.open { transform: rotate(180deg); }
 </style>

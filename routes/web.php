@@ -61,10 +61,14 @@ if (app()->environment('local') && config('app.mock_sso_enabled')) {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('role:admin')->group(function () {
-        Route::get('/admin/idp-chains', fn () => \Inertia\Inertia::render('Admin/Dashboard', [
-            'prototypePage' => 'admin-idp-chains',
-            'pageTitle' => 'ลำดับการประเมิน & IDP',
-        ]))->name('admin.idp-chains');
+        Route::get('/admin/idp-chains', function () {
+            abort_unless(config('app.idp_chain_prototype_enabled'), 404);
+
+            return \Inertia\Inertia::render('Admin/Dashboard', [
+                'prototypePage' => 'admin-idp-chains',
+                'pageTitle' => 'ลำดับการประเมิน & IDP',
+            ]);
+        })->name('admin.idp-chains');
         Route::put('/admin/organization-chart/people', [\App\Http\Controllers\Admin\OrganizationChartController::class, 'update'])->name('admin.organization-chart.people.update');
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');
@@ -137,6 +141,10 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/employee/fc-topic-selection/submit', [EmployeeFcTopicSelectionController::class, 'submit'])->name('employee.fc-topic-selection.submit');
     Route::post('/fc-topic-selections/approve', [FcTopicSelectionApprovalController::class, 'approve'])->name('fc-topic-selections.approve');
     Route::post('/fc-topic-selections/reject', [FcTopicSelectionApprovalController::class, 'reject'])->name('fc-topic-selections.reject');
+    Route::get('/employee/results/export', [\App\Http\Controllers\Employee\ResultsExportController::class, 'show'])->name('employee.results.export');
+    Route::get('/employee/history/idp', [DashboardController::class, 'idpHistory'])->name('employee.history.idp');
+    Route::get('/employee/history/evaluations', [DashboardController::class, 'evaluationHistoryPeriods'])->name('employee.history.evaluation-periods');
+    Route::get('/employee/history/evaluations/{round}', [DashboardController::class, 'evaluationHistory'])->whereNumber('round')->name('employee.history.evaluations');
     Route::post('/employee/idp/draft', [EmployeeIdpController::class, 'saveDraft'])->name('employee.idp.draft');
     Route::post('/employee/idp/submit', [EmployeeIdpController::class, 'submit'])->name('employee.idp.submit');
     Route::post('/employee/idp/submit-item', [EmployeeIdpController::class, 'submitItem'])->name('employee.idp.submit-item');

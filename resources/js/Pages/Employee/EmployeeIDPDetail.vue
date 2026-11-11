@@ -6,7 +6,7 @@ import RoundSelect from '../../Components/RoundSelect.vue';
 const scopeInfo = getViewerScope();
 const scope = scopeInfo.scope;
 const people = scopeInfo.people || [];
-const periods = listPeriods();
+const periods = ref<any[]>([{ id: 'all', label: 'ทุกรอบ', range: '', current: false }]);
 const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 const roundId = ref(params.get('round') || 'all');
 const ownerId = ref('self');
@@ -19,11 +19,11 @@ const drawer = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
 let opener: HTMLElement | null = null;
 let requestId = 0;
-const statusFilters = [{ id: 'all', label: 'ทั้งหมด' }, { id: 'approved', label: 'อนุมัติแล้ว' }, { id: 'pending', label: 'รออนุมัติ' }, { id: 'rejected', label: 'ไม่อนุมัติ' }, { id: 'draft', label: 'ร่าง' }];
+const statusFilters = [{ id: 'all', label: 'ทั้งหมด' }, { id: 'approved', label: 'อนุมัติแล้ว' }, { id: 'pending', label: 'รออนุมัติ' }, { id: 'rejected', label: 'ส่งกลับแก้ไข' }, { id: 'draft', label: 'ร่าง' }];
 const viewingOther = computed(() => ownerId.value !== 'self');
 const viewerName = computed(() => people.find((person: any) => person.id === ownerId.value)?.name || scopeInfo.viewer.name);
 const filteredPlans = computed(() => plans.value.filter(plan => activeStatus.value === 'all' || plan.status === activeStatus.value));
-const groupedPlans = computed(() => periods.filter(period => period.id !== 'all' && (roundId.value === 'all' || period.id === roundId.value)).map(period => ({
+const groupedPlans = computed(() => periods.value.filter(period => period.id !== 'all' && (roundId.value === 'all' || period.id === roundId.value)).map(period => ({
   ...period,
   plans: filteredPlans.value.filter(plan => plan.roundId === period.id),
 })));
@@ -45,7 +45,12 @@ function closeMethod() { selectedMethod.value = null; nextTick(() => methodOpene
 async function loadPlans() {
   const id = ++requestId;
   loading.value = true; error.value = false;
-  try { plans.value = await listIdpPlans({ roundId: roundId.value, ownerId: ownerId.value }); }
+  try {
+    const [nextPeriods, nextPlans] = await Promise.all([listPeriods(), listIdpPlans({ roundId: roundId.value })]);
+    if (id !== requestId) return;
+    periods.value = nextPeriods;
+    plans.value = nextPlans;
+  }
   catch { if (id === requestId) error.value = true; }
   finally { if (id === requestId) loading.value = false; }
 }
@@ -56,7 +61,7 @@ function setRound(value: string) {
   window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   loadPlans();
 }
-function statusLabel(value: string) { return ({ draft: 'ร่าง', pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ' } as Record<string, string>)[value] || value; }
+function statusLabel(value: string) { return ({ draft: 'ร่าง', pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ส่งกลับแก้ไข' } as Record<string, string>)[value] || value; }
 function formatDate(value?: string) { return value ? new Date(`${value}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : 'ยังไม่ส่ง'; }
 function trapFocus(event: KeyboardEvent) {
   if (selectedMethod.value) {
@@ -93,7 +98,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', trapFocus));
 
 <template>
   <section class="history-page">
-    <header class="page-head"><div><h1>ประวัติ IDP</h1><p>{{ viewingOther ? `ประวัติ IDP ของ ${viewerName}` : 'แผน IDP และทักษะที่พัฒนาตามรอบการประเมิน' }}</p></div><span class="test-mode">โหมดทดสอบ: ข้อมูลจำลอง</span></header>
+    <header class="page-head"><div><h1>ประวัติ IDP</h1><p>{{ viewingOther ? `ประวัติ IDP ของ ${viewerName}` : 'แผน IDP และทักษะที่พัฒนาตามรอบการประเมิน' }}</p></div></header>
 
     <section class="toolbar">
       <RoundSelect :model-value="roundId" :periods="periods" @update:model-value="setRound" />
@@ -129,7 +134,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', trapFocus));
         <section class="drawer-section"><h3>ทักษะที่พัฒนา</h3>
           <article v-for="skill in selectedPlan.skills" :key="skill.id" :class="selectedPlan.fillMode === 'form' ? 'form-skill-row' : 'skill-detail'"><header><h4>{{ skill.name }}</h4><span>ระดับ {{ skill.actualLevel }} → {{ skill.expectedLevel }}</span><button v-if="selectedPlan.fillMode === 'form'" type="button" class="skill-expand-button" :aria-expanded="isActivityExpanded(skill.id, 0)" @click="toggleActivity(skill.id, 0)">{{ isActivityExpanded(skill.id, 0) ? 'ซ่อนรายละเอียด' : 'ดูรายละเอียด' }}</button></header>
             <template v-if="selectedPlan.fillMode === 'form'">
-              <div class="skill-expand-collapse" :class="{ expanded: isActivityExpanded(skill.id, 0) }" :inert="!isActivityExpanded(skill.id, 0)"><div class="skill-expand-inner"><h5>วิธีพัฒนาที่เลือก</h5><div class="skill-method-list"><button v-for="(method, methodIndex) in (skill.methods || [])" :key="`${method.name}-${methodIndex}`" type="button" class="method-open" @click="openMethod(method, $event)"><strong>{{ method.name }}</strong><span class="method-type">{{ method.type }}</span><span class="method-filled" :class="method.filled ? 'is-filled' : 'is-empty'">{{ method.filled ? 'กรอกแล้ว' : 'ยังไม่กรอก' }}</span><span class="method-arrow">›</span></button><p v-if="!skill.methods?.length" class="no-method">ยังไม่ได้เลือกวิธีพัฒนา</p></div><h5>พฤติกรรมที่ต้องพัฒนา</h5><ul class="behavior-brief-list"><li v-for="(behavior, index) in skill.behaviors" :key="behavior.id"><strong>ระดับ {{ behavior.level }} · ข้อ {{ index + 1 }}</strong><span>{{ behavior.text }}</span></li></ul></div></div>
+              <div class="skill-expand-collapse" :class="{ expanded: isActivityExpanded(skill.id, 0) }" :inert="!isActivityExpanded(skill.id, 0)"><div class="skill-expand-inner"><h5>วิธีพัฒนาที่เลือก</h5><div class="skill-method-list"><button v-for="(method, methodIndex) in (skill.methods || [])" :key="`${method.name}-${methodIndex}`" type="button" class="method-open" @click="openMethod(method, $event)"><strong>{{ method.name }}</strong><span class="method-type">{{ method.type }}</span><span class="method-filled" :class="method.filled ? 'is-filled' : 'is-empty'">{{ method.filled ? 'กรอกแล้ว' : 'ยังไม่กรอก' }}</span><span class="method-arrow">›</span></button><p v-if="!skill.methods?.length" class="no-method">{{ skill.sharedMethodsNote || 'ยังไม่ได้เลือกวิธีพัฒนา' }}</p></div><h5>พฤติกรรมที่ต้องพัฒนา</h5><ul class="behavior-brief-list"><li v-for="(behavior, index) in skill.behaviors" :key="behavior.id"><strong>ระดับ {{ behavior.level }} · ข้อ {{ index + 1 }}</strong><span>{{ behavior.text }}</span></li></ul></div></div>
             </template>
             <template v-else>
               <h5>พฤติกรรมที่พัฒนา</h5><div v-for="(behavior, index) in skill.behaviors" :key="behavior.id" class="behavior-detail"><p><strong>ระดับ {{ behavior.level }} · ข้อ {{ index + 1 }}</strong>{{ behavior.text }}</p><div class="method-chips"><span v-for="method in behavior.methods" :key="method">{{ method }}</span></div></div>

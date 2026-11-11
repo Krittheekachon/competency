@@ -1,4 +1,5 @@
 <script setup>
+import UserMultiPicker from '../../Components/UserMultiPicker.vue';
 // Extracted from the existing Admin reviewer-template modal, shared with the mock prototype.
 defineProps(['hideUserAssignment', 'assessmentTemplateForm', 'activeReviewerTemplateTitle', 'activeReviewerTemplateType', 'templateReviewerOptions', 'selectedTemplateReviewerIds', 'templatePersonLabel', 'addTemplateReviewer', 'removeTemplateReviewer', 'isEditingAssessmentTemplate', 'templateAssignmentUserOptions', 'addTemplateAssignmentUser', 'selectedTemplateUserIds', 'removeTemplateAssignmentUser', 'assessmentTemplateError']);
 </script>
@@ -68,19 +69,13 @@ defineProps(['hideUserAssignment', 'assessmentTemplateForm', 'activeReviewerTemp
                             </div>
                         </div>
 
-                        <div class="template-picker-row">
-                            <select v-model="assessmentTemplateForm.user_pick" class="sel modal-input">
-                                <option value="">เลือกผู้ใช้</option>
-                                <option
-                                    v-for="person in templateAssignmentUserOptions"
-                                    :key="`template-user-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
-                            <button class="btn btn-s" type="button" @click="addTemplateAssignmentUser">+ เพิ่มผู้ใช้</button>
-                        </div>
+                        <UserMultiPicker v-model="assessmentTemplateForm.user_picks" :options="templateAssignmentUserOptions">
+                            <template #actions>
+                                <button class="btn btn-p" type="button" :disabled="!assessmentTemplateForm.user_picks?.length" @click="addTemplateAssignmentUser">
+                                    + เพิ่มผู้ใช้{{ assessmentTemplateForm.user_picks?.length ? ` (${assessmentTemplateForm.user_picks.length})` : '' }}
+                                </button>
+                            </template>
+                        </UserMultiPicker>
 
                         <div v-if="selectedTemplateUserIds.length" class="template-user-list">
                             <div

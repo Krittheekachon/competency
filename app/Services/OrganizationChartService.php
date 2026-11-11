@@ -54,7 +54,8 @@ class OrganizationChartService
                     return !$org['unitName'] && !$org['workName'] && $org['type'] === 'support' && $org['departmentName'] === $node['name'];
                 }
                 if ($node['type'] === 'workline') {
-                    return ! $org['departmentName'] && ! $org['workName'] && ! $org['unitName'] && $user->workline === $node['name'];
+                    // Management members stay at the workline even when they keep a home academic department.
+                    return (($org['type'] === 'management' && ! $user->position_id) || (! $org['departmentName'] && ! $org['workName'] && ! $org['unitName'])) && $user->workline === $node['name'];
                 }
                 return $node['type'] === 'family' && $org['type'] !== 'support' && $org['departmentName'] === $node['name'] && $user->workline === ($path['workline'] ?? null);
             });

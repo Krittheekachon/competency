@@ -36,10 +36,12 @@ const defaultPageForRole = () => 'emp-assess';
 
 const page = usePage();
 const activeCycleName = computed(() => page.props.activeCycleName || 'รอบประเมินปัจจุบัน');
-const usesFacultyMethod = computed(() => page.props.activeAssessmentMethod?.method === 'faculty');
+const roundUsesFacultyMethod = computed(() => page.props.activeAssessmentMethod?.method === 'faculty');
 const FACULTY_SCORING_LEVELS = [1, 3, 5];
+// Assessed per competency: MC keeps the university format (all levels) inside a faculty round.
+const rowUsesFacultyMethod = (row) => (row?.assessmentMethod ? row.assessmentMethod === 'faculty' : roundUsesFacultyMethod.value);
 const scoringLevelsForRow = (row) => (row?.levels || [])
-    .filter((level) => !usesFacultyMethod.value || FACULTY_SCORING_LEVELS.includes(Number(level.lvl)));
+    .filter((level) => !rowUsesFacultyMethod(row) || FACULTY_SCORING_LEVELS.includes(Number(level.lvl)));
 const idpTeamTab = ref('approval');
 const uniqueIdpPersonCount = (items) => new Set(items.map((item) => String(item.userId || item.userSso || item.userName))).size;
 const idpApprovalCount = computed(() => uniqueIdpPersonCount(props.idpReviewItems.filter((item) => item.canReview)));
@@ -765,9 +767,11 @@ const gapResultRows = (person) => {
                 levels: row.levels || [],
                 checkedIndicatorKeys: row.checkedIndicatorKeys || [],
                 checkedIndicatorCount: Number(row.checkedIndicatorCount || 0),
+                reviewedIndicatorKeys: row.reviewedIndicatorKeys || null,
                 rejectComment: row.rejectComment || '',
                 reviewHistory: row.reviewHistory || [],
                 canEditScore: Boolean(row.canEditScore),
+                assessmentMethod: row.assessmentMethod || null,
                 reviewerCheckedIndicatorKeys: row.reviewerCheckedIndicatorKeys || null,
                 levelEvidences: row.levelEvidences || [],
                 lastDraftSavedAt: row.lastDraftSavedAt || row.last_draft_saved_at || null,
@@ -1048,7 +1052,8 @@ const closeSupervisorCompetencyModal = () => {
 const checkedIndicatorKey = (row, level, index) => `${competencyIdentity(row)}:${level.id || level.lvl}:${index}`;
 const reviewerIndicatorDraftKey = (row) => `${selectedSupervisorApproval.value?.db_id || 'none'}:${competencyIdentity(row)}`;
 const reviewerCheckedIndicatorKeys = (row) => {
-    if (!row?.canEditScore) return row?.checkedIndicatorKeys || [];
+    // Reviewers who cannot score see the latest scorer's result, not the original self-assessment.
+    if (!row?.canEditScore) return row?.reviewedIndicatorKeys || row?.checkedIndicatorKeys || [];
     const key = reviewerIndicatorDraftKey(row);
     if (Object.prototype.hasOwnProperty.call(reviewerIndicatorDrafts.value, key)) {
         return reviewerIndicatorDrafts.value[key];
@@ -1316,7 +1321,7 @@ const logout = () => router.post(route('logout'));
                     :activities="page.props.currentUserApprovedIdpActivities || []"
                 />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 
                 <template v-else-if="activePage === 'dh-idp' && idpReviewModule.enabled">
                     <div class="team-page-head idp-team-head">
@@ -1824,7 +1829,7 @@ const logout = () => router.post(route('logout'));
                                             <div class="flex ic g8">
                                                 <span class="b" :class="competencyApprovalStatus(row).cls">{{ competencyApprovalStatus(row).label }}</span>
                                                 <span class="b bgr">ระดับความคาดหวัง {{ row.expected ?? '-' }}</span>
-                                                <span class="b by">{{ row.checkedIndicatorCount || 0 }}/{{ totalIndicatorCount(row) }}</span>
+                                                <span class="b by">{{ scoringIndicatorKeysForRow(row).length }}/{{ totalIndicatorCount(row) }}</span>
                                             </div>
                                         </button>
 

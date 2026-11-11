@@ -61,6 +61,7 @@ class FcTopicSelectionController extends Controller
             $positionTitleId,
             $user->position_id ? (int) $user->position_id : null,
             $roundId,
+            $user->department,
         );
         if ($requiredCount <= 0) {
             throw ValidationException::withMessages([

@@ -79,6 +79,44 @@ class FcUnitRuleTest extends TestCase
         $this->assertDatabaseMissing('fc_topic_selections', ['user_id' => $employeeA->id]);
     }
 
+    public function test_unit_rule_and_organization_follow_users_department_on_a_global_support_position(): void
+    {
+        $this->unitRule($this->unitIds['b'], 1);
+        $globalPositionId = DB::table('positions')->insertGetId([
+            'job_family_id' => DB::table('positions')->where('id', $this->positionIds['a'])->value('job_family_id'),
+            'support_unit_id' => null,
+            'position_title_id' => $this->positionTitleId,
+            'name' => 'นักวิชาการคอมพิวเตอร์',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $row = fn (int $id, ?string $department): object => (object) [
+            'id' => $id, 'position_id' => $globalPositionId, 'position_title_id' => $this->positionTitleId, 'department' => $department,
+        ];
+
+        $counts = app(\App\Services\FcSelectionRuleResolver::class)->requiredCountsForUsers(collect([
+            $row(1, 'ฝ่ายทดสอบ > งานทดสอบ > หน่วย b'),
+            $row(2, 'ฝ่ายทดสอบ > งานทดสอบ > หน่วย a'),
+            $row(3, 'ฝ่ายทดสอบ > งานทดสอบ > หน่วยที่ไม่มีจริง'),
+        ]), $this->roundId);
+        $this->assertSame([1 => 1, 2 => 2, 3 => 2], $counts->all());
+
+        $user = User::factory()->create([
+            'workline' => 'สายสนับสนุน',
+            'department' => 'ฝ่ายทดสอบ > งานทดสอบ > หน่วย b',
+            'position_id' => $globalPositionId,
+        ]);
+        $organization = app(\App\Services\UserOrganizationPresenter::class)->canonicalOrUnassignedForUser($user);
+        $this->assertSame('support', $organization['type']);
+        $this->assertSame('หน่วย b', $organization['unitName']);
+        $this->assertSame('งานทดสอบ · หน่วย b', $organization['display']);
+
+        $user->forceFill(['department' => 'ฝ่ายทดสอบ > งานทดสอบ > หน่วยที่ไม่มีจริง'])->save();
+        $organization = app(\App\Services\UserOrganizationPresenter::class)->canonicalOrUnassignedForUser($user->fresh());
+        $this->assertSame('งานทดสอบ', $organization['workName']);
+        $this->assertNull($organization['unitName']);
+    }
+
     public function test_unit_rule_of_zero_turns_off_fc_preselection_for_that_unit(): void
     {
         $this->unitRule($this->unitIds['b'], 0);

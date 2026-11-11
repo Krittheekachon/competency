@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CompetencySpiderChart from '@/Components/CompetencySpiderChart.vue';
 import RoundSelect from '@/Components/RoundSelect.vue';
-import { getViewerScope, listEvaluationResults, listPeriods } from '../../services/historyService.js';
+import { getViewerScope, listEvaluationPeriods, listEvaluationResults } from '../../services/historyService.js';
 
 const props = defineProps<{
   setPage: (p: string) => void;
@@ -42,18 +42,41 @@ const currentRows = computed(() => {
 const scopeInfo = getViewerScope();
 const scope = scopeInfo.scope;
 const people = scopeInfo.people || [];
-const evaluationPeriods = listPeriods().filter(period => period.id !== 'all');
-const currentPeriod = evaluationPeriods.find(period => period.current) || evaluationPeriods[0];
+const evaluationPeriods = ref<any[]>([]);
+const currentPeriodId = computed(() => String(evaluationPeriods.value.find(period => period.current)?.id || ''));
 const query = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-const roundId = ref(query.get('round') || currentPeriod.id);
+const roundId = ref(query.get('round') || '');
 const viewedUserId = ref('self');
 const historicalRows = ref<any[]>([]);
 const historicalLoading = ref(false);
 const historicalError = ref(false);
 let requestSequence = 0;
-const isCurrentRound = computed(() => roundId.value === currentPeriod.id);
+const isCurrentRound = computed(() => !roundId.value || roundId.value === currentPeriodId.value);
 const isHistorical = computed(() => !isCurrentRound.value);
 const rows = computed(() => isCurrentRound.value ? currentRows.value : historicalRows.value);
+// Printable summary of the round being viewed (opens in a new tab and offers "save as PDF").
+const exportUrl = computed(() => route('employee.results.export', { round: roundId.value || currentPeriodId.value || undefined, print: 1 }));
+
+// The results table shows six rows and scrolls for the rest; rows differ in height, so measure them.
+const VISIBLE_RESULT_ROWS = 6;
+const tableWrap = ref<HTMLElement | null>(null);
+const tableMaxHeight = ref<string>('');
+const measureTable = () => {
+  const wrap = tableWrap.value;
+  const bodyRows = wrap ? Array.from(wrap.querySelectorAll<HTMLElement>('tbody tr')) : [];
+  if (!wrap || bodyRows.length <= VISIBLE_RESULT_ROWS) { tableMaxHeight.value = ''; return; }
+  const head = wrap.querySelector<HTMLElement>('thead')?.offsetHeight || 0;
+  const rowsHeight = bodyRows.slice(0, VISIBLE_RESULT_ROWS).reduce((sum, row) => sum + row.offsetHeight, 0);
+  tableMaxHeight.value = `${parseFloat(getComputedStyle(wrap).paddingTop) + head + rowsHeight}px`;
+};
+let tableObserver: ResizeObserver | null = null;
+onMounted(() => {
+  tableObserver = new ResizeObserver(measureTable);
+  if (tableWrap.value) tableObserver.observe(tableWrap.value);
+  measureTable();
+});
+onBeforeUnmount(() => tableObserver?.disconnect());
+watch(rows, () => nextTick(measureTable), { flush: 'post' });
 const viewedUserName = computed(() => people.find((person: any) => person.id === viewedUserId.value)?.name || scopeInfo.viewer?.name || employeeName.value);
 async function loadHistoricalResults() {
   if (isCurrentRound.value) { historicalRows.value = []; return; }
@@ -66,17 +89,21 @@ async function loadHistoricalResults() {
 function setRound(value: string) {
   roundId.value = value;
   const url = new URL(window.location.href);
-  url.searchParams.set('round', value);
+  if (!value || value === currentPeriodId.value) url.searchParams.delete('round'); else url.searchParams.set('round', value);
   window.history.pushState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   loadHistoricalResults();
 }
 function restoreRoundFromUrl() {
   const url = new URL(window.location.href);
-  roundId.value = url.searchParams.get('round') || currentPeriod.id;
+  roundId.value = url.searchParams.get('round') || '';
   loadHistoricalResults();
 }
 watch(viewedUserId, loadHistoricalResults);
-onMounted(() => { window.addEventListener('popstate', restoreRoundFromUrl); if (!isCurrentRound.value) loadHistoricalResults(); });
+async function loadEvaluationPeriods() {
+  try { evaluationPeriods.value = await listEvaluationPeriods(); }
+  catch { evaluationPeriods.value = []; }
+}
+onMounted(() => { window.addEventListener('popstate', restoreRoundFromUrl); loadEvaluationPeriods(); if (!isCurrentRound.value) loadHistoricalResults(); });
 onBeforeUnmount(() => window.removeEventListener('popstate', restoreRoundFromUrl));
 const isApproved = (row: any) => approvedStatuses.includes(row?.status || '');
 const hasFinalResult = (row: any) => isApproved(row) && row.gap !== null && row.gap !== undefined;
@@ -182,19 +209,22 @@ const formatGap = (value: unknown) => {
         <h1>ผลการประเมิน</h1>
         <p>แสดงผลตามเกณฑ์ของวิธีประเมินที่กำหนดในรอบ</p>
       </div>
-      <button v-if="isCurrentRound" class="btn btn-s btn-sm" type="button" @click="setPage('emp-assess')">กลับไปประเมิน</button>
+      <div class="gap-head-actions">
+        <a v-if="viewedUserId === 'self' && rows.length" class="btn btn-s btn-sm" :href="exportUrl" target="_blank" rel="noopener">ส่งออก PDF</a>
+        <button v-if="isCurrentRound" class="btn btn-s btn-sm" type="button" @click="setPage('emp-assess')">กลับไปประเมิน</button>
+      </div>
     </div>
 
-    <div class="evaluation-round-tools">
-      <RoundSelect :model-value="roundId" :periods="evaluationPeriods" @update:model-value="setRound" />
+    <div v-if="evaluationPeriods.length > 1 || scope === 'unit' || scope === 'all'" class="evaluation-round-tools">
+      <RoundSelect v-if="evaluationPeriods.length > 1" :model-value="roundId || currentPeriodId" :periods="evaluationPeriods" @update:model-value="setRound" />
       <label v-if="scope === 'unit' || scope === 'all'" class="evaluation-person-control"><span>ดูผลของ</span><select v-model="viewedUserId"><option value="self">ตัวเอง</option><option v-for="person in people.filter((item: any) => item.id !== 'self')" :key="person.id" :value="person.id">{{ person.name }}</option></select></label>
     </div>
     <div v-if="isCurrentRound" class="evaluation-context current" aria-live="polite">ผลการประเมินรอบปัจจุบัน</div>
-    <div v-else class="evaluation-context archive" aria-live="polite"><span>กำลังดูผลย้อนหลัง · {{ evaluationPeriods.find(period => period.id === roundId)?.label }}</span><button type="button" @click="setRound(currentPeriod.id)">กลับรอบปัจจุบัน</button></div>
+    <div v-else class="evaluation-context archive" aria-live="polite"><span>กำลังดูผลย้อนหลัง · {{ evaluationPeriods.find(period => period.id === roundId)?.label }}</span><button type="button" @click="setRound(currentPeriodId)">กลับรอบปัจจุบัน</button></div>
     <div v-if="isHistorical && viewedUserId !== 'self'" class="evaluation-viewer-banner">กำลังดูผลของ {{ viewedUserName }}</div>
     <div v-if="historicalLoading" class="evaluation-skeleton" aria-label="กำลังโหลดผลย้อนหลัง"><i></i><i></i><i></i></div>
     <div v-else-if="historicalError" class="evaluation-state"><strong>โหลดผลการประเมินไม่สำเร็จ</strong><button type="button" @click="loadHistoricalResults">ลองใหม่</button></div>
-    <div v-else-if="isHistorical && !rows.length" class="evaluation-state"><strong>ไม่มีผลการประเมินในรอบนี้</strong><button type="button" @click="setRound(evaluationPeriods.find(period => period.id !== roundId && period.id !== '2568-1')?.id || currentPeriod.id)">ดูรอบที่มีข้อมูล</button></div>
+    <div v-else-if="isHistorical && !rows.length" class="evaluation-state"><strong>ไม่มีผลการประเมินในรอบนี้</strong><button type="button" @click="setRound(currentPeriodId)">กลับรอบปัจจุบัน</button></div>
 
     <div v-if="rows.length && !historicalLoading" class="summary-grid">
       <div class="summary-card">
@@ -233,7 +263,7 @@ const formatGap = (value: unknown) => {
         </div>
         <span v-if="isHistorical" class="historical-card-tag">{{ evaluationPeriods.find(period => period.id === roundId)?.label }}</span>
       </div>
-      <div class="result-table-wrap">
+      <div ref="tableWrap" class="result-table-wrap" :class="{ 'is-scrollable': tableMaxHeight }" :style="tableMaxHeight ? { maxHeight: tableMaxHeight } : undefined">
         <table class="result-table">
           <thead>
             <tr>
@@ -388,15 +418,15 @@ const formatGap = (value: unknown) => {
 .employee-page { display: grid; gap: 18px; }
 .evaluation-round-tools { position:sticky; top:56px; z-index:5; display:flex; align-items:end; gap:12px; border:1px solid var(--border); border-radius:8px; background:#fff; padding:10px 14px; }.evaluation-round-tools :deep(.round-control) { flex:0 1 auto; }.evaluation-person-control { display:grid; flex:1; gap:6px; color:var(--text2); font-size:14px; font-weight:800; }.evaluation-person-control select { min-height:46px; width:100%; border:1px solid var(--border); border-radius:7px; background:#fff; padding:8px 11px; color:var(--text); font:inherit; font-size:16px; }.evaluation-context { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid; border-radius:8px; padding:10px 14px; font-size:16px; font-weight:800; }.evaluation-context.current { border-color:#b8dec8; background:#eef9f1; color:#176b3c; }.evaluation-context.archive { border-color:#b7d8f2; background:#eff8ff; color:#175d90; }.evaluation-context button,.evaluation-state button { min-height:40px; border:1px solid currentColor; border-radius:7px; background:#fff; padding:7px 12px; color:inherit; font:inherit; font-size:14px; font-weight:800; cursor:pointer; }.evaluation-viewer-banner { border:1px solid #b7d8f2; border-radius:8px; background:#eff8ff; padding:10px 14px; color:#175d90; font-size:16px; font-weight:800; }.historical-card-tag { display:inline-flex; width:max-content; margin-bottom:8px; border:1px solid #b7d8f2; border-radius:999px; background:#eff8ff; padding:4px 9px; color:#175d90; font-size:14px; font-weight:800; }.evaluation-skeleton { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }.evaluation-skeleton i { min-height:86px; border:1px solid var(--border); border-radius:8px; background:linear-gradient(90deg,#f5f6f6,#fff,#f5f6f6); }.evaluation-state { display:grid; justify-items:center; gap:12px; min-height:210px; border:1px dashed var(--border); border-radius:8px; background:#fff; padding:30px; text-align:center; }.evaluation-state strong { font-size:17px; }.evaluation-state button { border-color:var(--color-primary); background:var(--color-primary); color:#fff; }
 .result-overview { min-width: 0; }
-.result-overview.has-chart { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.result-overview.has-chart > :deep(.spider-card) { min-width: 0; border: 0; border-radius: 0; box-shadow: none; }
-.result-overview.has-chart > .table-section { min-width: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+.result-overview.has-chart { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.result-overview.has-chart > :deep(.spider-card) { order: 2; min-width: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; box-shadow: none; }
+.result-overview.has-chart > .table-section { order: 1; min-width: 0; border: 0; border-radius: 0; box-shadow: none; }
 .result-overview.has-chart .result-table-wrap { padding: 12px; }
 .result-overview.has-chart .result-table { min-width: 560px; }
 .result-overview.has-chart .result-table th, .result-overview.has-chart .result-table td { padding: 10px; }
 @media (max-width: 900px) {
   .result-overview.has-chart { grid-template-columns: minmax(0, 1fr); }
-  .result-overview.has-chart > .table-section { border-left: 0; border-top: 1px solid var(--border); }
+  .result-overview.has-chart > :deep(.spider-card) { border-left: 0; border-top: 1px solid var(--border); }
 }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .page-head h1 { margin: 0; color: var(--text); font-size: 22px; font-weight: 900; }
@@ -543,6 +573,8 @@ const formatGap = (value: unknown) => {
 .indicator-line p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.6; }
 .missing-empty { padding: 14px 16px 16px; color: var(--text3); font-size: 13px; }
 .result-table-wrap { overflow-x: auto; padding: 16px 20px 20px; }
+.result-table-wrap.is-scrollable { overflow-y: auto; padding-bottom: 0; overscroll-behavior: contain; }
+.result-table-wrap.is-scrollable .result-table thead th { position: sticky; top: 0; z-index: 1; box-shadow: 0 1px 0 var(--border); }
 .result-table { width: 100%; border-collapse: collapse; min-width: 760px; }
 .result-table th {
   background: var(--bg);
@@ -764,4 +796,6 @@ const formatGap = (value: unknown) => {
   .competency-modal-head,
   .competency-modal-body { padding: 16px; }
 }
+.gap-head-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 </style>

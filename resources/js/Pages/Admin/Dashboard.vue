@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watchEffect } from 'vue';
+import { computed, nextTick, ref, watchEffect } from 'vue';
 import { Head, router, usePage, useRemember } from '@inertiajs/vue3';
 import SidebarBrand from '../../Components/SidebarBrand.vue';
 import PageTitleBlock from '../../Components/PageTitleBlock.vue';
@@ -10,6 +10,7 @@ import {
 } from '../../data';
 import AdminDict from './AdminDict.vue';
 import ReviewerPresetFields from './ReviewerPresetFields.vue';
+import UserMultiPicker from '../../Components/UserMultiPicker.vue';
 import IdpChainModule from './IdpChainModule.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
@@ -82,7 +83,7 @@ const activeReviewerTemplateModal = ref('');
 const showAssessmentTemplateCreate = ref(false);
 const activeAssessmentTemplateId = ref(null);
 const editingAssessmentTemplateId = ref(null);
-const assessmentTemplateMemberPick = ref('');
+const assessmentTemplateMemberPicks = ref([]);
 const assessmentTemplateError = ref('');
 const isSavingAssessmentTemplate = ref(false);
 const reviewerSearchTerms = ref({});
@@ -93,7 +94,7 @@ const assessmentTemplateForm = ref({
     reviewer_ids: [],
     assignment_user_ids: [],
     reviewer_pick: '',
-    user_pick: '',
+    user_picks: [],
 });
 const userForm = ref({
     db_id: null,
@@ -279,6 +280,11 @@ const jobOptions = computed(() => {
 
     return Object.keys(selectedWorklineGroups.value);
 });
+// Executives in สายบริหาร keep the academic department they belong to (e.g. the dean's home department).
+const academicFamilyOptions = computed(() => {
+    const academicWorkline = Object.keys(jobFamiliesByWorkline.value).find((name) => normalizeWorklineName(name) === 'วิชาการ');
+    return academicWorkline ? Object.keys(jobFamiliesByWorkline.value[academicWorkline] || {}) : [];
+});
 const legacyJobOption = computed(() => {
     const job = userForm.value.job;
 
@@ -353,10 +359,11 @@ const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
 const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [] });
 const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
+const idpChainPrototypeEnabled = Boolean(page.props.features?.idpChainPrototype);
 const visibleAdminPageIds = new Set([
     'admin-users',
     'admin-org-structure',
-    'admin-idp-chains',
+    ...(idpChainPrototypeEnabled ? ['admin-idp-chains'] : []),
     'admin-dict',
     'admin-idp-tools',
     'admin-fc-topic-review',
@@ -497,6 +504,23 @@ const personOption = (user) => ({
     label: `${user.t || ''}${user.n} · ${user.displayOrganization || user.organization?.display || primaryJobFamily(user.d)} · ${roleLabel(user.r)}`,
 });
 
+// Where a person sits, by line: support = งาน/หน่วย, academic = ภาควิชา, others = สังกัด; then ตำแหน่ง.
+const organizationMeta = (user) => {
+    const organization = user.organization || {};
+    const position = { label: 'ตำแหน่ง', value: user.p || '-' };
+    if (organization.type === 'support') {
+        return [
+            { label: 'งาน', value: organization.workName || '-' },
+            { label: 'หน่วย', value: organization.unitName || '-' },
+            position,
+        ];
+    }
+    if (organization.type === 'academic') {
+        return [{ label: 'ภาควิชา', value: organization.departmentName || '-' }, position];
+    }
+
+    return [{ label: 'สังกัด', value: user.displayOrganization || organization.display || user.w || '-' }, position];
+};
 const evaluatorOptions = computed(() =>
     users.value
         .filter((user) => user.db_id)
@@ -508,6 +532,9 @@ const evaluatorOptions = computed(() =>
             p: user.p || '',
             w: user.w || '',
             d: user.d || '',
+            // Display name of the unit (same as other admin lists); `d` is the raw internal path.
+            org: user.displayOrganization || user.organization?.display || primaryJobFamily(user.d || ''),
+            meta: organizationMeta(user),
             r: normalizeUserRoleKey(user.r || ''),
             label: `${user.t || ''}${user.n}${user.p ? ` · ${user.p}` : ''}`,
             searchText: [
@@ -714,16 +741,15 @@ const removeTemplateReviewer = (index) => {
     assessmentTemplateForm.value.reviewer_ids = (assessmentTemplateForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
 };
 const addTemplateAssignmentUser = () => {
-    const userId = selectedEvaluatorId(assessmentTemplateForm.value.user_pick);
-    if (
-        !userId
-        || selectedTemplateUserIds.value.includes(userId)
-        || selectedTemplateReviewerIds.value.includes(userId)
-    ) return;
+    const blocked = new Set([...selectedTemplateUserIds.value, ...selectedTemplateReviewerIds.value]);
+    const userIds = [...new Set((assessmentTemplateForm.value.user_picks || [])
+        .map((id) => selectedEvaluatorId(id))
+        .filter((id) => id && !blocked.has(id)))];
+    if (!userIds.length) return;
 
     assessmentTemplateError.value = '';
-    assessmentTemplateForm.value.assignment_user_ids = [...selectedTemplateUserIds.value, userId];
-    assessmentTemplateForm.value.user_pick = '';
+    assessmentTemplateForm.value.assignment_user_ids = [...selectedTemplateUserIds.value, ...userIds];
+    assessmentTemplateForm.value.user_picks = [];
 };
 const removeTemplateAssignmentUser = (index) => {
     assessmentTemplateForm.value.assignment_user_ids = selectedTemplateUserIds.value.filter((_, itemIndex) => itemIndex !== index);
@@ -789,18 +815,18 @@ const startEditAssessmentTemplate = (template) => {
             : (template.steps || []).map((step) => selectedEvaluatorId(step.reviewerId) || ''),
         assignment_user_ids: [],
         reviewer_pick: '',
-        user_pick: '',
+        user_picks: [],
     };
     showAssessmentTemplateCreate.value = false;
 };
 const openAssessmentTemplateDetail = (template) => {
     resetAssessmentTemplateForm();
     activeAssessmentTemplateId.value = template.id;
-    assessmentTemplateMemberPick.value = '';
+    assessmentTemplateMemberPicks.value = [];
 };
 const closeAssessmentTemplateDetail = () => {
     activeAssessmentTemplateId.value = null;
-    assessmentTemplateMemberPick.value = '';
+    assessmentTemplateMemberPicks.value = [];
 };
 const cancelAssessmentTemplateEdit = () => {
     resetAssessmentTemplateForm();
@@ -820,23 +846,23 @@ const resetAssessmentTemplateForm = () => {
         reviewer_ids: [],
         assignment_user_ids: [],
         reviewer_pick: '',
-        user_pick: '',
+        user_picks: [],
     };
 };
 const addAssessmentTemplateMember = () => {
     const template = selectedAssessmentTemplate.value;
-    const userId = selectedEvaluatorId(assessmentTemplateMemberPick.value);
-    if (!template || !userId) return;
+    const userIds = [...new Set(assessmentTemplateMemberPicks.value.map((id) => selectedEvaluatorId(id)).filter(Boolean))];
+    if (!template || !userIds.length) return;
 
     router.post(route('admin.reviewer-chain-templates.users.store', template.id), {
-        user_ids: [userId],
+        user_ids: userIds,
     }, {
         preserveScroll: true,
         onSuccess: (responsePage) => {
             if (Array.isArray(responsePage.props.users)) {
                 users.value = clone(responsePage.props.users);
             }
-            assessmentTemplateMemberPick.value = '';
+            assessmentTemplateMemberPicks.value = [];
         },
     });
 };
@@ -1088,7 +1114,12 @@ const normalizeReviewerList = () => {
 const addReviewerStep = () => {
     if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = [...(userForm.value.reviewer_ids || []), ''];
+    nextTick(() => {
+        const list = reviewerStepListRef.value;
+        if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
+    });
 };
+const reviewerStepListRef = ref(null);
 const removeReviewerStep = (index) => {
     if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
     userForm.value.reviewer_ids = (userForm.value.reviewer_ids || []).filter((_, itemIndex) => itemIndex !== index);
@@ -1250,20 +1281,10 @@ const canPickEvaluator2 = computed(() => !['admin', 'dept_head', 'division_head'
 const canPickEvaluator3 = computed(() => !['admin', 'dean'].includes(normalizeUserRoleKey(userForm.value.r)));
 const isDeanRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dean');
 const requiresOrganizationStructure = computed(() => !isDeanRole.value && !isManagementExecutive.value);
-const isDeptHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'dept_head');
-const isDivisionHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'division_head');
-const requiresSupportWork = computed(() => !(isSupportWorkline.value && isDivisionHeadRole.value));
-const requiresSupportUnit = computed(() => !(isSupportWorkline.value && (isDivisionHeadRole.value || isDeptHeadRole.value)));
-const supportPathCount = computed(() =>
-    [userForm.value.dept, userForm.value.job, userForm.value.unit].filter(Boolean).length,
-);
+// Everyone sits at ฝ่าย > งาน > หน่วย; a head of งาน (supervisor) sits at ฝ่าย > งาน. Keep in sync with SupportUnitResolver::WORK_LEVEL_ROLES.
+const isWorkHeadRole = computed(() => normalizeUserRoleKey(userForm.value.r) === 'supervisor');
 const allowsMissingPositionFields = computed(() => {
-    if (isDeanRole.value) return true;
-    if (!isSupportWorkline.value) return false;
-    if (isDivisionHeadRole.value) return supportPathCount.value >= 1 && supportPathCount.value < 3;
-    if (isDeptHeadRole.value) return supportPathCount.value === 2;
-
-    return false;
+    return isDeanRole.value;
 });
 const requiresPositionFields = computed(() =>
     requiresOrganizationStructure.value && Boolean(userForm.value.w) && !allowsMissingPositionFields.value,
@@ -1612,8 +1633,8 @@ const saveUser = () => {
         || (!isSupportWorkline.value && !form.job)
         || (isSupportWorkline.value && (
             !form.dept
-            || (requiresSupportWork.value && !form.job)
-            || (requiresSupportUnit.value && !form.unit)
+            || !form.job
+            || (!form.unit && !isWorkHeadRole.value)
         ))
     );
     const selectedOptionalPosition = !requiresPositionFields.value && canPickPosition.value && Boolean(form.p);
@@ -1671,7 +1692,7 @@ const saveUser = () => {
         t: form.t.trim(),
         w: form.w.trim(),
         ...(isManagementExecutive.value ? {position_title_id: managementPositionTitles.value.find(item => item.name === form.p)?.id || null} : {}),
-        d: (isDeanRole.value ? '' : form.d).trim(),
+        d: (isManagementExecutive.value ? form.job : (isDeanRole.value ? '' : form.d)).trim(),
         dept: form.dept.trim(),
         job: form.job.trim(),
         unit: form.unit.trim(),
@@ -1827,7 +1848,7 @@ const logout = () => router.post(route('logout'));
 
                 <EmployeeProgress v-else-if="activePage === 'emp-progress'" />
 
-                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" :activities="page.props.currentUserApprovedIdpActivities || []" />
+                <EmployeeIDPDetail v-else-if="activePage === 'emp-idp-detail'" />
 
                 <HeadDashboard
                     v-else-if="activePage === 'admin-fc-topic-review' && fcTopicApprovalModule.enabled"
@@ -1924,7 +1945,7 @@ const logout = () => router.post(route('logout'));
 
                 <AdminIdpTools
                     v-else-if="activePage === 'admin-idp-tools'"
-                    :idp-fill-mode="page.props.idpFillMode || 'quick'"
+                    :idp-fill-mode="page.props.idpFillMode || 'form'"
                     :competencies="competencies"
                     :idp-learning-methods="idpLearningMethods"
                     :learning-catalogs="hrCatalogItems"
@@ -2114,7 +2135,7 @@ const logout = () => router.post(route('logout'));
                     </div>
 
                     <div v-if="requiresOrganizationStructure && userForm.w && (!isSupportWorkline || userForm.dept)" class="fg">
-                        <label class="lbl" :class="{ req: !isSupportWorkline || requiresSupportWork }">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
+                        <label class="lbl req">{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }}</label>
                         <select v-model="userForm.job" class="sel modal-input" @change="handleJobChange">
                             <option value="">— เลือก{{ isSupportWorkline ? 'งาน' : 'ภาควิชา' }} —</option>
                             <option v-if="legacyJobOption" :value="legacyJobOption">
@@ -2129,10 +2150,21 @@ const logout = () => router.post(route('logout'));
                         </div>
                     </div>
 
+                    <div v-if="isManagementExecutive" class="fg">
+                        <label class="lbl">สังกัดภาควิชา</label>
+                        <select v-model="userForm.job" class="sel modal-input" aria-label="สังกัดภาควิชา" @change="organizationDirty = true">
+                            <option value="">— ไม่สังกัดภาควิชา —</option>
+                            <option v-if="userForm.job && !academicFamilyOptions.includes(userForm.job)" :value="userForm.job">
+                                {{ userForm.job }} (ข้อมูลเดิม)
+                            </option>
+                            <option v-for="family in academicFamilyOptions" :key="family" :value="family">{{ family }}</option>
+                        </select>
+                    </div>
+
                     <div v-if="requiresOrganizationStructure && isSupportWorkline && userForm.job" class="fg">
-                        <label class="lbl" :class="{ req: requiresSupportUnit }">หน่วย</label>
+                        <label class="lbl" :class="{ req: !isWorkHeadRole }">หน่วย</label>
                         <select v-model="userForm.unit" class="sel modal-input" @change="handleUnitChange">
-                            <option value="">— เลือกหน่วย —</option>
+                            <option value="">{{ isWorkHeadRole ? '— หัวหน้างาน: ไม่ต้องเลือกหน่วย —' : '— เลือกหน่วย —' }}</option>
                             <option v-if="legacyUnitOption" :value="legacyUnitOption">
                                 {{ legacyUnitOption }} (ข้อมูลเดิม)
                             </option>
@@ -2286,7 +2318,7 @@ const logout = () => router.post(route('logout'));
                             </button>
                         </div>
 
-                        <div class="reviewer-step-list">
+                        <div ref="reviewerStepListRef" class="reviewer-step-list">
                             <div class="fg reviewer-modal-preset">
                                 <label class="lbl">เลือกลำดับผู้ประเมิน</label>
                                 <select
@@ -2352,7 +2384,7 @@ const logout = () => router.post(route('logout'));
                         </div>
 
                         <div class="reviewer-modal-actions">
-                            <button class="btn btn-s" type="button" @click="addReviewerStep">
+                            <button class="btn btn-s reviewer-add-btn" type="button" @click="addReviewerStep">
                                 + เพิ่มผู้ประเมิน
                             </button>
                             <button class="btn btn-p reviewer-done-btn" type="button" @click="closeReviewerModal">
@@ -2404,7 +2436,7 @@ const logout = () => router.post(route('logout'));
         <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title">
             <div class="reviewer-modal-head">
                 <div>
-                    <a :href="route('admin.idp-chains', { type: activeReviewerTemplateType === 'idp' ? 'idp' : 'eval' })" style="font-size:14px">ไปจัดการที่โมดูลใหม่ ›</a>
+                    <a v-if="idpChainPrototypeEnabled" :href="route('admin.idp-chains', { type: activeReviewerTemplateType === 'idp' ? 'idp' : 'eval' })" style="font-size:14px">ไปจัดการที่โมดูลใหม่ ›</a>
                     <h3 id="reviewer-template-modal-title">{{ activeReviewerTemplateTitle }}</h3>
                     <p>{{ activeReviewerTemplateSubtitle }}</p>
                 </div>
@@ -2610,21 +2642,13 @@ const logout = () => router.post(route('logout'));
                             </div>
                         </div>
 
-                        <div class="template-picker-row">
-                            <select v-model="assessmentTemplateMemberPick" class="sel modal-input">
-                                <option value="">เพิ่มผู้ใช้{{ activeReviewerTemplateTitle }}</option>
-                                <option
-                                    v-for="person in selectedAssessmentTemplateUserOptions"
-                                    :key="`assessment-template-member-${person.value}`"
-                                    :value="person.value"
-                                >
-                                    {{ person.label }}
-                                </option>
-                            </select>
-                            <button class="btn btn-p" type="button" @click="addAssessmentTemplateMember">
-                                + เพิ่มสมาชิก
-                            </button>
-                        </div>
+                        <UserMultiPicker v-model="assessmentTemplateMemberPicks" :options="selectedAssessmentTemplateUserOptions">
+                            <template #actions>
+                                <button class="btn btn-p" type="button" :disabled="!assessmentTemplateMemberPicks.length" @click="addAssessmentTemplateMember">
+                                    + เพิ่มสมาชิก{{ assessmentTemplateMemberPicks.length ? ` (${assessmentTemplateMemberPicks.length})` : '' }}
+                                </button>
+                            </template>
+                        </UserMultiPicker>
 
                         <div v-if="templateAssignedUsers(selectedAssessmentTemplate).length" class="assessment-template-member-list">
                             <div
@@ -3048,7 +3072,9 @@ const logout = () => router.post(route('logout'));
 .reviewer-modal {
     width: min(720px, 100%);
     max-height: min(82vh, 720px);
-    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     border: 1px solid #dbe3ef;
     border-radius: 12px;
     background: #fff;
@@ -3738,10 +3764,29 @@ const logout = () => router.post(route('logout'));
 }
 
 .reviewer-step-list {
+    flex: 1 1 auto;
+    min-height: 0;
     display: grid;
+    align-content: start;
     gap: 10px;
     padding: 18px 20px;
-    overflow: visible;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.reviewer-modal-head {
+    flex: 0 0 auto;
+}
+
+.reviewer-add-btn {
+    background: #fff;
+    border-color: var(--color-primary, #b4472f);
+    color: var(--color-primary, #b4472f);
+    font-weight: 700;
+}
+
+.reviewer-add-btn:hover {
+    background: #fff4f0;
 }
 
 .reviewer-step-row {
@@ -3876,11 +3921,13 @@ const logout = () => router.post(route('logout'));
 }
 
 .reviewer-modal-actions {
+    flex: 0 0 auto;
     display: flex;
     justify-content: space-between;
     gap: 10px;
     padding: 16px 20px 20px;
     border-top: 1px solid #e2e8f0;
+    background: #fff;
 }
 
 .reviewer-done-btn {
