@@ -34,9 +34,6 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
-            'features' => [
-                'idpChainPrototype' => (bool) config('app.idp_chain_prototype_enabled'),
-            ],
         ];
     }
 }

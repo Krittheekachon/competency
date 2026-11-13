@@ -38,13 +38,14 @@ class AssessmentRoundSnapshotService
                 ->where('user_id', $user->id)
                 ->orderBy('chain_type')
                 ->orderBy('step_order')
-                ->get(['chain_type', 'step_order', 'reviewer_id'])
+                ->get(['chain_type', 'step_order', 'reviewer_id', 'scoring_types'])
                 ->map(fn (object $step): array => [
                     'assessment_round_id' => $roundId,
                     'user_id' => $user->id,
                     'chain_type' => $step->chain_type,
                     'step_order' => $step->step_order,
                     'reviewer_id' => $step->reviewer_id,
+                    'scoring_types' => $step->scoring_types,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ])

@@ -27,6 +27,9 @@ class ReviewerChainTemplateController extends Controller
             'chain_type' => ['nullable', 'in:assessment,idp'],
             'reviewer_ids' => ['required', 'array', 'min:1'],
             'reviewer_ids.*' => ['required', 'integer', 'exists:users,id'],
+            'scoring' => ['nullable', 'array'],
+            'scoring.*' => ['nullable', 'array'],
+            'scoring.*.*' => ['string', \Illuminate\Validation\Rule::in(['CC', 'FC', 'MC'])],
             'assignment_user_ids' => ['nullable', 'array'],
             'assignment_user_ids.*' => ['required', 'integer', 'exists:users,id'],
         ]);
@@ -101,6 +104,7 @@ class ReviewerChainTemplateController extends Controller
                     'resolver_type' => 'fixed_user',
                     'role_key' => null,
                     'reviewer_id' => $reviewerId,
+                    'scoring_types' => $chainType === 'assessment' ? $this->scoringValue($data['scoring'] ?? [], $reviewerId) : null,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ])
@@ -143,6 +147,9 @@ class ReviewerChainTemplateController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
             'reviewer_ids' => ['required', 'array', 'min:1'],
             'reviewer_ids.*' => ['required', 'integer', 'exists:users,id'],
+            'scoring' => ['nullable', 'array'],
+            'scoring.*' => ['nullable', 'array'],
+            'scoring.*.*' => ['string', \Illuminate\Validation\Rule::in(['CC', 'FC', 'MC'])],
         ]);
 
         if (! Schema::hasTable('reviewer_chain_templates')) {
@@ -227,6 +234,7 @@ class ReviewerChainTemplateController extends Controller
                     'resolver_type' => 'fixed_user',
                     'role_key' => null,
                     'reviewer_id' => $reviewerId,
+                    'scoring_types' => $chainType === 'assessment' ? $this->scoringValue($data['scoring'] ?? [], $reviewerId) : null,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ])
@@ -467,6 +475,11 @@ class ReviewerChainTemplateController extends Controller
             return;
         }
 
+        // The preset is the source of truth for who may score what in a chain built from it.
+        $grants = $chainType === 'assessment'
+            ? DB::table('reviewer_chain_template_steps')->where('template_id', $templateId)->pluck('scoring_types', 'reviewer_id')->all()
+            : [];
+
         $deleteQuery = DB::table('user_reviewer_steps')->where('user_id', $user->id);
         if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
             $deleteQuery->where('chain_type', $chainType);
@@ -475,11 +488,12 @@ class ReviewerChainTemplateController extends Controller
 
         DB::table('user_reviewer_steps')->insert(collect($reviewerIds)
             ->values()
-            ->map(function (int $reviewerId, int $index) use ($user, $now, $chainType): array {
+            ->map(function (int $reviewerId, int $index) use ($user, $now, $chainType, $grants): array {
                 $row = [
                     'user_id' => $user->id,
                     'step_order' => $index + 1,
                     'reviewer_id' => $reviewerId,
+                    'scoring_types' => $grants[$reviewerId] ?? null,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -491,6 +505,14 @@ class ReviewerChainTemplateController extends Controller
                 return $row;
             })
             ->all());
+    }
+
+    /** @param array<int|string, array<int, string>> $scoring */
+    private function scoringValue(array $scoring, int $reviewerId): ?string
+    {
+        $types = \App\Services\ReviewerChainResolver::parseScoringTypes(implode(',', $scoring[$reviewerId] ?? []));
+
+        return $types === [] ? null : implode(',', $types);
     }
 
     private function chainTypeFromTemplate(object $template): string

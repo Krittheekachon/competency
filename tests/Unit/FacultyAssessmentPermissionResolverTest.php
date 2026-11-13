@@ -2,96 +2,49 @@
 
 namespace Tests\Unit;
 
-use App\Models\Role;
 use App\Models\User;
 use App\Services\FacultyAssessmentPermissionResolver;
-use PHPUnit\Framework\Attributes\DataProvider;
-use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\TestCase;
 
 class FacultyAssessmentPermissionResolverTest extends TestCase
 {
     use RefreshDatabase;
-    #[DataProvider('permissionCases')]
-    public function test_scoring_permission_depends_on_reviewer_target_and_competency_type(
-        string $reviewerRole,
-        string $employeeRole,
-        string $workline,
-        string $type,
-        bool $expected,
-    ): void {
-        $resolver = new FacultyAssessmentPermissionResolver;
 
-        $this->assertSame($expected, $resolver->canScore(
-            $this->userWithRole($reviewerRole),
-            $this->userWithRole($employeeRole, $workline),
-            $type,
-        ));
+    #[DataProvider('grantCases')]
+    public function test_scoring_permission_follows_the_grant_on_the_reviewer_step(?string $grant, string $type, bool $expected): void
+    {
+        $employee = User::factory()->create();
+        $reviewer = User::factory()->create();
+        DB::table('user_reviewer_steps')->insert([
+            'user_id' => $employee->id, 'chain_type' => 'assessment', 'step_order' => 1,
+            'reviewer_id' => $reviewer->id, 'scoring_types' => $grant,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->assertSame($expected, app(FacultyAssessmentPermissionResolver::class)->canScore($reviewer, $employee, $type));
     }
 
-    public static function permissionCases(): array
+    public static function grantCases(): array
     {
         return [
-            'support CC by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'CC', true],
-            'support FC by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC', true],
-            'support FC1 sub-type by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC1', true],
-            'support FC2 sub-type by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'FC2', true],
-            'support by assistant is approval only' => ['assistant_dean', 'employee', 'สายสนับสนุน', 'CC', false],
-            'support MC is never scored by deputy' => ['deputy_dean', 'employee', 'สายสนับสนุน', 'MC', false],
-            'academic CC by department head' => ['academic_department_head', 'employee', 'สายวิชาการ', 'CC', true],
-            'academic FC by department head' => ['academic_department_head', 'employee', 'สายวิชาการ', 'FC', true],
-            'executive CC by department head' => ['academic_department_head', 'deputy_dean', 'สายวิชาการ', 'CC', true],
-            'executive MC by dean' => ['dean', 'assistant_dean', 'สายวิชาการ', 'MC', true],
-            'management deputy MC still by dean' => ['dean', 'deputy_dean', 'สายบริหาร', 'MC', true],
-            'management assistant MC still by dean' => ['dean', 'assistant_dean', 'สายบริหาร', 'MC', true],
-            'management employee MC not by dean' => ['dean', 'employee', 'สายบริหาร', 'MC', false],
-            'executive CC cannot be changed by dean' => ['dean', 'deputy_dean', 'สายวิชาการ', 'CC', false],
-            'executive MC cannot be changed by department head' => ['academic_department_head', 'assistant_dean', 'สายวิชาการ', 'MC', false],
-            'unknown workline is approval only' => ['deputy_dean', 'employee', 'สายอื่น', 'CC', false],
-            'legacy academic alias' => ['academic_department_head', 'employee', 'สายงานวิชาการ', 'CC', true],
-            'legacy support alias' => ['deputy_dean', 'employee', 'สนับสนุน', 'FC1', true],
+            'no grant is approval only' => [null, 'CC', false],
+            'CC granted' => ['CC', 'CC', true],
+            'CC grant does not cover FC' => ['CC', 'FC', false],
+            'FC grant covers FC1' => ['CC,FC', 'FC1', true],
+            'FC grant covers FC2' => ['FC', 'FC2', true],
+            'MC granted' => ['MC', 'MC', true],
+            'lowercase type is normalised' => ['CC', 'cc', true],
         ];
     }
 
-    public function test_legacy_workline_does_not_require_a_canonical_position(): void
+    public function test_a_user_outside_the_chain_never_scores(): void
     {
-        $resolver = new FacultyAssessmentPermissionResolver;
-        $reviewer = $this->userWithRole('deputy_dean');
-        $employee = new User(['workline' => 'สายสนับสนุน']);
-        $employee->setRelation('role', new Role(['key' => 'employee']));
-        $this->assertTrue($resolver->canScore($reviewer, $employee, 'CC'));
-        $this->assertFalse($resolver->canScore($reviewer, $employee, 'MC'));
-        $employee->position_title_id = DB::table('position_titles')->insertGetId([
-            'name' => 'Legacy unclassified', 'normalized_name' => 'legacy-unclassified',
-            'workline_type' => null,
-        ]);
-        $this->assertTrue($resolver->canScore($reviewer, $employee, 'FC'));
-        $employee->workline = 'สายอื่น';
-        $this->assertFalse($resolver->canScore($reviewer, $employee, 'CC'));
-    }
+        $employee = User::factory()->create();
+        $outsider = User::factory()->create();
 
-    public function test_existing_workline_takes_priority_over_conflicting_title_classification(): void
-    {
-        $employee = $this->userWithRole('employee', 'สายวิชาการ');
-        DB::table('position_titles')->where('id', $employee->position_title_id)->update(['workline_type' => 'support']);
-        $resolver = new FacultyAssessmentPermissionResolver;
-        $this->assertTrue($resolver->canScore($this->userWithRole('academic_department_head'), $employee, 'CC'));
-        $this->assertFalse($resolver->canScore($this->userWithRole('deputy_dean'), $employee, 'CC'));
-    }
-
-    private function userWithRole(string $key, ?string $workline = null): User
-    {
-        $role = new Role(['key' => $key]);
-        $user = new User(['workline' => $workline]);
-        if ($workline !== null) {
-            $user->position_title_id = DB::table('position_titles')->insertGetId([
-                'name' => 'QA '.$key, 'normalized_name' => 'qa-'.$key,
-                'workline_type' => match ($workline) { 'สายสนับสนุน' => 'support', 'สายวิชาการ' => 'academic', default => 'unknown' },
-            ]);
-        }
-        $user->setRelation('role', $role);
-
-        return $user;
+        $this->assertFalse(app(FacultyAssessmentPermissionResolver::class)->canScore($outsider, $employee, 'CC'));
     }
 }

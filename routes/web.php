@@ -61,14 +61,6 @@ if (app()->environment('local') && config('app.mock_sso_enabled')) {
 
 Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('role:admin')->group(function () {
-        Route::get('/admin/idp-chains', function () {
-            abort_unless(config('app.idp_chain_prototype_enabled'), 404);
-
-            return \Inertia\Inertia::render('Admin/Dashboard', [
-                'prototypePage' => 'admin-idp-chains',
-                'pageTitle' => 'ลำดับการประเมิน & IDP',
-            ]);
-        })->name('admin.idp-chains');
         Route::put('/admin/organization-chart/people', [\App\Http\Controllers\Admin\OrganizationChartController::class, 'update'])->name('admin.organization-chart.people.update');
         Route::post('/admin/users', [AdminUserController::class, 'store'])->name('admin.users.store');
         Route::put('/admin/users/{user}', [AdminUserController::class, 'update'])->name('admin.users.update');

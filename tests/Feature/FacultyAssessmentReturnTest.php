@@ -20,7 +20,7 @@ class FacultyAssessmentReturnTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId, 'สายสนับสนุน');
-        $this->assignReviewer($employee, $deputy, 1);
+        $this->assignReviewer($employee, $deputy, 1, 'CC,FC');
         $this->assignReviewer($employee, $assistant, 2);
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
@@ -67,7 +67,7 @@ class FacultyAssessmentReturnTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId] = $this->makeAssessable($employee, $roundId, 'สายสนับสนุน');
-        $this->assignReviewer($employee, $deputy, 1);
+        $this->assignReviewer($employee, $deputy, 1, 'CC,FC');
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
         $this->actingAs($deputy)
@@ -88,8 +88,8 @@ class FacultyAssessmentReturnTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId, 'สายสนับสนุน');
-        $this->assignReviewer($employee, $firstDeputy, 1);
-        $this->assignReviewer($employee, $lastDeputy, 2);
+        $this->assignReviewer($employee, $firstDeputy, 1, 'CC,FC');
+        $this->assignReviewer($employee, $lastDeputy, 2, 'CC,FC');
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
         $this->approve($firstDeputy, $employee, $competencyId, $this->levelThreeKeys($competencyId, $levelIds, full: true));
@@ -118,8 +118,8 @@ class FacultyAssessmentReturnTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId, 'สายสนับสนุน');
-        $this->assignReviewer($employee, $firstDeputy, 1);
-        $this->assignReviewer($employee, $lastDeputy, 2);
+        $this->assignReviewer($employee, $firstDeputy, 1, 'CC,FC');
+        $this->assignReviewer($employee, $lastDeputy, 2, 'CC,FC');
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
         $this->approve($firstDeputy, $employee, $competencyId, $this->levelThreeKeys($competencyId, $levelIds));

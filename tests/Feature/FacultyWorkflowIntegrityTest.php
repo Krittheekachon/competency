@@ -71,7 +71,7 @@ class FacultyWorkflowIntegrityTest extends TestCase
         [$cid, $levels] = $this->makeAssessable($employee, $round, 'สายสนับสนุน');
         DB::table('position_titles')->where('id', $employee->position_title_id)->update(['workline_type' => null]);
         $reviewer = User::factory()->create(['role_id' => $this->roleId('deputy_dean')]);
-        $this->assignReviewer($employee, $reviewer);
+        $this->assignReviewer($employee, $reviewer, 1, 'CC,FC');
         $aid = $this->submittedAssessment($employee, $round, $cid, 3);
         $this->actingAs($reviewer)->post(route('assessments.approve'), [
             'user_id' => $employee->id,
@@ -90,7 +90,7 @@ class FacultyWorkflowIntegrityTest extends TestCase
         $first=User::factory()->create(['role_id'=>$this->roleId('academic_department_head')]);
         $second=User::factory()->create(['role_id'=>$this->roleId('academic_department_head')]);
         $final=User::factory()->create(['role_id'=>$this->roleId('assistant_dean')]);
-        foreach([$first,$second,$final]as$i=>$reviewer)$this->assignReviewer($employee,$reviewer,$i+1);
+        foreach([$first,$second,$final]as$i=>$reviewer)$this->assignReviewer($employee,$reviewer,$i+1,$reviewer->id===$final->id?null:'CC');
         $aid=$this->submittedAssessment($employee,$round,$cid,2);
         DB::table('assessments')->where('id',$aid)->update(['status'=>'dept_evaluated']);
         DB::table('competency_gaps')->where('assessment_id',$aid)->update(['status'=>'dept_evaluated']);
@@ -267,19 +267,19 @@ class FacultyWorkflowIntegrityTest extends TestCase
         $this->assertEqualsCanonicalizing([$cid,$fc[1]],$state['requiredCompetencyIds']);
     }
 
-    public function test_scoring_supports_legacy_workline_and_canonical_fallback_without_unknown_role_grants(): void
+    public function test_scoring_follows_the_admin_grant_per_reviewer_and_type_regardless_of_role_or_workline(): void
     {
-        $reviewer=User::factory()->create(['role_id'=>$this->roleId('deputy_dean')]);
         $employee=User::factory()->create(['workline'=>'สายสนับสนุน']);
-        $title=DB::table('position_titles')->insertGetId(['name'=>'QA support','normalized_name'=>'qa-support','workline_type'=>'support']);
-        $employee->forceFill(['position_title_id'=>$title])->save();
+        $granted=User::factory()->create(['role_id'=>$this->roleId('employee')]);
+        $approvalOnly=User::factory()->create(['role_id'=>$this->roleId('deputy_dean')]);
+        $this->assignReviewer($employee,$granted,1,'CC,FC');
+        $this->assignReviewer($employee,$approvalOnly,2);
         $resolver=app(FacultyAssessmentPermissionResolver::class);
-        $this->assertTrue($resolver->canScore($reviewer,$employee,'CC'));
-        $employee->workline='สายสนับสนุน (ชื่อใหม่)';
-        $this->assertTrue($resolver->canScore($reviewer,$employee,'CC'));
-        DB::table('position_titles')->where('id',$title)->update(['workline_type'=>'unknown']);
-        $this->assertFalse($resolver->canScore($reviewer,$employee,'CC'));
-        $employee->forceFill(['position_title_id'=>null,'position_id'=>null,'workline'=>'สายสนับสนุน']);
-        $this->assertTrue($resolver->canScore($reviewer,$employee,'CC'));
+        $this->assertTrue($resolver->canScore($granted,$employee,'CC'));
+        $this->assertTrue($resolver->canScore($granted,$employee,'FC1'));
+        $this->assertFalse($resolver->canScore($granted,$employee,'MC'));
+        $this->assertFalse($resolver->canScore($approvalOnly,$employee,'CC'));
+        $outsider=User::factory()->create(['role_id'=>$this->roleId('dean')]);
+        $this->assertFalse($resolver->canScore($outsider,$employee,'CC'));
     }
 }

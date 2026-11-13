@@ -100,7 +100,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId);
-        $this->assignReviewer($employee, $reviewer);
+        $this->assignReviewer($employee, $reviewer, 1, 'CC,FC');
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
         $checked = [
             "{$competencyId}:{$levelIds[1]}:0",
@@ -144,7 +144,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId);
-        $this->assignReviewer($employee, $academicHead, 1);
+        $this->assignReviewer($employee, $academicHead, 1, 'CC,FC');
         $this->assignReviewer($employee, $assistantDean, 2);
         $assessmentId = $this->submittedAssessment($employee, $roundId, $competencyId, 2);
 
@@ -182,7 +182,7 @@ class FacultyAssessmentSubmissionTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $roundId);
-        $this->assignReviewer($employee, $reviewer);
+        $this->assignReviewer($employee, $reviewer, 1, 'CC,FC');
         $this->submittedAssessment($employee, $roundId, $competencyId, 4);
 
         $this->actingAs($reviewer)->post(route('assessments.approve'), [

@@ -3,10 +3,11 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class FacultyAssessmentPermissionResolver
 {
+    public function __construct(private ReviewerChainResolver $chains) {}
+
     /**
      * Every reviewer in the chain who may score this competency type scores it; the latest one
      * before $beforeStep is where a returned result goes back to.
@@ -33,41 +34,17 @@ class FacultyAssessmentPermissionResolver
             ->last();
     }
 
+    /**
+     * Whether $reviewer may score competencies of this type for $employee. Admin grants this per reviewer
+     * step (user_reviewer_steps.scoring_types, frozen in the round snapshot); roles play no part. A reviewer
+     * without a grant can only approve or return.
+     */
     public function canScore(User $reviewer, User $employee, string $competencyType): bool
     {
         $type = strtoupper(trim($competencyType));
-        // FC is stored as FC1/FC2 sub-types; permissions apply to the whole FC group.
+        // FC is stored as FC1/FC2 sub-types; grants apply to the whole FC group.
         $type = str_starts_with($type, 'FC') ? 'FC' : $type;
-        // Preserve existing workline rules, including the workline frozen in round snapshots.
-        // A missing canonical title must not remove a legacy user's scoring eligibility.
-        $worklineType = app(SsoWorklineNormalizer::class)->structureType($employee->workline);
-        $titleId = $employee->position_title_id;
-        if ($worklineType === null && ! $titleId && $employee->position_id) {
-            $titleId = DB::table('positions')->where('id', $employee->position_id)->value('position_title_id');
-        }
-        if ($worklineType === null && $titleId) {
-            $worklineType = DB::table('position_titles')->where('id', $titleId)->value('workline_type');
-        }
-        $isSupport = $worklineType === 'support';
-        $isAcademic = $worklineType === 'academic';
-        $isExecutive = $employee->hasRole(['deputy_dean', 'assistant_dean']);
 
-        if ($isExecutive && $type === 'MC' && in_array($worklineType, ['academic', 'management'], true)) {
-            return $reviewer->isDean();
-        }
-
-        if ($isSupport) {
-            return $reviewer->isDeputyDean() && in_array($type, ['CC', 'FC'], true);
-        }
-
-        if (! $isAcademic) {
-            return false;
-        }
-
-        if ($type === 'MC') {
-            return false;
-        }
-
-        return $reviewer->isAcademicDepartmentHead() && in_array($type, ['CC', 'FC'], true);
+        return in_array($type, $this->chains->scoringTypesForReviewer($employee, (int) $reviewer->id), true);
     }
 }

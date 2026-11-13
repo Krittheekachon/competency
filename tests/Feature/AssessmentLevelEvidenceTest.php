@@ -198,7 +198,7 @@ class AssessmentLevelEvidenceTest extends TestCase
         $employee = User::factory()->create(['role_id' => $this->roleId('employee')]);
         $this->roundId = $this->activeFacultyRound();
         [$competencyId, $levelIds] = $this->makeAssessable($employee, $this->roundId);
-        $this->assignReviewer($employee, $reviewer);
+        $this->assignReviewer($employee, $reviewer, 1, 'CC,FC');
 
         return [$employee, $competencyId, $levelIds, $reviewer];
     }

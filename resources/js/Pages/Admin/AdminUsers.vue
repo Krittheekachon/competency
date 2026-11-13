@@ -6,12 +6,6 @@
     </div>
     <div class="action-row">
       <!-- <button class="btn btn-s" type="button" @click="showImport = true"> Import Excel</button> -->
-      <button class="btn btn-s reviewer-template-entry-btn" type="button" @click="openReviewerTemplateModal('assessment')">
-        ลำดับการประเมิน
-      </button>
-      <button class="btn btn-s reviewer-template-entry-btn" type="button" @click="openReviewerTemplateModal('idp')">
-        ลำดับ IDP
-      </button>
       <button class="btn btn-p add-user-btn" type="button" @click="openModal('modal-user')">+ เพิ่มผู้ใช้</button>
     </div>
   </div>
@@ -298,7 +292,6 @@ type RoleBadge = {
 
 const props = defineProps<{
   openModal: (type: string, data?: unknown) => void;
-  openReviewerTemplateModal: (chainType?: string) => void;
   updateUserStatus: (user: User, callbacks?: {
     onSuccess?: () => void;
     onError?: (errors: Record<string, string>) => void;
@@ -388,7 +381,6 @@ const organizationUnit = (user: User) => {
 };
 const avatarInitial = (user: User) => user.n?.[0] || '?';
 const openModal = (type: string, data?: unknown) => props.openModal(type, data);
-const openReviewerTemplateModal = (chainType?: string) => props.openReviewerTemplateModal(chainType);
 const worklineOptions = computed(() => props.worklines || []);
 const isSupportFilterMode = computed(() => supportWorklineNames.includes(worklineFilter.value));
 const showSupportUnitFilter = computed(() =>
@@ -727,14 +719,6 @@ const toggleStatus = (user: User) => {
   border-color: #1d4ed8;
   background: #1d4ed8;
   color: #fff;
-}
-
-.reviewer-template-entry-btn {
-  min-width: 136px;
-  justify-content: center;
-  border-color: #cbd5e1;
-  background: #fff;
-  color: #334155;
 }
 
 .user-dashboard-grid {

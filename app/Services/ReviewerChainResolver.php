@@ -13,7 +13,8 @@ class ReviewerChainResolver
 
     private ?bool $hasChainTypeColumn = null;
 
-    public function stepsForUser(
+    /** @return list<array{step: int, reviewer_id: int, scoring_types: list<string>}> */
+    public function scoringStepsForUser(
         object $user,
         string $chainType = 'assessment',
         bool $allowUncapturedSnapshot = false,
@@ -58,10 +59,11 @@ class ReviewerChainResolver
                     ->where('user_id', $userId)
                     ->where('chain_type', $chainType)
                     ->orderBy('step_order')
-                    ->get(['step_order', 'reviewer_id'])
+                    ->get(['step_order', 'reviewer_id', 'scoring_types'])
                     ->map(fn (object $row): array => [
                         'step' => (int) $row->step_order,
                         'reviewer_id' => (int) $row->reviewer_id,
+                        'scoring_types' => self::parseScoringTypes($row->scoring_types),
                     ])
                     ->all();
 
@@ -100,6 +102,7 @@ class ReviewerChainResolver
                     ->map(fn (object $row): array => [
                         'step' => (int) $row->step_order,
                         'reviewer_id' => (int) $row->reviewer_id,
+                        'scoring_types' => self::parseScoringTypes($row->scoring_types ?? null),
                     ])
                     ->filter(fn (array $step): bool => $step['step'] > 0 && $step['reviewer_id'] > 0)
                     ->values()
@@ -110,9 +113,49 @@ class ReviewerChainResolver
         return [];
     }
 
+    /** Same steps as stepsForUser(), without the scoring grants, for callers that only route approvals. */
+    public function stepsForUser(
+        object $user,
+        string $chainType = 'assessment',
+        bool $allowUncapturedSnapshot = false,
+    ): array {
+        return array_map(
+            fn (array $step): array => ['step' => $step['step'], 'reviewer_id' => $step['reviewer_id']],
+            $this->scoringStepsForUser($user, $chainType, $allowUncapturedSnapshot),
+        );
+    }
+
+    /** @return list<string> competency type groups (CC, FC, MC) this reviewer may score for the user */
+    public function scoringTypesForReviewer(object $user, int $reviewerId): array
+    {
+        foreach ($this->scoringStepsForUser($user) as $step) {
+            if ((int) $step['reviewer_id'] === $reviewerId) {
+                return $step['scoring_types'];
+            }
+        }
+
+        return [];
+    }
+
+    /** @return array<int, ?string> reviewer_id => stored scoring_types, so a chain rewrite keeps admin's grants */
+    public static function storedScoringByReviewer(int $userId, string $chainType): array
+    {
+        return DB::table('user_reviewer_steps')
+            ->where('user_id', $userId)
+            ->where('chain_type', $chainType)
+            ->pluck('scoring_types', 'reviewer_id')
+            ->map(fn ($value): ?string => $value === null ? null : (string) $value)
+            ->all();
+    }
+
+    public static function parseScoringTypes(?string $value): array
+    {
+        return array_values(array_intersect(['CC', 'FC', 'MC'], array_map('trim', explode(',', strtoupper((string) $value)))));
+    }
+
     public function payloadForUser(User $user, string $chainType = 'assessment'): array
     {
-        $steps = $this->stepsForUser($user, $chainType);
+        $steps = $this->scoringStepsForUser($user, $chainType);
 
         if ($steps === []) {
             return [];
@@ -146,7 +189,7 @@ class ReviewerChainResolver
             return $users->mapWithKeys(fn (object $user): array => [(int) $user->id => []])->all();
         }
 
-        $rowsByUser = $query->get(['user_id', 'step_order', 'reviewer_id'])->groupBy('user_id');
+        $rowsByUser = $query->get(['user_id', 'step_order', 'reviewer_id', 'scoring_types'])->groupBy('user_id');
         $reviewers = User::query()
             ->with('role')
             ->whereIn('id', $rowsByUser->flatten(1)->pluck('reviewer_id')->unique())
@@ -158,6 +201,7 @@ class ReviewerChainResolver
                 ->map(fn (object $row): array => [
                     'step' => (int) $row->step_order,
                     'reviewer_id' => (int) $row->reviewer_id,
+                    'scoring_types' => self::parseScoringTypes($row->scoring_types),
                 ])
                 ->filter(fn (array $step): bool => $step['step'] > 0 && $step['reviewer_id'] > 0)
                 ->values()
@@ -185,6 +229,7 @@ class ReviewerChainResolver
                     'name' => trim(($reviewer->title ?: '').$reviewer->name),
                     'position' => $reviewer->position ?: '',
                     'role' => $this->normalizeRoleKey((string) ($reviewer->role?->key ?? '')),
+                    'scoringTypes' => $chainType === 'assessment' ? array_values($step['scoring_types'] ?? []) : [],
                 ];
             })
             ->filter()
@@ -285,7 +330,7 @@ class ReviewerChainResolver
 
         return $query
             ->orderBy('step_order')
-            ->get(['step_order', 'reviewer_id']);
+            ->get(['step_order', 'reviewer_id', 'scoring_types']);
     }
 
     private function hasReviewerStepsTable(): bool

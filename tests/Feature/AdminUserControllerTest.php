@@ -337,6 +337,45 @@ class AdminUserControllerTest extends TestCase
         ]);
     }
 
+    public function test_user_gets_scoring_grants_from_the_chosen_preset_and_resaves_keep_them(): void
+    {
+        $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);
+        $this->createStructure('สายสนับสนุน', 'งานทรัพยากรบุคคล', 'นักทรัพยากรบุคคล', 'ปฏิบัติการ');
+        $user = User::factory()->create(['sso' => 'staff-grants', 'role_id' => $this->roleId('employee')]);
+        $first = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $second = User::factory()->create(['role_id' => $this->roleId('employee')]);
+        $payload = [
+            'sso' => 'staff-grants', 't' => 'นาย', 'fn' => 'ทดสอบ', 'ln' => 'สิทธิ์', 'fe' => 'Test', 'le' => 'Grant',
+            'em' => 'grants@example.com', 'ph' => null, 'w' => 'สายสนับสนุน', 'd' => 'งานทรัพยากรบุคคล',
+            'p' => 'นักทรัพยากรบุคคล', 'l' => 'ปฏิบัติการ', 'r' => 'employee', 'act' => true,
+        ];
+
+        $this->actingAs($admin)->post(route('admin.reviewer-chain-templates.store'), [
+            'name' => 'สายสิทธิ์', 'chain_type' => 'assessment', 'reviewer_ids' => [$first->id, $second->id],
+            'scoring' => [$first->id => ['CC', 'FC']],
+        ])->assertSessionHasNoErrors();
+        $templateId = (int) DB::table('reviewer_chain_templates')->where('name', 'สายสิทธิ์')->value('id');
+
+        $this->put(route('admin.users.update', $user), [...$payload, 'reviewer_template_id' => $templateId, 'reviewer_ids' => [$first->id, $second->id]])->assertRedirect();
+        $grant = fn (User $reviewer) => DB::table('user_reviewer_steps')->where('user_id', $user->id)->where('reviewer_id', $reviewer->id)->where('chain_type', 'assessment')->value('scoring_types');
+        $this->assertSame('CC,FC', $grant($first));
+        $this->assertNull($grant($second));
+
+        // Ticks made by hand in the user's chain editor win over the preset and can be cleared again.
+        $this->put(route('admin.users.update', $user), [...$payload, 'reviewer_template_id' => $templateId, 'reviewer_ids' => [$first->id, $second->id], 'reviewer_scoring' => [$first->id => [], $second->id => ['MC']]])->assertRedirect();
+        $this->assertNull($grant($first));
+        $this->assertSame('MC', $grant($second));
+        $this->put(route('admin.users.update', $user), [...$payload, 'reviewer_ids' => [$first->id, $second->id], 'reviewer_scoring' => [$first->id => ['XX']]])->assertSessionHasErrors('reviewer_scoring.'.$first->id.'.0');
+
+        // Saving again with the preset and no hand ticks re-applies the preset's grants.
+        $this->put(route('admin.users.update', $user), [...$payload, 'reviewer_template_id' => $templateId, 'reviewer_ids' => [$first->id, $second->id]])->assertRedirect();
+        $this->assertSame('CC,FC', $grant($first));
+
+        // Without a preset or ticks (older form, org chart sync) the grants already stored stay.
+        $this->put(route('admin.users.update', $user), [...$payload, 'reviewer_ids' => [$first->id, $second->id]])->assertRedirect();
+        $this->assertSame('CC,FC', $grant($first));
+    }
+
     public function test_admin_can_update_assessment_reviewer_steps_with_linked_user_ids(): void
     {
         $admin = User::factory()->create(['role_id' => $this->roleId('admin')]);

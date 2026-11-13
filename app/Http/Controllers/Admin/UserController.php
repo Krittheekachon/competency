@@ -8,6 +8,8 @@ use App\Services\NotificationService;
 use App\Services\OrganizationChartService;
 use App\Services\OrganizationReviewerDefaults;
 use App\Services\PositionTitleResolver;
+use App\Services\ReviewerChainResolver;
+use App\Services\ReviewerChainWriter;
 use App\Services\ReviewerTemplateResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,7 +40,7 @@ class UserController extends Controller
                 'password' => Hash::make($data['password']),
             ]);
 
-            $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
+            $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment', $data['reviewer_scoring'] ?? $this->templateScoring($data['reviewer_template_id'] ?? null));
             $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
         });
 
@@ -61,7 +63,7 @@ class UserController extends Controller
                 $attributes['password'] = Hash::make($data['password']);
             }
             $user->update($attributes);
-            $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment');
+            $this->syncReviewerSteps($user, $data['reviewer_ids'] ?? [], 'assessment', $data['reviewer_scoring'] ?? $this->templateScoring($data['reviewer_template_id'] ?? null));
             $this->syncReviewerSteps($user, $data['idp_reviewer_ids'] ?? [], 'idp');
 
             if (! ($data['preserve_existing_structure'] ?? false)) {
@@ -174,6 +176,9 @@ class UserController extends Controller
             'reviewer_ids' => ['nullable', 'array'],
             'reviewer_ids.*' => ['nullable', 'integer', 'exists:users,id'],
             'reviewer_template_id' => ['nullable', 'integer'],
+            'reviewer_scoring' => ['nullable', 'array'],
+            'reviewer_scoring.*' => ['nullable', 'array'],
+            'reviewer_scoring.*.*' => ['string', Rule::in(['CC', 'FC', 'MC'])],
             'idp_reviewer_ids' => ['nullable', 'array'],
             'idp_reviewer_ids.*' => ['nullable', 'integer', 'exists:users,id'],
             'idp_reviewer_template_id' => ['nullable', 'integer'],
@@ -600,42 +605,29 @@ class UserController extends Controller
         return $reviewerIds->all();
     }
 
-    private function syncReviewerSteps(User $user, array $reviewerIds, string $chainType): void
+    /**
+     * Scoring grants come from the preset chain the admin picked (reviewer_id => types). Without a preset the
+     * grants already stored for the same reviewers are kept (null).
+     *
+     * @return array<int, array<int, string>>|null
+     */
+    private function templateScoring(mixed $templateId): ?array
     {
-        if (! Schema::hasTable('user_reviewer_steps')) {
-            return;
+        if (blank($templateId) || ! is_numeric($templateId)) {
+            return null;
         }
 
-        $deleteQuery = DB::table('user_reviewer_steps')->where('user_id', $user->id);
-        if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
-            $deleteQuery->where('chain_type', $chainType);
-        }
-        $deleteQuery->delete();
-
-        $now = now();
-        $rows = collect($reviewerIds)
-            ->filter()
-            ->values()
-            ->map(function (int $reviewerId, int $index) use ($user, $chainType, $now): array {
-                $row = [
-                    'user_id' => $user->id,
-                    'step_order' => $index + 1,
-                    'reviewer_id' => $reviewerId,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
-
-                if (Schema::hasColumn('user_reviewer_steps', 'chain_type')) {
-                    $row['chain_type'] = $chainType;
-                }
-
-                return $row;
-            })
+        return DB::table('reviewer_chain_template_steps')
+            ->where('template_id', (int) $templateId)
+            ->whereNotNull('reviewer_id')
+            ->pluck('scoring_types', 'reviewer_id')
+            ->map(fn ($value): array => ReviewerChainResolver::parseScoringTypes($value))
             ->all();
+    }
 
-        if ($rows !== []) {
-            DB::table('user_reviewer_steps')->insert($rows);
-        }
+    private function syncReviewerSteps(User $user, array $reviewerIds, string $chainType, ?array $scoring = null): void
+    {
+        app(ReviewerChainWriter::class)->sync($user, $reviewerIds, $chainType, $scoring);
     }
 
     private function jobFamilyNameFromDepartment(string $department): string

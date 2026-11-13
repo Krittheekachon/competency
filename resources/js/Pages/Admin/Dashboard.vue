@@ -11,7 +11,7 @@ import {
 import AdminDict from './AdminDict.vue';
 import ReviewerPresetFields from './ReviewerPresetFields.vue';
 import UserMultiPicker from '../../Components/UserMultiPicker.vue';
-import IdpChainModule from './IdpChainModule.vue';
+import AdminReviewerChains from './AdminReviewerChains.vue';
 import AdminIdpTools from './AdminIdpTools.vue';
 import AdminOrgStructure from './AdminOrgStructure.vue';
 import AdminUsers from './AdminUsers.vue';
@@ -41,7 +41,7 @@ const supportOrgFromGroups = (groups = {}) => Object.fromEntries(
 );
 const adminPageStorageKey = 'admin-active-page';
 const requestedPage = ref(typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('page') || usePage().props.prototypePage
+    ? new URLSearchParams(window.location.search).get('page')
     : null);
 const savedAdminPage = typeof window !== 'undefined'
     ? window.sessionStorage.getItem(adminPageStorageKey)
@@ -79,6 +79,8 @@ const issuedCredentials = ref(null);
 const supervisorSearch = ref('');
 const evaluator2Search = ref('');
 const showReviewerModal = ref(false);
+const showIdpReviewerModal = ref(false);
+const idpStepSearch = ref('');
 const activeReviewerTemplateModal = ref('');
 const showAssessmentTemplateCreate = ref(false);
 const activeAssessmentTemplateId = ref(null);
@@ -122,6 +124,7 @@ const userForm = ref({
     idp_reviewer_template_id: '',
     reviewer_ids: [],
     idp_reviewer_ids: [],
+    reviewer_scoring: {},
     act: true,
     structureStatus: 'ok',
     structureIssues: [],
@@ -359,11 +362,10 @@ const currentRoleData = computed(() => ROLES_CONFIG[currentRole.value]);
 const fcTopicApprovalModule = computed(() => page.props.fcTopicApprovalModule || { enabled: false, items: [] });
 const assessmentApprovalModule = computed(() => page.props.assessmentApprovalModule || { enabled: false, items: [] });
 const idpReviewModule = computed(() => page.props.idpReviewModule || { enabled: false, assignmentCount: 0 });
-const idpChainPrototypeEnabled = Boolean(page.props.features?.idpChainPrototype);
 const visibleAdminPageIds = new Set([
     'admin-users',
     'admin-org-structure',
-    ...(idpChainPrototypeEnabled ? ['admin-idp-chains'] : []),
+    'admin-idp-chains',
     'admin-dict',
     'admin-idp-tools',
     'admin-fc-topic-review',
@@ -1008,6 +1010,11 @@ const applyReviewerTemplate = () => {
     });
 
     userForm.value.reviewer_ids = ids.length ? ids : [''];
+    userForm.value.reviewer_scoring = Object.fromEntries(
+        (template.steps || [])
+            .filter((step) => step.reviewerId && ids.includes(step.reviewerId))
+            .map((step) => [step.reviewerId, [...(step.scoringTypes || [])]]),
+    );
     clearReviewerSearch();
 };
 const structureReviewerMessage = ref('');
@@ -1038,6 +1045,7 @@ const selectReviewerTemplate = (templateId, selectElement = null) => {
         return;
     }
     if (!templateId || useOrganizationStructure) {
+        userForm.value.reviewer_scoring = {};
         const preview = page.props.organizationReviewerDefaults?.[userForm.value.db_id];
         userForm.value.reviewer_template_id = '';
         if (preview?.reviewerIds?.length) {
@@ -1074,6 +1082,7 @@ const selectReviewerTemplate = (templateId, selectElement = null) => {
         }
         userForm.value.reviewer_template_id = selectedEvaluatorId(templateId);
         userForm.value.reviewer_ids = [...preview.reviewerIds];
+        userForm.value.reviewer_scoring = {};
         clearReviewerSearch();
         structureReviewerMessage.value = [`เติมหัวหน้าจาก ${preview.path.join(' → ')} แล้ว กรุณาตรวจลำดับก่อนบันทึก`, ...messages].join('\n');
         return;
@@ -1110,6 +1119,20 @@ const normalizeReviewerList = () => {
     userForm.value.reviewer_ids = selectedReviewerIds.value;
     reviewerSearchTerms.value = {};
     activeReviewerDropdown.value = null;
+};
+const scoringTypeOptions = [
+    { key: 'CC', label: 'CC' },
+    { key: 'FC', label: 'FC' },
+    { key: 'MC', label: 'MC' },
+];
+const hasScoringType = (reviewerId, type) => (userForm.value.reviewer_scoring?.[reviewerId] || []).includes(type);
+const toggleScoringType = (reviewerId, type) => {
+    if (!reviewerId) return;
+    const current = userForm.value.reviewer_scoring?.[reviewerId] || [];
+    userForm.value.reviewer_scoring = {
+        ...(userForm.value.reviewer_scoring || {}),
+        [reviewerId]: current.includes(type) ? current.filter((item) => item !== type) : [...current, type],
+    };
 };
 const addReviewerStep = () => {
     if (selectedReviewerTemplate.value?.structureDefault) userForm.value.reviewer_template_id = '';
@@ -1199,6 +1222,37 @@ const openReviewerModal = () => {
     if (!selectedReviewerIds.value.length) {
         userForm.value.reviewer_ids = [''];
     }
+};
+const openIdpReviewerModal = () => {
+    idpStepSearch.value = '';
+    showIdpReviewerModal.value = true;
+};
+const closeIdpReviewerModal = () => {
+    showIdpReviewerModal.value = false;
+};
+const idpStepCandidates = computed(() => {
+    const needle = idpStepSearch.value.trim().toLowerCase();
+    const taken = new Set([...selectedIdpReviewerIds.value, Number(userForm.value.db_id || 0)]);
+    return evaluatorOptions.value
+        .filter((person) => !taken.has(person.value))
+        .filter((person) => !needle || `${person.label}`.toLowerCase().includes(needle))
+        .slice(0, 40);
+});
+const addIdpStep = (value) => {
+    const id = selectedEvaluatorId(value);
+    if (!id) return;
+    userForm.value.idp_reviewer_ids = [...selectedIdpReviewerIds.value, id];
+    idpStepSearch.value = '';
+};
+const removeIdpStep = (index) => {
+    userForm.value.idp_reviewer_ids = selectedIdpReviewerIds.value.filter((_, i) => i !== index);
+};
+const moveIdpStep = (index, delta) => {
+    const next = [...selectedIdpReviewerIds.value];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    userForm.value.idp_reviewer_ids = next;
 };
 const closeReviewerModal = () => {
     normalizeReviewerList();
@@ -1294,14 +1348,6 @@ const showsPositionSection = computed(() =>
 );
 
 const requestPageChange = (nextPage) => {
-    if (nextPage === 'admin-idp-chains') {
-        window.location.assign(route('admin.idp-chains', { type: 'eval' }));
-        return;
-    }
-    if (page.props.prototypePage) {
-        window.location.assign(route('dashboard', { page: nextPage }));
-        return;
-    }
     activePage.value = nextPage;
 };
 
@@ -1477,6 +1523,11 @@ const resetUserForm = (data = null) => {
         idp_reviewer_ids: (data?.idpReviewerSteps || [])
             .map((step) => selectedEvaluatorId(step?.id))
             .filter(Boolean),
+        reviewer_scoring: Object.fromEntries(
+            (data?.reviewerSteps || [])
+                .filter((step) => step?.id && (step.scoringTypes || []).length)
+                .map((step) => [selectedEvaluatorId(step.id), [...step.scoringTypes]]),
+        ),
         act: data?.act !== false,
         structureStatus: data?.structureStatus || 'ok',
         structureIssues: Array.isArray(data?.structureIssues) ? data.structureIssues : [],
@@ -1701,6 +1752,9 @@ const saveUser = () => {
         reviewer_template_id: selectedEvaluatorId(form.reviewer_template_id) || null,
         idp_reviewer_template_id: selectedEvaluatorId(form.idp_reviewer_template_id) || null,
         reviewer_ids: selectedReviewerIds.value,
+        reviewer_scoring: Object.fromEntries(
+            selectedReviewerIds.value.map((id) => [id, form.reviewer_scoring?.[id] || []]),
+        ),
         idp_reviewer_ids: effectiveIdpReviewerIds.value,
         act: Boolean(form.act),
     };
@@ -1885,7 +1939,6 @@ const logout = () => router.post(route('logout'));
                 <AdminUsers
                     v-else-if="activePage === 'admin-users'"
                     :open-modal="openModal"
-                    :open-reviewer-template-modal="openReviewerTemplateModal"
                     :update-user-status="updateUserStatus"
                     :users="users"
                     :set-users="setRef(users)"
@@ -1895,7 +1948,12 @@ const logout = () => router.post(route('logout'));
                     :worklines="worklines"
                 />
 
-                <IdpChainModule v-else-if="activePage === 'admin-idp-chains'" />
+                <AdminReviewerChains
+                    v-else-if="activePage === 'admin-idp-chains'"
+                    :users="users"
+                    :templates="page.props.reviewerChainTemplates || []"
+                    :set-users="setRef(users)"
+                />
 
                 <AdminOrgStructure
                     v-else-if="activePage === 'admin-org-structure'"
@@ -2244,30 +2302,6 @@ const logout = () => router.post(route('logout'));
                             </button>
                         </div>
 
-                        <div v-if="assessmentReviewerTemplates.length" class="workflow-template-row">
-                            <div class="fg">
-                                <label class="lbl">Template ลำดับในการประเมิน</label>
-                                <select
-                                    :value="userForm.reviewer_template_id"
-                                    class="sel modal-input"
-                                    @change="selectReviewerTemplate($event.target.value, $event.target)"
-                                >
-                                    <option value="">— ไม่ใช้ template —</option>
-                                    <option value="__organization_structure__">ใช้หัวหน้าตามผังโครงสร้างองค์กร</option>
-                                    <option
-                                        v-for="template in assessmentReviewerTemplates"
-                                        :key="`reviewer-template-${template.id}`"
-                                        :value="template.id"
-                                    >
-                                        {{ template.name }}
-                                    </option>
-                                </select>
-                            </div>
-                            <div class="modal-help workflow-template-help">
-                                {{ reviewerTemplateDescription }}
-                            </div>
-                            <div v-if="structureReviewerMessage" class="modal-help warning" role="status" style="white-space: pre-line">{{ structureReviewerMessage }}</div>
-                        </div>
                     </section>
 
                     <section class="workflow-group">
@@ -2279,30 +2313,11 @@ const logout = () => router.post(route('logout'));
                                     <p>{{ idpReviewerSummary }}</p>
                                 </div>
                             </div>
+                            <button class="btn btn-s reviewer-config-btn" type="button" @click="openIdpReviewerModal">
+                                จัดการลำดับ
+                            </button>
                         </div>
 
-                        <div v-if="idpReviewerTemplates.length" class="workflow-template-row">
-                            <div class="fg">
-                                <label class="lbl">Template ลำดับการทำ IDP</label>
-                                <select
-                                    :value="userForm.idp_reviewer_template_id"
-                                    class="sel modal-input"
-                                    @change="selectIdpReviewerTemplate($event.target.value)"
-                                >
-                                    <option value="">— ใช้ลำดับประเมินเป็น fallback —</option>
-                                    <option
-                                        v-for="template in idpReviewerTemplates"
-                                        :key="`idp-reviewer-template-${template.id}`"
-                                        :value="template.id"
-                                    >
-                                        {{ template.name }}
-                                    </option>
-                                </select>
-                            </div>
-                            <div class="modal-help workflow-template-help">
-                                {{ selectedIdpReviewerTemplate ? templateChainSummary(selectedIdpReviewerTemplate) : 'ระบบจะใช้ลำดับในการประเมินเป็นค่า fallback' }}
-                            </div>
-                        </div>
                     </section>
                 </div>
 
@@ -2345,7 +2360,6 @@ const logout = () => router.post(route('logout'));
                             >
                                 <div class="reviewer-step-badge">{{ index + 1 }}</div>
                                 <div class="reviewer-step-main">
-                                    <label class="lbl">ลำดับที่ {{ index + 1 }}</label>
                                     <input
                                         class="inp modal-input reviewer-search-input"
                                         type="text"
@@ -2356,6 +2370,18 @@ const logout = () => router.post(route('logout'));
                                         @input="updateReviewerSearch(index, $event.target.value)"
                                         @keydown.escape="clearReviewerSearch"
                                     />
+                                    <div v-if="reviewerId" class="reviewer-scoring-row">
+                                        <span class="reviewer-scoring-label">ให้คะแนนแทนพนักงานได้ในหัวข้อ</span>
+                                        <label v-for="option in scoringTypeOptions" :key="option.key" class="reviewer-scoring-check">
+                                            <input
+                                                type="checkbox"
+                                                :checked="hasScoringType(reviewerId, option.key)"
+                                                @change="toggleScoringType(reviewerId, option.key)"
+                                            />
+                                            {{ option.label }}
+                                        </label>
+                                        <small v-if="!(userForm.reviewer_scoring?.[reviewerId] || []).length">ไม่ติ๊ก = อนุมัติ/ส่งกลับได้อย่างเดียว</small>
+                                    </div>
                                     <div v-if="isReviewerDropdownOpen(index)" class="reviewer-choice-list" @click.stop>
                                         <button
                                             v-for="person in filteredReviewerChoicesForStep(index)"
@@ -2388,6 +2414,79 @@ const logout = () => router.post(route('logout'));
                                 + เพิ่มผู้ประเมิน
                             </button>
                             <button class="btn btn-p reviewer-done-btn" type="button" @click="closeReviewerModal">
+                                เสร็จสิ้น
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="showIdpReviewerModal" class="reviewer-modal-backdrop" @click.self="closeIdpReviewerModal">
+                    <div class="reviewer-modal" role="dialog" aria-modal="true" aria-labelledby="idp-reviewer-modal-title">
+                        <div class="reviewer-modal-head">
+                            <div>
+                                <h3 id="idp-reviewer-modal-title">จัดการลำดับการทำ IDP</h3>
+                                <p>เพิ่มหรือลดผู้อนุมัติแผน IDP ได้อิสระ ระบบจะส่งงานตามลำดับที่กำหนด</p>
+                            </div>
+                            <button class="modal-close-btn" type="button" aria-label="ปิดหน้าต่าง" @click="closeIdpReviewerModal">
+                                ×
+                            </button>
+                        </div>
+
+                        <div class="reviewer-step-list">
+                            <div class="fg reviewer-modal-preset">
+                                <label class="lbl">เลือกลำดับผู้อนุมัติ IDP</label>
+                                <select
+                                    :value="userForm.idp_reviewer_template_id || ''"
+                                    class="sel modal-input"
+                                    @change="selectIdpReviewerTemplate($event.target.value)"
+                                >
+                                    <option value="">ใช้ลำดับประเมินเป็นค่าเริ่มต้น / กำหนดเอง</option>
+                                    <option
+                                        v-for="template in idpReviewerTemplates"
+                                        :key="`modal-idp-template-${template.id}`"
+                                        :value="template.id"
+                                    >
+                                        {{ template.name }}
+                                    </option>
+                                </select>
+                                <div v-if="!selectedIdpReviewerIds.length" class="modal-help">
+                                    ยังไม่ได้กำหนดเอง ระบบจะใช้ลำดับในการประเมินเมื่อบันทึก เพิ่มผู้อนุมัติด้านล่างเพื่อกำหนดเอง
+                                </div>
+                            </div>
+
+                            <div
+                                v-for="(reviewerId, index) in selectedIdpReviewerIds"
+                                :key="`idp-step-${reviewerId}`"
+                                class="reviewer-step-row idp-row"
+                            >
+                                <div class="reviewer-step-badge">{{ index + 1 }}</div>
+                                <div class="reviewer-step-main">
+                                    <div class="idp-step-name">{{ evaluatorFromId(reviewerId)?.displayName || `#${reviewerId}` }}</div>
+                                    <small class="idp-step-pos">{{ evaluatorFromId(reviewerId)?.p || '-' }}</small>
+                                </div>
+                                <div class="idp-step-actions">
+                                    <button class="btn btn-s" type="button" :disabled="index === 0" aria-label="เลื่อนขึ้น" @click="moveIdpStep(index, -1)">↑</button>
+                                    <button class="btn btn-s" type="button" :disabled="index === selectedIdpReviewerIds.length - 1" aria-label="เลื่อนลง" @click="moveIdpStep(index, 1)">↓</button>
+                                    <button class="btn btn-s reviewer-remove-btn" type="button" @click="removeIdpStep(index)">ลบ</button>
+                                </div>
+                            </div>
+
+                            <div class="reviewer-step-row idp-row idp-add-row">
+                                <div class="reviewer-step-badge">+</div>
+                                <div class="reviewer-step-main">
+                                    <label class="lbl">เพิ่มผู้อนุมัติท้ายสาย</label>
+                                    <input v-model="idpStepSearch" class="inp modal-input" type="text" placeholder="พิมพ์ชื่อ / ตำแหน่ง" />
+                                    <select class="sel modal-input" :value="''" @change="addIdpStep($event.target.value); $event.target.value = ''">
+                                        <option value="">เลือกผู้อนุมัติ</option>
+                                        <option v-for="person in idpStepCandidates" :key="`idp-cand-${person.key}`" :value="person.value">{{ person.label }}</option>
+                                    </select>
+                                </div>
+                                <span></span>
+                            </div>
+                        </div>
+
+                        <div class="reviewer-modal-actions">
+                            <button class="btn btn-p reviewer-done-btn" type="button" @click="closeIdpReviewerModal">
                                 เสร็จสิ้น
                             </button>
                         </div>
@@ -2436,7 +2535,6 @@ const logout = () => router.post(route('logout'));
         <div class="reviewer-template-modal" role="dialog" aria-modal="true" aria-labelledby="reviewer-template-modal-title">
             <div class="reviewer-modal-head">
                 <div>
-                    <a v-if="idpChainPrototypeEnabled" :href="route('admin.idp-chains', { type: activeReviewerTemplateType === 'idp' ? 'idp' : 'eval' })" style="font-size:14px">ไปจัดการที่โมดูลใหม่ ›</a>
                     <h3 id="reviewer-template-modal-title">{{ activeReviewerTemplateTitle }}</h3>
                     <p>{{ activeReviewerTemplateSubtitle }}</p>
                 </div>
@@ -3793,7 +3891,7 @@ const logout = () => router.post(route('logout'));
     position: relative;
     display: grid;
     grid-template-columns: 38px minmax(0, 1fr) auto;
-    align-items: end;
+    align-items: start;
     gap: 12px;
     padding: 14px;
     border: 1px solid #dbe3ef;
@@ -3807,6 +3905,7 @@ const logout = () => router.post(route('logout'));
 }
 
 .reviewer-step-badge {
+    margin-top: 3px;
     display: grid;
     place-items: center;
     width: 38px;
@@ -3829,6 +3928,53 @@ const logout = () => router.post(route('logout'));
     color: #64748b;
     font-size: 13px;
     font-weight: 800;
+}
+
+.idp-step-name {
+    font-weight: 800;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+}
+
+.idp-step-pos {
+    color: #64748b;
+}
+
+.idp-step-actions {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.idp-add-row .modal-input {
+    margin-top: 6px;
+}
+
+.reviewer-scoring-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: #475569;
+}
+
+.reviewer-scoring-label {
+    font-weight: 800;
+    color: #64748b;
+}
+
+.reviewer-scoring-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.reviewer-scoring-row small {
+    color: #94a3b8;
 }
 
 .reviewer-step-main .modal-input {
@@ -3912,7 +4058,7 @@ const logout = () => router.post(route('logout'));
 }
 
 .reviewer-remove-btn {
-    min-height: 38px;
+    min-height: 44px;
 }
 
 .reviewer-remove-btn:disabled {

@@ -78,6 +78,7 @@ class OrganizationChartController extends Controller
                     if ($currentIds === $nextIds) {
                         continue;
                     }
+                    $grants = \App\Services\ReviewerChainResolver::storedScoringByReviewer((int) $user->id, 'assessment');
                     DB::table('user_reviewer_steps')->where('user_id', $user->id)->where('chain_type', 'assessment')->delete();
                     if ($nextIds !== []) {
                         $now = now();
@@ -86,6 +87,7 @@ class OrganizationChartController extends Controller
                             'step_order' => $index + 1,
                             'reviewer_id' => $reviewerId,
                             'chain_type' => 'assessment',
+                            'scoring_types' => $grants[$reviewerId] ?? null,
                             'created_at' => $now,
                             'updated_at' => $now,
                         ])->all());

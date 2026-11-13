@@ -116,13 +116,15 @@ trait BuildsFacultyAssessment
         return (int) DB::table('roles')->where('key', $key)->value('id');
     }
 
-    protected function assignReviewer(User $employee, User $reviewer, int $step = 1): void
+    /** @param string|null $scoring competency types the reviewer may score, e.g. 'CC,FC'; null = approve/return only */
+    protected function assignReviewer(User $employee, User $reviewer, int $step = 1, ?string $scoring = null): void
     {
         DB::table('user_reviewer_steps')->insert([
             'user_id' => $employee->id,
             'chain_type' => 'assessment',
             'step_order' => $step,
             'reviewer_id' => $reviewer->id,
+            'scoring_types' => $scoring,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

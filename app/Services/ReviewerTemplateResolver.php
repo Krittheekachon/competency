@@ -23,7 +23,7 @@ class ReviewerTemplateResolver
         $steps = DB::table('reviewer_chain_template_steps')
             ->whereIn('template_id', $templates->pluck('id'))
             ->orderBy('step_order')
-            ->get(['template_id', 'step_order', 'resolver_type', 'role_key', 'reviewer_id'])
+            ->get(['template_id', 'step_order', 'resolver_type', 'role_key', 'reviewer_id', 'scoring_types'])
             ->groupBy('template_id');
 
         $assignments = DB::table('reviewer_chain_template_assignments')
@@ -45,6 +45,7 @@ class ReviewerTemplateResolver
                         'resolverType' => $step->resolver_type,
                         'roleKey' => $this->normalizeRoleKey((string) ($step->role_key ?? '')),
                         'reviewerId' => $step->reviewer_id ? (int) $step->reviewer_id : null,
+                        'scoringTypes' => ReviewerChainResolver::parseScoringTypes($step->scoring_types),
                         'label' => $this->stepLabel((string) $step->resolver_type, (string) ($step->role_key ?? '')),
                     ])
                     ->values()
