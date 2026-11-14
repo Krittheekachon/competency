@@ -131,7 +131,9 @@ const base = 'http://127.0.0.1:8010', prefix = `QA_SELECT_POSITION_${Date.now()}
       assert(!remaining.positionTitles.some(t=>records.some(r=>r.id===t.id)), 'QA titles remain after cleanup');
     } finally { await browser.close(); }
   }
+  if (process.env.QA_ARTIFACTS === '1') {
   fs.mkdirSync('output/organization-position-selection',{recursive:true});
   fs.writeFileSync('output/organization-position-selection/browser-results.json',JSON.stringify({passed:true,checks,errors,qaTitlesCreatedAndRemoved:records.map(r=>r.id)},null,2));
+  }
   console.log(JSON.stringify({passed:true,checks}));
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -38,3 +38,6 @@ auth.json
 /tests/Load/results/
 
 เอกสารที่เกี่ยวข้อง/
+
+# Generated local verification artifacts
+/output/

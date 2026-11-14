@@ -154,3 +154,8 @@ Set `MOCK_SSO_ENABLED=true`, then open `/mock-sso`, choose the required role, an
 - `npm run build` was run for frontend changes.
 - Real role page was inspected for visible UI changes when practical.
 - Final response lists files changed, checks run, and remaining risks.
+
+## Generated Artifacts
+
+- Summarize changes and verification in chat. Do not create report files, screenshots, PDFs, QA dumps, or an `output/` folder unless the user explicitly requests those artifacts.
+- Run necessary tests and visual checks without saving artifacts in the repository. Use temporary storage for tools that require files, and remove temporary artifacts after verification.

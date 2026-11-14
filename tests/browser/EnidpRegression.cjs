@@ -1,8 +1,11 @@
-// Reuses the local QA fixture and the role/login/control paths from output/enidp-client-qa scripts.
+// Requires a registry for disposable QA records in the current test database.
 const { chromium } = require('C:/Users/HP/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const fs = require('fs'), path = require('path'), assert = require('node:assert/strict');
 const dir = path.resolve('output/enidp-fix-qa'), base = 'http://127.0.0.1:8010';
-const d = JSON.parse(fs.readFileSync(path.join(dir, 'fixture-registry.json')));
+if (!process.env.ENIDP_FIXTURE_REGISTRY) throw new Error('Set ENIDP_FIXTURE_REGISTRY to a registry for disposable QA records in the current test database.');
+const d = JSON.parse(fs.readFileSync(process.env.ENIDP_FIXTURE_REGISTRY));
+const saveArtifacts = process.env.QA_ARTIFACTS === '1';
+if (saveArtifacts) fs.mkdirSync(dir, { recursive: true });
 const prefix = 'QA_ENIDP_FIX_20261104_', mode = process.argv[2], checks = [], errors = [];
 const check = (condition, name) => { checks.push({ name, pass: Boolean(condition) }); assert.ok(condition, name); };
 async function login(browser, role, viewport = { width: 1440, height: 960 }) {
@@ -69,7 +72,7 @@ const draftSaved = page => page.waitForResponse(r => r.url().endsWith('/employee
                 for (const type of types) await reviewer(head, person, type, type === 'MC' ? null : (type === 'CC' ? 3 : 4));
                 for (const type of types) await reviewer(dean, person, type, type === 'MC' ? 3 : null);
             }
-            await head.screenshot({ path: path.join(dir, 'reviewer-ui-coverage.png'), fullPage: false });
+            if (saveArtifacts) await head.screenshot({ path: path.join(dir, 'reviewer-ui-coverage.png'), fullPage: false });
         }
         if (mode === 'idp-before' || mode === 'idp') {
             const p = await login(browser, 'executive');
@@ -96,7 +99,7 @@ const draftSaved = page => page.waitForResponse(r => r.url().endsWith('/employee
                 await p.reload();
                 check(await p.locator('.goal-grid textarea').nth(0).inputValue() === prefix + 'edited goal', 'editing complete draft persists');
                 check(await p.locator('.faculty-plan-competencies li').count() === 2, 'gap links retained after editing');
-                await p.screenshot({ path: path.join(dir, 'idp-after-refresh.png'), fullPage: true });
+                if (saveArtifacts) await p.screenshot({ path: path.join(dir, 'idp-after-refresh.png'), fullPage: true });
                 // Approved assessments have no authorized reopen path. Assert the lock without inventing one.
                 const blocked = await post(p, '/assessments/draft', { competency_id: d.competencies.CC.id, score: 0, checked_indicators: {} });
                 check(blocked.status === 422, 'approved assessment remains locked (D08 cannot be reopened by employee)');
@@ -111,10 +114,10 @@ const draftSaved = page => page.waitForResponse(r => r.url().endsWith('/employee
             const p = await login(browser, 'executive');
             await p.goto(base + '/dashboard?page=emp-idp');
             await p.locator('.activities-section').scrollIntoViewIfNeeded();
-            await p.screenshot({ path: path.join(dir, 'idp-persisted-details.png'), fullPage: false });
+            if (saveArtifacts) await p.screenshot({ path: path.join(dir, 'idp-persisted-details.png'), fullPage: false });
             await p.setViewportSize({ width: 390, height: 844 });
             // The accessible close button lives inside the overlay rather than underneath it.
-            await p.screenshot({ path: path.join(dir, 'mobile-close-control.png'), fullPage: false });
+            if (saveArtifacts) await p.screenshot({ path: path.join(dir, 'mobile-close-control.png'), fullPage: false });
         }
         if (mode === 'mobile-before' || mode === 'mobile') {
             for (const role of mode === 'mobile-before' ? ['executive'] : ['executive', 'support', 'hr', 'dean', 'admin']) {
@@ -132,7 +135,7 @@ const draftSaved = page => page.waitForResponse(r => r.url().endsWith('/employee
                     if (role === 'executive') {
                         await p.goto(base + '/dashboard?page=emp-idp');
                         if (await close.count()) await close.click();
-                        await p.screenshot({ path: path.join(dir, 'mobile-idp-menu-closed.png'), fullPage: false });
+                        if (saveArtifacts) await p.screenshot({ path: path.join(dir, 'mobile-idp-menu-closed.png'), fullPage: false });
                         await p.setViewportSize({ width: 900, height: 844 });
                         await p.getByRole('button', { name: '☰', exact: true }).click(); await close.click();
                         check(await p.locator('.sidebar').count() === 0, '900px breakpoint closes');
@@ -142,5 +145,5 @@ const draftSaved = page => page.waitForResponse(r => r.url().endsWith('/employee
         }
         check(errors.length === 0, 'no unexpected browser errors');
     } catch (e) { errors.push(e.message); process.exitCode = 1; }
-    finally { fs.writeFileSync(path.join(dir, mode + '.json'), JSON.stringify({ checks, errors }, null, 2)); await browser.close(); console.log(JSON.stringify({ mode, checks: checks.length, failed: checks.filter(c => !c.pass).length, errors })); }
+    finally { if (saveArtifacts) fs.writeFileSync(path.join(dir, mode + '.json'), JSON.stringify({ checks, errors }, null, 2)); await browser.close(); console.log(JSON.stringify({ mode, checks: checks.length, failed: checks.filter(c => !c.pass).length, errors })); }
 })();
